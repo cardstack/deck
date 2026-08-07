@@ -1,0 +1,11 @@
+{
+  "deck": {
+    "packages": {
+      "confetti": {
+        "version": "1.0.0",
+        "entry": "$REALM/confetti.js",
+        "exports": { "./main": "$REALM/confetti.js" }
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Deck safe-vendor demo</title>
+<script type="importmap">
+  {
+    "imports": {
+      "confetti/": "/@confetti@1.0.0/"
+    }
+  }
+</script>
+<body style="font-family: system-ui; max-width: 40rem; margin: 4rem auto">
+  <h1>Deck: act as your own unpkg</h1>
+  <p>
+    This page's import map points <code>confetti/</code> at
+    <code>/@confetti@1.0.0/</code> on the local Deck server. The library was
+    reviewed once, packed, published, and now serves immutably by treeHash.
+    No public CDN is involved.
+  </p>
+  <button id="go">Celebrate</button>
+  <p id="status"></p>
+  <script type="module" src="/app.js"></script>
+</body>

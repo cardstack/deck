@@ -55,9 +55,28 @@ multi-package design, and the GitHub mirror analysis.
 ## Status
 
 Design: ruled and complete for the at-rest half plus pack
-equivalence. Code in this repo: none yet — next steps are (1) the
-canonical treeHash function with fixture tests, (2) `pack`/`unpack`
-in the CLI obeying the round-trip laws, (3) the minimal Node server
-(versioned serving, 301/302 rules, `?meta`, `?format=pack`, `!/`
-mounts), (4) the safe-vendor flow, proven on a vanilla JS/HTML app
-with plain import maps.
+equivalence. Code: **the reference implementation is built and
+tested** (34 tests green):
+
+- **`packages/core`** — `tree-hash-v1` (shasum-compatible manifest,
+  UTF-8 byte-order sort), `canonical-zip-v1` (hand-rolled
+  deterministic writer, zero deps; tolerant standard-zip reader with
+  size caps), packlist (`deck-pack-v1`), `pack`/`unpack` verified
+  under the round-trip laws (treeHash survives; byte-identical
+  repack; stock `unzip` interop), and the at-rest store
+  (immutable publishes, dist-tags, spec resolution with the
+  invalid-vs-not-found permanence split).
+- **`packages/server`** — read-only zero-framework serving:
+  exact = immutable + Content-Digest; range/tag = one 302 hop;
+  bare/alias = 301; `?meta`; `?format=pack` (faithful by
+  construction); `!/` mounts (depth-capped); coded JSON errors with
+  two negative-cache tiers; HEAD; writes refused.
+- **`packages/cli`** — `deck hash | pack | unpack | list | verify |
+  publish | tag | serve`.
+- **`examples/vanilla-app`** — the safe-vendor demo:
+  `pnpm --filter @deck/example-vanilla-app demo`, then open
+  http://localhost:8787/ — a plain HTML app whose import map
+  resolves a vetted library from your own Deck server. No public
+  CDN, no framework, no build step.
+
+Run everything: `pnpm install && pnpm test && pnpm lint`.
