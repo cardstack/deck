@@ -1,6 +1,6 @@
 import { watch, type FSWatcher } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { parsePackages, IMPORT_MAP_PATH } from '@deck/core/import-map';
 import { packFromDir } from '@deck/core/pack';
 import {
@@ -46,6 +46,18 @@ export interface WatchController {
 
 export function watchAndPublish(options: WatchOptions): WatchController {
   let { dir, name, storeDir, debounceMs = 500, onPublish, onError } = options;
+  // A store inside the watched tree feeds itself: publishing writes packs
+  // into the tree, which changes its treeHash, which publishes again —
+  // forever, with every pack swallowing the previous ones. Refuse it
+  // outright rather than leave it as a footgun in a guide.
+  let watchedRoot = resolve(dir);
+  let storeRoot = resolve(storeDir);
+  if (storeRoot === watchedRoot || storeRoot.startsWith(`${watchedRoot}/`)) {
+    throw new Error(
+      `the store (${storeRoot}) is inside the watched directory (${watchedRoot}); ` +
+        `every publish would change the tree and trigger another publish — keep the store outside`,
+    );
+  }
   let timer: NodeJS.Timeout | undefined;
   let running = false;
   let dirty = false;

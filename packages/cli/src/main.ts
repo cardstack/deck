@@ -25,6 +25,7 @@ import { watchAndPublish } from '@deck/server/watcher';
 const HELP = `deck — the Deck protocol CLI
 
 Usage:
+  deck hello [dir] [--port <p>]         scaffold a live app and serve it — start here
   deck hash <dir>                       print the canonical tree hash
   deck pack <dir> [--output <file>] [--created-by <who>] [--source <realm>]
                                         create <basename>.pack.zip
@@ -350,6 +351,108 @@ async function main(): Promise<void> {
             : ''
         }`,
       );
+      return;
+    }
+    case 'hello': {
+      // The runme: scaffold a working app and serve it live in one
+      // command. No install, no build, no config — edit a file, reload,
+      // see it. Everything else in this CLI is a step you take later.
+      let { values, positionals } = parseArgs({
+        args: rest,
+        allowPositionals: true,
+        options: { port: { type: 'string', default: '8787' } },
+      });
+      let appDir = resolve(positionals[0] ?? 'hello-deck');
+      let name = basename(appDir)
+        .replace(/[^a-z0-9-]/gi, '-')
+        .toLowerCase();
+      let storeDir = `${appDir}-store`; // outside the watched tree, always
+      let exists = await stat(join(appDir, 'app.js')).then(
+        () => true,
+        () => false,
+      );
+      if (!exists) {
+        await mkdir(appDir, { recursive: true });
+        await writeFile(
+          join(appDir, 'importmap.json'),
+          JSON.stringify(
+            {
+              imports: {},
+              deck: {
+                packages: {
+                  [name]: { version: '0.1.0', entry: '$REALM/app.js' },
+                },
+              },
+            },
+            null,
+            2,
+          ) + '\n',
+        );
+        await writeFile(
+          join(appDir, 'index.html'),
+          `<!doctype html>
+<meta charset="utf-8" />
+<title>${name}</title>
+<body style="font-family: system-ui; display: grid; place-items: center; height: 100vh; margin: 0">
+  <canvas id="c" width="360" height="360"></canvas>
+  <script type="module" src="./app.js"></script>
+</body>
+`,
+        );
+        await writeFile(
+          join(appDir, 'app.js'),
+          `// Edit this file and reload the page. That is the whole loop.
+const c = document.getElementById('c').getContext('2d');
+let t = 0;
+setInterval(() => {
+  t += 0.02;
+  c.fillStyle = '#0b1021';
+  c.fillRect(0, 0, 360, 360);
+  for (let i = 0; i < 90; i++) {
+    const a = i * 0.4 + t;
+    const r = 20 + i * 1.6;
+    c.fillStyle = \`hsl(\${(i * 4 + t * 60) % 360} 90% 65%)\`;
+    c.beginPath();
+    c.arc(180 + Math.cos(a) * r, 180 + Math.sin(a) * r, 4, 0, 7);
+    c.fill();
+  }
+}, 16);
+`,
+        );
+      }
+      watchAndPublish({
+        dir: appDir,
+        name,
+        storeDir,
+        onPublish: ({ version }) => console.log(`  saved → ${name}@${version}`),
+        onError: (error) => console.error(`  watch: ${error}`),
+      });
+      let server = createDeckServer({
+        storeDir,
+        live: { [name]: appDir },
+      });
+      let port = Number(values.port);
+      server.listen(port, () => {
+        let url = `http://localhost:${port}/live/${name}/index.html`;
+        console.log(`
+  ${exists ? 'Serving' : 'Created'} ${appDir}
+
+      ${url}
+
+  Open that, then edit ${join(appDir, 'app.js')} and reload.
+
+  No npm. No GitHub. No deploy. No PR. Instant feedback.
+  Every save is auto-saved as an immutable version — you cannot lose work,
+  and you can go back to any of them.
+
+  Next, when you want it:
+    deck vendor https://esm.sh/three@0.160.0 --name three --version 0.160.0 \\
+      --store ${storeDir} --tag latest      # any ESM library, pulled in for good
+    deck release --store ${storeDir} --name ${name} --version 1.0.0 \\
+      --from dev --tag latest               # freeze this state as a real version
+    deck pack ${appDir}                     # the whole app as one shareable file
+`);
+      });
       return;
     }
     case 'serve': {

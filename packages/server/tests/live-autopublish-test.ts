@@ -81,6 +81,19 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
     await rm(workDir, { recursive: true, force: true });
   });
 
+  test('a store inside the watched directory is refused', function (assert) {
+    assert.throws(
+      () =>
+        watchAndPublish({
+          dir: liveDir,
+          name: 'mylib',
+          storeDir: join(liveDir, 'store'),
+        }),
+      /inside the watched directory/,
+      'otherwise each publish would change the tree and publish again, forever',
+    );
+  });
+
   test('a settled edit auto-publishes a dev prerelease', async function (assert) {
     await writeFile(join(liveDir, 'lib.js'), 'export const v = 2;\n');
     await controller.settled();

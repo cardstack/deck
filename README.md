@@ -1,11 +1,37 @@
 # Deck
 
+```bash
+npx deck hello        # (from this repo: node packages/cli/bin/deck.js hello)
+```
+
+That scaffolds a working app, serves it live, and prints the URL. Edit
+a file, reload, see it. That is the whole loop.
+
+**No npm. No GitHub. No deploy. No PR.** Instant feedback. Ship any
+version, share any milestone, revert anytime, use any ESM library from
+the web, keep the whole web platform, never lose work, reuse and
+combine what you built before, and fork an experiment with no
+consequences.
+
 Deck is a protocol for versioning, publishing, and serving packages
 of ES modules and JSON documents from plain state: a file tree, an
 import map, seals, and immutable version pointers. A **deck** is a
 package — an arrangement declared over a shared tree, not a sealed
 box. A **pack** (`<name>.pack.zip`) is the same deck as one portable
 artifact. One identity — the canonical treeHash — spans both forms.
+
+How each promise is actually kept:
+
+| Promise | Mechanism |
+| --- | --- |
+| instant feedback | `/live/<name>/…` serves your working directory, `no-store` |
+| never lose work | every settled save is auto-published as an immutable version |
+| revert anytime | `curl "…/@app@<old>?format=pack" -o old.pack.zip && deck unpack old.pack.zip --into ./app --force` |
+| ship any version | `deck release … --from dev` — names a sealed state, copies nothing |
+| share any milestone | `deck pack ./app` → one `.pack.zip` any zip tool opens |
+| use any library | `deck vendor https://esm.sh/three@0.160.0 …` — pulled in for good, hermetic |
+| fork freely | copy the directory (or unpack a version into a new one) and watch it under another name; published versions are untouched |
+| whole web platform | plain ES modules and import maps; no bundler, no transpile, nothing between you and the browser |
 
 Deck is deliberately independent:
 
