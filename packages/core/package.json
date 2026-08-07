@@ -10,7 +10,8 @@
     "./packlist": "./src/packlist.ts",
     "./pack": "./src/pack.ts",
     "./store": "./src/store.ts",
-    "./import-map": "./src/import-map.ts"
+    "./import-map": "./src/import-map.ts",
+    "./vendor": "./src/vendor.ts"
   },
   "scripts": {
     "test": "node tests/index.ts",

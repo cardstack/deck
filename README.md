@@ -20,6 +20,36 @@ Deck is deliberately independent:
   `jj-history-sidecar` worktree of the boxel monorepo, L1–L7, fully
   tested) — it is prior art and a re-import target, not the home.
 
+## Bring a CDN library in-house
+
+```bash
+deck vendor https://esm.sh/three@0.160.0 --name three --version 0.160.0 \
+  --store ./store --tag latest
+```
+
+That pulls three.js's whole module graph from esm.sh ONCE, rewrites
+every cross-module reference to stay inside the pack, and seals it.
+Your app's import map then points at your own server:
+
+```html
+<script type="importmap">
+{ "imports": { "three": "/@three@0.160.0/esm.sh/three@0.160.0.mjs" } }
+</script>
+<script type="module">
+  import * as THREE from 'three';   // never touches a public CDN
+</script>
+```
+
+Verified end to end against the real esm.sh: three.js r160 loads and
+executes in a browser with every request going to the Deck server and
+none to any CDN. Vendoring is **hermetic by default** — if the graph
+reaches a host the walker will not follow, the command fails rather
+than sealing a pack with a live external reference inside it.
+`--allow-external` (keep it live) and `--allow-host` (follow it too)
+are the explicit opt-outs. The canonical source travels with the
+bytes as `vendoredFrom`, so a consumer can always tell what a
+vendored module IS — dedupe it, upgrade it, or check it upstream.
+
 ## The safe-vendor requirement (noted 2026-08-07)
 
 A Deck server must be able to act as **your own unpkg for a curated
@@ -56,7 +86,7 @@ multi-package design, and the GitHub mirror analysis.
 
 Design: ruled and complete for the at-rest half plus pack
 equivalence. Code: **the reference implementation is built and
-tested** — 48 tests green (23 core, 5 CLI, 20 server), lint and
+tested** — 54 tests green (29 core, 5 CLI, 20 server), lint and
 typecheck clean.
 
 - **`packages/core`** — `tree-hash-v1` (shasum-compatible manifest,
@@ -80,7 +110,7 @@ typecheck clean.
   state as `<base>-dev.N` (tag `dev`) — invisible to ranges, so
   vibe coding cannot surprise a consumer.
 - **`packages/cli`** — `deck hash | pack | unpack | list | verify |
-  publish | tag | release | prune | serve`. `deck serve --watch
+  publish | tag | release | vendor | prune | serve`. `deck serve --watch
   <dir> --as <name>` runs the live + auto-publish loop.
 - **`examples/vanilla-app`** — the safe-vendor demo:
   `pnpm --filter @deck/example-vanilla-app demo`, then open

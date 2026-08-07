@@ -6,13 +6,14 @@ import {
   formatTreeHash,
   hashBytes,
 } from '@deck/core/tree-hash';
-import { packFromDir, peekPacklist, unpack } from '@deck/core/pack';
+import { pack, packFromDir, peekPacklist, unpack } from '@deck/core/pack';
 import {
   pruneDevVersions,
   publishToStore,
   releaseVersion,
   setDistTag,
 } from '@deck/core/store';
+import { vendorFromCdn, vendorImportMap } from '@deck/core/vendor';
 import { createDeckServer } from '@deck/server/server';
 import { watchAndPublish } from '@deck/server/watcher';
 
@@ -38,6 +39,13 @@ Usage:
   deck release --store <dir> --name <n> --version <v> --from <tag-or-version> [--tag <t>]
                                         name an existing sealed state as a new
                                         version — a pointer, never a copy
+  deck vendor <cdn-url> --name <n> --version <v> [--store <dir>] [--tag <t>]
+              [--output <file>] [--allow-external] [--allow-host <h>]...
+                                        pull a library's whole module graph
+                                        from esm.sh/unpkg/jsdelivr ONCE,
+                                        rewrite every reference to stay
+                                        inside the pack, and seal it — your
+                                        own unpkg, hermetic by default
   deck prune --store <dir> --name <n> [--keep <k>]
                                         drop old -dev.N prereleases (never
                                         stables or tag targets); bytes are
@@ -247,6 +255,75 @@ async function main(): Promise<void> {
       console.log(
         `released ${values.name}@${values.version} from ${values.from}: same sealed state (treeHash ${record.treeHash}), zero bytes copied${values.tag ? `, tag ${values.tag}` : ''}`,
       );
+      return;
+    }
+    case 'vendor': {
+      let { values, positionals } = parseArgs({
+        args: rest,
+        allowPositionals: true,
+        options: {
+          name: { type: 'string' },
+          version: { type: 'string' },
+          store: { type: 'string' },
+          tag: { type: 'string' },
+          output: { type: 'string' },
+          'allow-external': { type: 'boolean', default: false },
+          'allow-host': { type: 'string', multiple: true, default: [] },
+        },
+      });
+      let [url] = positionals;
+      if (!url || !values.name || !values.version) {
+        fail(
+          'usage: deck vendor <cdn-url> --name <n> --version <v> [--store <dir>] [--output <file>]',
+        );
+      }
+      let result = await vendorFromCdn({
+        entryUrl: url,
+        allowExternal: values['allow-external'],
+        allowHosts: values['allow-host'],
+      });
+      let bytes = pack([
+        {
+          path: 'importmap.json',
+          bytes: vendorImportMap(
+            values.name,
+            values.version,
+            result.entryPath,
+            url,
+          ),
+        },
+        ...result.files,
+      ]);
+      let packlist = peekPacklist(bytes);
+      console.log(
+        `vendored ${result.modules.length} modules from ${url} (treeHash ${packlist.treeHash.hash})`,
+      );
+      if (result.externals.length > 0) {
+        console.log(
+          `  warning: ${result.externals.length} reference(s) still point outside the pack:`,
+        );
+        for (let external of result.externals.slice(0, 5)) {
+          console.log(`    ${external}`);
+        }
+      }
+      if (values.store) {
+        await publishToStore(
+          resolve(values.store),
+          values.name,
+          values.version,
+          bytes,
+          { tag: values.tag },
+        );
+        console.log(
+          `published ${values.name}@${values.version}${values.tag ? ` tag ${values.tag}` : ''} — import it as /@${values.name}@${values.version}/`,
+        );
+      }
+      if (values.output || !values.store) {
+        let output =
+          values.output ?? `${values.name}-${values.version}.pack.zip`;
+        await writeFile(output, bytes);
+        console.log(`wrote ${output}`);
+      }
       return;
     }
     case 'prune': {
