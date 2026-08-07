@@ -1,0 +1,12 @@
+packages:
+  - 'packages/*'
+
+catalog:
+  '@types/node': ^24.0.0
+  '@types/qunit': ^2.19.10
+  '@typescript-eslint/eslint-plugin': ^8.0.0
+  '@typescript-eslint/parser': ^8.0.0
+  eslint: ^8.57.1
+  prettier: ^3.6.2
+  qunit: ^2.24.1
+  typescript: ~5.9.3

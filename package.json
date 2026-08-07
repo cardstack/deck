@@ -1,0 +1,17 @@
+{
+  "name": "deck",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.0.9",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "pnpm run --filter './packages/**' --if-present -r lint",
+    "lint:fix": "pnpm run --filter './packages/**' --if-present -r lint:fix",
+    "test": "pnpm run --filter './packages/**' --if-present -r test"
+  },
+  "devDependencies": {
+    "prettier": "catalog:"
+  }
+}

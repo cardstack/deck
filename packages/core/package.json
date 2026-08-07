@@ -1,0 +1,26 @@
+{
+  "name": "@deck/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deck protocol core: canonical tree hash, packlist, pack/unpack laws",
+  "exports": {
+    "./tree-hash": "./src/tree-hash.ts"
+  },
+  "scripts": {
+    "test": "node tests/index.ts",
+    "lint": "pnpm run lint:js && pnpm run lint:types",
+    "lint:js": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "lint:types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/qunit": "catalog:",
+    "@typescript-eslint/eslint-plugin": "catalog:",
+    "@typescript-eslint/parser": "catalog:",
+    "eslint": "catalog:",
+    "qunit": "catalog:",
+    "typescript": "catalog:"
+  }
+}
