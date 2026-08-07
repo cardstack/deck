@@ -16,6 +16,12 @@ module.exports = {
   rules: {
     // House style follows the boxel monorepo: `let` is the default binding.
     'prefer-const': 'off',
+    // An `_`-prefixed parameter is a deliberate part of a signature the
+    // implementation does not use — interface parity, mostly.
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+    ],
   },
   ignorePatterns: ['node_modules/', 'reference/'],
 };

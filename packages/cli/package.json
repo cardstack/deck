@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@deck/core": "workspace:*",
-    "@deck/server": "workspace:*"
+    "@deck/server": "workspace:*",
+    "@deck/history": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

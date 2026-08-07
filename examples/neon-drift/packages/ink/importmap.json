@@ -1,0 +1,15 @@
+{
+  "imports": {},
+  "deck": {
+    "packages": {
+      "ink": {
+        "version": "0.1.0",
+        "entry": "$REALM/ink.js",
+        "exports": {
+          ".": "$REALM/ink.js",
+          "./themes": "$REALM/themes.js"
+        }
+      }
+    }
+  }
+}

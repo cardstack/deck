@@ -1,0 +1,29 @@
+{
+  "name": "@deck/history",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deck tier-2 history: seal-grained jj history under the auto-publish loop",
+  "exports": {
+    "./backend": "./src/backend.ts",
+    "./jj-cli": "./src/jj-cli.ts",
+    "./historyd": "./src/historyd.ts",
+    "./create": "./src/create.ts"
+  },
+  "scripts": {
+    "test": "node tests/index.ts",
+    "lint": "pnpm run lint:js && pnpm run lint:types",
+    "lint:js": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "lint:types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/qunit": "catalog:",
+    "@typescript-eslint/eslint-plugin": "catalog:",
+    "@typescript-eslint/parser": "catalog:",
+    "eslint": "catalog:",
+    "qunit": "catalog:",
+    "typescript": "catalog:"
+  }
+}

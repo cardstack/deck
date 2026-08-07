@@ -1,0 +1,11 @@
+{
+  "imports": {},
+  "deck": {
+    "packages": {
+      "water": {
+        "version": "0.1.0",
+        "entry": "$REALM/water.js"
+      }
+    }
+  }
+}

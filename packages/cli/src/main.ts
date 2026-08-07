@@ -14,8 +14,10 @@ import {
   setDistTag,
 } from '@deck/core/store';
 import { vendorFromCdn, vendorImportMap } from '@deck/core/vendor';
-import { createDeckServer } from '@deck/server/server';
+import { createDeckServer, type HistoryMount } from '@deck/server/server';
 import { watchAndPublish } from '@deck/server/watcher';
+import { applyRestore } from '@deck/history/backend';
+import { createHistory, isValidHistoryKind } from '@deck/history/create';
 
 // The Deck CLI is the WRITE side of the standalone protocol: it arranges
 // at-rest state (packs, the store). The server is read-only. Together they
@@ -52,9 +54,19 @@ Usage:
                                         stables or tag targets); bytes are
                                         deleted only when nothing points at them
   deck serve --store <dir> [--port <p>] [--watch <dir> --as <name>]...
+             [--history auto|jj|historyd|none]
                                         start the read-only Deck server;
                                         --watch adds /live/<name> vibe serving
-                                        plus auto-published <base>-dev.N versions
+                                        plus auto-published <base>-dev.N versions;
+                                        --history seals every save (tier 2) and
+                                        serves /history/<name>/<changeId>/<path>
+  deck history <dir> [--limit <n>] [--json]
+                                        list the seals of a live tree — every
+                                        state it has been in, published or not
+  deck restore <dir> <changeId>         put the tree back to a sealed state;
+                                        the state you leave is sealed first, and
+                                        the restored one auto-publishes as the
+                                        next dev version
 `;
 
 function fail(message: string): never {
@@ -353,6 +365,92 @@ async function main(): Promise<void> {
       );
       return;
     }
+    case 'history': {
+      let { values, positionals } = parseArgs({
+        args: rest,
+        allowPositionals: true,
+        options: {
+          limit: { type: 'string', default: '20' },
+          json: { type: 'boolean', default: false },
+          history: { type: 'string', default: 'auto' },
+        },
+      });
+      let [dir] = positionals;
+      if (!dir) fail('usage: deck history <dir> [--limit <n>] [--json]');
+      if (!isValidHistoryKind(values.history!)) {
+        fail('--history must be auto, jj, historyd, or none');
+      }
+      let attachment = await createHistory({
+        dir: resolve(dir),
+        kind: values.history,
+      });
+      if (!attachment.backend) {
+        fail(`${attachment.detail} — no seals to list`);
+      }
+      // Listing flushes first, so whatever is on disk right now is sealed
+      // before it is reported: the log is never behind the tree.
+      let seals = await attachment.backend.list(resolve(dir));
+      attachment.backend.close();
+      if (values.json) {
+        console.log(JSON.stringify(seals, null, 2));
+        return;
+      }
+      if (seals.length === 0) {
+        console.log('no seals yet — save a file');
+        return;
+      }
+      for (let seal of seals.slice(0, Number(values.limit))) {
+        console.log(
+          `${seal.changeId.slice(0, 12)}  ${seal.timestamp}  ${seal.description}${
+            seal.author ? ` (${seal.author})` : ''
+          }`,
+        );
+        for (let line of seal.filesSummary) {
+          console.log(`              ${line}`);
+        }
+      }
+      if (seals.length > Number(values.limit)) {
+        console.log(`… ${seals.length - Number(values.limit)} more`);
+      }
+      return;
+    }
+    case 'restore': {
+      let { values, positionals } = parseArgs({
+        args: rest,
+        allowPositionals: true,
+        options: { history: { type: 'string', default: 'auto' } },
+      });
+      let [dir, changeId] = positionals;
+      if (!dir || !changeId) fail('usage: deck restore <dir> <changeId>');
+      if (!isValidHistoryKind(values.history!)) {
+        fail('--history must be auto, jj, historyd, or none');
+      }
+      let attachment = await createHistory({
+        dir: resolve(dir),
+        kind: values.history,
+      });
+      if (!attachment.backend) {
+        fail(`${attachment.detail} — nothing to restore from`);
+      }
+      let result = await applyRestore(
+        attachment.backend,
+        resolve(dir),
+        changeId,
+      );
+      attachment.backend.close();
+      console.log(
+        `restored ${dir} to ${changeId}: ${result.written.length} file(s) written, ${result.deleted.length} removed`,
+      );
+      for (let path of [...result.written, ...result.deleted].slice(0, 10)) {
+        console.log(`  ${path}`);
+      }
+      if (result.from) {
+        console.log(
+          `the state you left is sealed as ${result.from.slice(0, 12)} — restore it back any time`,
+        );
+      }
+      return;
+    }
     case 'hello': {
       // The runme: scaffold a working app and serve it live in one
       // command. No install, no build, no config — edit a file, reload,
@@ -393,6 +491,7 @@ async function main(): Promise<void> {
           `<!doctype html>
 <meta charset="utf-8" />
 <title>${name}</title>
+<script type="module" src="/_live/hmr.js"></script>
 <body style="font-family: system-ui; display: grid; place-items: center; height: 100vh; margin: 0">
   <canvas id="c" width="360" height="360"></canvas>
   <script type="module" src="./app.js"></script>
@@ -420,16 +519,27 @@ setInterval(() => {
 `,
         );
       }
-      watchAndPublish({
+      // History is on when the machine can do it: "you cannot lose work" is
+      // the promise, and seals are what make it true between publishes.
+      let attachment = await createHistory({
         dir: appDir,
-        name,
-        storeDir,
-        onPublish: ({ version }) => console.log(`  saved → ${name}@${version}`),
-        onError: (error) => console.error(`  watch: ${error}`),
+        onError: (error) => console.error(`  history: ${error}`),
       });
       let server = createDeckServer({
         storeDir,
         live: { [name]: appDir },
+        history: attachment.backend
+          ? { [name]: { dir: appDir, backend: attachment.backend } }
+          : {},
+      });
+      watchAndPublish({
+        dir: appDir,
+        name,
+        storeDir,
+        history: attachment.backend,
+        onLiveChange: (event) => server.liveBus.emit(event),
+        onPublish: ({ version }) => console.log(`  saved → ${name}@${version}`),
+        onError: (error) => console.error(`  watch: ${error}`),
       });
       let port = Number(values.port);
       server.listen(port, () => {
@@ -439,11 +549,19 @@ setInterval(() => {
 
       ${url}
 
-  Open that, then edit ${join(appDir, 'app.js')} and reload.
+  Open that, then edit ${join(appDir, 'app.js')} — it hot-reloads.
 
   No npm. No GitHub. No deploy. No PR. Instant feedback.
   Every save is auto-saved as an immutable version — you cannot lose work,
   and you can go back to any of them.
+
+  ${attachment.detail}${
+    attachment.backend
+      ? `
+    deck history ${appDir}              # every state this tree has been in
+    deck restore ${appDir} <changeId>   # go back to any of them`
+      : ''
+  }
 
   Next, when you want it:
     deck vendor https://esm.sh/three@0.160.0 --name three --version 0.160.0 \\
@@ -463,6 +581,7 @@ setInterval(() => {
           port: { type: 'string', default: '8787' },
           watch: { type: 'string', multiple: true, default: [] },
           as: { type: 'string', multiple: true, default: [] },
+          history: { type: 'string', default: 'auto' },
         },
       });
       if (!values.store) {
@@ -473,31 +592,66 @@ setInterval(() => {
       if (values.watch!.length !== values.as!.length) {
         fail('each --watch <dir> needs a matching --as <name>');
       }
+      if (!isValidHistoryKind(values.history!)) {
+        fail(`--history must be auto, jj, historyd, or none`);
+      }
       let live: Record<string, string> = {};
+      let historyMounts: Record<string, HistoryMount> = {};
+      let server = createDeckServer({
+        storeDir: resolve(values.store),
+        live,
+        history: historyMounts,
+      });
       for (let [i, dir] of values.watch!.entries()) {
         let name = values.as![i];
         live[name] = resolve(dir);
+        let attachment = await createHistory({
+          dir: resolve(dir),
+          kind: values.history,
+          onError: (error) => console.error(`history ${name}: ${error}`),
+        });
+        console.log(`  ${name}: ${attachment.detail}`);
+        if (attachment.backend) {
+          historyMounts[name] = {
+            dir: resolve(dir),
+            backend: attachment.backend,
+          };
+        }
         watchAndPublish({
           dir: resolve(dir),
           name,
           storeDir: resolve(values.store),
-          onPublish: ({ version, treeHash }) =>
+          history: attachment.backend,
+          onLiveChange: (event) => server.liveBus.emit(event),
+          onPublish: ({ version, treeHash, sealChangeId }) =>
             console.log(
-              `auto-published ${name}@${version} (${treeHash.slice(0, 12)})`,
+              `auto-published ${name}@${version} (${treeHash.slice(0, 12)})${
+                sealChangeId ? ` sealed ${sealChangeId.slice(0, 12)}` : ''
+              }`,
             ),
           onError: (error) => console.error(`watch ${name}: ${error}`),
         });
       }
-      let server = createDeckServer({ storeDir: resolve(values.store), live });
       let port = Number(values.port);
       server.listen(port, () => {
         console.log(
           `deck server on http://localhost:${port} (read-only, store: ${values.store})`,
         );
+        console.log(
+          `  browse: http://localhost:${port}/  — packages, files, versions`,
+        );
+        console.log(
+          `  hmr:  http://localhost:${port}/_live/hmr.js → SSE /_live/events`,
+        );
         for (let name of Object.keys(live)) {
           console.log(
             `  live: http://localhost:${port}/live/${name} — auto-publishes ${name}@<base>-dev.N (tag: dev)`,
           );
+          if (historyMounts[name]) {
+            console.log(
+              `  seals: http://localhost:${port}/history/${name} — every save, published or not`,
+            );
+          }
         }
       });
       return;

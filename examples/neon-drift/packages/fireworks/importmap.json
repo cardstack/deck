@@ -1,0 +1,11 @@
+{
+  "imports": {},
+  "deck": {
+    "packages": {
+      "fireworks": {
+        "version": "0.1.0",
+        "entry": "$REALM/fireworks.js"
+      }
+    }
+  }
+}

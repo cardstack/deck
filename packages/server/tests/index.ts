@@ -18,5 +18,8 @@ QUnit.on('runEnd', (runEnd) => {
 
 await import('./server-test.ts');
 await import('./live-autopublish-test.ts');
+await import('./live-hmr-test.ts');
+await import('./browse-test.ts');
+await import('./history-test.ts');
 
 QUnit.start();

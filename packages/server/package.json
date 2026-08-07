@@ -6,7 +6,8 @@
   "description": "Minimal Deck protocol server: read-only versioned serving from an at-rest store",
   "exports": {
     "./server": "./src/server.ts",
-    "./watcher": "./src/watcher.ts"
+    "./watcher": "./src/watcher.ts",
+    "./live-events": "./src/live-events.ts"
   },
   "scripts": {
     "test": "node tests/index.ts",
@@ -16,7 +17,8 @@
     "lint:types": "tsc --noEmit"
   },
   "dependencies": {
-    "@deck/core": "workspace:*"
+    "@deck/core": "workspace:*",
+    "@deck/history": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

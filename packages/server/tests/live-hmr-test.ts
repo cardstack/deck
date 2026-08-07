@@ -1,0 +1,132 @@
+import QUnit from 'qunit';
+const { module, test } = QUnit;
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { AddressInfo } from 'node:net';
+import { createDeckServer, type DeckServer } from '../src/server.ts';
+import { watchAndPublish, type WatchController } from '../src/watcher.ts';
+
+let workDir: string;
+let storeDir: string;
+let liveDir: string;
+let server: DeckServer;
+let origin: string;
+let controller: WatchController;
+
+async function readSseChange(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs = 5000,
+): Promise<{ name: string; treeHash: string }> {
+  let buffer = '';
+  let deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    let remaining = Math.max(1, deadline - Date.now());
+    let chunk = await Promise.race([
+      reader.read().then((r) => ({ kind: 'read' as const, r })),
+      new Promise<{ kind: 'timeout' }>((resolve) =>
+        setTimeout(() => resolve({ kind: 'timeout' }), remaining),
+      ),
+    ]);
+    if (chunk.kind === 'timeout') {
+      break;
+    }
+    if (chunk.r.value) {
+      buffer += new TextDecoder().decode(chunk.r.value);
+    }
+    let match = buffer.match(/event: change\ndata: ({[^\n]+})\n\n/);
+    if (match) {
+      return JSON.parse(match[1]);
+    }
+    if (chunk.r.done) {
+      throw new Error(`SSE stream closed before change event: ${buffer}`);
+    }
+  }
+  throw new Error(`timed out waiting for SSE change event: ${buffer}`);
+}
+
+module('live HMR-lite (SSE)', function (hooks) {
+  hooks.before(async function () {
+    workDir = await mkdtemp(join(tmpdir(), 'deck-hmr-test-'));
+    storeDir = join(workDir, 'store');
+    liveDir = join(workDir, 'mylib');
+    await mkdir(liveDir, { recursive: true });
+    await writeFile(
+      join(liveDir, 'importmap.json'),
+      JSON.stringify({
+        imports: {},
+        deck: {
+          packages: {
+            mylib: { version: '0.1.0', entry: '$REALM/lib.js' },
+          },
+        },
+      }),
+    );
+    await writeFile(join(liveDir, 'lib.js'), 'export const v = 1;\n');
+
+    server = createDeckServer({ storeDir, live: { mylib: liveDir } });
+    controller = watchAndPublish({
+      dir: liveDir,
+      name: 'mylib',
+      storeDir,
+      debounceMs: 40,
+      onLiveChange: (event) => server.liveBus.emit(event),
+    });
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  hooks.after(async function () {
+    controller.close();
+    await new Promise<void>((resolve, reject) =>
+      server.close((e) => (e ? reject(e) : resolve())),
+    );
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  test('/_live/hmr.js serves the client helper', async function (assert) {
+    let res = await fetch(`${origin}/_live/hmr.js`);
+    assert.equal(res.status, 200);
+    assert.true(/javascript/.test(res.headers.get('content-type') ?? ''));
+    let body = await res.text();
+    assert.true(body.includes('EventSource'));
+    assert.true(body.includes('/_live/events'));
+  });
+
+  test('liveBus emit fans out over SSE', async function (assert) {
+    assert.timeout(8000);
+    let res = await fetch(`${origin}/_live/events`);
+    assert.equal(res.status, 200);
+    assert.true(
+      /text\/event-stream/.test(res.headers.get('content-type') ?? ''),
+    );
+    assert.ok(res.body, 'SSE response has a body stream');
+
+    let reader = res.body!.getReader();
+    let pending = readSseChange(reader);
+    server.liveBus.emit({
+      name: 'mylib',
+      treeHash: 'a'.repeat(64),
+    });
+    let event = await pending;
+    assert.equal(event.name, 'mylib');
+    assert.equal(event.treeHash, 'a'.repeat(64));
+    await reader.cancel();
+  });
+
+  test('settled live edits emit through the watcher onto SSE', async function (
+    assert,
+  ) {
+    assert.timeout(10000);
+    let res = await fetch(`${origin}/_live/events`);
+    assert.ok(res.body);
+    let reader = res.body!.getReader();
+    let pending = readSseChange(reader);
+    await writeFile(join(liveDir, 'lib.js'), 'export const v = 2;\n');
+    let event = await pending;
+    assert.equal(event.name, 'mylib');
+    assert.true(/^[0-9a-f]{64}$/.test(event.treeHash));
+    await controller.settled();
+    await reader.cancel();
+  });
+});

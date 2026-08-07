@@ -1,4 +1,12 @@
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import semver from 'semver';
 import { unpack } from './pack.ts';
@@ -77,6 +85,27 @@ export async function readStoreMeta(
   } catch {
     return undefined;
   }
+}
+
+/** Every package that has a meta.json in the store, sorted by name. */
+export async function listStorePackages(
+  storeDir: string,
+): Promise<StoreMeta[]> {
+  let names: string[];
+  try {
+    names = await readdir(storeDir);
+  } catch {
+    return [];
+  }
+  let packages: StoreMeta[] = [];
+  for (let name of names.sort()) {
+    if (!isValidPackageName(name)) continue;
+    let meta = await readStoreMeta(storeDir, name);
+    if (meta && Object.keys(meta.versions).length > 0) {
+      packages.push(meta);
+    }
+  }
+  return packages;
 }
 
 async function writeStoreMeta(

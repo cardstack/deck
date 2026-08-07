@@ -1,0 +1,11 @@
+{
+  "imports": {},
+  "deck": {
+    "packages": {
+      "neon-drift": {
+        "version": "0.1.0",
+        "entry": "$REALM/app.js"
+      }
+    }
+  }
+}

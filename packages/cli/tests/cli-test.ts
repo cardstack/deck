@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { treeHashFromDir } from '@deck/core/tree-hash';
 import { readStoreMeta } from '@deck/core/store';
+import { jjVersion } from '@deck/history/jj-cli';
 
 const execFileAsync = promisify(execFile);
 const BIN = fileURLToPath(new URL('../bin/deck.js', import.meta.url));
@@ -15,8 +16,12 @@ const BIN = fileURLToPath(new URL('../bin/deck.js', import.meta.url));
 async function deck(
   args: string[],
   cwd: string,
+  env?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync('node', [BIN, ...args], { cwd });
+  return execFileAsync('node', [BIN, ...args], {
+    cwd,
+    env: { ...process.env, ...env },
+  });
 }
 
 module('deck CLI end-to-end', function (hooks) {
@@ -257,6 +262,57 @@ module('deck CLI end-to-end', function (hooks) {
         )
       ).length > 0,
       'the released stable still has its bytes',
+    );
+  });
+
+  test('history + restore: the mulligan, through the CLI', async function (assert) {
+    let source = join(work, 'my-lib');
+    if (!(await jjVersion())) {
+      assert.ok(true, 'skipped — jj is not installed; tier 2 is optional');
+      return;
+    }
+    await writeFile(join(source, 'index.js'), 'export const LIB = 1;\n');
+    await deck(['history', 'my-lib'], work); // listing seals the tree
+    await writeFile(join(source, 'index.js'), 'export const LIB = 2;\n');
+
+    let { stdout: log } = await deck(['history', 'my-lib'], work);
+    let seals = log
+      .split('\n')
+      .filter((line) => /^[0-9a-z]{12}\s/.test(line))
+      .map((line) => line.slice(0, 12));
+    assert.strictEqual(seals.length, 2, log);
+
+    let { stdout: restored } = await deck(
+      ['restore', 'my-lib', seals[1]],
+      work,
+    );
+    assert.true(restored.includes('1 file(s) written'), restored);
+    assert.true(
+      restored.includes('the state you left is sealed'),
+      'a restore is itself undoable',
+    );
+    assert.strictEqual(
+      (await readFile(join(source, 'index.js'))).toString(),
+      'export const LIB = 1;\n',
+    );
+
+    let { stdout: json } = await deck(['history', 'my-lib', '--json'], work);
+    assert.strictEqual(
+      JSON.parse(json).length,
+      3,
+      'restoring adds to history rather than rewriting it',
+    );
+  });
+
+  test('history without a backend explains itself instead of failing obscurely', async function (assert) {
+    await assert.rejects(
+      // Port 1 answers nothing — an explicitly requested backend that is not
+      // there degrades to tier 1 rather than silently becoming another one.
+      deck(['history', 'my-lib', '--history', 'historyd'], work, {
+        DECK_HISTORYD_URL: 'http://127.0.0.1:1',
+      }),
+      /no daemon at http:\/\/127\.0\.0\.1:1/,
+      'the message names what was missing',
     );
   });
 
