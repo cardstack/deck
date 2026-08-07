@@ -5,13 +5,23 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { readZipEntry } from '@deck/core/canonical-zip';
+import {
+  packagesFromPack,
+  parsePackages,
+  treePathFromMapValue,
+  IMPORT_MAP_PATH,
+  MOUNT_SEPARATOR,
+} from '@deck/core/import-map';
 import { peekPacklist } from '@deck/core/pack';
 import {
   readStoredPack,
   readStoreMeta,
   resolveVersionSpec,
 } from '@deck/core/store';
+import { isValidTreePath } from '@deck/core/tree-hash';
 
 // The minimal Deck server: READ-ONLY versioned serving over an at-rest
 // store directory. All state changes happen through the CLI (an agent
@@ -36,11 +46,11 @@ import {
 const SERVE_PATH =
   /^\/@(?<name>[a-z0-9][a-z0-9-]{0,63})@(?<spec>[^/]+)(?<rest>\/.*)?$/;
 const PACKAGES_PATH = /^\/_packages\/(?<name>[a-z0-9][a-z0-9-]{0,63})$/;
+const LIVE_PATH = /^\/live\/(?<name>[a-z0-9][a-z0-9-]{0,63})(?<rest>\/.*)?$/;
 
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 const SHORT_CACHE = 'public, max-age=60, s-maxage=300';
 
-const MOUNT_SEPARATOR = '.pack.zip!/';
 const MAX_MOUNT_DEPTH = 2;
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -72,62 +82,14 @@ function contentDigest(bytes: Buffer): string {
 
 export interface DeckServerOptions {
   storeDir: string;
+  // Live directories: `/live/<name>/<path>` serves these straight from
+  // disk with no-store caching — the vibe-coding surface. Names use the
+  // package-name grammar; paths are tree-path validated (never joined
+  // into the filesystem unchecked).
+  live?: Record<string, string>;
   // Optional fallthrough for anything that is not a Deck route (demo
   // pages, health checks). Without it, non-routes 404.
   fallback?: (req: IncomingMessage, res: ServerResponse) => void;
-}
-
-interface PackageMapEntry {
-  version?: string;
-  entry?: string;
-  exports?: Record<string, string>;
-  baseApi?: string;
-}
-
-// The import map travels inside the pack as a tree file. The vendor key is
-// `deck` here; `boxel` is honored for content authored in Boxel realms —
-// same shape, one namespace per ecosystem.
-function packagesFromImportMap(
-  packBytes: Buffer,
-): Record<string, PackageMapEntry> | undefined {
-  let raw = readZipEntry(packBytes, 'importmap.json');
-  if (!raw) {
-    return undefined;
-  }
-  try {
-    let parsed = JSON.parse(raw.toString('utf8'));
-    let packages = parsed?.deck?.packages ?? parsed?.boxel?.packages;
-    if (packages && typeof packages === 'object' && !Array.isArray(packages)) {
-      return packages as Record<string, PackageMapEntry>;
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function treePathFromMapValue(value: string): string | undefined {
-  let path = value;
-  if (path.startsWith('$REALM/')) {
-    path = path.slice('$REALM/'.length);
-  } else if (path.startsWith('./')) {
-    path = path.slice('./'.length);
-  }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path) || path.startsWith('$')) {
-    return undefined;
-  }
-  if (path.length === 0 || path.startsWith('/')) {
-    return undefined;
-  }
-  // `!` is legal ONLY as the mount separator `.pack.zip!/`.
-  if (path.includes('!') && !path.includes(MOUNT_SEPARATOR)) {
-    return undefined;
-  }
-  let segments = path.split('/');
-  if (segments.some((s) => s === '' || s === '.' || s === '..')) {
-    return undefined;
-  }
-  return path;
 }
 
 // Resolve a possibly-mounted path against a pack: `a/b.js` reads directly;
@@ -155,7 +117,7 @@ interface CachedPack {
 }
 
 export function createDeckServer(options: DeckServerOptions): Server {
-  let { storeDir, fallback } = options;
+  let { storeDir, live = {}, fallback } = options;
   // Stored packs are immutable (published versions never change), so this
   // cache never invalidates; the cap only bounds memory.
   let packCache = new Map<string, CachedPack>();
@@ -233,6 +195,103 @@ export function createDeckServer(options: DeckServerOptions): Server {
     let url = new URL(req.url ?? '/', 'http://localhost');
     let pathname = decodeURIComponent(url.pathname);
     let search = url.search;
+
+    let liveMatch = pathname.match(LIVE_PATH);
+    if (liveMatch?.groups) {
+      let dir = live[liveMatch.groups.name];
+      if (!dir) {
+        respondError(
+          req,
+          res,
+          404,
+          'package-not-found',
+          `no live directory for ${liveMatch.groups.name}`,
+        );
+        return;
+      }
+      let rest = liveMatch.groups.rest?.slice(1);
+      if (rest === undefined || rest === '') {
+        // Bare live form → temporary redirect to the entry module; the
+        // answer changes with every edit of the map, so nothing caches.
+        let entry: string | undefined;
+        try {
+          let map = parsePackages(
+            await readFile(join(dir, IMPORT_MAP_PATH), 'utf8'),
+          );
+          let value = map?.[liveMatch.groups.name]?.entry;
+          entry = value ? treePathFromMapValue(value) : undefined;
+        } catch {
+          entry = undefined;
+        }
+        if (!entry) {
+          respondError(
+            req,
+            res,
+            404,
+            'no-entry-module',
+            `live ${liveMatch.groups.name} declares no entry module in ${IMPORT_MAP_PATH}`,
+            'no-store',
+          );
+          return;
+        }
+        respond(req, res, 302, {
+          location: `/live/${liveMatch.groups.name}/${entry}${search}`,
+          'cache-control': 'no-store',
+          'access-control-allow-origin': '*',
+        });
+        return;
+      }
+      if (!isValidTreePath(rest)) {
+        respondError(
+          req,
+          res,
+          404,
+          'file-not-found',
+          `invalid path`,
+          'no-store',
+        );
+        return;
+      }
+      let bytes: Buffer | undefined;
+      let served = rest;
+      for (let candidate of /\.[^/]+$/.test(rest)
+        ? [rest]
+        : [rest, `${rest}.js`, `${rest}.mjs`]) {
+        try {
+          bytes = await readFile(join(dir, ...candidate.split('/')));
+          served = candidate;
+          break;
+        } catch {
+          // keep probing
+        }
+      }
+      if (bytes === undefined) {
+        respondError(
+          req,
+          res,
+          404,
+          'file-not-found',
+          `${rest} does not exist in the live tree`,
+          'no-store',
+        );
+        return;
+      }
+      // The whole point: every save is visible on the next request.
+      respond(
+        req,
+        res,
+        200,
+        {
+          'content-type': contentTypeFor(served),
+          'cache-control': 'no-store',
+          'content-digest': contentDigest(bytes),
+          'x-deck-live': liveMatch.groups.name,
+          'access-control-allow-origin': '*',
+        },
+        bytes,
+      );
+      return;
+    }
 
     let packagesMatch = pathname.match(PACKAGES_PATH);
     if (packagesMatch?.groups) {
@@ -353,7 +412,7 @@ export function createDeckServer(options: DeckServerOptions): Server {
       return;
     }
 
-    let mapEntry = packagesFromImportMap(pack.bytes)?.[name];
+    let mapEntry = packagesFromPack(pack.bytes)?.[name];
     let canonicalRest: string | undefined;
     if (wantsMeta || wantsPack) {
       canonicalRest = undefined;

@@ -133,6 +133,75 @@ module('deck CLI end-to-end', function (hooks) {
     );
   });
 
+  test('release: the no-copies version update through the CLI', async function (assert) {
+    await deck(['pack', 'my-lib'], work);
+    // an auto-publish-shaped dev prerelease of the declared base
+    await deck(
+      [
+        'publish',
+        'my-lib.pack.zip',
+        '--store',
+        'store',
+        '--name',
+        'my-lib',
+        '--version',
+        '1.0.0-dev.1',
+        '--tag',
+        'dev',
+      ],
+      work,
+    );
+
+    let { stdout } = await deck(
+      [
+        'release',
+        '--store',
+        'store',
+        '--name',
+        'my-lib',
+        '--version',
+        '1.0.0',
+        '--from',
+        'dev',
+        '--tag',
+        'latest',
+      ],
+      work,
+    );
+    assert.true(stdout.includes('zero bytes copied'), stdout);
+
+    let meta = await readStoreMeta(join(work, 'store'), 'my-lib');
+    assert.strictEqual(
+      meta!.versions['1.0.0'].file,
+      meta!.versions['1.0.0-dev.1'].file,
+      'the stable is a POINTER to the same stored pack file',
+    );
+    assert.strictEqual(
+      meta!.versions['1.0.0'].treeHash,
+      meta!.versions['1.0.0-dev.1'].treeHash,
+    );
+    assert.deepEqual(meta!.tags, { dev: '1.0.0-dev.1', latest: '1.0.0' });
+
+    await assert.rejects(
+      deck(
+        [
+          'release',
+          '--store',
+          'store',
+          '--name',
+          'my-lib',
+          '--version',
+          '2.0.0',
+          '--from',
+          'dev',
+        ],
+        work,
+      ),
+      /declares my-lib@1\.0\.0/,
+      'the sealed manifest must agree it IS the released version',
+    );
+  });
+
   test('tampered packs are refused by verify and unpack', async function (assert) {
     await deck(['pack', 'my-lib'], work);
     let packPath = join(work, 'my-lib.pack.zip');

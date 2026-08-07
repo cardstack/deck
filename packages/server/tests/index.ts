@@ -17,5 +17,6 @@ QUnit.on('runEnd', (runEnd) => {
 });
 
 await import('./server-test.ts');
+await import('./live-autopublish-test.ts');
 
 QUnit.start();

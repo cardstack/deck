@@ -9,7 +9,8 @@
     "./canonical-zip": "./src/canonical-zip.ts",
     "./packlist": "./src/packlist.ts",
     "./pack": "./src/pack.ts",
-    "./store": "./src/store.ts"
+    "./store": "./src/store.ts",
+    "./import-map": "./src/import-map.ts"
   },
   "scripts": {
     "test": "node tests/index.ts",

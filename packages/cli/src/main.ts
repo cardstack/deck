@@ -7,8 +7,9 @@ import {
   hashBytes,
 } from '@deck/core/tree-hash';
 import { packFromDir, peekPacklist, unpack } from '@deck/core/pack';
-import { publishToStore, setDistTag } from '@deck/core/store';
+import { publishToStore, releaseVersion, setDistTag } from '@deck/core/store';
 import { createDeckServer } from '@deck/server/server';
+import { watchAndPublish } from '@deck/server/watcher';
 
 // The Deck CLI is the WRITE side of the standalone protocol: it arranges
 // at-rest state (packs, the store). The server is read-only. Together they
@@ -29,8 +30,13 @@ Usage:
                                         publish a pack into a store
   deck tag --store <dir> --name <n> --tag <t> --version <v>
                                         move a dist-tag
-  deck serve --store <dir> [--port <p>]
-                                        start the read-only Deck server
+  deck release --store <dir> --name <n> --version <v> --from <tag-or-version> [--tag <t>]
+                                        name an existing sealed state as a new
+                                        version — a pointer, never a copy
+  deck serve --store <dir> [--port <p>] [--watch <dir> --as <name>]...
+                                        start the read-only Deck server;
+                                        --watch adds /live/<name> vibe serving
+                                        plus auto-published <base>-dev.N versions
 `;
 
 function fail(message: string): never {
@@ -202,21 +208,82 @@ async function main(): Promise<void> {
       console.log(`${values.name} ${values.tag} → ${values.version}`);
       return;
     }
+    case 'release': {
+      let { values } = parseArgs({
+        args: rest,
+        options: {
+          store: { type: 'string' },
+          name: { type: 'string' },
+          version: { type: 'string' },
+          from: { type: 'string' },
+          tag: { type: 'string' },
+        },
+      });
+      if (!values.store || !values.name || !values.version || !values.from) {
+        fail(
+          'usage: deck release --store <dir> --name <n> --version <v> --from <tag-or-version> [--tag <t>]',
+        );
+      }
+      // A leading digit means a source version; otherwise a dist-tag.
+      let from = /^[0-9]/.test(values.from)
+        ? { version: values.from }
+        : { tag: values.from };
+      let record = await releaseVersion(
+        resolve(values.store),
+        values.name,
+        values.version,
+        from,
+        { tag: values.tag },
+      );
+      console.log(
+        `released ${values.name}@${values.version} from ${values.from}: same sealed state (treeHash ${record.treeHash}), zero bytes copied${values.tag ? `, tag ${values.tag}` : ''}`,
+      );
+      return;
+    }
     case 'serve': {
       let { values } = parseArgs({
         args: rest,
         options: {
           store: { type: 'string' },
           port: { type: 'string', default: '8787' },
+          watch: { type: 'string', multiple: true, default: [] },
+          as: { type: 'string', multiple: true, default: [] },
         },
       });
-      if (!values.store) fail('usage: deck serve --store <dir> [--port <p>]');
-      let server = createDeckServer({ storeDir: resolve(values.store) });
+      if (!values.store) {
+        fail(
+          'usage: deck serve --store <dir> [--port <p>] [--watch <dir> --as <name>]...',
+        );
+      }
+      if (values.watch!.length !== values.as!.length) {
+        fail('each --watch <dir> needs a matching --as <name>');
+      }
+      let live: Record<string, string> = {};
+      for (let [i, dir] of values.watch!.entries()) {
+        let name = values.as![i];
+        live[name] = resolve(dir);
+        watchAndPublish({
+          dir: resolve(dir),
+          name,
+          storeDir: resolve(values.store),
+          onPublish: ({ version, treeHash }) =>
+            console.log(
+              `auto-published ${name}@${version} (${treeHash.slice(0, 12)})`,
+            ),
+          onError: (error) => console.error(`watch ${name}: ${error}`),
+        });
+      }
+      let server = createDeckServer({ storeDir: resolve(values.store), live });
       let port = Number(values.port);
       server.listen(port, () => {
         console.log(
           `deck server on http://localhost:${port} (read-only, store: ${values.store})`,
         );
+        for (let name of Object.keys(live)) {
+          console.log(
+            `  live: http://localhost:${port}/live/${name} — auto-publishes ${name}@<base>-dev.N (tag: dev)`,
+          );
+        }
       });
       return;
     }
