@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import semver from 'semver';
 import { unpack } from './pack.ts';
@@ -292,6 +292,64 @@ export async function readStoredPack(
     return undefined;
   }
   return readFile(join(storeDir, name, record.file));
+}
+
+export interface PruneResult {
+  removedVersions: string[];
+  deletedFiles: string[];
+}
+
+// Auto-publishing accumulates dev prereleases, so the store needs a policy.
+// Only `-dev.N` prereleases are prunable — stables and anything a dist-tag
+// points at are never touched, so the public surface stays immutable.
+//
+// The content-addressed subtlety: several versions can share ONE pack file
+// (a release names a dev state without copying it). So dropping a version
+// record is not permission to delete its bytes — a file is deleted only
+// when NO surviving version still points at that treeHash. Without that
+// check, pruning a dev prerelease would silently break the stable released
+// from it.
+export async function pruneDevVersions(
+  storeDir: string,
+  name: string,
+  options: { keep?: number } = {},
+): Promise<PruneResult> {
+  let keep = options.keep ?? 10;
+  let meta = await readStoreMeta(storeDir, name);
+  if (!meta) {
+    return { removedVersions: [], deletedFiles: [] };
+  }
+  let tagged = new Set(Object.values(meta.tags));
+  let devVersions = Object.keys(meta.versions)
+    .filter((version) => /-dev\.\d+$/.test(version) && !tagged.has(version))
+    .sort((a, b) => semver.compare(a, b));
+  let removedVersions = devVersions.slice(
+    0,
+    Math.max(0, devVersions.length - keep),
+  );
+  if (removedVersions.length === 0) {
+    return { removedVersions: [], deletedFiles: [] };
+  }
+  let condemned = new Map<string, string>(); // file → treeHash
+  for (let version of removedVersions) {
+    let record = meta.versions[version];
+    condemned.set(record.file, record.treeHash);
+    delete meta.versions[version];
+  }
+  // Garbage-collect only bytes nothing points at any more.
+  let stillReferenced = new Set(
+    Object.values(meta.versions).map((record) => record.file),
+  );
+  let deletedFiles: string[] = [];
+  for (let file of condemned.keys()) {
+    if (stillReferenced.has(file)) {
+      continue;
+    }
+    await rm(join(storeDir, name, file), { force: true });
+    deletedFiles.push(file);
+  }
+  await writeStoreMeta(storeDir, meta);
+  return { removedVersions, deletedFiles };
 }
 
 // The next auto-publish number for a dev line: `<base>-dev.<n>`.

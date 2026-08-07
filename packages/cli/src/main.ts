@@ -7,7 +7,12 @@ import {
   hashBytes,
 } from '@deck/core/tree-hash';
 import { packFromDir, peekPacklist, unpack } from '@deck/core/pack';
-import { publishToStore, releaseVersion, setDistTag } from '@deck/core/store';
+import {
+  pruneDevVersions,
+  publishToStore,
+  releaseVersion,
+  setDistTag,
+} from '@deck/core/store';
 import { createDeckServer } from '@deck/server/server';
 import { watchAndPublish } from '@deck/server/watcher';
 
@@ -33,6 +38,10 @@ Usage:
   deck release --store <dir> --name <n> --version <v> --from <tag-or-version> [--tag <t>]
                                         name an existing sealed state as a new
                                         version — a pointer, never a copy
+  deck prune --store <dir> --name <n> [--keep <k>]
+                                        drop old -dev.N prereleases (never
+                                        stables or tag targets); bytes are
+                                        deleted only when nothing points at them
   deck serve --store <dir> [--port <p>] [--watch <dir> --as <name>]...
                                         start the read-only Deck server;
                                         --watch adds /live/<name> vibe serving
@@ -237,6 +246,32 @@ async function main(): Promise<void> {
       );
       console.log(
         `released ${values.name}@${values.version} from ${values.from}: same sealed state (treeHash ${record.treeHash}), zero bytes copied${values.tag ? `, tag ${values.tag}` : ''}`,
+      );
+      return;
+    }
+    case 'prune': {
+      let { values } = parseArgs({
+        args: rest,
+        options: {
+          store: { type: 'string' },
+          name: { type: 'string' },
+          keep: { type: 'string', default: '10' },
+        },
+      });
+      if (!values.store || !values.name) {
+        fail('usage: deck prune --store <dir> --name <n> [--keep <k>]');
+      }
+      let { removedVersions, deletedFiles } = await pruneDevVersions(
+        resolve(values.store),
+        values.name,
+        { keep: Number(values.keep) },
+      );
+      console.log(
+        `pruned ${removedVersions.length} dev prerelease(s), deleted ${deletedFiles.length} pack file(s)${
+          removedVersions.length > deletedFiles.length
+            ? ' (the rest are still referenced by surviving versions)'
+            : ''
+        }`,
       );
       return;
     }

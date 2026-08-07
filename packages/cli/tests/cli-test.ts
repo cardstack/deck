@@ -202,6 +202,64 @@ module('deck CLI end-to-end', function (hooks) {
     );
   });
 
+  test('prune drops old dev prereleases but keeps what is still pointed at', async function (assert) {
+    await deck(['pack', 'my-lib'], work);
+    for (let n of [1, 2]) {
+      await deck(
+        [
+          'publish',
+          'my-lib.pack.zip',
+          '--store',
+          'store',
+          '--name',
+          'my-lib',
+          '--version',
+          `1.0.0-dev.${n}`,
+          '--tag',
+          'dev',
+        ],
+        work,
+      );
+    }
+    await deck(
+      [
+        'release',
+        '--store',
+        'store',
+        '--name',
+        'my-lib',
+        '--version',
+        '1.0.0',
+        '--from',
+        '1.0.0-dev.1',
+        '--tag',
+        'latest',
+      ],
+      work,
+    );
+
+    let { stdout } = await deck(
+      ['prune', '--store', 'store', '--name', 'my-lib', '--keep', '0'],
+      work,
+    );
+    assert.true(stdout.includes('pruned 1 dev prerelease'), stdout);
+
+    let meta = await readStoreMeta(join(work, 'store'), 'my-lib');
+    assert.deepEqual(
+      Object.keys(meta!.versions).sort(),
+      ['1.0.0', '1.0.0-dev.2'],
+      'the stable and the tagged dev survive; dev.1 is gone',
+    );
+    assert.true(
+      (
+        await readFile(
+          join(work, 'store', 'my-lib', meta!.versions['1.0.0'].file),
+        )
+      ).length > 0,
+      'the released stable still has its bytes',
+    );
+  });
+
   test('tampered packs are refused by verify and unpack', async function (assert) {
     await deck(['pack', 'my-lib'], work);
     let packPath = join(work, 'my-lib.pack.zip');

@@ -56,27 +56,60 @@ multi-package design, and the GitHub mirror analysis.
 
 Design: ruled and complete for the at-rest half plus pack
 equivalence. Code: **the reference implementation is built and
-tested** (34 tests green):
+tested** — 48 tests green (23 core, 5 CLI, 20 server), lint and
+typecheck clean.
 
 - **`packages/core`** — `tree-hash-v1` (shasum-compatible manifest,
   UTF-8 byte-order sort), `canonical-zip-v1` (hand-rolled
   deterministic writer, zero deps; tolerant standard-zip reader with
   size caps), packlist (`deck-pack-v1`), `pack`/`unpack` verified
   under the round-trip laws (treeHash survives; byte-identical
-  repack; stock `unzip` interop), and the at-rest store
-  (immutable publishes, dist-tags, spec resolution with the
-  invalid-vs-not-found permanence split).
+  repack; stock `unzip` interop), the shared import-map module, and
+  the **content-addressed store**: packs live once per treeHash and
+  versions are pointers, so publishing identical content writes no
+  new bytes, `release` names an existing sealed state without
+  copying, and pruning deletes bytes only when nothing points at
+  them.
 - **`packages/server`** — read-only zero-framework serving:
   exact = immutable + Content-Digest; range/tag = one 302 hop;
   bare/alias = 301; `?meta`; `?format=pack` (faithful by
   construction); `!/` mounts (depth-capped); coded JSON errors with
-  two negative-cache tiers; HEAD; writes refused.
+  two negative-cache tiers; HEAD; writes refused. Plus the
+  **filesystem endpoint**: `/live/<name>/…` serves a working
+  directory `no-store` while a watcher auto-publishes every settled
+  state as `<base>-dev.N` (tag `dev`) — invisible to ranges, so
+  vibe coding cannot surprise a consumer.
 - **`packages/cli`** — `deck hash | pack | unpack | list | verify |
-  publish | tag | serve`.
+  publish | tag | release | prune | serve`. `deck serve --watch
+  <dir> --as <name>` runs the live + auto-publish loop.
 - **`examples/vanilla-app`** — the safe-vendor demo:
   `pnpm --filter @deck/example-vanilla-app demo`, then open
   http://localhost:8787/ — a plain HTML app whose import map
   resolves a vetted library from your own Deck server. No public
   CDN, no framework, no build step.
 
+### The release workflow, in full
+
+```bash
+deck serve --store ./store --watch ./my-lib --as my-lib   # live + auto dev
+# …edit files; every settled save publishes my-lib@<base>-dev.N
+# happy with it? bump the version in the tree's importmap.json, save,
+# then name that sealed state:
+deck release --store ./store --name my-lib --version 1.2.0 --from dev --tag latest
+```
+
+No copies, no branch, no rebuild: the release is a pointer to bytes
+that already exist, and the sealed import map is what authorizes the
+name.
+
 Run everything: `pnpm install && pnpm test && pnpm lint`.
+
+### Not built yet
+
+Tier 2 history (jj/historyd seals beneath the same auto-publish
+loop, giving per-save restore and `/history/<name>/<changeId>/…`) is
+designed in [docs/deck-live-autopublish.md](docs/deck-live-autopublish.md)
+and needs no rework of what exists. Vendoring flows
+(`vendor`/`unvendor` map rewrites) are designed in
+[docs/deck-pack-equivalence.md](docs/deck-pack-equivalence.md); the
+`!/` mount half they depend on is already serving.
