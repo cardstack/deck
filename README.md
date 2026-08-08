@@ -209,6 +209,9 @@ Design set in [docs/](docs/) — start with:
 - [deck-ui-spec.md](docs/deck-ui-spec.md) — product requirements and
   screen flows for a UI over all of it, written against the endpoints
   and states that exist.
+- [deck-use-cases.md](docs/deck-use-cases.md) — four workloads that
+  need this protocol rather than merely benefit from it, written
+  against the bottlenecks agentic engineering hits on git and npm.
 - [deck-cardpack-requirements.md](docs/deck-cardpack-requirements.md)
   — requirements recovered from the cardpack v0.2 implementation
   (preserved verbatim in [reference/cardpack-v0.2](reference/cardpack-v0.2)).
