@@ -25,5 +25,7 @@ await import('./store-test.ts');
 await import('./vendor-test.ts');
 await import('./lock-test.ts');
 await import('./fork-test.ts');
+await import('./merge-test.ts');
+await import('./offer-test.ts');
 
 QUnit.start();

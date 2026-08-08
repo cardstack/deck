@@ -1,7 +1,6 @@
 import { watch, type FSWatcher } from 'node:fs';
-import { readdir, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { IMPORT_MAP_PATH } from '@deck/core/import-map';
+import { discoverDecks, type DeckRef } from '@deck/core/deck-scan';
 import type { HistoryBackend } from '@deck/history/backend';
 import {
   watchAndPublish,
@@ -37,54 +36,7 @@ export function storeDirFor(realmDir: string): string {
   return join(realmDir, DECK_DIR, 'store');
 }
 
-export interface DeckRef {
-  publisher: string;
-  package: string;
-  // `<publisher>/<package>` — the store name and the log path both use it.
-  name: string;
-  dir: string;
-}
-
-const SEGMENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
-
-/** Every `<publisher>/<package>/importmap.json` under a realm. */
-export async function discoverDecks(realmDir: string): Promise<DeckRef[]> {
-  let decks: DeckRef[] = [];
-  for (let publisher of await entriesOf(realmDir)) {
-    for (let name of await entriesOf(join(realmDir, publisher))) {
-      let dir = join(realmDir, publisher, name);
-      if (!(await isFile(join(dir, IMPORT_MAP_PATH)))) {
-        continue;
-      }
-      decks.push({
-        publisher,
-        package: name,
-        name: `${publisher}/${name}`,
-        dir,
-      });
-    }
-  }
-  return decks.sort((a, b) => (a.name < b.name ? -1 : 1));
-}
-
-async function entriesOf(dir: string): Promise<string[]> {
-  try {
-    return (await readdir(dir, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory() && SEGMENT.test(entry.name))
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
-async function isFile(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isFile();
-  } catch {
-    return false;
-  }
-}
+export { discoverDecks, type DeckRef };
 
 export interface RealmMount {
   name: string;

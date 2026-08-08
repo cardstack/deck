@@ -13,7 +13,11 @@
     "./import-map": "./src/import-map.ts",
     "./vendor": "./src/vendor.ts",
     "./lock": "./src/lock.ts",
-    "./fork": "./src/fork.ts"
+    "./fork": "./src/fork.ts",
+    "./tree": "./src/tree.ts",
+    "./merge": "./src/merge.ts",
+    "./offer": "./src/offer.ts",
+    "./deck-scan": "./src/deck-scan.ts"
   },
   "scripts": {
     "test": "node tests/index.ts",

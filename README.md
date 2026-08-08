@@ -68,6 +68,9 @@ deck fork --realm ./work/site --from acme/palette --as you/palette --use-in you/
 #   copy someone's deck into YOUR publisher scope and change it at byte speed.
 #   Separate version line, separate dist-tags. Their versions never move.
 
+deck offers --realm ./work/site          # every open proposal, and whether it still merges
+deck rebase --realm ./work/site          # re-merge them all; conflicts are reported, not written
+
 deck history ./work/site                 # every state the realm has been in
 deck restore ./work/site <changeId>      # go back to any of them; the state you
                                          # leave is sealed first, so this is undoable
@@ -104,6 +107,45 @@ Deck is deliberately independent:
   realm server (branches `deck/01`–`deck/07` on the
   `jj-history-sidecar` worktree of the boxel monorepo, L1–L7, fully
   tested) — it is prior art and a re-import target, not the home.
+
+## Contribution: the proposal is a version, not a diff
+
+A fork records its base — package, version, and treeHash — in its own import
+map, so a fork IS a proposal. Nothing registers it; there is no branch and no
+side table. That makes two things possible that a diff-based flow cannot do.
+
+**Review by running, not by reading.** Every proposal is already published at
+a URL, so trying one is a query parameter:
+
+```
+/site/you/app/index.html?with=acme/palette=you/palette
+/site/you/app/index.html?with=acme/palette@1.1.0
+```
+
+The server resolves the app's import map differently for that one request —
+same rules `deck lock` uses, applied at serve time. No checkout, no build, no
+branch, and the app's own tree is untouched. Repeat `with` to try several at
+once. A trial is never cached as if it were the sealed thing.
+
+**Nobody rebases.** `deck serve --rebase` keeps every open proposal merged
+against upstream continuously: the base is exact and both sides are
+content-addressed, so re-merging is a pure function a machine can run. Clean
+merges are written into the proposal's own tree — which auto-publishes and
+seals like any other save — and the base pointer moves to what it absorbed.
+Conflicted ones are reported and **left strictly alone**: a machine never
+damages a contributor's work.
+
+So a maintainer with 200 open proposals sees the three that stopped merging,
+not 197 that need a rebase.
+
+JSON is merged as data rather than as lines. In a pretty-printed object,
+adding a key makes the line above grow a comma, so a line merge would call
+that a conflict — and manifests and card instances are JSON. Merging by key
+means only the same key, changed differently on both sides, is a real
+disagreement.
+
+Accepting a proposal is a pointer move: upstream publishes the treeHash the
+proposal already holds. **Zero bytes are copied.**
 
 ## Bring a CDN library in-house
 
@@ -177,8 +219,8 @@ multi-package design, and the GitHub mirror analysis.
 
 ## Status
 
-**The reference implementation is built and tested** — 118 tests green
-(43 core, 19 history, 48 server, 8 CLI), lint and typecheck clean.
+**The reference implementation is built and tested** — 151 tests green
+(69 core, 19 history, 55 server, 8 CLI), lint and typecheck clean.
 
 - **`packages/core`** — `tree-hash-v1` (shasum-compatible manifest,
   UTF-8 byte-order sort), `canonical-zip-v1` (hand-rolled
@@ -187,8 +229,10 @@ multi-package design, and the GitHub mirror analysis.
   under the round-trip laws, the shared import-map module, the
   **content-addressed store** (packs live once per treeHash; versions
   are pointers, so `release` copies nothing and pruning deletes bytes
-  only when nothing points at them), the **decklist lock**, and
-  **fork**.
+  only when nothing points at them), the **decklist lock**, **fork**, the
+  **three-way merge** (line-level for text, key-level for JSON), and
+  **offers** — a fork with a recorded base, planned and rebased as a pure
+  function.
 - **`packages/history`** — tier-2 seals behind one contract, with two
   backends: the jj CLI and historyd (jj-lib over localhost HTTP,
   ~5-6x faster per call). A missing jj or a dead daemon degrades to
@@ -200,11 +244,12 @@ multi-package design, and the GitHub mirror analysis.
   (including which seal a version was cut from); `?format=pack`;
   `!/` mounts; `/<realm>/_history/<changeId>/<path>`; import-map
   injection for HTML; coded JSON errors with two negative-cache
-  tiers; HEAD; writes refused. Plus `/_packages`, `/_browse`, and an
-  SSE change bus at `/_live/events` with a drop-in HMR client.
+  tiers; HEAD; writes refused. Plus `/_packages`, `/_browse`,
+  `/<realm>/_offers`, the `?with=` trial override, the **rebase daemon**,
+  and an SSE change bus at `/_live/events` with a drop-in HMR client.
 - **`packages/cli`** — `deck hello | hash | pack | unpack | list |
   verify | publish | tag | release | lock | fork | vendor | prune |
-  history | restore | serve`.
+  history | restore | offers | rebase | serve`.
 
 Run everything: `pnpm install && pnpm test && pnpm lint`.
 

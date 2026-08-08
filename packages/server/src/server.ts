@@ -22,6 +22,7 @@ import {
   readStoreMeta,
   resolveVersionSpec,
 } from '@deck/core/store';
+import { resolveDependencies } from '@deck/core/lock';
 import { isValidTreePath } from '@deck/core/tree-hash';
 import {
   isValidHistoryPath,
@@ -44,6 +45,7 @@ import {
   type LiveChangeEvent,
 } from './live-events.ts';
 import { injectImportMap } from './inject-importmap.ts';
+import { rebasePass } from './rebase-daemon.ts';
 import { discoverDecks, type RealmMount } from './realm.ts';
 
 // The minimal Deck server: READ-ONLY serving of realms laid out on disk.
@@ -95,6 +97,7 @@ const PACKAGES_INDEX = /^\/_packages\/?$/;
 const PACKAGES_PATH = new RegExp(
   `^/_packages/(?<realm>${SEGMENT})/(?<publisher>${SEGMENT})/(?<pkg>${SEGMENT})$`,
 );
+const OFFERS_PATH = new RegExp(`^/(?<realm>${SEGMENT})/_offers/?$`);
 const LIVE_EVENTS_PATH = '/_live/events';
 const LIVE_HMR_PATH = '/_live/hmr.js';
 const BROWSER_PATHS = new Set(['/', '/_browser', '/_browser/']);
@@ -125,6 +128,18 @@ function contentTypeFor(path: string): string {
     (dot >= 0 ? CONTENT_TYPES[path.slice(dot)] : undefined) ??
     'application/octet-stream'
   );
+}
+
+// `pub/pkg@spec` → [`pub/pkg`, `spec`]. The `@` that matters is the last
+// one, because a version can contain none and a name never contains one.
+function splitAtVersion(value: string): [string, string | undefined] {
+  let at = value.lastIndexOf('@');
+  return at <= 0 ? [value, undefined] : [value.slice(0, at), value.slice(at + 1)];
+}
+
+// Overrides may be written with or without the realm they are already in.
+function stripRealm(name: string, realm: string): string {
+  return name.startsWith(`${realm}/`) ? name.slice(realm.length + 1) : name;
 }
 
 function contentDigest(bytes: Buffer): string {
@@ -338,6 +353,73 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     } catch {
       return {};
     }
+  }
+
+  // TRY-BY-URL.
+  //
+  //   ?with=acme/palette@1.4.0-dev.7    same package, another version
+  //   ?with=acme/palette=you/palette    replace it with a fork (live)
+  //   ?with=acme/palette=you/palette@1.4.0-dev.7
+  //
+  // Reviewing a proposal should not mean checking anything out. Every
+  // proposal is already published at a URL, so trying one is a matter of
+  // resolving the app's import map differently for ONE request — the same
+  // resolution rules `deck lock` uses, applied at serve time instead of
+  // write time. Repeat the parameter to try several at once.
+  function parseOverrides(
+    url: URL,
+    realm: RealmMount,
+  ): { specifier: string; name: string; spec: string }[] {
+    let overrides: { specifier: string; name: string; spec: string }[] = [];
+    for (let raw of url.searchParams.getAll('with')) {
+      let [left, right] = raw.split('=');
+      let target = right ?? left;
+      let [name, spec] = splitAtVersion(target);
+      let specifier = right ? splitAtVersion(left)[0] : name;
+      overrides.push({
+        specifier: stripRealm(specifier, realm.name),
+        name: stripRealm(name, realm.name),
+        // No version asked for means the working tree — the point of trying
+        // a fork is usually to see every save of it.
+        spec: spec ?? 'live',
+      });
+    }
+    return overrides;
+  }
+
+  async function overrideImports(
+    url: URL,
+    realm: RealmMount,
+  ): Promise<Record<string, string>> {
+    let overrides = parseOverrides(url, realm);
+    if (overrides.length === 0) {
+      return {};
+    }
+    let resolutions = await resolveDependencies({
+      realmDir: realm.dir,
+      realmName: realm.name,
+      storeDir: realm.storeDir,
+      dependencies: Object.fromEntries(
+        overrides.map((override) => [override.name, override.spec]),
+      ),
+    });
+    let imports: Record<string, string> = {};
+    for (let override of overrides) {
+      let resolution = resolutions.find(
+        (candidate) => candidate.key === override.name,
+      );
+      if (!resolution) {
+        continue;
+      }
+      // The pins are computed for the TARGET package, then bound to the
+      // specifier the document actually imports — which is what lets a fork
+      // stand in for the package it forked.
+      for (let [specifier, value] of Object.entries(resolution.imports)) {
+        let suffix = specifier.endsWith('/') ? '/' : '';
+        imports[`${override.specifier}${suffix}`] = value;
+      }
+    }
+    return imports;
   }
 
   async function readLiveBytes(
@@ -751,6 +833,48 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       }
     }
 
+    let offersMatch = pathname.match(OFFERS_PATH);
+    if (offersMatch?.groups) {
+      let realm = byName.get(offersMatch.groups.realm);
+      if (!realm) {
+        respondError(
+          req,
+          res,
+          404,
+          'realm-not-found',
+          `no realm ${offersMatch.groups.realm}`,
+        );
+        return;
+      }
+      // Read-only: the daemon writes, this only reports. A maintainer wants
+      // the three that stopped merging, not the hundred that are fine.
+      let { outcomes, rebased, conflicted } = await rebasePass({
+        realm,
+        dryRun: true,
+      });
+      respondJson(
+        req,
+        res,
+        {
+          meta: { realm: realm.name, open: outcomes.length, conflicted },
+          data: outcomes.map((outcome) => ({
+            type: 'offer',
+            id: outcome.offer,
+            attributes: {
+              ...outcome,
+              applied: undefined,
+              rebased,
+              // One URL a reviewer can open: the app, with this proposal
+              // standing in for what it forked.
+              tryWith: `?with=${outcome.upstream}=${outcome.offer}`,
+            },
+          })),
+        },
+        'no-store',
+      );
+      return;
+    }
+
     let historyMatch = pathname.match(HISTORY_PATH);
     if (historyMatch?.groups) {
       let realm = byName.get(historyMatch.groups.realm);
@@ -898,7 +1022,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     if (liveMatch?.groups) {
       let realm = byName.get(liveMatch.groups.realm);
       if (realm) {
-        await serveLive(req, res, realm, liveMatch.groups.rest, search);
+        await serveLive(req, res, realm, liveMatch.groups.rest, search, url);
         return;
       }
     }
@@ -917,6 +1041,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     realm: RealmMount,
     rawRest: string | undefined,
     search: string,
+    url: URL,
   ): Promise<void> {
     let rest = rawRest?.replace(/^\/+/, '').replace(/\/+$/, '') ?? '';
     if (rest !== '' && (!isValidTreePath(rest) || isHiddenPath(rest))) {
@@ -962,11 +1087,15 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     }
     let bytes = found.bytes;
     let injected = false;
+    let trying: string[] = [];
     if (found.path.endsWith('.html')) {
-      ({ bytes, injected } = injectImportMap(
-        bytes,
-        await liveImports(realm, found.path),
-      ));
+      let imports = await liveImports(realm, found.path);
+      let overrides = await overrideImports(url, realm);
+      trying = Object.keys(overrides).sort();
+      ({ bytes, injected } = injectImportMap(bytes, {
+        ...imports,
+        ...overrides,
+      }));
     }
     // The whole point: every save is visible on the next request.
     respond(
@@ -979,6 +1108,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         'content-digest': contentDigest(bytes),
         'x-deck-realm': realm.name,
         ...(injected ? { 'x-deck-importmap': 'injected' } : {}),
+        ...(trying.length > 0 ? { 'x-deck-with': trying.join(', ') } : {}),
         'access-control-allow-origin': '*',
       },
       bytes,
@@ -1197,6 +1327,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       return;
     }
     let injected = false;
+    let trying: string[] = [];
     if (rest!.endsWith('.html')) {
       let sealedMap = readZipEntry(pack.bytes, IMPORT_MAP_PATH);
       let imports: Record<string, string> = {};
@@ -1210,8 +1341,14 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       } catch {
         imports = {};
       }
-      // From the SAME seal — a sealed document and its map move together.
-      ({ bytes, injected } = injectImportMap(bytes, imports));
+      let overrides = await overrideImports(url, realm);
+      trying = Object.keys(overrides).sort();
+      // From the SAME seal — a sealed document and its map move together —
+      // unless the caller is deliberately trying something else.
+      ({ bytes, injected } = injectImportMap(bytes, {
+        ...imports,
+        ...overrides,
+      }));
     }
     respond(
       req,
@@ -1219,9 +1356,12 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       200,
       {
         'content-type': contentTypeFor(rest!),
-        'cache-control': IMMUTABLE_CACHE,
+        // A trial is NOT the sealed representation, so it never inherits the
+        // sealed response's immutability.
+        'cache-control': trying.length > 0 ? 'no-store' : IMMUTABLE_CACHE,
         'content-digest': contentDigest(bytes),
         ...(injected ? { 'x-deck-importmap': 'injected' } : {}),
+        ...(trying.length > 0 ? { 'x-deck-with': trying.join(', ') } : {}),
         'x-deck-package': `${name}@${version}`,
         'x-deck-realm': realm.name,
         'x-deck-tree-hash': pack.treeHash,

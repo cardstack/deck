@@ -14,6 +14,7 @@ import {
   setDistTag,
 } from '@deck/core/store';
 import { forkDeck } from '@deck/core/fork';
+import { rebasePass, startRebaseDaemon } from '@deck/server/rebase-daemon';
 import { lockDeck } from '@deck/core/lock';
 import { vendorFromCdn, vendorImportMap } from '@deck/core/vendor';
 import { createDeckServer } from '@deck/server/server';
@@ -73,11 +74,13 @@ Usage:
                                         stables or tag targets); bytes are
                                         deleted only when nothing points at them
   deck serve --root <dir> | --realm <dir> --as <name> ...
-             [--port <p>] [--history auto|jj|historyd|none]
+             [--port <p>] [--history auto|jj|historyd|none] [--rebase]
                                         start the read-only Deck server; every
                                         deck under a realm is served live and
                                         auto-published as <base>-dev.N;
-                                        --history seals every save (tier 2)
+                                        --history seals every save (tier 2);
+                                        --rebase keeps every open proposal
+                                        merged against upstream, continuously
   deck fork --realm <dir> --from <pub>/<pkg>[@<version>] --as <pub>/<pkg>
             [--use-in <pub>/<pkg>] [--force]
                                         copy someone's deck into YOUR publisher
@@ -91,6 +94,14 @@ Usage:
                                         pin them in its import map — what your
                                         users get, so they never inherit
                                         somebody else's working tree
+  deck offers --realm <dir> [--onto <spec>] [--json]
+                                        every open proposal in the realm and
+                                        whether it still merges with upstream
+  deck rebase --realm <dir> [--onto <spec>] [--check]
+                                        re-merge every proposal against
+                                        upstream; clean ones are written back
+                                        (and auto-publish), conflicted ones are
+                                        reported and left untouched
   deck history <realm-dir> [--limit <n>] [--json]
                                         list a realm's seals — every state it
                                         has been in, published or not
@@ -458,6 +469,67 @@ async function main(): Promise<void> {
       );
       return;
     }
+    case 'offers':
+    case 'rebase': {
+      let { values } = parseArgs({
+        args: rest,
+        options: {
+          realm: { type: 'string' },
+          onto: { type: 'string' },
+          check: { type: 'boolean', default: false },
+          json: { type: 'boolean', default: false },
+        },
+      });
+      if (!values.realm) {
+        fail(`usage: deck ${command} --realm <dir> [--onto <spec>]`);
+      }
+      let realmDir = resolve(values.realm);
+      // `offers` reports; `rebase` writes unless asked not to.
+      let dryRun = command === 'offers' || values.check;
+      let result = await rebasePass({
+        realm: {
+          name: basename(realmDir),
+          dir: realmDir,
+          storeDir: storeDirFor(realmDir),
+        },
+        onto: values.onto,
+        dryRun,
+        onError: (error) => console.error(`  ${error}`),
+      });
+      if (values.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (result.outcomes.length === 0) {
+        console.log('no open offers (no deck in this realm records a base)');
+        return;
+      }
+      for (let outcome of result.outcomes) {
+        let target = outcome.upstreamVersion
+          ? `${outcome.upstream}@${outcome.upstreamVersion}`
+          : outcome.upstream;
+        let note =
+          outcome.state === 'conflicted'
+            ? `  conflicts: ${outcome.conflicts.join(', ')}`
+            : outcome.detail
+              ? `  ${outcome.detail}`
+              : outcome.applied
+                ? '  (written)'
+                : '';
+        console.log(
+          `${outcome.state.padEnd(12)} ${outcome.offer} ← ${target}${note}`,
+        );
+      }
+      console.log(
+        dryRun
+          ? `${result.outcomes.length} open, ${result.conflicted} need a person`
+          : `${result.rebased} rebased, ${result.conflicted} need a person`,
+      );
+      if (dryRun && values.check && result.conflicted > 0) {
+        process.exit(1);
+      }
+      return;
+    }
     case 'fork': {
       let { values } = parseArgs({
         args: rest,
@@ -803,6 +875,8 @@ setInterval(() => {
           as: { type: 'string', multiple: true, default: [] },
           port: { type: 'string', default: DEFAULT_PORT },
           history: { type: 'string', default: 'auto' },
+          rebase: { type: 'boolean', default: false },
+          onto: { type: 'string' },
         },
       });
       if (!values.root && values.realm!.length === 0) {
@@ -846,6 +920,22 @@ setInterval(() => {
         });
       }
       let server = createDeckServer({ realms });
+      if (values.rebase) {
+        for (let realm of realms) {
+          startRebaseDaemon({
+            realm,
+            onto: values.onto,
+            onPass: ({ rebased, conflicted }) => {
+              if (rebased > 0 || conflicted > 0) {
+                console.log(
+                  `rebase ${realm.name}: ${rebased} moved, ${conflicted} need a person`,
+                );
+              }
+            },
+            onError: (error) => console.error(`rebase ${realm.name}: ${error}`),
+          });
+        }
+      }
       for (let realm of realms) {
         let controller = watchRealm({
           realm,

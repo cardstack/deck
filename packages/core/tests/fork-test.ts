@@ -67,9 +67,19 @@ module('fork: change someone else\'s deck without touching theirs', function (
       await readFile(join(realmDir, 'you', 'palette', 'importmap.json'), 'utf8'),
     );
     assert.strictEqual(
-      map.deck.packages.palette.forkedFrom,
-      'acme/palette (live)',
+      map.deck.packages.palette.forkedFrom.package,
+      'acme/palette',
       'lineage is recorded in the fork itself, not in a side table',
+    );
+    assert.strictEqual(
+      map.deck.packages.palette.forkedFrom.treeHash,
+      result.baseTreeHash,
+      'and it records the BASE TREE — the third input a later merge needs',
+    );
+    assert.strictEqual(
+      map.deck.packages.palette.forkedFrom.version,
+      undefined,
+      'forked from the live tree, so no version to name',
     );
     assert.strictEqual(
       map.deck.packages.palette.version,

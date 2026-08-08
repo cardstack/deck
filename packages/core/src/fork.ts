@@ -1,9 +1,11 @@
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { unpack } from './pack.ts';
 import { IMPORT_MAP_PATH } from './import-map.ts';
+import type { ForkedFrom } from './offer.ts';
 import { readStoreMeta, readStoredPack, resolveVersionSpec } from './store.ts';
-import { DEFAULT_IGNORE } from './tree-hash.ts';
+import { readTreeFromDir } from './tree.ts';
+import { treeHashFromDir } from './tree-hash.ts';
 
 // Fork: take somebody else's deck and start changing it at byte speed,
 // without asking, without planning to publish, without touching what they
@@ -43,6 +45,8 @@ export interface ForkResult {
   to: string;
   // The exact version forked, when forking a sealed one.
   version?: string;
+  // The tree the fork started from — the merge base for every later rebase.
+  baseTreeHash: string;
   files: string[];
   dir: string;
 }
@@ -53,25 +57,10 @@ export interface ForkOptions {
   from: ForkSource;
   to: ForkTarget;
   force?: boolean;
-}
-
-async function readLiveTree(dir: string): Promise<Map<string, Buffer>> {
-  let files = new Map<string, Buffer>();
-  async function walk(current: string, prefix: string): Promise<void> {
-    for (let entry of await readdir(current, { withFileTypes: true })) {
-      if (DEFAULT_IGNORE.has(entry.name)) {
-        continue;
-      }
-      let path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
-      if (entry.isDirectory()) {
-        await walk(join(current, entry.name), path);
-      } else if (entry.isFile()) {
-        files.set(path, await readFile(join(current, entry.name)));
-      }
-    }
-  }
-  await walk(dir, '');
-  return files;
+  // Who is making the offer. Recorded in the fork's own map, so it survives
+  // copying — and is where a Matrix user id goes when this reaches the
+  // realm server.
+  actor?: string;
 }
 
 // The map travels with the copy, so it has to say what the copy IS: the
@@ -81,7 +70,7 @@ function rewriteMap(
   mapText: string,
   from: ForkSource,
   to: ForkTarget,
-  version: string | undefined,
+  forkedFrom: ForkedFrom,
 ): string {
   let parsed = JSON.parse(mapText);
   let vendor = parsed.deck ?? parsed.boxel;
@@ -91,15 +80,13 @@ function rewriteMap(
   }
   let entry = vendor?.packages?.[to.package];
   if (entry) {
-    entry.forkedFrom = `${from.publisher}/${from.package}${
-      version ? `@${version}` : ' (live)'
-    }`;
+    entry.forkedFrom = forkedFrom;
   }
   return JSON.stringify(parsed, null, 2) + '\n';
 }
 
 export async function forkDeck(options: ForkOptions): Promise<ForkResult> {
-  let { realmDir, storeDir, from, to, force } = options;
+  let { realmDir, storeDir, from, to, force, actor } = options;
   let targetDir = join(realmDir, to.publisher, to.package);
   let exists = await stat(targetDir).then(
     () => true,
@@ -113,8 +100,13 @@ export async function forkDeck(options: ForkOptions): Promise<ForkResult> {
 
   let files: Map<string, Buffer>;
   let version: string | undefined;
+  // The base treeHash is what makes this a proposal rather than a copy: it
+  // is the third input every later three-way merge needs.
+  let baseTreeHash: string;
   if (from.spec === undefined) {
-    files = await readLiveTree(join(realmDir, from.publisher, from.package));
+    let sourceDir = join(realmDir, from.publisher, from.package);
+    files = await readTreeFromDir(sourceDir);
+    baseTreeHash = (await treeHashFromDir(sourceDir)).treeHash;
   } else {
     let name = `${from.publisher}/${from.package}`;
     let meta = await readStoreMeta(storeDir, name);
@@ -130,17 +122,25 @@ export async function forkDeck(options: ForkOptions): Promise<ForkResult> {
     if (!bytes) {
       throw new Error(`${name}@${version} has no stored pack`);
     }
-    files = unpack(bytes).files;
+    let opened = unpack(bytes);
+    files = opened.files;
+    baseTreeHash = opened.treeHash;
   }
   if (files.size === 0) {
     throw new Error(`${from.publisher}/${from.package} has no files to fork`);
   }
 
+  let forkedFrom: ForkedFrom = {
+    package: `${from.publisher}/${from.package}`,
+    ...(version ? { version } : {}),
+    treeHash: baseTreeHash,
+    ...(actor ? { actor } : {}),
+  };
   let mapText = files.get(IMPORT_MAP_PATH)?.toString('utf8');
   if (mapText) {
     files.set(
       IMPORT_MAP_PATH,
-      Buffer.from(rewriteMap(mapText, from, to, version), 'utf8'),
+      Buffer.from(rewriteMap(mapText, from, to, forkedFrom), 'utf8'),
     );
   }
   for (let [path, bytes] of files) {
@@ -152,6 +152,7 @@ export async function forkDeck(options: ForkOptions): Promise<ForkResult> {
     from: `${from.publisher}/${from.package}${version ? `@${version}` : ''}`,
     to: `${to.publisher}/${to.package}`,
     version,
+    baseTreeHash,
     files: [...files.keys()].sort(),
     dir: targetDir,
   };
