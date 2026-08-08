@@ -193,6 +193,53 @@ module('offers, rebase, and try-by-URL', function (hooks) {
     );
   });
 
+  // The specifier a page imports a deck under is its own choice — since
+  // aliased dependencies, `acme/palette` may answer to the key `palette`.
+  // A `?with=` that rebinds the DECK name would rewrite a specifier the
+  // page never imports, and silently change nothing.
+  test('an override rebinds the specifier in use, not the deck name', async function (assert) {
+    await writeDeck(
+      'acme/palette',
+      { 'palette.js': "export const colors = ['red'];\n" },
+      {
+        deck: {
+          packages: {
+            palette: { version: '1.1.0', entry: '$REALM/palette.js' },
+          },
+        },
+      },
+    );
+    await publish('acme/palette', '1.1.0');
+    // The app imports it as `palette`, aliased to the acme/palette deck.
+    await writeFile(
+      join(realmDir, 'you', 'app', 'importmap.json'),
+      JSON.stringify({
+        imports: {
+          palette: '/site/acme/palette@1.0.0/palette.js',
+          'palette/': '/site/acme/palette@1.0.0/',
+        },
+        deck: {
+          packages: { app: { version: '0.1.0', entry: '$REALM/app.js' } },
+          dependencies: { palette: 'acme/palette@1.0.0' },
+        },
+      }),
+    );
+    let trial = await fetch(
+      `${origin}/site/you/app/index.html?with=acme/palette@1.1.0`,
+    );
+    let map = JSON.parse((await trial.text()).match(/importmap">([^<]*)/)![1]);
+    assert.strictEqual(
+      map.imports.palette,
+      '/site/acme/palette@1.1.0/palette.js',
+      'the specifier the page actually imports was rebound',
+    );
+    assert.strictEqual(
+      map.imports['acme/palette'],
+      undefined,
+      'and no phantom specifier was invented',
+    );
+  });
+
   test('trying a sealed page drops its immutability claim', async function (assert) {
     await forkPalette();
     await publish('you/app', '0.1.0');

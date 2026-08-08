@@ -533,18 +533,27 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   // resolving the app's import map differently for ONE request — the same
   // resolution rules `deck lock` uses, applied at serve time instead of
   // write time. Repeat the parameter to try several at once.
-  function parseOverrides(
-    url: URL,
-    realm: RealmMount,
-  ): { specifier: string; name: string; spec: string }[] {
-    let overrides: { specifier: string; name: string; spec: string }[] = [];
+  interface Override {
+    // The import specifier to rebind. Undefined when the caller named only a
+    // target and the document's own map has to say which specifier that deck
+    // currently answers.
+    specifier?: string;
+    name: string;
+    spec: string;
+  }
+
+  function parseOverrides(url: URL, realm: RealmMount): Override[] {
+    let overrides: Override[] = [];
     for (let raw of url.searchParams.getAll('with')) {
       let [left, right] = raw.split('=');
       let target = right ?? left;
       let [name, spec] = splitAtVersion(target);
-      let specifier = right ? splitAtVersion(left)[0] : name;
       overrides.push({
-        specifier: stripRealm(specifier, realm.name),
+        // `?with=<left>=<right>` says which specifier explicitly.
+        // `?with=<target>` does not — see specifiersFor.
+        ...(right
+          ? { specifier: stripRealm(splitAtVersion(left)[0], realm.name) }
+          : {}),
         name: stripRealm(name, realm.name),
         // No version asked for means the working tree — the point of trying
         // a fork is usually to see every save of it.
@@ -554,9 +563,57 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     return overrides;
   }
 
+  // Which specifier(s) the document currently binds to a deck.
+  //
+  // `?with=lib/three@0.160.0-min.0` used to rebind the specifier
+  // `lib/three`, which the page never imports: since aliased dependencies
+  // landed, a deck answers to whatever key its consumer chose — `three`. So
+  // the map is read backwards to find the specifier actually in use, and the
+  // deck name is only the fallback for a page that imports it by that name.
+  function specifiersFor(
+    deck: string,
+    realm: string,
+    current: Record<string, string>,
+  ): string[] {
+    let prefix = `/${realm}/${deck}`;
+    let found = Object.entries(current)
+      .filter(
+        ([specifier, value]) =>
+          !specifier.endsWith('/') &&
+          (value.startsWith(`${prefix}/`) || value.startsWith(`${prefix}@`)),
+      )
+      .map(([specifier]) => specifier);
+    return found.length > 0 ? found : [deck];
+  }
+
+  // An override has to reach INSIDE the scopes too, or a trial swaps the
+  // app's binding and leaves every vendored dependency pointing at the old
+  // deck — two copies of the same library in one document, which is the
+  // exact failure L7's dedupe corollary is about. A scope entry keyed by a
+  // specifier the override rebinds gets the same target.
+  function rebindScopes(
+    scopes: Record<string, Record<string, string>>,
+    overrides: Record<string, string>,
+  ): Record<string, Record<string, string>> {
+    if (Object.keys(overrides).length === 0) {
+      return scopes;
+    }
+    let rebound: Record<string, Record<string, string>> = {};
+    for (let [prefix, table] of Object.entries(scopes)) {
+      rebound[prefix] = Object.fromEntries(
+        Object.entries(table).map(([specifier, value]) => [
+          specifier,
+          overrides[specifier] ?? value,
+        ]),
+      );
+    }
+    return rebound;
+  }
+
   async function overrideImports(
     url: URL,
     realm: RealmMount,
+    current: Record<string, string> = {},
   ): Promise<Record<string, string>> {
     let overrides = parseOverrides(url, realm);
     if (overrides.length === 0) {
@@ -578,12 +635,18 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       if (!resolution) {
         continue;
       }
-      // The pins are computed for the TARGET package, then bound to the
-      // specifier the document actually imports — which is what lets a fork
-      // stand in for the package it forked.
-      for (let [specifier, value] of Object.entries(resolution.imports)) {
-        let suffix = specifier.endsWith('/') ? '/' : '';
-        imports[`${override.specifier}${suffix}`] = value;
+      // The pins are computed for the TARGET package, then bound to every
+      // specifier the document actually imports it under — which is what
+      // lets a fork, or a minified projection, stand in for the thing it
+      // was derived from without the page changing a line.
+      let bindings = override.specifier
+        ? [override.specifier]
+        : specifiersFor(override.name, realm.name, current);
+      for (let binding of bindings) {
+        for (let [specifier, value] of Object.entries(resolution.imports)) {
+          let suffix = specifier.endsWith('/') ? '/' : '';
+          imports[`${binding}${suffix}`] = value;
+        }
       }
     }
     return imports;
@@ -1316,12 +1379,12 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     let trying: string[] = [];
     if (found.path.endsWith('.html')) {
       let live = await liveImports(realm, found.path);
-      let overrides = await overrideImports(url, realm);
+      let overrides = await overrideImports(url, realm, live.imports);
       trying = Object.keys(overrides).sort();
       ({ bytes, injected } = injectImportMap(
         bytes,
         { ...live.imports, ...overrides },
-        live.scopes,
+        rebindScopes(live.scopes, overrides),
       ));
     }
     // The whole point: every save is visible on the next request.
@@ -1579,22 +1642,32 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     if (rest!.endsWith('.html')) {
       let sealedMap = await pack.read(IMPORT_MAP_PATH);
       let imports: Record<string, string> = {};
+      // Scopes are part of the sealed map too. Dropping them would leave a
+      // vendored graph's bare specifiers unresolved on exactly the pages
+      // that need them most — the sealed ones.
+      let scopes: Record<string, Record<string, string>> = {};
       try {
-        imports = sealedMap
-          ? ((JSON.parse(sealedMap.toString('utf8')).imports ?? {}) as Record<
-              string,
-              string
-            >)
+        let parsed = sealedMap
+          ? (JSON.parse(sealedMap.toString('utf8')) as {
+              imports?: Record<string, string>;
+              scopes?: Record<string, Record<string, string>>;
+            })
           : {};
+        imports = parsed.imports ?? {};
+        scopes = parsed.scopes ?? {};
       } catch {
         imports = {};
       }
-      let overrides = await overrideImports(url, realm);
+      let overrides = await overrideImports(url, realm, imports);
       trying = Object.keys(overrides).sort();
       // From the SAME seal — a sealed document and its map move together —
       // unless the caller is deliberately trying something else.
       let resolved = { ...imports, ...overrides };
-      ({ bytes, injected } = injectImportMap(bytes, resolved));
+      ({ bytes, injected } = injectImportMap(
+        bytes,
+        resolved,
+        rebindScopes(scopes, overrides),
+      ));
       // The closure is advertised only for a SEALED document. A trial has
       // substituted dependencies, so its graph is not the one the seal
       // describes, and preloading the sealed closure would fetch bytes the
