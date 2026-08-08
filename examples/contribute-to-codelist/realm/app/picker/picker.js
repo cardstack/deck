@@ -11,6 +11,9 @@
 //   forked, re-merged against upstream on read, with the ones that stopped
 //   merging named.
 import * as upstream from 'std/currencies';
+import { installPillStyles, legend, pill } from 'ui/pills';
+
+installPillStyles();
 
 // The reviewer's fixed point: the RELEASED list, fetched directly at its
 // immutable address. `?with=` cannot move this — that is the whole reason
@@ -79,6 +82,16 @@ app.innerHTML = `
     view below is the same sealed page, resolved against something different
     for one request.
   </p>
+  <div class="namekey">
+    ${legend(['deck'])}
+    <p class="namenote">
+      Every address here is a <em>Deck</em> address, and that is what makes the
+      review possible: the released list, the next release, and both open
+      proposals are all just URLs this realm answers. A proposal does not need
+      to reach a registry or a repository to be reviewable — it only needs to
+      exist at an address.
+    </p>
+  </div>
 </header>
 
 <nav class="views">
@@ -92,7 +105,7 @@ app.innerHTML = `
 <section class="resolved">
   <div>
     <span class="k">resolved to</span>
-    <code>${esc(sourceLabel)}</code>
+    ${pill('deck', sourceLabel)}
   </div>
   <div>
     <span class="k">against the release</span>
@@ -145,11 +158,11 @@ app.innerHTML = `
             let a = offer.attributes;
             return `<article class="offer ${esc(a.state)}">
         <div class="ohead">
-          <code>${esc(offer.id)}</code>
+          ${pill('deck', offer.id)}
           <span class="pill ${esc(a.state)}">${esc(a.state)}</span>
         </div>
-        <p class="odetail">forked <code>${esc(a.upstream)}</code>${
-          a.upstreamVersion ? ` · upstream is now <code>${esc(a.upstreamVersion)}</code>` : ''
+        <p class="odetail">forked ${pill('deck', a.upstream)}${
+          a.upstreamVersion ? ` · upstream is now ${pill('deck', `${a.upstream}@${a.upstreamVersion}`)}` : ''
         }</p>
         <p class="onote">${esc(STATE_NOTE[a.state] ?? a.detail ?? '')}</p>
         ${
@@ -202,6 +215,8 @@ h2{margin:2.5rem 0 .5rem;font-size:1.05rem}
 h2 .quiet{font:400 .78rem var(--mono);color:var(--ink-meta);margin-left:.5rem}
 .lede{margin:0 0 1.5rem;max-width:44rem;color:var(--ink-body)}
 .note{margin:0 0 .9rem;max-width:46rem;color:var(--ink-body);font-size:.9rem}
+.namekey{margin:0 0 1.25rem;padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
+.namenote{margin:.6rem 0 0;font-size:.85rem;color:var(--ink-body);max-width:50rem;line-height:1.7}
 .views{display:grid;gap:.6rem;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));margin-bottom:1.1rem}
 .view{display:block;text-decoration:none;color:inherit;background:var(--surface);border:1px solid var(--border);
   border-radius:10px;padding:.7rem .85rem;box-shadow:var(--shadow);transition:box-shadow .18s,border-color .12s}

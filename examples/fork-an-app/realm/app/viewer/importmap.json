@@ -1,7 +1,17 @@
 {
   "deck": {
     "packages": {
-      "viewer": { "version": "1.0.0", "entry": "$REALM/viewer.js" }
+      "viewer": {
+        "version": "1.0.0",
+        "entry": "$REALM/viewer.js"
+      }
+    },
+    "dependencies": {
+      "ui/pills": "^1.0.0"
     }
+  },
+  "imports": {
+    "ui/pills/": "/site/ui/pills@1.0.0/",
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js"
   }
 }

@@ -12,7 +12,8 @@
       "fields/due-date": "^1.0.0",
       "fields/handle": "^1.0.0",
       "fields/meeting-slot": "^1.0.0",
-      "fields/swatch": "^1.0.0"
+      "fields/swatch": "^1.0.0",
+      "ui/pills": "^1.0.0"
     }
   },
   "imports": {
@@ -27,7 +28,9 @@
     "fields/meeting-slot/": "/site/fields/meeting-slot@1.0.0/",
     "fields/meeting-slot": "/site/fields/meeting-slot@1.0.0/index.js",
     "fields/swatch/": "/site/fields/swatch@1.0.0/",
-    "fields/swatch": "/site/fields/swatch@1.0.0/index.js"
+    "fields/swatch": "/site/fields/swatch@1.0.0/index.js",
+    "ui/pills/": "/site/ui/pills@1.0.0/",
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js"
   },
   "scopes": {
     "/site/fields/audit-stamp@1.0.0/": {

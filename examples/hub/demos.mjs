@@ -4,6 +4,12 @@
 // prose that goes above it. The explanations live here rather than in the
 // page so that the page stays a renderer and the copy stays reviewable as
 // text.
+//
+// `pill()` is the same module the demos publish as `ui/pills`; Node imports
+// it directly, the browser gets it from /pills.js, the realms serve it as a
+// deck. One definition of what a name means, three carriages.
+import { pill } from '../shared/ui/pills/pills.js';
+
 export const DEMOS = [
   {
     name: 'codelist',
@@ -63,10 +69,10 @@ export const DEMOS = [
       boundary intact, so “change one file” means changing one file, not
       patching a 140 KB bundle or maintaining a downstream build.`,
     look: [
-      'Two maps on one page, from two decks. The right one is a fork with a patched zoom control.',
-      '89 objects in the store for two 87-file packages — the fork cost 2, and one of those is the manifest.',
+      `Two maps on one page, from two decks: ${pill('deck', 'lib/leaflet@1.9.4')} and ${pill('deck', 'me/leaflet@1.9.4-mine.0')}. The right one is a fork with a patched zoom control.`,
+      `89 objects in the store for two 87-file packages — the fork cost 2, and one of those is the manifest. That is a fact about the store, not about ${pill('npm', 'leaflet@1.9.4')}, which is 85 modules.`,
       'Both maps draw vector layers only. There is no tile server, so nothing on the page reaches the network at runtime (L6).',
-      'The fork inherits no endorsements, because it announces a different lineage and is therefore a different tree (L10).',
+      `The fork inherits no endorsements, because it announces a different lineage and is therefore a different tree (L10). Provenance survives it: the deck still records ${pill('npm', 'leaflet@1.9.4')} and ${pill('github', 'Leaflet/Leaflet')}.`,
     ],
     tries: [
       { label: 'upstream', path: '/site/lib/leaflet@1.9.4/src/control/Control.Zoom.js' },
@@ -105,8 +111,8 @@ export const DEMOS = [
       vendored from source. Enough decks on one page for the resolution rules
       to matter — and all three of them show up at once.`,
     look: [
-      'Every field imports <code>zod</code>, <code>date-fns</code>, <code>luxon</code> — bare npm specifiers. None of those is a deck name; one line of decklist aliases each to the deck that answers to it.',
-      '<code>fields/swatch</code> is on chroma-js 3.1.2 and <code>fields/brand-swatch</code> is pinned to 2.6.0, and both render on the same page. A flat import map has one slot for <code>chroma-js</code>.',
+      `Every field imports <code>zod</code>, <code>date-fns</code>, <code>luxon</code> — bare npm specifiers. None of those is a deck name: ${pill('npm', 'zod@3.25.76')} is the artifact, ${pill('deck', 'lib/zod@3.25.76')} is the address, and one line of decklist connects them.`,
+      `${pill('deck', 'fields/swatch@1.0.0')} is on chroma-js 3.1.2 and ${pill('deck', 'fields/brand-swatch@1.0.0')} is pinned to 2.6.0, and both render on the same page. A flat import map has one slot for <code>chroma-js</code>.`,
       '13 dependency edges collapse to 6 library URLs. Nothing computed that — identical ranges resolve to identical versions, and identical bytes have identical names.',
       'One URL is one module instance, so <code>dueDate.schema instanceof handle.modules.zod.ZodType</code> is <b>true</b>. The page checks it live.',
       'The page reads its own injected import map back out of the DOM, so the tables are measurements of the page you are looking at.',

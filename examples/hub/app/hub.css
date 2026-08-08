@@ -455,3 +455,10 @@ p.body {
   max-width: 46rem;
   color: var(--ink-body);
 }
+
+/* The name-kind key on the overview. */
+.names { margin: 12px 0 6px; }
+.names td { vertical-align: middle; }
+.names td:nth-child(2) { font-weight: 600; white-space: nowrap; }
+.quiet { color: var(--ink-quiet); }
+p.body.small { font-size: 12.5px; color: var(--ink-quiet); }

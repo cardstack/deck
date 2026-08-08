@@ -150,6 +150,20 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // The hub is not a realm, so it cannot depend on `ui/pills` the way the
+  // demos do. It serves the same source file instead — one definition, two
+  // carriages, which is the L2/L3 point restated as a build step that is not
+  // a build step.
+  if (path === '/pills.js') {
+    let bytes = await readFile(join(examplesDir, 'shared', 'ui', 'pills', 'pills.js'));
+    res.writeHead(200, {
+      'content-type': 'text/javascript; charset=utf-8',
+      'cache-control': 'no-store',
+    });
+    res.end(bytes);
+    return;
+  }
+
   if (path === '/deckbook') {
     try {
       let html = await readFile(join(repoRoot, 'deckbook.html'));

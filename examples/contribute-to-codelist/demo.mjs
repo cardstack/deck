@@ -46,6 +46,7 @@ import { readTreeFromDir } from '@deck/core/tree';
 import { createDeckServer } from '@deck/server/server';
 import { rebasePass } from '@deck/server/rebase-daemon';
 import { storeDirFor } from '@deck/server/realm';
+import { publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8794);
@@ -155,6 +156,11 @@ let base = await publishToStore(
   { tag: 'latest' },
 );
 console.log(`1) ${UPSTREAM}@1.4.0 — ${Object.keys(BASE_CODES).length} codes · ${base.treeHash.slice(0, 12)}…`);
+
+// The shared `ui/pills` deck, published into this realm's store from
+// examples/shared. Same source tree in every demo, so the same treeHash.
+let [pills] = await publishShared(storeDir);
+console.log(`   shared: ${pills.name}@${pills.version} · ${pills.treeHash.slice(0, 12)}… (same tree in every demo)`);
 
 // ---------------------------------------------------------------------------
 // 2. The app that consumes it, locked to the release and sealed.

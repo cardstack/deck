@@ -30,6 +30,22 @@ real address space, not a demo router.
 | [fork-a-language](fork-a-language/) | W3 — bespoke to generic | Replace a language's parser with a FEEL-shaped one. The evaluator stays byte-identical, so both dialects share it and provably run the same semantics. |
 | [field-library](field-library/) | W4 — patterns and fields | Six field decks over five vendored libraries. Aliasing, scopes (two chroma-js versions in one document), and dedupe: 13 dependency edges collapse to 6 URLs, and one URL is one module instance. |
 
+## Three kinds of name
+
+Every demo distinguishes three registers, because they are constantly confused
+and the confusion changes what a claim means:
+
+| pill | is | example fact |
+| --- | --- | --- |
+| **deck** (teal) | a Deck address — where **this realm** serves it from | *the fork cost 2 objects* |
+| **npm** (red) | the published artifact that was fetched and hashed | *85 modules* |
+| **github** (neutral) | the source repository, `org/repo` | *fixed in 1.9.5* |
+
+One module draws them all: [`shared/ui/pills`](shared/), published into each
+demo's own store as `ui/pills@1.0.0`. Five separate realms, five separate
+stores, one source tree — and the same treeHash in all five, which each demo
+prints so you can check.
+
 ## On the libraries
 
 Where an example needs a real dependency it vendors one **from npm source**

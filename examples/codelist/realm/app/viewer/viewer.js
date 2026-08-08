@@ -6,7 +6,11 @@
 // visible: which keys each state has, who introduced them, and the fact
 // that nowhere in the sequence did anyone resolve a conflict.
 
+import { installPillStyles, legend, pill } from 'ui/pills';
+
 const { realm, states } = await (await fetch('./states.json')).json();
+
+installPillStyles();
 
 // Fetch each sealed state. These are immutable URLs — the browser may cache
 // them forever, and the server says so.
@@ -59,6 +63,15 @@ app.innerHTML = `
       .join('')}
   </section>
 
+  <section class="namekey">
+    ${legend(['deck'])}
+    <p class="namenote">
+      Every address on this page is a <em>Deck</em> address — this realm's own
+      delivery space. Nothing here came from a registry or a repository, which
+      is why there is only one pill to learn.
+    </p>
+  </section>
+
   <section class="states">
     ${loaded
       .map(
@@ -81,7 +94,7 @@ app.innerHTML = `
             )
             .join('')}
         </ul>
-        <a class="url" href="${s.url}"><code>${s.url}</code></a>
+        <a class="url" href="${s.url}">${pill('deck', s.url, { wrap: true })}</a>
         <p class="hash" title="tree-hash-v1">${s.hash.slice(0, 24)}…</p>
       </article>`,
       )
@@ -120,7 +133,7 @@ app.innerHTML = `
     </ol>
     <p class="foot">
       Try the raw addresses — they are the same bytes this page fetched:<br />
-      ${loaded.map((s) => `<a href="${s.url}"><code>${s.version}</code></a>`).join(' · ')}
+      ${loaded.map((s) => `<a href="${s.url}">${pill('deck', `${s.deck}@${s.version}`)}</a>`).join(' ')}
     </p>
   </section>
 `;
@@ -157,6 +170,9 @@ style.textContent = `
   .chip.added i { background: var(--added); }
   .chip.acme i { background: var(--acme); }
 
+  .namekey { margin: 0 0 1.5rem; padding: .8rem .95rem; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .namenote { margin: .55rem 0 0; font-size: .82rem; color: var(--dim); max-width: 46rem; }
+
   .states { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
   .state {
     background: var(--panel); border: 1px solid var(--line);
@@ -185,8 +201,7 @@ style.textContent = `
   .keys li.acme { background: var(--acme); color: #fff; }
   .keys li.absent { background: transparent; color: var(--line); }
 
-  .url { display: block; color: var(--dim); text-decoration: none; word-break: break-all; }
-  .url:hover { color: var(--ink); }
+  .url { display: block; text-decoration: none; }
   .hash { color: var(--line); font: .7rem ui-monospace, monospace; margin: .4rem 0 0; }
 
   .reading { margin-top: 2.5rem; border-top: 1px solid var(--line); padding-top: 1.5rem; }

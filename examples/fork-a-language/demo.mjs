@@ -26,6 +26,7 @@ import { packFromDir } from '@deck/core/pack';
 import { publishToStore, inspectStore } from '@deck/core/store';
 import { createDeckServer } from '@deck/server/server';
 import { storeDirFor } from '@deck/server/realm';
+import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8792);
@@ -134,6 +135,24 @@ console.log(`   comparisons the shared evaluator already understood.`);
 let report = await inspectStore(storeDir);
 console.log(`\n4) store: ${report.objects} objects for two 4-file decks`);
 console.log(`   two full copies would be 8`);
+
+
+// The shared `ui/pills` deck, published into THIS realm's store from
+// examples/shared. Five demos, five stores, one source tree — and because
+// identity is the hash of the tree, the treeHash below is the same in all
+// five. Then the viewer's decklist is locked, so the pins that resolve
+// `ui/pills` are in the tree where you can read them.
+let [pills] = await publishShared(storeDir);
+let viewerLock = await lockAndWrite({
+  realmDir,
+  realmName: REALM,
+  storeDir,
+  deckDir: join(realmDir, 'app', 'viewer'),
+});
+console.log(`\n   shared: ${pills.name}@${pills.version} \u00b7 ${pills.treeHash.slice(0, 12)}\u2026 (same tree in every demo)`);
+if (viewerLock.changed) {
+  console.log(`   note: the checked-in lock was stale and has been rewritten`);
+}
 
 await writeFile(
   join(realmDir, 'app', 'viewer', 'build.json'),

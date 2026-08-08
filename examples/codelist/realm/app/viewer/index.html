@@ -2,12 +2,11 @@
 <meta charset="utf-8" />
 <title>Deck — the merge that is not a conflict</title>
 <link rel="icon" href="data:," />
-<script type="importmap">
-  { "imports": { "viewer": "/site/app/viewer/viewer.js" } }
-</script>
+<!--
+  No import map here on purpose. The server injects the one this deck's own
+  importmap.json resolved to, so the page cannot drift from its decklist.
+-->
 <body>
   <main id="app" class="loading">sealing four states…</main>
-  <script type="module">
-    import 'viewer';
-  </script>
+  <script type="module" src="./viewer.js"></script>
 </body>

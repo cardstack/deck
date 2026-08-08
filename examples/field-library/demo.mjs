@@ -39,6 +39,7 @@ import { readTreeFromDir } from '@deck/core/tree';
 import { vendorFromNpmSource } from '@deck/core/vendor-npm';
 import { createDeckServer } from '@deck/server/server';
 import { storeDirFor } from '@deck/server/realm';
+import { publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8793);
@@ -76,6 +77,11 @@ await rm(storeDir, { recursive: true, force: true });
 await mkdir(storeDir, { recursive: true });
 
 console.log('\n  FIELD LIBRARY — aliasing, scopes, and dedupe across many decks\n');
+
+// The shared `ui/pills` deck, published into this realm's store from
+// examples/shared. Same source tree in every demo, so the same treeHash.
+let [pills] = await publishShared(storeDir);
+console.log(`   shared: ${pills.name}@${pills.version} · ${pills.treeHash.slice(0, 12)}… (same tree in every demo)\n`);
 
 // ---------------------------------------------------------------------------
 // 1. The shelf. Vendored from npm SOURCE — the module tree npm published, not

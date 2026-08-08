@@ -5,6 +5,10 @@
 // live app in a frame, and the transcript the demo actually printed while it
 // built its store — which is the honest version of "what is going on here".
 
+import { installPillStyles, legend, pill } from '/pills.js';
+
+installPillStyles();
+
 const esc = (s) =>
   String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
 
@@ -73,6 +77,29 @@ function overview() {
       Each demo below is its own process, its own realm directory, and its own
       content-addressed store. They are not sharing anything, which is why the
       numbers each one prints are its own.
+    </p>
+
+    <h2>Three kinds of name</h2>
+    <p class="body">
+      Nearly every confusing sentence about a vendored package is confusing
+      because three different names for &ldquo;the same thing&rdquo; are
+      spelled the same way, in the same font, in the same paragraph. They are
+      not the same thing, and which one you mean changes what a claim means.
+      So nothing here prints a bare name.
+    </p>
+    <div class="card">${legend()}</div>
+    <table class="names">
+      <tbody>
+        <tr><td>${pill('npm', 'leaflet@1.9.4')}</td><td>85 modules</td><td class="quiet">a fact about the published artifact</td></tr>
+        <tr><td>${pill('github', 'Leaflet/Leaflet')}</td><td>fixed in 1.9.5</td><td class="quiet">a fact about the source</td></tr>
+        <tr><td>${pill('deck', '/site/lib/leaflet@1.9.4/…')}</td><td>the fork cost 2 objects</td><td class="quiet">a fact about this store</td></tr>
+      </tbody>
+    </table>
+    <p class="body small">
+      The same module draws these in all five demos and in this page. The
+      realms publish it as a deck, <code>ui/pills@1.0.0</code>; the hub is not
+      a realm, so it serves the identical file at <code>/pills.js</code>. Same
+      bytes, different carriage.
     </p>
 
     <h2>The demos</h2>
@@ -145,7 +172,7 @@ function demoPage(demo) {
                    .map(
                      (t) => `<tr>
                    <td><a href="${esc(demo.origin + t.path)}" target="_blank" rel="noreferrer">${esc(t.label)} →</a></td>
-                   <td class="path">${esc(t.path)}</td>
+                   <td>${pill('deck', t.path, { wrap: true })}</td>
                  </tr>`,
                    )
                    .join('')}

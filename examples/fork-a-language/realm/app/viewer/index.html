@@ -2,10 +2,11 @@
 <meta charset="utf-8" />
 <title>Deck — fork a language, keep the engine</title>
 <link rel="icon" href="data:," />
-<script type="importmap">
-  { "imports": { "viewer": "/site/app/viewer/viewer.js" } }
-</script>
+<!--
+  No import map here on purpose — the server injects this deck's own locked
+  one. See examples/codelist/realm/app/viewer/index.html.
+-->
 <body>
   <main id="app" class="loading">loading both dialects…</main>
-  <script type="module">import 'viewer';</script>
+  <script type="module" src="./viewer.js"></script>
 </body>

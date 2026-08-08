@@ -11,6 +11,7 @@ import { field as dueDate } from 'fields/due-date';
 import { field as handle } from 'fields/handle';
 import { field as meetingSlot } from 'fields/meeting-slot';
 import { field as swatch } from 'fields/swatch';
+import { installPillStyles, legend, pill } from 'ui/pills';
 
 const FIELDS = [
   { deck: 'fields/due-date', field: dueDate },
@@ -20,6 +21,8 @@ const FIELDS = [
   { deck: 'fields/handle', field: handle },
   { deck: 'fields/audit-stamp', field: auditStamp },
 ];
+
+installPillStyles();
 
 const shelf = await (await fetch('./shelf.json')).json();
 const map = JSON.parse(
@@ -128,6 +131,18 @@ app.innerHTML = `
     page imports a library directly — every one of them arrives because a
     field asked for it, resolved inside that field's own scope.
   </p>
+  <div class="namekey">
+    ${legend()}
+    <p class="namenote">
+      Three registers, and this page uses all three. ${pill('npm', 'zod@3.25.76')}
+      is what the registry published; ${pill('deck', 'lib/zod@3.25.76')} is where
+      this realm serves it from; a ${pill('github', 'colinhacks/zod')} is where
+      the source lives. The shelf table below shows the first two side by side,
+      which is the whole point of vendoring: one artifact, one address, and a
+      recorded link between them.
+    </p>
+  </div>
+
   <div class="stats">
     <div><b>${shelf.decks}</b><span>decks in the realm</span></div>
     <div><b>${shelf.libraries.reduce((n, l) => n + l.modules, 0)}</b><span>vendored modules</span></div>
@@ -143,7 +158,7 @@ app.innerHTML = `
     <article class="field">
       <div class="fhead">
         <h3>${esc(entry.field.name)}</h3>
-        <code class="deck">${esc(entry.deck)}@1.0.0</code>
+        ${pill('deck', `${entry.deck}@1.0.0`)}
         <span class="lib">${esc(entry.field.library)}</span>
       </div>
       <p class="summary">${esc(entry.field.summary)}</p>
@@ -171,7 +186,7 @@ app.innerHTML = `
           (row) => `<tr class="${row.instances === row.urls.length ? 'same' : 'diff'}">
         <td><code>${esc(row.specifier)}</code></td>
         <td>${row.holders.length}<span class="quiet"> · ${row.holders.map((d) => esc(d.replace('fields/', ''))).join(', ')}</span></td>
-        <td>${row.urls.map((u) => `<code>${esc(urlOf(u))}</code>`).join('<br />')}</td>
+        <td>${row.urls.map((u) => pill('deck', urlOf(u), { wrap: true })).join('<br />')}</td>
         <td class="count">${row.instances}</td>
       </tr>`,
         )
@@ -229,8 +244,8 @@ app.innerHTML = `
       ${shelf.libraries
         .map(
           (lib) => `<tr>
-        <td><code>${esc(lib.deck)}@${esc(lib.version)}</code></td>
-        <td class="quiet"><code>${esc(lib.npm)}</code></td>
+        <td>${pill('deck', `${lib.deck}@${lib.version}`)}</td>
+        <td>${pill('npm', lib.npm)}</td>
         <td class="count">${lib.modules}</td>
         <td class="quiet">${lib.consumers.map((c) => esc(c.replace('fields/', ''))).join(', ')}</td>
       </tr>`,
@@ -274,6 +289,8 @@ h2{margin:2.5rem 0 .5rem;font-size:1.05rem;letter-spacing:-.01em}
 h3{margin:0;font-size:.95rem}
 .lede{margin:0 0 1.5rem;max-width:44rem;color:var(--ink-body)}
 .note{margin:0 0 .9rem;max-width:46rem;color:var(--ink-body);font-size:.9rem}
+.namekey{margin:0 0 1.25rem;padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
+.namenote{margin:.6rem 0 0;font-size:.85rem;color:var(--ink-body);max-width:52rem;line-height:1.7}
 .stats{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))}
 .stats div{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.85rem .95rem;box-shadow:var(--shadow)}
 .stats b{display:block;font-size:1.6rem;font-weight:600;letter-spacing:-.02em}

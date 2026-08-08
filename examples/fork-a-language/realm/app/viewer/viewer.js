@@ -1,5 +1,9 @@
 // Both engines, running in the browser, from two sealed decks.
+import { installPillStyles, legend, pill } from 'ui/pills';
+
 const b = await (await fetch('./build.json')).json();
+
+installPillStyles();
 const url = (s) => `/${b.realm}/${s.deck}@${s.version}/index.js`;
 const [up, fk] = await Promise.all([import(url(b.upstream)), import(url(b.fork))]);
 const show = (v) => JSON.stringify(v);
@@ -31,8 +35,17 @@ app.innerHTML = `
   </p>
 
   <div class="dialects">
-    <div><span class="dot up"></span><code>${b.upstream.deck}@${b.upstream.version}</code><em>${b.upstream.dialect.tagline}</em></div>
-    <div><span class="dot fk"></span><code>${b.fork.deck}@${b.fork.version}</code><em>${b.fork.dialect.tagline}</em></div>
+    <div><span class="dot up"></span>${pill('deck', `${b.upstream.deck}@${b.upstream.version}`)}<em>${b.upstream.dialect.tagline}</em></div>
+    <div><span class="dot fk"></span>${pill('deck', `${b.fork.deck}@${b.fork.version}`)}<em>${b.fork.dialect.tagline}</em></div>
+  </div>
+
+  <div class="namekey">
+    ${legend(['deck'])}
+    <p class="namenote">
+      Both dialects are <em>Deck</em> addresses in this realm — neither is on a
+      registry and neither has a repository. A language can be a deck, and a
+      dialect of it can be another deck, without either one being a product.
+    </p>
   </div>
 
   <table>
@@ -70,7 +83,9 @@ body{margin:0;padding:3rem 1.5rem 5rem;background:var(--bg);color:var(--ink);fon
 h1{font-size:1.6rem;margin:0 0 .5rem;letter-spacing:-.01em}
 .lede{color:var(--dim);max-width:46rem;margin:0 0 1.5rem}.lede strong{color:var(--ink)}
 code{font-family:ui-monospace,Menlo,monospace;font-size:.85em}
-.dialects{display:flex;gap:2rem;flex-wrap:wrap;margin-bottom:1.5rem}
+.dialects{display:flex;gap:2rem;flex-wrap:wrap;margin-bottom:1rem}
+.namekey{margin:0 0 1.5rem;padding:.8rem .95rem;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.namenote{margin:.55rem 0 0;font-size:.82rem;color:var(--dim);max-width:48rem}
 .dialects div{display:flex;align-items:center;gap:.5rem;font-size:.88rem}
 .dialects em{color:var(--dim);font-style:normal}
 .dot{width:.6rem;height:.6rem;border-radius:50%;border:2px solid var(--dim)}

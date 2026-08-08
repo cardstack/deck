@@ -1,0 +1,8 @@
+{
+  "name": "@deck/example-shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Source shared by every example: the ui/pills deck, and the helper that publishes it into each demo's own store.",
+  "dependencies": { "@deck/core": "workspace:*" }
+}

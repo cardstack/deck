@@ -7,11 +7,14 @@
       }
     },
     "dependencies": {
-      "std/currencies": "^1.4.0"
+      "std/currencies": "^1.4.0",
+      "ui/pills": "^1.0.0"
     }
   },
   "imports": {
     "std/currencies/": "/site/std/currencies@1.4.0/",
-    "std/currencies": "/site/std/currencies@1.4.0/index.js"
+    "std/currencies": "/site/std/currencies@1.4.0/index.js",
+    "ui/pills/": "/site/ui/pills@1.0.0/",
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js"
   }
 }

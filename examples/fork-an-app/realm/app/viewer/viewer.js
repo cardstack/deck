@@ -5,7 +5,16 @@
 // treats them as two unrelated modules — because they are. Two decks, two
 // treeHashes, no collision.
 
+import { installPillStyles, legend, pill } from 'ui/pills';
+
 const build = await (await fetch('./build.json')).json();
+
+installPillStyles();
+
+// `provenance.repo` is whatever npm recorded, which is usually a git URL.
+// Reduce it to the thing a person recognises: org/repo.
+const repoId = (url) =>
+  (url ?? '').replace(/^.*github\.com[:/]/, '').replace(/\.git$/, '') || null;
 const { realm, entry, changed, modules, store, upstream, fork, provenance } = build;
 
 const urlFor = (side) => `/${realm}/${side.deck}@${side.version}/${entry}`;
@@ -34,6 +43,18 @@ app.innerHTML = `
       <br />
       Look at the zoom controls.
     </p>
+    <div class="namekey">
+      ${legend()}
+      <p class="namenote">
+        This page names the same library three ways, and they mean different
+        things. ${pill('npm', `${provenance.name}@${provenance.version}`)} is the
+        artifact that was fetched and hashed;
+        ${repoId(provenance.repo) ? `${pill('github', repoId(provenance.repo))} is where the code is written;` : ''}
+        ${pill('deck', `lib/leaflet@${upstream.version}`)} is where this realm
+        serves it from. “85 modules” is a fact about the first; “2 objects” is
+        a fact about the third.
+      </p>
+    </div>
   </header>
 
   <section class="maps">
@@ -46,8 +67,7 @@ app.innerHTML = `
       <article class="map-card ${kind}">
         <div class="strip">
           <span class="dot"></span>
-          <code class="deck">${side.deck}</code>
-          <code class="version">${side.version}</code>
+          ${pill('deck', `${side.deck}@${side.version}`)}
         </div>
         <h2>${title}</h2>
         <p class="sub"><code>${sub}</code></p>
@@ -77,9 +97,9 @@ app.innerHTML = `
       <b>✓</b>
       <span>
         provenance survives the fork — it is still Leaflet and still says so:<br />
-        <code>${provenance.registry} · ${provenance.name}@${provenance.version}</code><br />
-        <code>${provenance.integrity ?? 'no integrity published'}</code>
-        ${provenance.repo ? `<br /><code>${provenance.repo}${provenance.commit ? ` @ ${provenance.commit.slice(0, 12)}` : ''}</code>` : ''}
+        ${pill('npm', `${provenance.name}@${provenance.version}`)}
+        ${repoId(provenance.repo) ? pill('github', provenance.commit ? `${repoId(provenance.repo)}@${provenance.commit}` : repoId(provenance.repo)) : ''}
+        <br /><code class="integrity">${provenance.integrity ?? 'no integrity published'}</code>
       </span>
     </div>
   </section>
@@ -156,14 +176,16 @@ style.textContent = `
   .lede strong { color:var(--ink); }
   code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85em; }
 
+  .namekey { margin:0 0 2rem; padding:.85rem 1rem; background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .namenote { margin:.6rem 0 0; font-size:.85rem; color:var(--dim); max-width:52rem; line-height:1.7; }
+  .integrity { color:var(--dim); word-break:break-all; }
+
   .maps { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit,minmax(20rem,1fr)); }
   .map-card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:1rem 1.1rem 1.2rem; }
   .strip { display:flex; align-items:center; gap:.5rem; margin-bottom:.6rem; }
   .dot { width:.6rem; height:.6rem; border-radius:50%; flex:none; border:2px solid var(--dim); }
   .upstream .dot { border-color:var(--up); }
   .fork .dot { border-color:var(--fork); }
-  .deck { color:var(--dim); }
-  .version { margin-left:auto; padding:.1rem .45rem; border-radius:4px; background:var(--line); }
   .map-card h2 { font-size:1rem; margin:0 0 .2rem; }
   .sub { color:var(--dim); margin:0 0 .8rem; font-size:.85rem; }
   .map { height:19rem; border-radius:7px; overflow:hidden; background:#eef1f5; border:1px solid var(--line); }

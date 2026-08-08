@@ -22,6 +22,7 @@ import { pack } from '@deck/core/pack';
 import { publishToStore } from '@deck/core/store';
 import { createDeckServer } from '@deck/server/server';
 import { storeDirFor } from '@deck/server/realm';
+import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8790);
@@ -160,6 +161,24 @@ console.log(`   manifest conflicts: ${rebased.conflicts.length}   ← ${rebased.
 console.log(`   both sides renamed the version, so a person picks 1.5.0-acme.1.`);
 console.log(`   The machine merged everything it could actually know.`);
 console.log(`   acme/currencies@1.5.0-acme.1 · ${absorbedHash.slice(0, 12)}…`);
+
+
+// The shared `ui/pills` deck, published into THIS realm's store from
+// examples/shared. Five demos, five stores, one source tree — and because
+// identity is the hash of the tree, the treeHash below is the same in all
+// five. Then the viewer's decklist is locked, so the pins that resolve
+// `ui/pills` are in the tree where you can read them.
+let [pills] = await publishShared(storeDir);
+let viewerLock = await lockAndWrite({
+  realmDir,
+  realmName: REALM,
+  storeDir,
+  deckDir: join(realmDir, 'app', 'viewer'),
+});
+console.log(`\n   shared: ${pills.name}@${pills.version} \u00b7 ${pills.treeHash.slice(0, 12)}\u2026 (same tree in every demo)`);
+if (viewerLock.changed) {
+  console.log(`   note: the checked-in lock was stale and has been rewritten`);
+}
 
 // 6. Hand the viewer the four addresses. It fetches them like any consumer.
 let states = [
