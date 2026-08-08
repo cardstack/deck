@@ -22,8 +22,10 @@ import { readTree, readTreeFile } from '@deck/core/object-store';
 import { readEnvelope, summarizeEnvelope } from '@deck/core/signature';
 import { negotiateBody } from './compression.ts';
 import {
+  documentEntries,
   injectModulePreload,
   moduleClosure,
+  SEGMENT,
   type Closure,
 } from './preload.ts';
 import {
@@ -92,7 +94,8 @@ import { discoverDecks, type RealmMount } from './realm.ts';
 //     the filesystem with archive-derived paths
 //   - HEAD rides the GET path
 
-const SEGMENT = '[a-z0-9][a-z0-9-]{0,63}';
+// SEGMENT comes from preload.ts so the router and the closure walk cannot
+// disagree about what a name is.
 const SEALED_PATH = new RegExp(
   `^/(?<realm>${SEGMENT})/(?<publisher>${SEGMENT})/(?<pkg>${SEGMENT})@(?<spec>[^/]+)(?<rest>/.*)?$`,
 );
@@ -222,6 +225,10 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   // cache never invalidates; the cap only bounds memory.
   let packCache = new Map<string, CachedPack>();
   const PACK_CACHE_MAX = 50;
+  // Keyed on the sealed document plus the exact map it was resolved with, so
+  // a `?with=` trial can never be served a sealed page's closure.
+  let closureCache = new Map<string, Closure>();
+  const CLOSURE_CACHE_MAX = 100;
 
   // A sealed version is opened LAZILY. The store keeps files as objects and
   // rebuilds the archive on request, so decoding — or worse, re-deflating —
@@ -314,24 +321,28 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   // "we covered it"; a cap that lies about its own denominator is worse.
   async function closureFor(
     html: Buffer,
+    documentUrl: string,
     imports: Record<string, string>,
     scopes: Record<string, Record<string, string>>,
   ): Promise<Closure> {
-    let entries: string[] = [];
-    for (let match of html
-      .toString('utf8')
-      .matchAll(/<script[^>]*type\s*=\s*["']module["'][^>]*\ssrc\s*=\s*["']([^"']+)["']/gi)) {
-      let src = match[1];
-      if (src.startsWith('/')) {
-        entries.push(src);
-      }
+    let entries = documentEntries({
+      html: html.toString('utf8'),
+      imports,
+      scopes,
+      fromUrl: documentUrl,
+    });
+    // Everything the walk reads is SEALED — the document, its map, and every
+    // module it reaches — so the answer cannot change while the key holds.
+    // Without this the server reads the whole reachable graph off disk on
+    // every request for the same immutable page: 843 files for the vendored
+    // corpus, to emit a list it had already computed. The byte budget clips
+    // the OUTPUT; only the cache clips the work.
+    let key = `${documentUrl} ${JSON.stringify([entries, imports, scopes])}`;
+    let hit = closureCache.get(key);
+    if (hit) {
+      return hit;
     }
-    for (let value of Object.values(imports)) {
-      if (value.startsWith('/') && !value.endsWith('/')) {
-        entries.push(value);
-      }
-    }
-    return moduleClosure({
+    let closure = await moduleClosure({
       entries,
       imports,
       scopes,
@@ -348,6 +359,11 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         );
       },
     });
+    if (closureCache.size >= CLOSURE_CACHE_MAX) {
+      closureCache.delete(closureCache.keys().next().value!);
+    }
+    closureCache.set(key, closure);
+    return closure;
   }
 
   async function packageMapOf(
@@ -1676,7 +1692,12 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       // describes, and preloading the sealed closure would fetch bytes the
       // page will not use.
       if (trying.length === 0) {
-        preload = await closureFor(bytes, resolved, resolvedScopes);
+        preload = await closureFor(
+          bytes,
+          `/${realm.name}/${name}@${version}${rest}`,
+          resolved,
+          resolvedScopes,
+        );
         if (preload.urls.length > 0) {
           bytes = injectModulePreload(bytes, preload.urls).bytes;
         }

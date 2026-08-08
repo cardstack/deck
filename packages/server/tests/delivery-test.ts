@@ -7,6 +7,7 @@ import {
   negotiateEncoding,
 } from '../src/compression.ts';
 import {
+  documentEntries,
   formatDeckUrl,
   injectModulePreload,
   moduleClosure,
@@ -251,5 +252,50 @@ module('C: closure preload', () => {
     let result = injectModulePreload(html, []);
     assert.strictEqual(result.injected, 0);
     assert.true(result.bytes.equals(html));
+  });
+
+  // The walk starts from what the DOCUMENT imports. Seeding it from the
+  // import map instead preloads whatever the deck declares, and a
+  // `modulepreload crossorigin` is a download, not a hint — over-preloading
+  // is how this feature makes a page slower than no preloading at all.
+  test('entries come from the document, not from the whole import map', (assert) => {
+    let imports = {
+      used: '/site/lib/used@1/index.js',
+      unused: '/site/lib/unused@1/index.js',
+    };
+    let html =
+      '<head><script type="importmap">{}</script></head>' +
+      '<body><script type="module" src="/site/me/app@1/main.js"></script></body>';
+    assert.deepEqual(
+      documentEntries({ html, imports, fromUrl: '/site/me/app@1/page.html' }),
+      ['/site/me/app@1/main.js'],
+      'the declared-but-unimported deck is not an entry',
+    );
+  });
+
+  test('an inline module script is an entry too', (assert) => {
+    let imports = { app: '/site/me/app@1/main.js' };
+    let scopes = {
+      '/site/me/other@1/': { app: '/site/me/other-app@1/main.js' },
+    };
+    assert.deepEqual(
+      documentEntries({
+        html: '<body><script type="module">import "app";</script></body>',
+        imports,
+        scopes,
+        fromUrl: '/site/me/app@1/page.html',
+      }),
+      ['/site/me/app@1/main.js'],
+      'bare specifiers resolve through the map that applies to the document',
+    );
+    assert.deepEqual(
+      documentEntries({
+        html: '<body><script>import "app";</script></body>',
+        imports,
+        fromUrl: '/site/me/app@1/page.html',
+      }),
+      [],
+      'a classic script is not a module graph',
+    );
   });
 });

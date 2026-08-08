@@ -165,4 +165,26 @@ module('the ES module lexer', () => {
       './y.js',
     ]);
   });
+
+  // `require` and `exports` already required a bare occurrence; `module` did
+  // not, so a property chain on somebody else's object read as CommonJS.
+  test('a property chain named module.exports is not CommonJS', (assert) => {
+    assert.false(
+      isCommonJsModule('export const a = 1;\nconsole.log(foo.module.exports);\n'),
+      'foo.module.exports belongs to foo',
+    );
+    assert.false(
+      isCommonJsModule('export const a = 1;\nthis.module.exports = 2;\n'),
+    );
+    assert.true(
+      isCommonJsModule('module.exports = { a: 1 };\n'),
+      'the real one still counts',
+    );
+  });
+
+  // Without an identifier-boundary check the tail matched by prefix.
+  test('module.exportsSomething is not module.exports', (assert) => {
+    assert.false(isCommonJsModule('export const a = 1;\nmodule.exportsAll();\n'));
+    assert.true(isCommonJsModule('module . exports = 1;\n'), 'trivia is allowed');
+  });
 });

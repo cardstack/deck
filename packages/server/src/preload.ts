@@ -33,8 +33,15 @@ export interface DeckUrl {
   path: string;
 }
 
-const DECK_URL =
-  /^\/(?<realm>[a-z0-9][a-z0-9-]*)\/(?<publisher>[a-z0-9][a-z0-9-]*)\/(?<pkg>[a-z0-9][a-z0-9-]*)(?:@(?<version>[^/]+))?\/(?<path>.+)$/;
+// ONE definition of what a name segment is. Two spellings of the same
+// grammar drift, and the drift shows up as a URL the router answers and the
+// closure walk silently skips — which is exactly the failure mode the walk
+// already had once. server.ts imports this rather than restating it.
+export const SEGMENT = '[a-z0-9][a-z0-9-]{0,63}';
+
+const DECK_URL = new RegExp(
+  `^/(?<realm>${SEGMENT})/(?<publisher>${SEGMENT})/(?<pkg>${SEGMENT})(?:@(?<version>[^/]+))?/(?<path>.+)$`,
+);
 
 export function parseDeckUrl(url: string): DeckUrl | undefined {
   let match = DECK_URL.exec(url);
@@ -88,6 +95,51 @@ function lookup(
     }
   }
   return best ? table[best] + specifier.slice(best.length) : undefined;
+}
+
+const MODULE_SCRIPT =
+  /<script([^>]*\btype\s*=\s*["']module["'][^>]*)>([\s\S]*?)<\/script\s*>/gi;
+const SRC_ATTR = /\bsrc\s*=\s*["']([^"']+)["']/i;
+
+// What the DOCUMENT actually starts from.
+//
+// Not "every value in the import map". A map lists what a deck declares, and
+// a page rarely imports all of it — seeding the walk from the map preloads
+// modules the page will never request, and `modulepreload crossorigin` is a
+// real download, not a hint. Over-preloading is the classic way this feature
+// makes a page slower rather than faster.
+//
+// Inline module scripts are entries too: `<script type="module">import
+// 'app';</script>` has no src, and skipping it would miss the whole graph on
+// any page written that way.
+export function documentEntries(options: {
+  html: string;
+  imports: Record<string, string>;
+  scopes?: Record<string, Record<string, string>>;
+  // The document's own URL, so an inline script's bare specifiers resolve
+  // through the scopes that apply to it.
+  fromUrl: string;
+}): string[] {
+  let { html, imports, scopes = {}, fromUrl } = options;
+  let entries: string[] = [];
+  for (let [, attributes, body] of html.matchAll(MODULE_SCRIPT)) {
+    let src = SRC_ATTR.exec(attributes)?.[1];
+    if (src) {
+      if (src.startsWith('/')) {
+        entries.push(src);
+      }
+      continue;
+    }
+    for (let specifier of moduleSpecifiers(body)) {
+      let resolved = specifier.startsWith('/')
+        ? specifier
+        : resolveSpecifier({ specifier, fromUrl, imports, scopes });
+      if (resolved?.startsWith('/')) {
+        entries.push(resolved);
+      }
+    }
+  }
+  return [...new Set(entries)];
 }
 
 export interface ClosureOptions {

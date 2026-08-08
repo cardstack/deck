@@ -30,8 +30,19 @@ function sourcePack(version = '1.2.3') {
     },
     {
       path: 'ink.js',
+      // Big enough that minifying actually beats what the map gains in
+      // provenance. On a two-line module it does not: the derivation record
+      // costs a few hundred bytes and there is nothing to win them back
+      // with, so the derived TREE is larger even though the JS is smaller.
+      // Worth knowing, and the reason the byte tally counts the rewritten
+      // map rather than the map it replaced.
       bytes: Buffer.from(
-        `// a comment worth removing\nexport function add(first, second) {\n  const total = first + second;\n  return total;\n}\nexport const answer = 40 + 2;\n`,
+        `// a comment worth removing\nexport function add(first, second) {\n  const total = first + second;\n  return total;\n}\nexport const answer = 40 + 2;\n` +
+          Array.from(
+            { length: 40 },
+            (_ignored, index) =>
+              `export function helper${index}(someArgument) {\n  const intermediateValue = someArgument * ${index};\n  return intermediateValue + ${index};\n}\n`,
+          ).join(''),
       ),
     },
     { path: 'data.json', bytes: Buffer.from('{"keep": true}\n') },

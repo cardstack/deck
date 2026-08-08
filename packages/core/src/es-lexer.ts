@@ -459,13 +459,24 @@ export function lexModule(source: string): ModuleFacts {
       if (word === 'exports' && !precededByDot) {
         hasCommonJs = true;
       }
-      if (word === 'module') {
+      // `!precededByDot` for the same reason as `require` and `exports`
+      // above: `foo.module.exports` is a property chain on somebody's object,
+      // not the CommonJS one. And the tail has to end on an identifier
+      // boundary, or `module.exportsFoo` reads as `module.exports`.
+      if (!precededByDot && word === 'module') {
         let after = { ...cursor };
         skipTrivia(after);
         if (source[after.index] === '.') {
           after.index++;
           skipTrivia(after);
-          if (source.slice(after.index, after.index + 7) === 'exports') {
+          let start = after.index;
+          while (
+            after.index < source.length &&
+            isIdentifierPart(source[after.index])
+          ) {
+            after.index++;
+          }
+          if (source.slice(start, after.index) === 'exports') {
             hasCommonJs = true;
           }
         }

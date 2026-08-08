@@ -163,14 +163,15 @@ export async function deriveMinified(options: {
   // declared version to match what is published.
   let mapIndex = files.findIndex((file) => file.path === 'importmap.json');
   if (mapIndex !== -1) {
-    files[mapIndex] = {
-      path: 'importmap.json',
-      bytes: rewriteMap(files[mapIndex].bytes, packageName, {
-        version,
-        derivedFrom: opened.treeHash,
-        derivation,
-      }),
-    };
+    let rewritten = rewriteMap(files[mapIndex].bytes, packageName, {
+      version,
+      derivedFrom: opened.treeHash,
+      derivation,
+    });
+    // The rewrite happens after the byte tally, so correct the tally rather
+    // than report a size for a tree that is not the one being returned.
+    derivedBytes += rewritten.length - files[mapIndex].bytes.length;
+    files[mapIndex] = { path: 'importmap.json', bytes: rewritten };
   }
 
   return {
@@ -251,7 +252,18 @@ export async function verifyDerivation(options: {
       detail: `recorded ${recorded}, this machine has ${current} — install the recorded version to reproduce`,
     };
   }
-  let counter = Number(version.split('-min.').at(-1) ?? 0);
+  // `1.2.3` has no `-min.` to split on, so `at(-1)` hands back the whole
+  // string and `Number` gives NaN — which would rebuild as `1.2.3-min.NaN`
+  // and report a hash mismatch instead of the real problem.
+  let suffix = version.split('-min.');
+  let counter = suffix.length > 1 ? Number(suffix.at(-1)) : NaN;
+  if (!Number.isInteger(counter) || counter < 0) {
+    return {
+      ok: false,
+      expected: derivedTreeHash,
+      detail: `"${version}" is not a derived version (expected "<source>-min.<n>")`,
+    };
+  }
   let rebuilt = await deriveMinified({
     packBytes: sourcePack,
     sourceVersion,
