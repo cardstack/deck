@@ -195,6 +195,13 @@ revives the CatalogJS-era idea with modern mechanics: pin + hash +
 review, then serve forever. It falls out of the vendoring design
 (carriage modes) rather than being a bolt-on.
 
+## Deckbook
+
+Open [deckbook.html](deckbook.html) (or `http://localhost:<port>/deckbook.html`
+on a running server) for a teaching tour of the protocol against what this
+reference implementation actually runs — vocabulary, address space, live loop,
+store/packs, history tiers, vendor, fork/lock/offers, HTTP + CLI maps, and use cases.
+
 ## Documents
 
 Design set in [docs/](docs/) — start with:
@@ -218,6 +225,10 @@ Design set in [docs/](docs/) — start with:
 - [deck-use-cases.md](docs/deck-use-cases.md) — four workloads that
   need this protocol rather than merely benefit from it, written
   against the bottlenecks agentic engineering hits on git and npm.
+- [deck-competitive-gaps.md](docs/deck-competitive-gaps.md) — what is
+  missing to replace git + GitHub + npm + unpkg, reconciled against what
+  the Boxel realm server and CLI already built, and classified by who
+  supplies each answer: backport, federation, protocol, or operations.
 - [deck-cardpack-requirements.md](docs/deck-cardpack-requirements.md)
   — requirements recovered from the cardpack v0.2 implementation
   (preserved verbatim in [reference/cardpack-v0.2](reference/cardpack-v0.2)).

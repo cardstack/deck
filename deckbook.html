@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Deckbook — the Deck protocol, taught from the running code</title>
+<style>
+  :root {
+    --bg: #0c0f14;
+    --panel: #141a22;
+    --panel-2: #1a222d;
+    --line: #2a3441;
+    --text: #e8eef6;
+    --muted: #8b97a8;
+    --accent: #3ecf8e;
+    --accent-2: #6eb6ff;
+    --warn: #e2b340;
+    --danger: #ff7b72;
+    --mono: "JetBrains Mono", "SF Mono", Menlo, ui-monospace, monospace;
+    --sans: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --ui: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(900px 420px at 0% -10%, #163024 0%, transparent 55%),
+      radial-gradient(800px 380px at 100% 0%, #142033 0%, transparent 50%),
+      var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.55;
+  }
+  a { color: var(--accent-2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, kbd, pre { font-family: var(--mono); }
+  code, kbd {
+    font-size: 0.86em;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.05em 0.35em;
+  }
+  pre {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.9rem 1rem;
+    overflow: auto;
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+  .wrap {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 48rem);
+    gap: 2rem;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 1.5rem 1.25rem 4rem;
+  }
+  @media (max-width: 860px) {
+    .wrap { grid-template-columns: 1fr; }
+    nav.toc { position: static !important; }
+  }
+  nav.toc {
+    position: sticky;
+    top: 1rem;
+    align-self: start;
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+    font-family: var(--ui);
+    font-size: 0.82rem;
+  }
+  nav.toc h1 {
+    margin: 0 0 0.35rem;
+    font-size: 1rem;
+    font-family: var(--ui);
+    font-weight: 650;
+    letter-spacing: 0.02em;
+  }
+  nav.toc h1 span { color: var(--accent); }
+  nav.toc .blurb {
+    color: var(--muted);
+    margin: 0 0 1rem;
+    font-size: 0.75rem;
+    line-height: 1.35;
+  }
+  nav.toc ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  nav.toc a {
+    display: block;
+    color: var(--muted);
+    padding: 0.22rem 0;
+    text-decoration: none;
+  }
+  nav.toc a:hover { color: var(--text); }
+  article header.hero {
+    margin-bottom: 2rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--line);
+  }
+  article header.hero h1 {
+    margin: 0 0 0.4rem;
+    font-size: clamp(2rem, 4vw, 2.75rem);
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+  article header.hero h1 em {
+    font-style: normal;
+    color: var(--accent);
+  }
+  article header.hero p {
+    margin: 0.5rem 0 0;
+    color: var(--muted);
+    font-family: var(--ui);
+    font-size: 1.02rem;
+    max-width: 40rem;
+  }
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 1rem;
+    font-family: var(--ui);
+  }
+  .badge {
+    display: inline-block;
+    padding: 0.18rem 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge.ok { color: var(--accent); border-color: #255c42; }
+  .badge.warn { color: var(--warn); border-color: #6e5a2a; }
+  .badge.dim { color: var(--muted); }
+  section {
+    margin: 2.4rem 0;
+  }
+  section > h2 {
+    margin: 0 0 0.75rem;
+    font-size: 1.55rem;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+  }
+  section > h3 {
+    margin: 1.6rem 0 0.5rem;
+    font-size: 1.15rem;
+    font-family: var(--ui);
+    font-weight: 600;
+  }
+  p, li { font-size: 1.02rem; }
+  p { margin: 0.7rem 0; }
+  ul, ol { padding-left: 1.2rem; }
+  li { margin: 0.35rem 0; }
+  .callout {
+    margin: 1rem 0;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    background: var(--panel);
+    border-radius: 0 8px 8px 0;
+    font-family: var(--ui);
+    font-size: 0.92rem;
+  }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout strong { color: var(--text); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--ui);
+    font-size: 0.9rem;
+    margin: 1rem 0;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  th { color: var(--muted); font-weight: 560; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td code { font-size: 0.8em; }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+  @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    font-family: var(--ui);
+  }
+  .card h4 {
+    margin: 0 0 0.35rem;
+    font-size: 0.95rem;
+  }
+  .card p { margin: 0; color: var(--muted); font-size: 0.88rem; }
+  .cmd {
+    display: block;
+    margin: 0.35rem 0;
+  }
+  footer.book {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-family: var(--ui);
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="toc" aria-label="Deckbook contents">
+  <h1><span>Deck</span>book</h1>
+  <p class="blurb">Taught from the reference implementation — what runs, what it means, what to try next.</p>
+  <ol>
+    <li><a href="#promise">1. The promise</a></li>
+    <li><a href="#vocabulary">2. Vocabulary</a></li>
+    <li><a href="#address">3. Layout is the address</a></li>
+    <li><a href="#volatility">4. Three volatilities</a></li>
+    <li><a href="#loop">5. The live loop</a></li>
+    <li><a href="#store">6. Store &amp; packs</a></li>
+    <li><a href="#history">7. History tiers</a></li>
+    <li><a href="#vendor">8. Safe vendor</a></li>
+    <li><a href="#fork">9. Fork, lock, offers</a></li>
+    <li><a href="#http">10. HTTP surface</a></li>
+    <li><a href="#cli">11. CLI map</a></li>
+    <li><a href="#usecases">12. Use cases</a></li>
+    <li><a href="#try">13. Try it here</a></li>
+    <li><a href="#status">14. Honest status</a></li>
+  </ol>
+</nav>
+
+<article>
+<header class="hero">
+  <h1>The <em>Deck</em>book</h1>
+  <p>
+    Deck is a protocol for versioning, publishing, and serving ES modules
+    and JSON from plain state — a directory tree, an import map, seals, and
+    immutable version pointers. This book teaches the running reference
+    implementation: CLI, store, server, history, and the workflows they unlock.
+  </p>
+  <div class="badges">
+    <span class="badge ok">Reference impl built</span>
+    <span class="badge ok">Tier‑1 store always on</span>
+    <span class="badge ok">Tier‑2 history optional</span>
+    <span class="badge dim">No framework required</span>
+  </div>
+</header>
+
+<section id="promise">
+  <h2>1. The promise</h2>
+  <p>
+    <strong>No npm. No GitHub. No deploy. No PR</strong> — for the loop that
+    matters while you are building. Edit a file, see it live, keep every
+    settled state, ship a name when you mean it, share a zip anyone can open,
+    pull any ESM library in-house, fork without consequences.
+  </p>
+  <table>
+    <thead><tr><th>Promise</th><th>Mechanism (implemented)</th></tr></thead>
+    <tbody>
+      <tr><td>Instant feedback</td><td>Version-less URL → working tree, <code>Cache-Control: no-store</code></td></tr>
+      <tr><td>Never lose work</td><td>Auto-publish <code>&lt;base&gt;-dev.N</code> + optional per-save seals</td></tr>
+      <tr><td>Revert anytime</td><td><code>deck unpack</code> a pack, or <code>deck restore &lt;changeId&gt;</code> (tier 2)</td></tr>
+      <tr><td>Ship any version</td><td><code>deck release --from dev</code> — pointer, zero bytes copied</td></tr>
+      <tr><td>Share a milestone</td><td><code>deck pack</code> → <code>.pack.zip</code> (standard zip)</td></tr>
+      <tr><td>Use any library</td><td><code>deck vendor</code> hermetic CDN graph → your store</td></tr>
+      <tr><td>Fork freely</td><td><code>deck fork</code> into your publisher scope</td></tr>
+      <tr><td>Stability on demand</td><td><code>deck lock</code> turns ranges into exact pins</td></tr>
+      <tr><td>Whole web platform</td><td>Plain ESM + import maps; no bundler required</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="vocabulary">
+  <h2>2. Vocabulary</h2>
+  <p>Borrowed lightly from trading-card games — because a Deck package is an <em>arrangement</em>, not a sealed npm box.</p>
+  <table>
+    <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><strong>realm</strong></td><td>A directory that is also a URL space. Self-contained.</td></tr>
+      <tr><td><strong>deck</strong></td><td>A package: <code>&lt;publisher&gt;/&lt;name&gt;</code> with an <code>importmap.json</code>.</td></tr>
+      <tr><td><strong>decklist</strong></td><td>The manifest entry: versions, entry, exports, declared deps.</td></tr>
+      <tr><td><strong>live tree</strong></td><td>Bytes on disk right now. Editing surface.</td></tr>
+      <tr><td><strong>sealed deck / version</strong></td><td>Immutable published state addressed by semver.</td></tr>
+      <tr><td><strong>pack</strong></td><td><code>.pack.zip</code> — faithful transport of a tree + packlist.</td></tr>
+      <tr><td><strong>treeHash</strong></td><td>Content identity of a whole tree (<code>tree-hash-v1</code>).</td></tr>
+      <tr><td><strong>seal / changeId</strong></td><td>Tier‑2 history checkpoint (jj / historyd).</td></tr>
+      <tr><td><strong>offer</strong></td><td>A fork that records its upstream base — a proposal you can run.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="address">
+  <h2>3. The layout is the address</h2>
+  <p>
+    What <code>ls</code> shows and what the URL says are the same shape.
+    A realm carries its machinery inside itself — <code>.deck/store/</code>
+    for sealed versions, <code>.jj/</code> for seals — both invisible to the
+    tree hash, so copying the directory takes live files, published versions,
+    and history with it.
+  </p>
+<pre><code>&lt;root&gt;/site/acme/palette/palette.js     on disk
+       /site/acme/palette/palette.js    live — every save, no-store
+       /site/acme/palette@1.1.0/palette.js
+                                        sealed copy, immutable forever
+       /site/_history/&lt;changeId&gt;/acme/palette/palette.js
+                                        any state it was ever in (tier 2)</code></pre>
+  <div class="callout">
+    <strong>Publisher segment = fork boundary.</strong>
+    <code>acme/palette</code> and <code>you/palette</code> are different
+    decks with different version lines in the same realm. Undiverged forks
+    cost no extra pack bytes — the store is content-addressed.
+  </div>
+</section>
+
+<section id="volatility">
+  <h2>4. Three levels of volatility</h2>
+  <p>All just import-map values / URL forms. Opting into churn is always explicit.</p>
+  <table>
+    <thead><tr><th>You want</th><th>You write</th><th>You get</th></tr></thead>
+    <tbody>
+      <tr><td>Every save, instantly</td><td><code>"live"</code> / version-less URL</td><td>Working tree, <code>no-store</code></td></tr>
+      <tr><td>Freshest auto-seal</td><td><code>"dev"</code> or <code>@dev</code></td><td>Short-TTL redirect to newest <code>-dev.N</code></td></tr>
+      <tr><td>Something dependable</td><td><code>"^1.0.0"</code> / exact</td><td>Stable resolution; ranges ignore prereleases</td></tr>
+    </tbody>
+  </table>
+  <p>
+    <code>latest</code> is a dist-tag on a stable release.
+    <strong><code>latest</code> is not live</strong> — live is the bytes on disk with no version segment.
+  </p>
+</section>
+
+<section id="loop">
+  <h2>5. The live loop</h2>
+  <p>The core vibe-coding workflow, as implemented:</p>
+<pre><code>deck hello ./work          # scaffold + serve (or: deck serve --root ./work)
+# edit anything under a deck directory
+# → debounce (~500ms quiet)
+# → treeHash unchanged? stop
+# → packFromDir → publish &lt;base&gt;-dev.N, tag:dev
+# → [tier 2] history backend seals the save too
+
+deck release --realm ./work/site --publisher acme --name palette \
+  --version 1.1.0 --from dev --tag latest</code></pre>
+  <div class="grid-2">
+    <div class="card">
+      <h4>HMR-lite</h4>
+      <p><code>/_live/events</code> (SSE) + drop-in <code>/_live/hmr.js</code> reloads pages that depend on changed live decks.</p>
+    </div>
+    <div class="card">
+      <h4>Import-map injection</h4>
+      <p>HTML responses get a real inline import map (browsers ignore external map scripts). Sealed pack bytes stay untouched.</p>
+    </div>
+  </div>
+</section>
+
+<section id="store">
+  <h2>6. Store &amp; packs</h2>
+  <p>At rest, each package lives under the realm store:</p>
+<pre><code>&lt;realm&gt;/.deck/store/&lt;publisher&gt;/&lt;name&gt;/
+  meta.json                          # versions + dist-tags (pointers)
+  packs/&lt;treeHash&gt;.pack.zip          # bytes once per content hash</code></pre>
+  <ul>
+    <li><strong>Publish</strong> verifies a pack, writes bytes only if the treeHash is new, then adds a version pointer.</li>
+    <li><strong>Release</strong> names an existing sealed state — never copies bytes.</li>
+    <li><strong>Prune</strong> drops old <code>-dev.N</code> records; deletes pack files only when nothing still points at them.</li>
+    <li><strong>Pack laws</strong>: treeHash survives pack→unpack; pack∘unpack is byte-identical for canonical packs; stock <code>unzip</code> works.</li>
+  </ul>
+</section>
+
+<section id="history">
+  <h2>7. History tiers (be honest)</h2>
+  <table>
+    <thead><tr><th>Tier</th><th>What you get</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>1 — store only</strong></td>
+        <td>Every settled save → immutable <code>-dev.N</code> pack. Restore by unpacking. No seals between publishes.</td>
+        <td><span class="badge ok">Always on</span></td>
+      </tr>
+      <tr>
+        <td><strong>2 — jj / historyd</strong></td>
+        <td>Every save sealed; <code>/&lt;realm&gt;/_history/&lt;changeId&gt;/…</code>; <code>deck history</code> / <code>deck restore</code>; packlist can name <code>sealChangeId</code>.</td>
+        <td><span class="badge ok">Implemented</span> when <code>--history auto|jj|historyd</code> attaches</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="callout warn">
+    <strong>Capability is reported, not pretended.</strong>
+    <code>GET /_packages</code> includes a history block (<code>tier</code>, <code>jj</code>, <code>historyd</code>).
+    Missing jj or a dead daemon degrades to tier 1 with a printed reason — the live/auto-publish loop keeps working.
+  </div>
+<pre><code>deck serve --root ./work --history auto
+deck history ./work/site
+deck restore ./work/site &lt;changeId&gt;   # leaves current state sealed first</code></pre>
+</section>
+
+<section id="vendor">
+  <h2>8. Safe vendor — your own unpkg</h2>
+  <p>
+    Pull a CDN module graph once, rewrite references to stay inside the pack,
+    seal it. Runtime imports hit your Deck server only. Hermetic by default;
+    <code>--allow-external</code> / <code>--allow-host</code> are explicit opt-outs.
+    Identity travels as <code>vendoredFrom</code>.
+  </p>
+<pre><code>deck vendor https://esm.sh/simplex-noise@4.0.1 \
+  --name simplex-noise --version 4.0.1 \
+  --realm ./work/site --publisher acme --tag latest</code></pre>
+<pre><code>&lt;script type="importmap"&gt;
+{ "imports": { "simplex-noise": "/site/acme/simplex-noise@4.0.1" } }
+&lt;/script&gt;</code></pre>
+</section>
+
+<section id="fork">
+  <h2>9. Fork, lock, offers, rebase</h2>
+  <p>Contribution is a <strong>version you can run</strong>, not a diff waiting for merge theater.</p>
+  <h3>Fork</h3>
+<pre><code>deck fork --realm ./work/site \
+  --from acme/palette --as you/palette --use-in you/app</code></pre>
+  <p>Copies into your publisher scope; optional <code>--use-in</code> repoints a consumer at the fork live. Records base (package, version, treeHash) so the fork <em>is</em> an offer.</p>
+
+  <h3>Lock</h3>
+<pre><code>deck lock --realm ./work/site --publisher you --name app
+deck lock --realm ./work/site --publisher you --name app --check</code></pre>
+  <p>Resolves declared ranges to exact pins in the import map — users never inherit someone else's working tree.</p>
+
+  <h3>Try by URL</h3>
+<pre><code>/site/you/app/index.html?with=acme/palette=you/palette
+/site/you/app/index.html?with=acme/palette@1.1.0</code></pre>
+  <p>Server rewrites resolution for that request only. No checkout, no build, not cached as sealed content.</p>
+
+  <h3>Offers &amp; rebase</h3>
+<pre><code>deck offers --realm ./work/site
+deck rebase --realm ./work/site          # or: deck serve --rebase
+GET /site/_offers</code></pre>
+  <ul>
+    <li>Clean merges write into the proposal tree (auto-publish + seal).</li>
+    <li>Conflicts are <strong>reported and left untouched</strong> — machines never damage contributor work.</li>
+    <li>JSON merges as data (key-level), not as lines — so adding adjacent keys is not a fake conflict.</li>
+    <li>Accepting a proposal is a pointer move to a treeHash already held. Zero bytes copied.</li>
+  </ul>
+</section>
+
+<section id="http">
+  <h2>10. HTTP surface (read-only server)</h2>
+  <p>Writes go through CLI / watcher. The server distributes.</p>
+  <table>
+    <thead><tr><th>Request</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /&lt;realm&gt;/&lt;pub&gt;/&lt;pkg&gt;/…</code></td><td>Live tree, <code>no-store</code></td></tr>
+      <tr><td><code>GET /&lt;realm&gt;/&lt;pub&gt;/&lt;pkg&gt;@&lt;exact&gt;/…</code></td><td>Immutable + <code>Content-Digest</code></td></tr>
+      <tr><td><code>GET …@&lt;tag|range&gt;/…</code></td><td>One 302 hop to exact (short TTL)</td></tr>
+      <tr><td><code>GET …@&lt;exact&gt;</code> (bare)</td><td>301 to entry module</td></tr>
+      <tr><td><code>?meta</code></td><td>Machine-readable listing (incl. seal when present)</td></tr>
+      <tr><td><code>?format=pack</code></td><td>Faithful stored pack bytes</td></tr>
+      <tr><td><code>…/vendor.pack.zip!/inner.js</code></td><td>Mount into a nested pack (depth-capped)</td></tr>
+      <tr><td><code>GET /&lt;realm&gt;/_history</code></td><td>Seal log (tier 2)</td></tr>
+      <tr><td><code>GET /&lt;realm&gt;/_history/&lt;id&gt;/…</code></td><td>File at any seal</td></tr>
+      <tr><td><code>GET /_packages</code></td><td>Catalog + capability truth</td></tr>
+      <tr><td><code>GET /_browse/…</code></td><td>Directory / file JSON for the store browser</td></tr>
+      <tr><td><code>GET /&lt;realm&gt;/_offers</code></td><td>Open proposals + merge status</td></tr>
+      <tr><td><code>GET /_live/events</code></td><td>SSE change bus (HMR-lite)</td></tr>
+      <tr><td><code>/</code> or <code>/_browser</code></td><td>Store browser UI</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="cli">
+  <h2>11. CLI map</h2>
+<pre><code>deck hello | hash | pack | unpack | list | verify
+deck publish | tag | release | vendor | prune
+deck serve [--history auto|jj|historyd|none] [--rebase]
+deck fork | lock | offers | rebase
+deck history | restore</code></pre>
+  <p>From this repo without a global install:</p>
+<pre><code>node packages/cli/bin/deck.js hello ./playground
+node packages/cli/bin/deck.js serve --root ./playground --history auto --rebase</code></pre>
+</section>
+
+<section id="usecases">
+  <h2>12. Use cases the protocol earns</h2>
+  <p>From <code>docs/deck-use-cases.md</code> — shapes of work that <em>need</em> this, not merely benefit.</p>
+
+  <h3>Swarm-built internal tool</h3>
+  <p>
+    Eight agents, eight decks under one app import map. Composition is continuous —
+    no integration branch. Quarantine a bad agent by pinning one dependency from
+    <code>live</code> to <code>^1.2.0</code>. Dial volatility per component.
+  </p>
+
+  <h3>Codelists &amp; reference data</h3>
+  <p>
+    JSON merges as data (implemented). Amendments publish as <code>dev</code>;
+    ranges never see them. Forks keep absorbing upstream via rebase daemon —
+    your three private keys stay, and you stay current.
+  </p>
+
+  <h3>Adapters → patterns → instances</h3>
+  <p>
+    One address space for stable adapters (<code>^2.0.0</code>), vibe patterns
+    (<code>live</code>), and instance JSON. Promote bespoke→generic with
+    <code>deck fork</code>, not a rewrite in another product.
+  </p>
+
+  <h3>Skills &amp; agent capabilities</h3>
+  <p>
+    Versioned, forkable, try-by-URL evaluable. Hundreds of tiny edits stay sealed;
+    review means running the harness with <code>?with=</code>, not reading the prompt.
+  </p>
+</section>
+
+<section id="try">
+  <h2>13. Try it on this server</h2>
+  <p>If you are reading this from a running Deck server, these links hit the live surface:</p>
+  <ul>
+    <li><a href="/">Store browser</a> — packages, files, version switch (honest store paths)</li>
+    <li><a href="/_packages">/_packages</a> — JSON catalog + history capability block</li>
+    <li><a href="/_live/hmr.js">/_live/hmr.js</a> — drop-in HMR client source</li>
+    <li><a href="/live/neon-drift/index.html">Neon Drift lab</a> — multi-deck demo (if that example is served)</li>
+  </ul>
+  <div class="callout">
+    <strong>Start cold:</strong>
+    <code class="cmd">node packages/cli/bin/deck.js hello ./playground</code>
+    Open the printed URL, edit <code>app.js</code>, watch auto-publish and (with history) seals land.
+  </div>
+</section>
+
+<section id="status">
+  <h2>14. Honest status</h2>
+  <table>
+    <thead><tr><th>Area</th><th>State in this repo</th></tr></thead>
+    <tbody>
+      <tr><td>tree-hash / canonical-zip / pack laws</td><td>Built &amp; tested</td></tr>
+      <tr><td>Content-addressed store, release-as-pointer, prune</td><td>Built &amp; tested</td></tr>
+      <tr><td>Live serve + auto-publish <code>-dev.N</code></td><td>Built &amp; tested</td></tr>
+      <tr><td>Vendor hermetic graphs</td><td>Built &amp; tested</td></tr>
+      <tr><td>Lock / fork / merge / offers / rebase</td><td>Built &amp; tested</td></tr>
+      <tr><td>Try-by-URL <code>?with=</code></td><td>Built &amp; tested</td></tr>
+      <tr><td>Import-map injection + HMR-lite SSE</td><td>Built &amp; tested</td></tr>
+      <tr><td>Store browser <code>/</code></td><td>Built</td></tr>
+      <tr><td>History backends (jj CLI + historyd)</td><td>Built; attaches when available</td></tr>
+      <tr><td>Cross-realm dependency pins</td><td>Not built — lock refuses them</td></tr>
+      <tr><td>Vendor/unvendor map-rewrite toggle</td><td>Designed; <code>!/</code> mounts already serve</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Deeper design notes live in <code>docs/</code> —
+    start with <code>deck-at-rest-protocol.md</code>,
+    <code>deck-live-autopublish.md</code>,
+    <code>deck-pack-equivalence.md</code>,
+    <code>deck-use-cases.md</code>.
+  </p>
+</section>
+
+<footer class="book">
+  Deckbook · generated against the reference implementation in this repository ·
+  protocol vocabulary from the Deck design set · open <a href="/">the store browser</a> to inspect real trees.
+</footer>
+</article>
+</div>
+</body>
+</html>

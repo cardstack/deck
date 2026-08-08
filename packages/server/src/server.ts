@@ -7,6 +7,7 @@ import {
 } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { DECKBOOK_PATHS, loadDeckbookHtml } from './deckbook.ts';
 import { readZipEntry } from '@deck/core/canonical-zip';
 import {
   packagesFromPack,
@@ -463,6 +464,33 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           'access-control-allow-origin': '*',
         },
         BROWSER_HTML,
+      );
+      return;
+    }
+
+    if (DECKBOOK_PATHS.has(pathname)) {
+      let html = await loadDeckbookHtml();
+      if (!html) {
+        respondError(
+          req,
+          res,
+          404,
+          'not-found',
+          'deckbook.html not found next to the server (run from the deck repo)',
+          'no-store',
+        );
+        return;
+      }
+      respond(
+        req,
+        res,
+        200,
+        {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+          'access-control-allow-origin': '*',
+        },
+        html,
       );
       return;
     }

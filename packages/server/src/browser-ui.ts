@@ -34,6 +34,10 @@ export const BROWSER_HTML = `<!doctype html>
   header.app h1 { margin: 0; font-size: 1.05rem; font-weight: 600; letter-spacing: 0.02em; }
   header.app h1 span { color: var(--accent); }
   header.app .sub { color: var(--muted); font-size: 0.85rem; font-family: var(--mono); }
+  header.app a.book {
+    margin-left: auto; color: var(--link); font-size: 0.85rem; text-decoration: none;
+  }
+  header.app a.book:hover { text-decoration: underline; }
   .truth {
     padding: 0.55rem 1rem; border-bottom: 1px solid var(--line);
     background: #1a1510; color: #e3c07a; font-size: 0.8rem; line-height: 1.4;
@@ -123,6 +127,7 @@ export const BROWSER_HTML = `<!doctype html>
   <header class="app">
     <h1><span>Deck</span> realms</h1>
     <div class="sub">/&lt;realm&gt;/&lt;publisher&gt;/&lt;package&gt;[@&lt;version&gt;]/&lt;path&gt;</div>
+    <a class="book" href="/deckbook.html">Deckbook →</a>
   </header>
   <div class="truth" id="truth">
     Loading store capability…

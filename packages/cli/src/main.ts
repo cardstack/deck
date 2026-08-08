@@ -109,6 +109,8 @@ Usage:
                                         the state you leave is sealed first, and
                                         the restored one auto-publishes as the
                                         next dev version
+
+On a running server, open /deckbook.html for the teaching tour (Deckbook).
 `;
 
 // 8787 is jj-historyd's default; a deck server sharing a machine with one
