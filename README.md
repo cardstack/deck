@@ -215,6 +215,16 @@ Design set in [docs/](docs/) — start with:
 - [deck-cas-v2-spec.md](docs/deck-cas-v2-spec.md) — next CAS work:
   blob store (pack as transport), verified dependency links, and
   signatures on treeHash.
+- [deck-efficient-delivery-spec.md](docs/deck-efficient-delivery-spec.md)
+  — **built.** Sealed releases without bundling-as-identity: minify as a
+  derived tree, gzip at the origin, and `modulepreload` of the decklist
+  closure. Brotli and HTTP/2–3 are the edge's job and terminate at
+  Cloudflare, never here.
+- [deck-tree-hash-v2-merkle-proposal.md](docs/deck-tree-hash-v2-merkle-proposal.md)
+  — **rejected.** A Merkle directory identity does not solve what it was
+  proposed for, and costs a second identity spec to find that out.
+  `tree-hash-v1` is the identity for everything. The measurements are in
+  [deck-tree-hash-v2-review.md](docs/deck-tree-hash-v2-review.md).
 - [deck-pack-equivalence.md](docs/deck-pack-equivalence.md) — deck ⇄
   pack: four homes, treeHash identity, carriage modes, round-trip
   laws, `!/` mounts, canonical-zip-v1. All opens ruled.

@@ -102,6 +102,14 @@ with an import map and no bundler.
   the exact dependency treeHashes it resolved against.
 - Browser-side pack install (`?format=pack` → drag onto a drop zone →
   unpack into a watched dir) for the "no GitHub" collaboration pitch.
+- **A WAN measurement of the cold path** (spec item A9). Efficient sealed
+  delivery is *built* — minify as a derived tree, gzip at the origin,
+  `modulepreload` of the decklist closure; brotli and HTTP/2–3 stay at
+  Cloudflare by ruling, not by omission. What is still unmeasured is the
+  thing `deck-efficient-delivery-spec.md` §4.4 actually claims: every
+  number so far is localhost, which has no latency and therefore cannot
+  show a waterfall. A throttled cold-cache run with and without preload
+  is what settles it.
 
 ## Tiny quality-of-life
 

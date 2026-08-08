@@ -553,12 +553,16 @@ node packages/cli/bin/deck.js serve --root ./playground --history auto --rebase<
       <tr><td>Cross-realm dependency pins</td><td>Not built — lock refuses them</td></tr>
       <tr><td>Vendor/unvendor map-rewrite toggle</td><td>Designed; <code>!/</code> mounts already serve</td></tr>
       <tr><td>Blob store / verified links / sigs on treeHash</td><td>Specified — <code>docs/deck-cas-v2-spec.md</code></td></tr>
+      <tr><td>Derived minify trees / gzip at origin / <code>modulepreload</code> closure</td><td>Built &amp; tested — <code>docs/deck-efficient-delivery-spec.md</code>. Brotli and H2–3 are the edge's job, not the origin's</td></tr>
+      <tr><td>Merkle <code>tree-hash-v2</code></td><td><strong>Rejected</strong> — <code>tree-hash-v1</code> is the identity for everything. Measurements in <code>docs/deck-tree-hash-v2-review.md</code></td></tr>
     </tbody>
   </table>
   <p>
     Deeper design notes live in <code>docs/</code> —
-    start with <code>deck-at-rest-protocol.md</code>,
+    start with <code>deck-laws.md</code> (the contract),
+    then <code>deck-at-rest-protocol.md</code>,
     <code>deck-cas-v2-spec.md</code>,
+    <code>deck-efficient-delivery-spec.md</code>,
     <code>deck-live-autopublish.md</code>,
     <code>deck-pack-equivalence.md</code>,
     <code>deck-use-cases.md</code>.
