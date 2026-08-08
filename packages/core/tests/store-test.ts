@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pack, unpack } from '../src/pack.ts';
 import {
+  inspectStore,
+  migrateStore,
   pruneDevVersions,
   publishToStore,
   readStoredFile,
@@ -256,6 +258,85 @@ module('store: content addressing and pruning', function (hooks) {
       ),
       'export const v = 9;\n',
     );
+  });
+
+  test('migrate converts a legacy store and proves each rebuild', async function (assert) {
+    let bytes = pack(libFiles('1.0.0', 'export const v = 9;\n'));
+    let treeHash = unpack(bytes).treeHash;
+    await mkdir(join(storeDir, 'lib', 'packs'), { recursive: true });
+    await writeFile(join(storeDir, 'lib', 'packs', `${treeHash}.pack.zip`), bytes);
+    await writeFile(
+      join(storeDir, 'lib', 'meta.json'),
+      JSON.stringify({
+        name: 'lib',
+        versions: {
+          '1.0.0': { treeHash, file: `packs/${treeHash}.pack.zip` },
+          // Two versions, ONE archive: the shared-file case that a naive
+          // migration would delete out from under the survivor.
+          '1.0.1': { treeHash, file: `packs/${treeHash}.pack.zip` },
+        },
+        tags: { latest: '1.0.1' },
+      }),
+    );
+
+    let dry = await migrateStore(storeDir, { dryRun: true });
+    assert.strictEqual(dry.migrated.length, 2, 'dry run reports both');
+    assert.strictEqual(await objectCount(storeDir), 0, 'dry run writes nothing');
+
+    let result = await migrateStore(storeDir);
+    assert.deepEqual(result.failures, []);
+    assert.strictEqual(result.migrated.length, 2);
+    assert.strictEqual(result.archivesRemoved.length, 1, 'one shared archive');
+    assert.true(result.bytesReclaimed > 0);
+
+    let meta = await readStoreMeta(storeDir, 'lib');
+    assert.strictEqual(meta!.versions['1.0.0'].storage, 'blobs-v1');
+    assert.strictEqual(meta!.versions['1.0.0'].file, undefined);
+    let rebuilt = await readStoredPack(storeDir, 'lib', '1.0.1');
+    assert.true(
+      rebuilt !== undefined && rebuilt.equals(bytes),
+      'the migrated version rebuilds byte-identically',
+    );
+  });
+
+  test('migrate leaves an archive alone when it cannot prove the rebuild', async function (assert) {
+    let bytes = pack(libFiles('1.0.0', 'export const v = 1;\n'));
+    await mkdir(join(storeDir, 'lib', 'packs'), { recursive: true });
+    let archive = join(storeDir, 'lib', 'packs', 'claimed.pack.zip');
+    await writeFile(archive, bytes);
+    await writeFile(
+      join(storeDir, 'lib', 'meta.json'),
+      JSON.stringify({
+        name: 'lib',
+        // The meta lies about the hash: migration must notice rather than
+        // rewrite the record to match whatever the archive happens to be.
+        versions: { '1.0.0': { treeHash: 'f'.repeat(64), file: 'packs/claimed.pack.zip' } },
+        tags: {},
+      }),
+    );
+    let result = await migrateStore(storeDir);
+    assert.strictEqual(result.migrated.length, 0);
+    assert.strictEqual(result.failures.length, 1);
+    assert.true(result.failures[0].detail.includes('meta claims'));
+    assert.strictEqual(result.archivesRemoved.length, 0, 'nothing deleted');
+    let meta = await readStoreMeta(storeDir, 'lib');
+    assert.strictEqual(meta!.versions['1.0.0'].storage, 'pack-v1');
+  });
+
+  test('status reports what is live and what is reclaimable', async function (assert) {
+    await publishToStore(
+      storeDir,
+      'lib',
+      '1.0.0',
+      pack(libFiles('1.0.0', 'export const v = 1;\n')),
+    );
+    let report = await inspectStore(storeDir);
+    assert.strictEqual(report.packages, 1);
+    assert.strictEqual(report.versions, 1);
+    assert.strictEqual(report.liveTrees, 1);
+    assert.strictEqual(report.reclaimableTrees, 0);
+    assert.strictEqual(report.legacyArchives, 0);
+    assert.true(report.objects > 0 && report.bytes > 0);
   });
 
   test('one file can be read without rebuilding the archive', async function (assert) {

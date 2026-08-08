@@ -143,7 +143,7 @@ candidate entry and let a person choose.
 | --- | --- | --- | --- | --- |
 | `bundle` *(today)* | esm.sh | 1–few opaque modules | yes | consumers who will never edit |
 | `source` *(new)* | npm tarball | the published module tree | yes, when it is real ESM | **editing, forking, contributing** |
-| `map` *(new)* | bundle + `.map` | the pre-bundle tree with contents | no | reading, diffing, PRs |
+| `map` *(built)* | bundle + `.map` | the pre-bundle tree with contents | **no — structurally** | reading, diffing, PRs |
 | `repo` *(later)* | git tarball at `gitHead` | the true source incl. tests | needs a build | deep upstream work |
 
 Same command, same package name, same store. **A mode is a carriage
@@ -247,8 +247,11 @@ consequence of getting the carriage right rather than a separate feature.
    goes stale the moment someone edits `src/`, and regenerating it needs
    the build step Deck refuses to have. Possibly the honest answer is: edit
    in source mode, distribute in whichever mode the publisher sealed.
-3. **How is a reconstructed (`map` mode) tree marked** so nobody expects
-   it to run?
+3. ~~How is a reconstructed tree marked so nobody expects it to run?~~
+   **Answered: it declares no entry.** A map-mode deck omits `entry` from
+   its import map, so the server answers `no-entry-module` to anyone who
+   tries to import it. The files stay addressable; the package is not
+   executable. That is structural, not a warning in a README.
 4. **d3-shaped packages.** Vendoring a family means N decks and a
    dependency graph between them. That is the right answer, and it is also
    the first real test of transitive resolution (G10).
@@ -389,3 +392,49 @@ Verified in a browser: with the app's source untouched, the page renders
 
 A bare `you/three` means `live`, which is what a fork wants. An alias that
 is not a deck name is refused rather than silently treated as a range.
+
+
+---
+
+## 9. Map mode, built
+
+`deck vendor npm:<pkg> --mode map` recovers the pre-bundle tree from the
+bundle's source map. Run against the four bundle-only packages in the boxel
+corpus:
+
+| Package | Bundle chosen | Recovered | Note |
+| --- | --- | --- | --- |
+| chart.js 4.5.1 | `dist/chart.js` | **53 modules** | |
+| preact 10.29.8 | `dist/preact.module.js` | **12 modules** | ESM bundle preferred over cjs/umd/min |
+| marked 9.1.4 | `lib/marked.esm.js` | **11 modules** | recovered as `.ts` |
+| jszip 3.10.1 | — | refused | ships no map; the error names bundle mode |
+
+Three of four. marked is the clearest demonstration of why this mode can
+never claim to be executable: what comes back is `src/Tokenizer.ts`,
+importing `./defaults.ts`. It is exactly what the author wrote, and no
+browser will run it.
+
+**The promise is kept structurally.** A map-mode deck declares no `entry`:
+
+```
+GET /site/recovered/marked@9.1.4?meta          → entry: null
+GET /site/recovered/marked@9.1.4               → 404 no-entry-module
+GET /site/recovered/chart-js@4.5.1/src/core/core.animator.js → 200
+```
+
+Files are addressable, so you can read, diff, and cut a patch against
+upstream. The package cannot be imported, because there is nothing to
+import — not because a document asked nicely.
+
+Three details worth recording:
+
+- **Sources that escape the package are kept, under `_outside/`, and
+  counted.** A monorepo bundle reaches across package boundaries; dropping
+  those files silently would make the recovered tree a lie about what the
+  bundle was built from.
+- **`sourcesContent: null` is reported, never invented.** A map that names
+  paths without carrying their text is refused outright.
+- **Protocol-form sources are root-relative.** `webpack://pkg/./src/x.js`
+  resolves to `src/x.js`, not to `<mapdir>/pkg/src/x.js` — the `/./` marks
+  the project root, and joining it to the map's directory was the one bug
+  the tests caught here.

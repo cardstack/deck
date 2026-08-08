@@ -15,7 +15,9 @@ import {
   readTreeFile,
   rebuildPack,
   storePack,
+  storeUsage,
   type GcResult,
+  type StoreUsage,
 } from './object-store.ts';
 
 // A Deck store is pure at-rest state on disk — the standalone counterpart
@@ -58,8 +60,15 @@ import {
 //   - dist-tags are movable; names never semver-shaped; `latest` never
 //     points at a prerelease
 
+export type StorageKind = 'blobs-v1' | 'pack-v1';
+
 export interface StoreVersionRecord {
   treeHash: string;
+  // How this version's bytes are materialised. Self-describing rather than
+  // inferred, so a reader never has to guess from which other fields happen
+  // to be present — and so a future third form is an added value here
+  // instead of a new inference rule everywhere.
+  storage?: StorageKind;
   // Legacy one-zip-per-tree stores wrote a path here, relative to
   // <store>/<name>/. New records carry only the treeHash: the bytes live in
   // the store-wide object and tree directories, and the pack is rebuilt on
@@ -118,11 +127,14 @@ export async function readStoreMeta(
   }
   try {
     let parsed = JSON.parse(await readFile(metaPath(storeDir, name), 'utf8'));
-    return {
-      name,
-      versions: parsed.versions ?? {},
-      tags: parsed.tags ?? {},
-    };
+    // Records written before the discriminator existed are pack-v1 exactly
+    // when they name an archive. Normalising on read means nothing else in
+    // the codebase has to know that.
+    let versions = (parsed.versions ?? {}) as Record<string, StoreVersionRecord>;
+    for (let record of Object.values(versions)) {
+      record.storage ??= record.file ? 'pack-v1' : 'blobs-v1';
+    }
+    return { name, versions, tags: parsed.tags ?? {} };
   } catch {
     return undefined;
   }
@@ -238,7 +250,7 @@ export async function publishToStore(
   // re-publish of already-stored content costs nothing.
   await mkdir(packageDir(storeDir, name), { recursive: true });
   await storePack(storeDir, packBytes);
-  meta.versions[version] = { treeHash };
+  meta.versions[version] = { treeHash, storage: 'blobs-v1' };
   if (tag) {
     meta.tags[tag] = version;
   }
@@ -363,7 +375,7 @@ async function readRecordPack(
   name: string,
   record: StoreVersionRecord,
 ): Promise<Buffer | undefined> {
-  if (record.file) {
+  if (record.storage === 'pack-v1' && record.file) {
     // A store written before per-file addressing. Still readable, so
     // nobody has to migrate to keep serving.
     try {
@@ -399,7 +411,7 @@ export async function readStoredFile(
   if (!record) {
     return undefined;
   }
-  if (!record.file) {
+  if (record.storage !== 'pack-v1') {
     return readTreeFile(storeDir, record.treeHash, path);
   }
   let packBytes = await readRecordPack(storeDir, name, record);
@@ -496,6 +508,39 @@ export async function collectStoreGarbage(
   return collectGarbage(storeDir, await liveTreeHashes(storeDir));
 }
 
+export interface StoreReport extends StoreUsage {
+  packages: number;
+  versions: number;
+  liveTrees: number;
+  // Trees and objects nothing points at any more, without deleting them.
+  reclaimableTrees: number;
+  legacyArchives: number;
+}
+
+export async function inspectStore(storeDir: string): Promise<StoreReport> {
+  let usage = await storeUsage(storeDir);
+  let packages = await listStorePackages(storeDir);
+  let live = await liveTreeHashes(storeDir);
+  let versions = 0;
+  let legacyArchives = 0;
+  for (let meta of packages) {
+    for (let record of Object.values(meta.versions)) {
+      versions++;
+      if (record.storage === 'pack-v1') {
+        legacyArchives++;
+      }
+    }
+  }
+  return {
+    ...usage,
+    packages: packages.length,
+    versions,
+    liveTrees: live.size,
+    reclaimableTrees: Math.max(0, usage.trees - live.size),
+    legacyArchives,
+  };
+}
+
 // The next auto-publish number for a dev line: `<base>-dev.<n>`.
 export function nextDevVersion(
   meta: StoreMeta | undefined,
@@ -511,4 +556,104 @@ export function nextDevVersion(
     }
   }
   return `${base}-dev.${max + 1}`;
+}
+
+export interface MigrateResult {
+  migrated: { name: string; version: string; treeHash: string }[];
+  alreadyBlobs: number;
+  archivesRemoved: string[];
+  bytesReclaimed: number;
+  failures: { name: string; version: string; detail: string }[];
+}
+
+// Convert a legacy one-zip-per-tree store into objects and trees.
+//
+// Nothing forces this: pack-v1 records keep serving (there is a conformance
+// check for it). Migrating is worth doing because the old layout charged a
+// full archive for every revision AND for every publisher — the two costs
+// per-file addressing removes.
+//
+// The archives are only deleted once the tree they held reads back
+// byte-identically from objects. A migration that cannot prove that leaves
+// the original exactly where it was.
+export async function migrateStore(
+  storeDir: string,
+  options: { removeArchives?: boolean; dryRun?: boolean } = {},
+): Promise<MigrateResult> {
+  let { removeArchives = true, dryRun = false } = options;
+  let result: MigrateResult = {
+    migrated: [],
+    alreadyBlobs: 0,
+    archivesRemoved: [],
+    bytesReclaimed: 0,
+    failures: [],
+  };
+  for (let meta of await listStorePackages(storeDir)) {
+    let changed = false;
+    for (let [version, record] of Object.entries(meta.versions)) {
+      if (record.storage !== 'pack-v1' || !record.file) {
+        result.alreadyBlobs++;
+        continue;
+      }
+      let archive = join(packageDir(storeDir, meta.name), record.file);
+      let bytes: Buffer;
+      try {
+        bytes = await readFile(archive);
+      } catch (error) {
+        result.failures.push({
+          name: meta.name,
+          version,
+          detail: `cannot read ${record.file}: ${error}`,
+        });
+        continue;
+      }
+      if (dryRun) {
+        result.migrated.push({ name: meta.name, version, treeHash: record.treeHash });
+        continue;
+      }
+      try {
+        let stored = await storePack(storeDir, bytes);
+        if (stored.treeHash !== record.treeHash) {
+          throw new Error(
+            `archive hashes to ${stored.treeHash}, meta claims ${record.treeHash}`,
+          );
+        }
+        // Prove the rebuild before trusting it: L2 or nothing.
+        let rebuilt = await rebuildPack(storeDir, record.treeHash);
+        if (!rebuilt || !rebuilt.equals(bytes)) {
+          throw new Error('the rebuilt pack is not byte-identical');
+        }
+      } catch (error) {
+        result.failures.push({
+          name: meta.name,
+          version,
+          detail: String(error instanceof Error ? error.message : error),
+        });
+        continue;
+      }
+      meta.versions[version] = { treeHash: record.treeHash, storage: 'blobs-v1' };
+      changed = true;
+      result.migrated.push({ name: meta.name, version, treeHash: record.treeHash });
+      if (removeArchives) {
+        // Several versions can share one archive; only the last one out
+        // turns off the light.
+        let stillUsed = Object.values(meta.versions).some(
+          (other) => other.file === record.file,
+        );
+        if (!stillUsed) {
+          let size = await readFile(archive).then(
+            (data) => data.length,
+            () => 0,
+          );
+          await rm(archive, { force: true });
+          result.archivesRemoved.push(join(meta.name, record.file));
+          result.bytesReclaimed += size;
+        }
+      }
+    }
+    if (changed && !dryRun) {
+      await writeStoreMeta(storeDir, meta);
+    }
+  }
+  return result;
 }

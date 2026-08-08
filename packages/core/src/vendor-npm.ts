@@ -274,7 +274,10 @@ export interface VendoredFrom {
   name: string;
   version: string;
   integrity?: string;
-  mode: 'source';
+  // How the bytes were obtained. `source` is the module tree npm published;
+  // `map` is a tree RECOVERED from a bundle's source map, which reads and
+  // diffs but does not run.
+  mode: 'source' | 'map';
   entry: string;
   subtree?: string;
   repo?: string;

@@ -8,6 +8,9 @@ import {
 } from '@deck/core/tree-hash';
 import { pack, packFromDir, peekPacklist, unpack } from '@deck/core/pack';
 import {
+  collectStoreGarbage,
+  inspectStore,
+  migrateStore,
   pruneDevVersions,
   publishToStore,
   readStoreMeta,
@@ -25,6 +28,10 @@ import {
   vendorFromNpmSource,
 } from '@deck/core/vendor-npm';
 import { fetchNpmPackage, verifyAgainstGithubTree } from '@deck/core/npm';
+import {
+  mapVendorImportMap,
+  vendorFromSourceMap,
+} from '@deck/core/vendor-map';
 import {
   planVendorTree,
   vendorUnitImportMap,
@@ -91,6 +98,14 @@ Usage:
                                         rewrite every reference to stay
                                         inside the pack, and seal it — your
                                         own unpkg, hermetic by default
+  deck vendor npm:<pkg>@<version> --mode map [--entry <path>]
+                                        MAP mode, for a package that ships
+                                        only a bundle: recover the pre-bundle
+                                        module tree from the source map.
+                                        Readable and diffable against
+                                        upstream; NOT executable, so the deck
+                                        declares no entry and nothing can
+                                        import it
   deck vendor npm:<pkg>@<version> [--entry <path>] [--verify-repo] [--probe]
               [--name <n>] [--version <v>] [--realm <dir> --publisher <p>] [--tag <t>]
                                         SOURCE mode: vendor the module tree
@@ -145,6 +160,14 @@ Usage:
                                         upstream; clean ones are written back
                                         (and auto-publish), conflicted ones are
                                         reported and left untouched
+  deck store <status|migrate|gc> --realm <dir> [--dry-run] [--keep-archives]
+                                        status: what the store holds and what
+                                        is reclaimable. migrate: convert a
+                                        legacy packs/ store into per-file
+                                        objects, proving each rebuild is
+                                        byte-identical before deleting
+                                        anything. gc: drop trees and objects
+                                        no published version points at
   deck verify-links --realm <dir> [--publisher <p> --name <n>]
                     [--require-signature <n>]
                                         L11: check that every pin still
@@ -495,6 +518,7 @@ async function main(): Promise<void> {
           entry: { type: 'string' },
           probe: { type: 'boolean', default: false },
           'verify-repo': { type: 'boolean', default: false },
+          mode: { type: 'string' },
         },
       });
       let [url] = positionals;
@@ -545,6 +569,66 @@ async function main(): Promise<void> {
       let provenance: string | Record<string, unknown>;
       let deckName: string;
       let deckVersion: string;
+
+      if (isNpm && values.mode === 'map') {
+        // Recovered, not published: the tree comes out of the bundle's
+        // source map. It is for reading, diffing and raising a pull
+        // request — never for execution, which is why no entry is declared.
+        let recovered = await vendorFromSourceMap({
+          spec: url.slice(4),
+          entry: values.entry,
+        });
+        deckName = values.name ?? deckNameForNpm(recovered.pkg.name);
+        deckVersion = values.version ?? recovered.pkg.version;
+        console.log(
+          `recovered ${recovered.modules} module(s) from ${recovered.mapFrom} (bundle ${recovered.bundleEntry})`,
+        );
+        if (recovered.escaped.length > 0) {
+          console.log(
+            `  ${recovered.escaped.length} source(s) resolved outside the package, filed under _outside/`,
+          );
+        }
+        if (recovered.missingContent.length > 0) {
+          console.log(
+            `  ${recovered.missingContent.length} source(s) had no inlined content and could not be recovered`,
+          );
+        }
+        console.log(
+          '  NOT EXECUTABLE: this is pre-bundle source, so the deck declares no entry',
+        );
+        entryPath = recovered.bundleEntry;
+        vendoredFiles = recovered.files;
+        moduleCount = recovered.modules;
+        externals = [];
+        provenance = recovered.vendoredFrom as unknown as Record<string, unknown>;
+        let bytes = pack([
+          {
+            path: 'importmap.json',
+            bytes: mapVendorImportMap(deckName, deckVersion, recovered),
+          },
+          ...recovered.files,
+        ]);
+        console.log(`  treeHash ${peekPacklist(bytes).treeHash.hash}`);
+        if (values.realm && values.publisher) {
+          let realmDir = resolve(values.realm);
+          await publishToStore(
+            storeDirFor(realmDir),
+            `${values.publisher}/${deckName}`,
+            deckVersion,
+            bytes,
+            { tag: values.tag },
+          );
+          console.log(
+            `published ${values.publisher}/${deckName}@${deckVersion} — read it at /${basename(realmDir)}/${values.publisher}/${deckName}@${deckVersion}/`,
+          );
+        }
+        if (values.output || !values.realm) {
+          let output = values.output ?? `${deckName}-${deckVersion}.pack.zip`;
+          await writeFile(output, bytes);
+          console.log(`wrote ${output}`);
+        }
+        return;
+      }
 
       if (isNpm) {
         let source = await vendorFromNpmSource({
@@ -734,6 +818,75 @@ async function main(): Promise<void> {
       console.log(
         `\n${plan.units.length} deck(s) under /${basename(realmDir)}/${values.publisher}/`,
       );
+      return;
+    }
+    case 'store': {
+      let { values, positionals } = parseArgs({
+        args: rest,
+        allowPositionals: true,
+        options: {
+          realm: { type: 'string' },
+          'dry-run': { type: 'boolean', default: false },
+          'keep-archives': { type: 'boolean', default: false },
+        },
+      });
+      let [subcommand] = positionals;
+      if (!values.realm || !subcommand) {
+        fail('usage: deck store <status|migrate|gc> --realm <dir> [--dry-run]');
+      }
+      let storeDir = storeDirFor(resolve(values.realm!));
+      if (subcommand === 'status') {
+        let report = await inspectStore(storeDir);
+        console.log(`packages   ${report.packages}`);
+        console.log(`versions   ${report.versions}`);
+        console.log(`trees      ${report.trees} (${report.liveTrees} live, ${report.reclaimableTrees} reclaimable)`);
+        console.log(`objects    ${report.objects}`);
+        console.log(`on disk    ${(report.bytes / 1024).toFixed(0)} KB of objects`);
+        if (report.legacyArchives > 0) {
+          console.log(
+            `legacy     ${report.legacyArchives} version(s) still on pack-v1 — \`deck store migrate\` converts them`,
+          );
+        }
+        return;
+      }
+      if (subcommand === 'migrate') {
+        let result = await migrateStore(storeDir, {
+          dryRun: values['dry-run'],
+          removeArchives: !values['keep-archives'],
+        });
+        for (let entry of result.migrated) {
+          console.log(
+            `  ${values['dry-run'] ? 'would migrate' : 'migrated'} ${entry.name}@${entry.version} (${entry.treeHash.slice(0, 12)})`,
+          );
+        }
+        for (let failure of result.failures) {
+          console.log(
+            `  FAILED ${failure.name}@${failure.version}: ${failure.detail} — the archive was left alone`,
+          );
+        }
+        console.log(
+          `${result.migrated.length} migrated, ${result.alreadyBlobs} already per-file, ${result.archivesRemoved.length} archive(s) removed (${(result.bytesReclaimed / 1024).toFixed(0)} KB)`,
+        );
+        if (result.failures.length > 0) {
+          fail(`${result.failures.length} version(s) could not be migrated`);
+        }
+        return;
+      }
+      if (subcommand === 'gc') {
+        if (values['dry-run']) {
+          let report = await inspectStore(storeDir);
+          console.log(
+            `${report.reclaimableTrees} tree(s) reclaimable of ${report.trees}; run without --dry-run to collect`,
+          );
+          return;
+        }
+        let result = await collectStoreGarbage(storeDir);
+        console.log(
+          `collected ${result.treesDeleted} tree(s) and ${result.objectsDeleted} object(s), freeing ${(result.bytesFreed / 1024).toFixed(0)} KB`,
+        );
+        return;
+      }
+      fail(`unknown store subcommand "${subcommand}" (status | migrate | gc)`);
       return;
     }
     case 'verify-links': {

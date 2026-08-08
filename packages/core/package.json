@@ -17,6 +17,7 @@
     "./vendor": "./src/vendor.ts",
     "./es-lexer": "./src/es-lexer.ts",
     "./vendor-npm": "./src/vendor-npm.ts",
+    "./vendor-map": "./src/vendor-map.ts",
     "./vendor-tree": "./src/vendor-tree.ts",
     "./npm": "./src/npm.ts",
     "./lock": "./src/lock.ts",
