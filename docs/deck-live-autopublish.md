@@ -145,3 +145,39 @@ capability — a filesystem endpoint that IS an auto-versioning
 module publisher with live vibe coding. Add tier 2 when seal-grained
 history/restore/audit earns its daemon: the design above means no
 rework, only additions.
+
+---
+
+## Addendum (2026-08-07): built, plus the realm layout
+
+Tier 2 is BUILT (`packages/history`): the jj CLI backend and a
+historyd client behind one contract, seals under the auto-publish
+loop, `/<realm>/_history/<changeId>/<path>`, `deck history`, and
+`deck restore`. Two things changed against the sketch above:
+
+- **The repo is per REALM, not per deck.** A realm seals as one tree,
+  the way a realm server does, so seal paths are realm-relative
+  (`acme/palette/app.js`) — the same path the URL uses. Each deck
+  under the realm still publishes its own version line.
+- **Routes moved under the realm**: `/<realm>/_history/…` rather than
+  `/history/<name>/…`, matching the realm server's `_`-prefixed
+  reserved segments.
+
+What the design did NOT anticipate, and what it cost:
+
+- **jj sealed the realm's own store.** With `.deck/store` inside the
+  realm (so a realm directory is self-contained), jj tracked it: every
+  seal carried a copy of every pack, and a restore rewound the
+  published versions themselves. Fixed by writing the tree-hash ignore
+  set into `.git/info/exclude` at repo creation — git's untracked
+  ignore file, so the rules are not part of the tree and attaching
+  history never changes a deck's hash — plus a restore-time refusal of
+  those paths for repos sealed before the rule existed.
+  **The invariant to hold: what jj seals is exactly what the tree hash
+  covers.**
+- **The watcher had to stop feeding itself.** jj writes into `.jj` on
+  every operation, inside the watched tree; without filtering those
+  events, sealing triggers sealing forever.
+- **`settled()` had to mean "the store reflects the tree"**, not "the
+  debounce elapsed". A filesystem event can arrive late, and a
+  publish that never happened is not settled.
