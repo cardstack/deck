@@ -8,7 +8,10 @@ import {
   DEFAULT_IGNORE,
   formatTreeHash,
   hashBytes,
+  isNormalizedTreePath,
   isValidTreePath,
+  normalizeTreePath,
+  onDiskPathFor,
   treeHashFromDir,
   treeHashFromEntries,
   TREE_HASH_SPEC,
@@ -210,6 +213,95 @@ module('tree-hash-v1', function () {
         extended.entries.map((e) => e.path),
         ['keep.js'],
         'extending still works',
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Paths are hashed as UTF-8 bytes, so the two Unicode spellings of one
+  // name are two different trees. Without a rule, L1's "same files, same
+  // hash on every implementation" holds only for trees that happen to be
+  // NFC — which is luck, not a protocol.
+  const NFC = 'ä-utf8.txt'; // U+00E4
+  const NFD = 'ä-utf8.txt'; // U+0061 U+0308
+
+  test('the two Unicode spellings really are different bytes', function (assert) {
+    assert.strictEqual(Buffer.byteLength(NFC, 'utf8'), 11);
+    assert.strictEqual(Buffer.byteLength(NFD, 'utf8'), 12);
+    assert.notStrictEqual(NFC, NFD, 'different strings');
+    assert.strictEqual(normalizeTreePath(NFD), NFC, 'and one normalises to the other');
+    assert.true(isNormalizedTreePath(NFC));
+    assert.false(isNormalizedTreePath(NFD));
+  });
+
+  // An author who wrote a path chose those bytes. Silently rewriting them is
+  // the kind of guess L11 forbids, so an explicit entry list refuses.
+  test('a non-NFC path is refused, and the error says so', function (assert) {
+    assert.false(isValidTreePath(NFD));
+    assert.throws(
+      () => treeHashFromEntries([{ path: NFD, sha256: hashBytes('x') }]),
+      /not Unicode NFC/,
+      'the least actionable error would be "invalid path" for two identical-looking strings',
+    );
+    assert.strictEqual(
+      treeHashFromEntries([{ path: NFC, sha256: hashBytes('x') }]).entries[0]
+        .path,
+      NFC,
+      'NFC passes untouched',
+    );
+  });
+
+  // The filesystem, not the author, chose this encoding — HFS+ hands back
+  // NFD for a name written as NFC. An author should not be locked out of
+  // sealing by their filesystem's convention.
+  test('the directory walk normalises, and remembers the on-disk name', async function (assert) {
+    let dir = await mkdtemp(join(tmpdir(), 'tree-hash-nfd-'));
+    try {
+      await writeFile(join(dir, NFD), 'umlaut\n');
+      let walked = await treeHashFromDir(dir);
+      assert.deepEqual(
+        walked.entries.map((e) => e.path),
+        [NFC],
+        'sealed under the NFC name whatever the disk called it',
+      );
+      assert.strictEqual(
+        walked.treeHash,
+        treeHashFromEntries([{ path: NFC, sha256: hashBytes('umlaut\n') }])
+          .treeHash,
+        'and lands on the same hash a NFC filesystem would produce',
+      );
+      // On APFS the write above may be stored as NFC already; either way the
+      // reopen has to use whatever the OS actually reported.
+      let onDisk = onDiskPathFor(walked, NFC);
+      assert.true(
+        onDisk === NFD || onDisk === NFC,
+        `on-disk name is one of the two spellings, got ${JSON.stringify(onDisk)}`,
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('one tree cannot hold both spellings of one name', async function (assert) {
+    let dir = await mkdtemp(join(tmpdir(), 'tree-hash-clash-'));
+    try {
+      await writeFile(join(dir, NFC), 'one\n');
+      await writeFile(join(dir, NFD), 'two\n');
+      let names = (await treeHashFromDir(dir).then(
+        (r) => r.entries.map((e) => e.path),
+        () => null,
+      )) as string[] | null;
+      if (names === null) {
+        assert.true(true, 'refused, with the clash named');
+        return;
+      }
+      // A normalisation-insensitive filesystem (APFS) collapsed the two
+      // writes into one file, so there is nothing to clash.
+      assert.deepEqual(
+        names,
+        [NFC],
+        'or the filesystem folded them and there is only one file',
       );
     } finally {
       await rm(dir, { recursive: true, force: true });

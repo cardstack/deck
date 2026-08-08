@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   hashBytes,
   isValidTreePath,
+  onDiskPathFor,
   treeHashFromDir,
   treeHashFromEntries,
 } from './tree-hash.ts';
@@ -77,10 +78,17 @@ export async function packFromDir(
   dir: string,
   provenance?: PackProvenance,
 ): Promise<Buffer> {
-  let { entries } = await treeHashFromDir(dir);
+  let result = await treeHashFromDir(dir);
   let files: PackInputFile[] = [];
-  for (let { path } of entries) {
-    files.push({ path, bytes: await readFile(join(dir, ...path.split('/'))) });
+  for (let { path } of result.entries) {
+    // Sealed under the NFC path; reopened under whatever the filesystem
+    // actually calls it. On a byte-transparent filesystem holding an NFD
+    // name those differ, and asking for the normalised one would ENOENT.
+    let onDisk = onDiskPathFor(result, path);
+    files.push({
+      path,
+      bytes: await readFile(join(dir, ...onDisk.split('/'))),
+    });
   }
   return pack(files, provenance);
 }

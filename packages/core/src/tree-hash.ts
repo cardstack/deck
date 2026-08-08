@@ -35,10 +35,43 @@ export interface TreeHashResult {
   treeHash: string; // lowercase sha256 hex of manifestText
   manifestText: string;
   entries: TreeHashEntry[]; // sorted, as hashed
+  // Logical (NFC) path -> the relative path as the filesystem spells it.
+  // Only `treeHashFromDir` can know this, and only it needs to: a caller
+  // that re-opens a file must ask the OS for the name the OS gave, which on
+  // a byte-transparent filesystem is not the normalised one.
+  onDiskPaths?: ReadonlyMap<string, string>;
 }
 
 export function hashBytes(bytes: Uint8Array | string): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+// UNICODE NORMALISATION — part of the algorithm, not a nicety.
+//
+// Paths are hashed as UTF-8 bytes, so `ä` as U+00E4 (NFC, 2 bytes) and as
+// U+0061 U+0308 (NFD, 3 bytes) are different paths and produce different
+// tree hashes for the same logical tree. Filesystems disagree about which
+// they hand back: APFS preserves whatever it was given, HFS+ normalised to
+// NFD, Linux filesystems are byte-transparent and will hold either, and
+// archive tools vary. Without a rule, L1's promise — two trees with the
+// same files have the same hash on every implementation — is true only for
+// trees that happen to be NFC, which is luck rather than a protocol.
+//
+// The ruling is split, deliberately:
+//
+//   A non-NFC path is NOT a valid tree path.  Refused, not silently
+//   rewritten — an author who wrote a path chose those bytes, and quietly
+//   changing them is the kind of guess L11 exists to forbid.
+//
+//   `treeHashFromDir` normalises as it reads.  That is the one place where
+//   the OS, not the author, chose the encoding, and an HFS+ user should not
+//   be locked out of sealing by their filesystem's convention.
+export function normalizeTreePath(path: string): string {
+  return path.normalize('NFC');
+}
+
+export function isNormalizedTreePath(path: string): boolean {
+  return normalizeTreePath(path) === path;
 }
 
 // The `!` exclusion is a protocol ruling: `!/` marks the archive boundary
@@ -48,6 +81,9 @@ export function isValidTreePath(path: string): boolean {
     return false;
   }
   if (path.includes('\0') || path.includes('\\') || path.includes('!')) {
+    return false;
+  }
+  if (!isNormalizedTreePath(path)) {
     return false;
   }
   return path
@@ -69,6 +105,16 @@ export function treeHashFromEntries(
   let seen = new Set<string>();
   for (let { path, sha256 } of entries) {
     if (!isValidTreePath(path)) {
+      // Say which rule was broken when it is the invisible one. "invalid
+      // tree path" for two strings that look identical on screen is the
+      // least actionable error a hash function can produce.
+      if (!isNormalizedTreePath(path)) {
+        throw new Error(
+          `tree path is not Unicode NFC: ${JSON.stringify(path)} — the same ` +
+            `name in NFC is ${JSON.stringify(normalizeTreePath(path))}. Paths ` +
+            `are hashed as UTF-8 bytes, so the two forms would be different trees.`,
+        );
+      }
       throw new Error(`invalid tree path: ${JSON.stringify(path)}`);
     }
     if (!HEX_64.test(sha256)) {
@@ -120,12 +166,29 @@ export async function treeHashFromDir(
     ? new Set([...DEFAULT_IGNORE, ...options.ignore])
     : DEFAULT_IGNORE;
   let entries: TreeHashEntry[] = [];
+  // Normalised path -> the on-disk name it came from, so a directory that
+  // holds both encodings of one name reports something a human can act on
+  // instead of "duplicate tree path" for two identical-looking strings.
+  let seenOnDisk = new Map<string, string>();
   async function walk(current: string, prefix: string): Promise<void> {
     for (let dirent of await readdir(current, { withFileTypes: true })) {
       if (ignore.has(dirent.name)) {
         continue;
       }
-      let path = prefix === '' ? dirent.name : `${prefix}/${dirent.name}`;
+      let raw = prefix === '' ? dirent.name : `${prefix}/${dirent.name}`;
+      // The filesystem chose this encoding, not the author — HFS+ hands
+      // back NFD for a name that was written as NFC. Normalising here is
+      // what makes the same logical tree hash the same on every platform.
+      let path = normalizeTreePath(raw);
+      let clash = seenOnDisk.get(path);
+      if (clash !== undefined && clash !== raw) {
+        throw new Error(
+          `${JSON.stringify(clash)} and ${JSON.stringify(raw)} are different ` +
+            `byte sequences for the same Unicode NFC path ${JSON.stringify(path)}. ` +
+            `A deck cannot contain both; rename one.`,
+        );
+      }
+      seenOnDisk.set(path, raw);
       if (dirent.isDirectory()) {
         await walk(join(current, dirent.name), path);
       } else if (dirent.isFile()) {
@@ -139,7 +202,16 @@ export async function treeHashFromDir(
     }
   }
   await walk(dir, '');
-  return treeHashFromEntries(entries);
+  return { ...treeHashFromEntries(entries), onDiskPaths: seenOnDisk };
+}
+
+// The name to hand the filesystem for a logical path. Identity is always
+// the NFC form; only the reopen is spelled the OS's way.
+export function onDiskPathFor(
+  result: Pick<TreeHashResult, 'onDiskPaths'>,
+  path: string,
+): string {
+  return result.onDiskPaths?.get(path) ?? path;
 }
 
 export function formatTreeHash(result: Pick<TreeHashResult, 'treeHash'>) {

@@ -31,15 +31,43 @@ the same files have the same hash on every implementation, forever.
 cannot change what a deck IS. A caller may extend that set; it cannot shrink
 it, or two implementations could hash one directory differently.
 
-**Decided, so it is not re-litigated: the manifest stays flat.** A Merkle
-directory identity (`tree-hash-v2`) was proposed and rejected on 2026-08-08.
-It does not solve what it was proposed for — a directory node is not a binary
-Merkle node, so a proof costs the full child list of every ancestor, and both
-published packages and realms are fat and shallow enough that the proof
-measures larger than shipping the whole gzipped manifest. See
+**Paths are Unicode NFC**, and that is part of the algorithm too. They are
+hashed as UTF-8 bytes, so `ä` as U+00E4 and as U+0061 U+0308 are different
+paths and different trees for the same logical files — and filesystems
+disagree about which they hand back. The ruling splits by who chose the
+encoding:
+
+- A non-NFC path is **not a valid tree path**. An author who wrote those
+  bytes gets a refusal, not a silent rewrite (L11).
+- `treeHashFromDir` **normalises as it reads**, because there the OS chose,
+  not the author, and nobody should be locked out of sealing by their
+  filesystem's convention. Identity is the NFC path; the on-disk spelling is
+  carried separately, for reopening files only.
+- One tree may not hold both spellings of one name.
+
+### On there being a v2
+
+There will probably be a `tree-hash-v2` eventually. This is a spec string,
+not a vow — `TREE_HASH_SPEC` rides in every packlist precisely so a change is
+a new version rather than silent drift, and a v1 hash stays a correct name
+for its bytes forever, so old seals never become wrong. Anything above that
+is *this* version's rule, not a permanent one.
+
+What **is** settled is the direction. A Merkle directory identity was
+proposed and rejected on 2026-08-08: it does not solve what it was proposed
+for, because a directory node is not a binary Merkle node, so a proof costs
+the full child list of every ancestor — and both published packages and
+realms are fat and shallow enough that the proof measures larger than
+shipping the whole gzipped manifest. See
 `deck-tree-hash-v2-merkle-proposal.md` for the rejection and
-`deck-tree-hash-v2-review.md` for the numbers. Subtree hashes remain
-available as **derived** data at any time; identity is not where they belong.
+`deck-tree-hash-v2-review.md` for the numbers.
+
+So a future v2 is open, and it is most likely **not** that. If cheap
+inclusion proofs ever become the driver, the measured answer is a binary
+Merkle over the sorted manifest, which leaves the logical tree and the flat
+list untouched and only changes how the list is folded into a root. Subtree
+hashes, meanwhile, are available as **derived** data at any time; identity is
+not where they belong.
 
 ## L2 · Round trip
 

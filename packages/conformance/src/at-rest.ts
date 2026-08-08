@@ -99,6 +99,33 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
       );
     });
 
+    // The fixture contains a non-ASCII filename on purpose, and the golden
+    // root above is only meaningful if every implementation agrees on how it
+    // is spelled. Paths are hashed as UTF-8 bytes, so NFC and NFD are
+    // different trees; without this check the golden hash is stable by luck
+    // — whichever normalisation the building filesystem happened to use.
+    await checks.run('L1', 'tree paths are Unicode NFC', async () => {
+      for (let file of fixtureFiles()) {
+        assertEqual(
+          file.path.normalize('NFC'),
+          file.path,
+          `fixture path ${JSON.stringify(file.path)} must be NFC`,
+        );
+      }
+      let decomposed = 'ä-utf8.txt';
+      assert(
+        decomposed.normalize('NFC') !== decomposed,
+        'the negative case must actually be non-NFC',
+      );
+      let refused = false;
+      try {
+        treeHashFromEntries([{ path: decomposed, sha256: 'ab'.repeat(32) }]);
+      } catch {
+        refused = true;
+      }
+      assert(refused, 'a non-NFC tree path must be refused, not normalised away');
+    });
+
     // ---- L2 round trip ---------------------------------------------------
     let sealed = pack(fixtureFiles());
 
