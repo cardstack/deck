@@ -15,7 +15,7 @@ consequences.
 
 ## The layout is the address
 
-A realm is a directory. What `ls` shows and what the URL says are the
+A depot is a directory. What `ls` shows and what the URL says are the
 same thing:
 
 ```
@@ -29,7 +29,7 @@ same thing:
 
 `ls` and `cat` give you the LATEST of everything, and an agent can
 change any of it. Adding `@<version>` to the package segment reads the
-same path out of a seal instead. A realm carries its own machinery
+same path out of a seal instead. A depot carries its own machinery
 inside itself — `.deck/store/` for sealed versions, `.jj/` for seals —
 both invisible to the tree hash, so copying the directory takes the
 live files, every published version, and the whole history with it.
@@ -52,33 +52,33 @@ always explicit.
 ## The workflow
 
 ```bash
-deck serve --root ./work                 # every realm under ./work, live + auto-publishing
+deck serve --root ./work                 # every depot under ./work, live + auto-publishing
 # …edit anything. Every settled save auto-publishes <base>-dev.N (tag: dev)
 #   and is sealed, whether or not it is published.
 
-deck release --realm ./work/site --publisher acme --name palette \
+deck release --depot ./work/site --publisher acme --name palette \
   --version 1.1.0 --from dev --tag latest      # instantly a real semver, zero bytes copied
 
-deck lock --realm ./work/site --publisher you --name app
+deck lock --depot ./work/site --publisher you --name app
 #   resolves this deck's declared RANGES to exact versions and pins them in
 #   its import map — what your users get, so they never inherit your
 #   dependencies' working trees. Move them forward when you're ready.
 
-deck fork --realm ./work/site --from acme/palette --as you/palette --use-in you/app
+deck fork --depot ./work/site --from acme/palette --as you/palette --use-in you/app
 #   copy someone's deck into YOUR publisher scope and change it at byte speed.
 #   Separate version line, separate dist-tags. Their versions never move.
 
-deck offers --realm ./work/site          # every open proposal, and whether it still merges
-deck rebase --realm ./work/site          # re-merge them all; conflicts are reported, not written
+deck offers --depot ./work/site          # every open proposal, and whether it still merges
+deck rebase --depot ./work/site          # re-merge them all; conflicts are reported, not written
 
-deck history ./work/site                 # every state the realm has been in
+deck history ./work/site                 # every state the depot has been in
 deck restore ./work/site <changeId>      # go back to any of them; the state you
                                          # leave is sealed first, so this is undoable
 ```
 
 The publisher segment IS the fork boundary: `acme/palette` and
 `you/palette` are different names with different version lines in the
-same realm. An undiverged fork costs no bytes — the store is content-
+same depot. An undiverged fork costs no bytes — the store is content-
 addressed, so identical content is stored once.
 
 How each promise is kept:
@@ -87,7 +87,7 @@ How each promise is kept:
 | --- | --- |
 | instant feedback | the version-less URL serves your working directory, `no-store` |
 | never lose work | every settled save auto-publishes an immutable version, and every save is sealed |
-| revert anytime | `deck restore <realm> <changeId>` — replayed forward, never rewinding |
+| revert anytime | `deck restore <depot> <changeId>` — replayed forward, never rewinding |
 | ship any version | `deck release … --from dev` — names a sealed state, copies nothing |
 | share any milestone | `deck pack <deck>` → one `.pack.zip` any zip tool opens |
 | use any library | `deck vendor https://esm.sh/three@0.160.0 …` — pulled in for good, hermetic |
@@ -151,7 +151,7 @@ proposal already holds. **Zero bytes are copied.**
 
 ```bash
 deck vendor https://esm.sh/three@0.160.0 --name three --version 0.160.0 \
-  --realm ./work/site --publisher acme --tag latest
+  --depot ./work/site --publisher acme --tag latest
 ```
 
 That pulls three.js's whole module graph from esm.sh ONCE, rewrites
@@ -204,7 +204,7 @@ pnpm demo
 ```
 
 [`examples/hub`](examples/hub/) starts every example at once — each in its own
-process, its own realm, its own store — and serves one console: the Deckbook,
+process, its own depot, its own store — and serves one console: the Deckbook,
 and for each demo its explanation, its live app, and the transcript it actually
 printed while building its store. See [examples/](examples/) to run one on its
 own.
@@ -302,14 +302,14 @@ multi-package design, and the GitHub mirror analysis.
   ~5-6x faster per call). A missing jj or a dead daemon degrades to
   tier 1 with a printed reason. Restores replay forward as ordinary
   writes, so history only ever grows.
-- **`packages/server`** — read-only zero-framework serving of realms:
+- **`packages/server`** — read-only zero-framework serving of depots:
   version-less = the working tree (`no-store`); exact = immutable +
   Content-Digest; range/tag = one 302 hop; bare/alias = 301; `?meta`
   (including which seal a version was cut from); `?format=pack`;
-  `!/` mounts; `/<realm>/_history/<changeId>/<path>`; import-map
+  `!/` mounts; `/<depot>/_history/<changeId>/<path>`; import-map
   injection for HTML; coded JSON errors with two negative-cache
   tiers; HEAD; writes refused. Plus `/_packages`, `/_browse`,
-  `/<realm>/_offers`, the `?with=` trial override, the **rebase daemon**,
+  `/<depot>/_offers`, the `?with=` trial override, the **rebase daemon**,
   and an SSE change bus at `/_live/events` with a drop-in HMR client.
 - **`packages/cli`** — `deck hello | hash | pack | unpack | list |
   verify | publish | tag | release | lock | fork | vendor | prune |
@@ -319,7 +319,7 @@ Run everything: `pnpm install && pnpm test && pnpm lint`.
 
 ### Not built yet
 
-Cross-realm dependencies (a lock refuses them rather than writing a
+Cross-depot dependencies (a lock refuses them rather than writing a
 pin nobody can serve). The `vendor`/`unvendor` map-rewrite toggle is
 designed in [docs/deck-pack-equivalence.md](docs/deck-pack-equivalence.md);
 the `!/` mount half it depends on is already serving.

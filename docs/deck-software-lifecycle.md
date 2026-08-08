@@ -1,5 +1,11 @@
 # The Boxel Software Lifecycle: from playing around to thousands of live users
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Status (updated 2026-08-07): the at-rest half of this story (Stages
 A–D: play, name, test, release) is BUILT — see
 `deck-at-rest-protocol.md`. Stage E's migration machinery and the

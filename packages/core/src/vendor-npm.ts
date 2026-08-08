@@ -433,7 +433,7 @@ export async function vendorFromNpmSource(
   });
   if (!cooldown.ok) {
     throw new Error(
-      `vendor: cooldown refused ${pkg.name}@${pkg.version} — ${cooldown.reason} (raise it with --minimum-release-age 0, or exempt the package in the realm policy)`,
+      `vendor: cooldown refused ${pkg.name}@${pkg.version} — ${cooldown.reason} (raise it with --minimum-release-age 0, or exempt the package in the depot policy)`,
     );
   }
 

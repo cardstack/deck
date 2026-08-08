@@ -247,7 +247,7 @@ export function vendorImportMap(
           packages: {
             [name]: {
               version,
-              entry: `$REALM/${entryPath}`,
+              entry: `$DECK/${entryPath}`,
               vendoredFrom,
             },
           },

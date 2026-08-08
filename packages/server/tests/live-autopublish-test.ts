@@ -10,19 +10,19 @@ import { readStoreMeta, releaseVersion } from '@deck/core/store';
 import { createDeckServer } from '../src/server.ts';
 import {
   storeDirFor,
-  watchRealm,
-  type RealmMount,
-  type RealmWatchController,
-} from '../src/realm.ts';
+  watchDepot,
+  type DepotMount,
+  type DepotWatchController,
+} from '../src/depot.ts';
 import type { WatchPublishEvent } from '../src/watcher.ts';
 
 let workDir: string;
-let realmDir: string;
+let depotDir: string;
 let storeDir: string;
 let deckDir: string;
 let server: Server;
 let origin: string;
-let controller: RealmWatchController;
+let controller: DepotWatchController;
 let published: WatchPublishEvent[] = [];
 
 async function writeImportMap(version: string): Promise<void> {
@@ -32,7 +32,7 @@ async function writeImportMap(version: string): Promise<void> {
       imports: {},
       deck: {
         packages: {
-          mylib: { version, entry: '$REALM/lib.js' },
+          mylib: { version, entry: '$DECK/lib.js' },
         },
       },
     }),
@@ -50,16 +50,16 @@ async function packFiles(name: string): Promise<string[]> {
 module('live tree + auto-publish + no-copies release', function (hooks) {
   hooks.before(async function () {
     workDir = await mkdtemp(join(tmpdir(), 'deck-live-test-'));
-    realmDir = join(workDir, 'demo');
-    storeDir = storeDirFor(realmDir);
-    deckDir = join(realmDir, 'me', 'mylib');
+    depotDir = join(workDir, 'demo');
+    storeDir = storeDirFor(depotDir);
+    deckDir = join(depotDir, 'me', 'mylib');
     await mkdir(deckDir, { recursive: true });
     await writeImportMap('0.1.0');
     await writeFile(join(deckDir, 'lib.js'), 'export const v = 1;\n');
 
-    let realm: RealmMount = { name: 'demo', dir: realmDir, storeDir };
-    controller = watchRealm({
-      realm,
+    let depot: DepotMount = { name: 'demo', dir: depotDir, storeDir };
+    controller = watchDepot({
+      depot,
       debounceMs: 50,
       onPublish: (event) => published.push(event),
       onError: (error) => {
@@ -72,7 +72,7 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
     await controller.settled();
     published = [];
 
-    server = createDeckServer({ realms: [realm] });
+    server = createDeckServer({ depots: [depot] });
     await new Promise<void>((resolve) => server.listen(0, resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -85,8 +85,8 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
     await rm(workDir, { recursive: true, force: true });
   });
 
-  test('the store lives inside the realm — a hidden dir, so it never feeds itself', async function (assert) {
-    assert.strictEqual(storeDir, join(realmDir, '.deck', 'store'));
+  test('the store lives inside the depot — a hidden dir, so it never feeds itself', async function (assert) {
+    assert.strictEqual(storeDir, join(depotDir, '.deck', 'store'));
     assert.deepEqual(
       controller.decks().map((deck) => deck.name),
       ['me/mylib'],
@@ -256,13 +256,13 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
   });
 
   test('a new deck appearing on disk starts publishing itself', async function (assert) {
-    let second = join(realmDir, 'me', 'other');
+    let second = join(depotDir, 'me', 'other');
     await mkdir(second, { recursive: true });
     await writeFile(
       join(second, 'importmap.json'),
       JSON.stringify({
         deck: {
-          packages: { other: { version: '0.0.1', entry: '$REALM/other.js' } },
+          packages: { other: { version: '0.0.1', entry: '$DECK/other.js' } },
         },
       }),
     );

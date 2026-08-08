@@ -526,9 +526,9 @@ module('vendor: the cooldown policy', () => {
     );
   });
 
-  // The realm's policy file is pnpm's two settings verbatim, so it can be
+  // The depot's policy file is pnpm's two settings verbatim, so it can be
   // lifted out of a pnpm-workspace.yaml unchanged.
-  test('a realm policy file parses pnpm\'s two settings', (assert) => {
+  test('a depot policy file parses pnpm\'s two settings', (assert) => {
     assert.deepEqual(
       parsePolicy(
         JSON.stringify({

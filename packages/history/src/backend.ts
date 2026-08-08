@@ -146,7 +146,7 @@ export async function applyRestore(
 }
 
 // A restore replays TREE content. Anything the tree hash ignores — a
-// realm's `.deck` store above all — is machinery that happens to sit in the
+// depot's `.deck` store above all — is machinery that happens to sit in the
 // same directory, and rewinding it would undo published versions. Backends
 // exclude it from sealing too; this is the belt to that suspenders, and it
 // also protects trees sealed before those rules existed.

@@ -6,7 +6,7 @@
 //
 //   leaflet@1.9.4                     what npm publishes
 //   Leaflet/Leaflet                   where the source lives
-//   /site/lib/leaflet@1.9.4/…         where THIS realm serves it from
+//   /site/lib/leaflet@1.9.4/…         where THIS depot serves it from
 //
 // They are not the same thing, and which one you mean changes what a claim
 // means. "Leaflet is 85 modules" is a fact about the npm tarball. "The fork
@@ -30,7 +30,7 @@
 export const KINDS = {
   deck: {
     label: 'deck',
-    title: 'a Deck address — where this realm serves it from',
+    title: 'a Deck address — where this depot serves it from',
   },
   npm: {
     label: 'npm',
@@ -48,9 +48,9 @@ const esc = (value) =>
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
   );
 
-// `/<realm>/<publisher>/<package>@<version>/<path>` — the version is the part
+// `/<depot>/<publisher>/<package>@<version>/<path>` — the version is the part
 // a reader most often needs to find, so it is the part that is emphasised.
-// A grammar pattern (`/<realm>/…`) has no version to find and falls through
+// A grammar pattern (`/<depot>/…`) has no version to find and falls through
 // to plain text.
 const DECK_ADDRESS =
   /^(\/?(?:[a-z0-9][a-z0-9-]*\/)*[a-z0-9][a-z0-9-]*)@([^/\s]+)(\/.*)?$/;
@@ -113,10 +113,14 @@ export function legend(kinds = Object.keys(KINDS)) {
   );
 }
 
+// The legend shows the GRAMMAR, not a plausible-looking fake address. A
+// concrete example there reads as a real URL and invites the reader to go
+// looking for it; the angle brackets say "this slot is a name you choose".
+// Real addresses on these pages carry the real depot name, `site`.
 const EXAMPLE = {
-  deck: '/realm/publisher/package@1.0.0/file.js',
-  npm: 'package@1.0.0',
-  github: 'org/package',
+  deck: '/<depot>/<publisher>/<package>@<version>/<path>',
+  npm: '<name>@<version>',
+  github: '<org>/<repo>',
 };
 const MEANS = {
   deck: 'served from here',

@@ -1,5 +1,11 @@
 # In-Realm Development Use Cases: vibe coding → enterprise deployment
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Companion to `deck-semver-migration-spec.md` (the rules),
 `deck-publishing-skill.md` (the agent playbook), and
 `deck-software-lifecycle.md` (the narrative). Written 2026-08-07.

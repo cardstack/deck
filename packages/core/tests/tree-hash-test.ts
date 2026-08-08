@@ -139,7 +139,7 @@ module('tree-hash-v1', function () {
         /invalid tree path/,
       );
     }
-    for (let good_ of ['a', 'a/b/c.gts', 'importmap.json', '.realm.json']) {
+    for (let good_ of ['a', 'a/b/c.gts', 'importmap.json', '.depot.json']) {
       assert.true(isValidTreePath(good_), `${good_} is valid`);
     }
   });
@@ -187,7 +187,7 @@ module('tree-hash-v1', function () {
   });
 
   // L1 names DEFAULT_IGNORE as part of the algorithm. A caller may add to it
-  // — a realm carrying its own sidecar — but a caller that could REMOVE from
+  // — a depot carrying its own sidecar — but a caller that could REMOVE from
   // it could make two conforming implementations hash the same directory
   // differently, which is the drift the law exists to forbid.
   test('a caller may extend the ignore set but never shrink it', async function (assert) {

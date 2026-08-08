@@ -26,7 +26,7 @@ the field's decklist connects the two:
 ```
 
 The key is the import specifier; the value names the deck that answers to it.
-So vendored npm source stays unmodified, and the realm names things its own
+So vendored npm source stays unmodified, and the depot names things its own
 way. It is the same substitution `?with=` performs at serve time, made durable
 in the lock.
 

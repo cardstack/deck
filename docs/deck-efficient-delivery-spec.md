@@ -1,5 +1,11 @@
 # Deck efficient delivery: minify variants, wire compression, modulepreload over H2/H3
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 **Status: SPEC** (2026-08-08, amended 2026-08-08) — how sealed decks load
 fast **without bundling as identity**. Amendments are marked **[A1]**–**[A9]**
 and close open questions 1–3; see §10 for the list. Companions: `deck-at-rest-protocol.md` (immutable serve rules;

@@ -36,7 +36,7 @@ import {
   FIXTURE_TREE_HASH,
   FIXTURE_VERSION,
   fixtureFiles,
-  writeFixtureRealm,
+  writeFixtureDepot,
 } from './fixture.ts';
 import { assert, assertEqual, Checks, type CheckResult } from './laws.ts';
 
@@ -67,9 +67,9 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
     });
 
     await checks.run('L1', 'hashing a directory agrees with hashing entries', async () => {
-      let realmDir = await writeFixtureRealm(root);
+      let depotDir = await writeFixtureDepot(root);
       let fromDir = await treeHashFromDir(
-        join(realmDir, FIXTURE_PUBLISHER, FIXTURE_PACKAGE),
+        join(depotDir, FIXTURE_PUBLISHER, FIXTURE_PACKAGE),
       );
       assertEqual(fromDir.treeHash, FIXTURE_TREE_HASH, 'directory treeHash');
     });
@@ -87,9 +87,9 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
       assertEqual(reversed, forward, 'reversed input');
     });
 
-    await checks.run('L1', 'realm bookkeeping is invisible to the hash', async () => {
-      let realmDir = await writeFixtureRealm(root);
-      let deckDir = join(realmDir, FIXTURE_PUBLISHER, FIXTURE_PACKAGE);
+    await checks.run('L1', 'depot bookkeeping is invisible to the hash', async () => {
+      let depotDir = await writeFixtureDepot(root);
+      let deckDir = join(depotDir, FIXTURE_PUBLISHER, FIXTURE_PACKAGE);
       let before = (await treeHashFromDir(deckDir)).treeHash;
       await writeFile(join(deckDir, '.DS_Store'), 'junk');
       assertEqual(
@@ -156,9 +156,9 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
     });
 
     await checks.run('L2', 'packing a directory matches packing its files', async () => {
-      let realmDir = await writeFixtureRealm(root);
+      let depotDir = await writeFixtureDepot(root);
       let fromDir = await packFromDir(
-        join(realmDir, FIXTURE_PUBLISHER, FIXTURE_PACKAGE),
+        join(depotDir, FIXTURE_PUBLISHER, FIXTURE_PACKAGE),
       );
       assertEqual(unpack(fromDir).treeHash, FIXTURE_TREE_HASH, 'dir pack');
     });
@@ -390,7 +390,7 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
         }),
       );
       let report = await verifyLinks({
-        realmName: 'r',
+        depotName: 'r',
         storeDir,
         deck: 'x/probe',
         deckDir,
@@ -412,7 +412,7 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
         }),
       );
       let report = await verifyLinks({
-        realmName: 'r',
+        depotName: 'r',
         storeDir,
         deck: 'x/probe',
         deckDir,
@@ -440,7 +440,7 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
         }),
       );
       let report = await verifyLinks({
-        realmName: 'r',
+        depotName: 'r',
         storeDir,
         deck: 'x/probe',
         deckDir,

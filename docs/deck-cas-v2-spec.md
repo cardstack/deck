@@ -1,5 +1,11 @@
 # Deck CAS v2: blob store, verified links, signatures on treeHash
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 > **HISTORICAL (2026-08-08).** Superseded by [deck-laws.md](deck-laws.md) and
 > the executable contract in [packages/conformance](../packages/conformance).
 > Do not implement from this document — §9 records where measurement
@@ -247,7 +253,7 @@ Under `deck.packages[<name>]` and/or `deck.dependencies` (new, additive):
     "packages": {
       "app": {
         "version": "1.0.0",
-        "entry": "$REALM/app.js"
+        "entry": "$DECK/app.js"
       }
     },
     "dependencies": {
@@ -264,7 +270,7 @@ Under `deck.packages[<name>]` and/or `deck.dependencies` (new, additive):
         "canonical": "https://esm.sh/three@0.160.0",
         "treeHash": { "spec": "tree-hash-v1", "hash": "<64 hex>" },
         "vendoredFrom": "https://esm.sh/three@0.160.0",
-        "local": "$REALM/vendor/three/"
+        "local": "$DECK/vendor/three/"
       }
     }
   }
@@ -276,7 +282,7 @@ Rules:
 1. Every `imports` / `scopes` value that is absolute `http(s):` OR points at
    another package's sealed URL MUST have a matching `deck.dependencies`
    entry (by bare specifier key), **or** publish/lock fails.
-2. Local `$REALM/<path>/` values that are not vendored carriages need no
+2. Local `$DECK/<path>/` values that are not vendored carriages need no
    dependency record (they are this tree).
 3. `mode: "reference"` — bytes are not in this tree; fetch+verify on lock,
    intake, and first serve-to-cache if the server mirrors.

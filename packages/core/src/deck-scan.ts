@@ -2,9 +2,9 @@ import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { IMPORT_MAP_PATH } from './import-map.ts';
 
-// Finding the decks in a realm. The rule is the layout itself: a directory
+// Finding the decks in a depot. The rule is the layout itself: a directory
 // two levels down holding an importmap.json IS a deck, addressed at
-// `/<realm>/<publisher>/<package>/`. Nothing registers; nothing is
+// `/<depot>/<publisher>/<package>/`. Nothing registers; nothing is
 // configured.
 
 export interface DeckRef {
@@ -17,11 +17,11 @@ export interface DeckRef {
 
 const SEGMENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-export async function discoverDecks(realmDir: string): Promise<DeckRef[]> {
+export async function discoverDecks(depotDir: string): Promise<DeckRef[]> {
   let decks: DeckRef[] = [];
-  for (let publisher of await directoriesIn(realmDir)) {
-    for (let name of await directoriesIn(join(realmDir, publisher))) {
-      let dir = join(realmDir, publisher, name);
+  for (let publisher of await directoriesIn(depotDir)) {
+    for (let name of await directoriesIn(join(depotDir, publisher))) {
+      let dir = join(depotDir, publisher, name);
       if (!(await isFile(join(dir, IMPORT_MAP_PATH)))) {
         continue;
       }

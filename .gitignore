@@ -2,10 +2,10 @@
 *.log
 .DS_Store
 .deck/
-examples/*/realm/app/viewer/build.json
-examples/*/realm/app/viewer/states.json
-examples/*/realm/app/library/shelf.json
-# `deck fork` WRITES these into the realm: they are demo output, not source.
-examples/contribute-to-codelist/realm/ana/
-examples/contribute-to-codelist/realm/kim/
+examples/*/depot/app/viewer/build.json
+examples/*/depot/app/viewer/states.json
+examples/*/depot/app/library/shelf.json
+# `deck fork` WRITES these into the depot: they are demo output, not source.
+examples/contribute-to-codelist/depot/ana/
+examples/contribute-to-codelist/depot/kim/
 node_modules/

@@ -9,12 +9,12 @@ import { forkDeck } from '@deck/core/fork';
 import { packFromDir } from '@deck/core/pack';
 import { publishToStore } from '@deck/core/store';
 import { createDeckServer } from '../src/server.ts';
-import { storeDirFor, type RealmMount } from '../src/realm.ts';
+import { storeDirFor, type DepotMount } from '../src/depot.ts';
 import { rebasePass, startRebaseDaemon } from '../src/rebase-daemon.ts';
 
 let root: string;
-let realmDir: string;
-let realm: RealmMount;
+let depotDir: string;
+let depot: DepotMount;
 let server: Server;
 let origin: string;
 
@@ -27,7 +27,7 @@ async function writeDeck(
   files: Record<string, string>,
   map: Record<string, unknown>,
 ): Promise<void> {
-  let dir = join(realmDir, ...name.split('/'));
+  let dir = join(depotDir, ...name.split('/'));
   await mkdir(dir, { recursive: true });
   await writeFile(
     join(dir, 'importmap.json'),
@@ -40,10 +40,10 @@ async function writeDeck(
 
 async function publish(name: string, version: string, tag = 'latest') {
   await publishToStore(
-    realm.storeDir,
+    depot.storeDir,
     name,
     version,
-    await packFromDir(join(realmDir, ...name.split('/'))),
+    await packFromDir(join(depotDir, ...name.split('/'))),
     { tag },
   );
 }
@@ -51,8 +51,8 @@ async function publish(name: string, version: string, tag = 'latest') {
 module('offers, rebase, and try-by-URL', function (hooks) {
   hooks.beforeEach(async function () {
     root = await mkdtemp(join(tmpdir(), 'deck-offers-'));
-    realmDir = join(root, 'site');
-    realm = { name: 'site', dir: realmDir, storeDir: storeDirFor(realmDir) };
+    depotDir = join(root, 'site');
+    depot = { name: 'site', dir: depotDir, storeDir: storeDirFor(depotDir) };
     await writeDeck(
       'acme/palette',
       {
@@ -62,7 +62,7 @@ module('offers, rebase, and try-by-URL', function (hooks) {
       {
         deck: {
           packages: {
-            palette: { version: '1.0.0', entry: '$REALM/palette.js' },
+            palette: { version: '1.0.0', entry: '$DECK/palette.js' },
           },
         },
       },
@@ -77,12 +77,12 @@ module('offers, rebase, and try-by-URL', function (hooks) {
           'acme/palette/': '/site/acme/palette@1.0.0/',
         },
         deck: {
-          packages: { app: { version: '0.1.0', entry: '$REALM/app.js' } },
+          packages: { app: { version: '0.1.0', entry: '$DECK/app.js' } },
           dependencies: { 'acme/palette': '^1.0.0' },
         },
       },
     );
-    server = createDeckServer({ realms: [realm] });
+    server = createDeckServer({ depots: [depot] });
     await new Promise<void>((resolve) => server.listen(0, resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -96,8 +96,8 @@ module('offers, rebase, and try-by-URL', function (hooks) {
 
   async function forkPalette() {
     await forkDeck({
-      realmDir,
-      storeDir: realm.storeDir,
+      depotDir,
+      storeDir: depot.storeDir,
       from: { publisher: 'acme', package: 'palette', spec: '1.0.0' },
       to: { publisher: 'you', package: 'palette' },
       actor: '@chris:boxel.ai',
@@ -122,7 +122,7 @@ module('offers, rebase, and try-by-URL', function (hooks) {
   test('try-by-URL swaps ONE specifier for this request only', async function (assert) {
     await forkPalette();
     await writeFile(
-      join(realmDir, 'you', 'palette', 'palette.js'),
+      join(depotDir, 'you', 'palette', 'palette.js'),
       "export const colors = ['a', 'b', 'c', 'd'];\n",
     );
 
@@ -155,7 +155,7 @@ module('offers, rebase, and try-by-URL', function (hooks) {
 
     // The app's own tree is untouched by any of this.
     let map = JSON.parse(
-      await readFile(join(realmDir, 'you', 'app', 'importmap.json'), 'utf8'),
+      await readFile(join(depotDir, 'you', 'app', 'importmap.json'), 'utf8'),
     );
     assert.strictEqual(
       map.imports['acme/palette'],
@@ -165,7 +165,7 @@ module('offers, rebase, and try-by-URL', function (hooks) {
 
   test('a version override needs no fork at all', async function (assert) {
     await writeFile(
-      join(realmDir, 'acme', 'palette', 'palette.js'),
+      join(depotDir, 'acme', 'palette', 'palette.js'),
       "export const colors = ['red', 'teal', 'gold'];\n",
     );
     await writeDeck(
@@ -177,7 +177,7 @@ module('offers, rebase, and try-by-URL', function (hooks) {
       {
         deck: {
           packages: {
-            palette: { version: '1.1.0', entry: '$REALM/palette.js' },
+            palette: { version: '1.1.0', entry: '$DECK/palette.js' },
           },
         },
       },
@@ -204,7 +204,7 @@ module('offers, rebase, and try-by-URL', function (hooks) {
       {
         deck: {
           packages: {
-            palette: { version: '1.1.0', entry: '$REALM/palette.js' },
+            palette: { version: '1.1.0', entry: '$DECK/palette.js' },
           },
         },
       },
@@ -212,14 +212,14 @@ module('offers, rebase, and try-by-URL', function (hooks) {
     await publish('acme/palette', '1.1.0');
     // The app imports it as `palette`, aliased to the acme/palette deck.
     await writeFile(
-      join(realmDir, 'you', 'app', 'importmap.json'),
+      join(depotDir, 'you', 'app', 'importmap.json'),
       JSON.stringify({
         imports: {
           palette: '/site/acme/palette@1.0.0/palette.js',
           'palette/': '/site/acme/palette@1.0.0/',
         },
         deck: {
-          packages: { app: { version: '0.1.0', entry: '$REALM/app.js' } },
+          packages: { app: { version: '0.1.0', entry: '$DECK/app.js' } },
           dependencies: { palette: 'acme/palette@1.0.0' },
         },
       }),
@@ -270,12 +270,12 @@ module('offers, rebase, and try-by-URL', function (hooks) {
     await forkPalette();
     // The proposal changes one file…
     await writeFile(
-      join(realmDir, 'you', 'palette', 'palette.js'),
+      join(depotDir, 'you', 'palette', 'palette.js'),
       "export const colors = ['a', 'b', 'c', 'd'];\n",
     );
     // …upstream changes a different one and releases.
     await writeFile(
-      join(realmDir, 'acme', 'palette', 'notes.md'),
+      join(depotDir, 'acme', 'palette', 'notes.md'),
       'one\nTWO\nthree\n',
     );
     await writeDeck(
@@ -287,38 +287,38 @@ module('offers, rebase, and try-by-URL', function (hooks) {
       {
         deck: {
           packages: {
-            palette: { version: '1.1.0', entry: '$REALM/palette.js' },
+            palette: { version: '1.1.0', entry: '$DECK/palette.js' },
           },
         },
       },
     );
     await publish('acme/palette', '1.1.0');
 
-    let behind = await rebasePass({ realm, dryRun: true });
+    let behind = await rebasePass({ depot, dryRun: true });
     assert.strictEqual(behind.outcomes[0].state, 'rebased');
     assert.false(behind.outcomes[0].applied, 'a dry run writes nothing');
 
-    let daemon = startRebaseDaemon({ realm, intervalMs: 60_000 });
+    let daemon = startRebaseDaemon({ depot, intervalMs: 60_000 });
     let pass = await daemon.pass();
     daemon.close();
     assert.strictEqual(pass.rebased, 1);
     assert.strictEqual(pass.conflicted, 0);
     assert.strictEqual(
       (
-        await readFile(join(realmDir, 'you', 'palette', 'notes.md'))
+        await readFile(join(depotDir, 'you', 'palette', 'notes.md'))
       ).toString(),
       'one\nTWO\nthree\n',
       "the proposal absorbed upstream's change without the contributor doing anything",
     );
     assert.strictEqual(
       (
-        await readFile(join(realmDir, 'you', 'palette', 'palette.js'))
+        await readFile(join(depotDir, 'you', 'palette', 'palette.js'))
       ).toString(),
       "export const colors = ['a', 'b', 'c', 'd'];\n",
       'and kept its own',
     );
 
-    let settled = await rebasePass({ realm, dryRun: true });
+    let settled = await rebasePass({ depot, dryRun: true });
     assert.strictEqual(
       settled.outcomes[0].state,
       'current',
@@ -329,7 +329,7 @@ module('offers, rebase, and try-by-URL', function (hooks) {
   test('a conflicted proposal is reported, never written', async function (assert) {
     await forkPalette();
     await writeFile(
-      join(realmDir, 'you', 'palette', 'notes.md'),
+      join(depotDir, 'you', 'palette', 'notes.md'),
       'one\nMINE\nthree\n',
     );
     await writeDeck(
@@ -341,20 +341,20 @@ module('offers, rebase, and try-by-URL', function (hooks) {
       {
         deck: {
           packages: {
-            palette: { version: '1.1.0', entry: '$REALM/palette.js' },
+            palette: { version: '1.1.0', entry: '$DECK/palette.js' },
           },
         },
       },
     );
     await publish('acme/palette', '1.1.0');
 
-    let pass = await rebasePass({ realm });
+    let pass = await rebasePass({ depot });
     assert.strictEqual(pass.conflicted, 1);
     assert.strictEqual(pass.rebased, 0);
     assert.deepEqual(pass.outcomes[0].conflicts, ['notes.md']);
     assert.strictEqual(
       (
-        await readFile(join(realmDir, 'you', 'palette', 'notes.md'))
+        await readFile(join(depotDir, 'you', 'palette', 'notes.md'))
       ).toString(),
       'one\nMINE\nthree\n',
       'a machine never damages a contributor\'s work',

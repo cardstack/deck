@@ -1,5 +1,11 @@
 # Deck ⇄ Pack equivalence: the matrix
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Written 2026-08-07 from Chris's design direction: **deck and pack
 must be as much the same as possible.** A pack is a zipped-up deck.
 The packlist is the decklist plus transport facts. Dependencies can
@@ -61,9 +67,9 @@ The three ways a deck or pack can carry a dependency:
 
 | Mode | Meaning | What the map value looks like |
 | --- | --- | --- |
-| local | the dep is part of this deck | `$REALM/<path>/` |
+| local | the dep is part of this deck | `$DECK/<path>/` |
 | **reference** | recipient fetches it from a proven web deck | `https://.../@place/pub/name@ver/` (+ expected treeHash) |
-| **vendored** | the bytes ride inside, identity preserved | `$REALM/<vendor-path>/` or `$REALM/<pack>!/` — PLUS a record of the canonical identity |
+| **vendored** | the bytes ride inside, identity preserved | `$DECK/<vendor-path>/` or `$DECK/<pack>!/` — PLUS a record of the canonical identity |
 
 The insight that keeps deck and pack the same: **the carriage mode
 IS the kind of value in the import map.** A web URL is a reference.
@@ -153,7 +159,7 @@ The cases, concretely:
   file, and the normal transpile/serve pipeline continues. Works
   identically in the live tree and at a sealed version.
 - **Local root alias**: the import map hides the mechanics:
-  `"@money/": "$REALM/vendor/money.pack.zip!/"` — consumers write
+  `"@money/": "$DECK/vendor/money.pack.zip!/"` — consumers write
   `@money/accounting/account` and never see the archive. Flipping
   this ONE VALUE between the `!/` form and a web URL is the
   vendor/unvendor toggle for the whole dependency.

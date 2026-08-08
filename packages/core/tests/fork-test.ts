@@ -8,24 +8,24 @@ import { pack, packFromDir } from '../src/pack.ts';
 import { publishToStore, readStoreMeta } from '../src/store.ts';
 import { treeHashFromDir } from '../src/tree-hash.ts';
 
-let realmDir: string;
+let depotDir: string;
 let storeDir: string;
 
 module('fork: change someone else\'s deck without touching theirs', function (
   hooks,
 ) {
   hooks.beforeEach(async function () {
-    realmDir = join(await mkdtemp(join(tmpdir(), 'deck-fork-')), 'demo');
-    storeDir = join(realmDir, '.deck', 'store');
-    await mkdir(join(realmDir, 'acme', 'palette', 'util'), { recursive: true });
+    depotDir = join(await mkdtemp(join(tmpdir(), 'deck-fork-')), 'demo');
+    storeDir = join(depotDir, '.deck', 'store');
+    await mkdir(join(depotDir, 'acme', 'palette', 'util'), { recursive: true });
     await writeFile(
-      join(realmDir, 'acme', 'palette', 'importmap.json'),
+      join(depotDir, 'acme', 'palette', 'importmap.json'),
       JSON.stringify(
         {
           imports: {},
           deck: {
             packages: {
-              palette: { version: '1.0.0', entry: '$REALM/palette.js' },
+              palette: { version: '1.0.0', entry: '$DECK/palette.js' },
             },
           },
         },
@@ -34,22 +34,22 @@ module('fork: change someone else\'s deck without touching theirs', function (
       ) + '\n',
     );
     await writeFile(
-      join(realmDir, 'acme', 'palette', 'palette.js'),
+      join(depotDir, 'acme', 'palette', 'palette.js'),
       'export const colors = 3;\n',
     );
     await writeFile(
-      join(realmDir, 'acme', 'palette', 'util', 'mix.js'),
+      join(depotDir, 'acme', 'palette', 'util', 'mix.js'),
       'export const mix = 1;\n',
     );
   });
 
   hooks.afterEach(async function () {
-    await rm(join(realmDir, '..'), { recursive: true, force: true });
+    await rm(join(depotDir, '..'), { recursive: true, force: true });
   });
 
   test('forking live copies the tree into YOUR scope, whole', async function (assert) {
     let result = await forkDeck({
-      realmDir,
+      depotDir,
       storeDir,
       from: { publisher: 'acme', package: 'palette' },
       to: { publisher: 'you', package: 'palette' },
@@ -60,11 +60,11 @@ module('fork: change someone else\'s deck without touching theirs', function (
       'util/mix.js',
     ]);
     assert.strictEqual(
-      (await readFile(join(realmDir, 'you', 'palette', 'palette.js'))).toString(),
+      (await readFile(join(depotDir, 'you', 'palette', 'palette.js'))).toString(),
       'export const colors = 3;\n',
     );
     let map = JSON.parse(
-      await readFile(join(realmDir, 'you', 'palette', 'importmap.json'), 'utf8'),
+      await readFile(join(depotDir, 'you', 'palette', 'importmap.json'), 'utf8'),
     );
     assert.strictEqual(
       map.deck.packages.palette.forkedFrom.package,
@@ -94,18 +94,18 @@ module('fork: change someone else\'s deck without touching theirs', function (
       storeDir,
       'acme/palette',
       '1.0.0',
-      await packFromDir(join(realmDir, 'acme', 'palette')),
+      await packFromDir(join(depotDir, 'acme', 'palette')),
       { tag: 'latest' },
     );
     await forkDeck({
-      realmDir,
+      depotDir,
       storeDir,
       from: { publisher: 'acme', package: 'palette', spec: 'latest' },
       to: { publisher: 'you', package: 'palette' },
     });
     // The rewritten map records the fork, so the trees differ by that line…
-    let source = await treeHashFromDir(join(realmDir, 'acme', 'palette'));
-    let fork = await treeHashFromDir(join(realmDir, 'you', 'palette'));
+    let source = await treeHashFromDir(join(depotDir, 'acme', 'palette'));
+    let fork = await treeHashFromDir(join(depotDir, 'you', 'palette'));
     assert.notStrictEqual(
       fork.treeHash,
       source.treeHash,
@@ -114,7 +114,7 @@ module('fork: change someone else\'s deck without touching theirs', function (
 
     // …but publishing an IDENTICAL tree under the new name still writes no
     // new bytes, which is the property that makes forking cheap.
-    let bytes = await packFromDir(join(realmDir, 'acme', 'palette'));
+    let bytes = await packFromDir(join(depotDir, 'acme', 'palette'));
     await publishToStore(storeDir, 'you/palette', '1.0.0', bytes);
     let acme = await readStoreMeta(storeDir, 'acme/palette');
     let mine = await readStoreMeta(storeDir, 'you/palette');
@@ -130,24 +130,24 @@ module('fork: change someone else\'s deck without touching theirs', function (
       storeDir,
       'acme/palette',
       '1.0.0',
-      await packFromDir(join(realmDir, 'acme', 'palette')),
+      await packFromDir(join(depotDir, 'acme', 'palette')),
       { tag: 'latest' },
     );
     await forkDeck({
-      realmDir,
+      depotDir,
       storeDir,
       from: { publisher: 'acme', package: 'palette', spec: '1.0.0' },
       to: { publisher: 'you', package: 'palette' },
     });
     await writeFile(
-      join(realmDir, 'you', 'palette', 'palette.js'),
+      join(depotDir, 'you', 'palette', 'palette.js'),
       'export const colors = 99;\n',
     );
     await publishToStore(
       storeDir,
       'you/palette',
       '1.0.0-dev.1',
-      await packFromDir(join(realmDir, 'you', 'palette')),
+      await packFromDir(join(depotDir, 'you', 'palette')),
       { tag: 'dev' },
     );
 
@@ -164,14 +164,14 @@ module('fork: change someone else\'s deck without touching theirs', function (
 
   test('renaming on fork moves the package key with it', async function (assert) {
     await forkDeck({
-      realmDir,
+      depotDir,
       storeDir,
       from: { publisher: 'acme', package: 'palette' },
       to: { publisher: 'you', package: 'palette-hdr' },
     });
     let map = JSON.parse(
       await readFile(
-        join(realmDir, 'you', 'palette-hdr', 'importmap.json'),
+        join(depotDir, 'you', 'palette-hdr', 'importmap.json'),
         'utf8',
       ),
     );
@@ -181,14 +181,14 @@ module('fork: change someone else\'s deck without touching theirs', function (
 
   test('forking onto an existing deck refuses unless told twice', async function (assert) {
     await forkDeck({
-      realmDir,
+      depotDir,
       storeDir,
       from: { publisher: 'acme', package: 'palette' },
       to: { publisher: 'you', package: 'palette' },
     });
     await assert.rejects(
       forkDeck({
-        realmDir,
+        depotDir,
         storeDir,
         from: { publisher: 'acme', package: 'palette' },
         to: { publisher: 'you', package: 'palette' },
@@ -196,11 +196,11 @@ module('fork: change someone else\'s deck without touching theirs', function (
       /already exists/,
     );
     await writeFile(
-      join(realmDir, 'you', 'palette', 'palette.js'),
+      join(depotDir, 'you', 'palette', 'palette.js'),
       'mine\n',
     );
     let forced = await forkDeck({
-      realmDir,
+      depotDir,
       storeDir,
       from: { publisher: 'acme', package: 'palette' },
       to: { publisher: 'you', package: 'palette' },
@@ -208,7 +208,7 @@ module('fork: change someone else\'s deck without touching theirs', function (
     });
     assert.strictEqual(forced.files.length, 3);
     assert.strictEqual(
-      (await readFile(join(realmDir, 'you', 'palette', 'palette.js'))).toString(),
+      (await readFile(join(depotDir, 'you', 'palette', 'palette.js'))).toString(),
       'export const colors = 3;\n',
     );
   });
@@ -216,7 +216,7 @@ module('fork: change someone else\'s deck without touching theirs', function (
   test('a fork of a version that does not exist is refused', async function (assert) {
     await assert.rejects(
       forkDeck({
-        realmDir,
+        depotDir,
         storeDir,
         from: { publisher: 'acme', package: 'palette', spec: '9.9.9' },
         to: { publisher: 'you', package: 'palette' },
@@ -234,7 +234,7 @@ module('fork: change someone else\'s deck without touching theirs', function (
     );
     await assert.rejects(
       forkDeck({
-        realmDir,
+        depotDir,
         storeDir,
         from: { publisher: 'acme', package: 'palette', spec: '9.9.9' },
         to: { publisher: 'you', package: 'palette' },

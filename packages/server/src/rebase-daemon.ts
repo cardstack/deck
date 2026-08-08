@@ -6,7 +6,7 @@ import {
   type RebasePlan,
   type RebaseState,
 } from '@deck/core/offer';
-import type { RealmMount } from './realm.ts';
+import type { DepotMount } from './depot.ts';
 
 // The rebase daemon.
 //
@@ -44,7 +44,7 @@ export interface RebasePassResult {
 }
 
 export interface RebaseDaemonOptions {
-  realm: RealmMount;
+  depot: DepotMount;
   // Which upstream state proposals chase. Default: the release if there is
   // one, else the freshest seal.
   onto?: string;
@@ -58,14 +58,14 @@ export interface RebaseDaemonOptions {
 export async function rebasePass(
   options: Omit<RebaseDaemonOptions, 'intervalMs' | 'onPass'>,
 ): Promise<RebasePassResult> {
-  let { realm, onto, dryRun } = options;
+  let { depot, onto, dryRun } = options;
   let outcomes: RebaseOutcome[] = [];
-  for (let offer of await discoverOffers(realm.dir)) {
+  for (let offer of await discoverOffers(depot.dir)) {
     let plan: RebasePlan;
     try {
       plan = await planRebase({
-        realmDir: realm.dir,
-        storeDir: realm.storeDir,
+        depotDir: depot.dir,
+        storeDir: depot.storeDir,
         offer,
         onto,
       });

@@ -30,14 +30,14 @@ import { pack, unpack } from '@deck/core/pack';
 import { publishToStore, inspectStore } from '@deck/core/store';
 import { vendorFromNpmSource } from '@deck/core/vendor-npm';
 import { createDeckServer } from '@deck/server/server';
-import { storeDirFor } from '@deck/server/realm';
+import { storeDirFor } from '@deck/server/depot';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8791);
-const REALM = 'site';
-const realmDir = join(here, 'realm');
-const storeDir = storeDirFor(realmDir);
+const DEPOT = 'site';
+const depotDir = join(here, 'depot');
+const storeDir = storeDirFor(depotDir);
 const SPEC = 'leaflet@1.9.4';
 const VERSION = '1.9.4';
 const FORK_VERSION = '1.9.4-mine.0';
@@ -54,7 +54,7 @@ console.log(`1) vendoring ${SPEC} from npm source…`);
 let vendored = await vendorFromNpmSource({
   spec: SPEC,
   // The cooldown gate is off here only because a demo should not fail on the
-  // day someone runs it. A realm sets a real minimumReleaseAge; see L11.
+  // day someone runs it. A depot sets a real minimumReleaseAge; see L11.
   policy: { minimumReleaseAge: 0 },
 });
 console.log(`   ${vendored.modules.length} modules, ${vendored.externals.length} externals`);
@@ -71,7 +71,7 @@ let mapBytes = Buffer.from(
         packages: {
           leaflet: {
             version: VERSION,
-            entry: `$REALM/${vendored.entryPath}`,
+            entry: `$DECK/${vendored.entryPath}`,
             vendoredFrom: vendored.vendoredFrom,
           },
         },
@@ -135,7 +135,7 @@ let forkFiles = [...opened.files.entries()].map(([path, bytes]) =>
                   packages: {
                     leaflet: {
                       version: FORK_VERSION,
-                      entry: `$REALM/${vendored.entryPath}`,
+                      entry: `$DECK/${vendored.entryPath}`,
                       // Provenance survives the fork: this is still Leaflet,
                       // and it still says where it came from. What changed is
                       // recorded beside it, not instead of it.
@@ -179,17 +179,17 @@ console.log(`   other ${files - 1} are the same bytes, so they are stored once.`
 // 4. Serve both. The page mounts two maps from two different decks.
 // ---------------------------------------------------------------------------
 
-// The shared `ui/pills` deck, published into THIS realm's store from
+// The shared `ui/pills` deck, published into THIS depot's store from
 // examples/shared. Five demos, five stores, one source tree — and because
 // identity is the hash of the tree, the treeHash below is the same in all
 // five. Then the viewer's decklist is locked, so the pins that resolve
 // `ui/pills` are in the tree where you can read them.
 let [pills] = await publishShared(storeDir);
 let viewerLock = await lockAndWrite({
-  realmDir,
-  realmName: REALM,
+  depotDir,
+  depotName: DEPOT,
   storeDir,
-  deckDir: join(realmDir, 'app', 'viewer'),
+  deckDir: join(depotDir, 'app', 'viewer'),
 });
 console.log(`\n   shared: ${pills.name}@${pills.version} \u00b7 ${pills.treeHash.slice(0, 12)}\u2026 (same tree in every demo)`);
 if (viewerLock.changed) {
@@ -197,10 +197,10 @@ if (viewerLock.changed) {
 }
 
 await writeFile(
-  join(realmDir, 'app', 'viewer', 'build.json'),
+  join(depotDir, 'app', 'viewer', 'build.json'),
   JSON.stringify(
     {
-      realm: REALM,
+      depot: DEPOT,
       entry: vendored.entryPath,
       changed: TARGET,
       modules: opened.files.size - 1,
@@ -222,17 +222,17 @@ await writeFile(
 );
 
 let server = createDeckServer({
-  realms: [{ name: REALM, dir: realmDir, storeDir }],
+  depots: [{ name: DEPOT, dir: depotDir, storeDir }],
   fallback: (req, res) => {
-    res.writeHead(302, { location: `/${REALM}/app/viewer/index.html` });
+    res.writeHead(302, { location: `/${DEPOT}/app/viewer/index.html` });
     res.end();
   },
 });
 server.listen(PORT, () => {
   console.log(`\n4) serving both versions side by side\n`);
   console.log(`      http://localhost:${PORT}/\n`);
-  console.log(`      /${REALM}/lib/leaflet@${VERSION}/${vendored.entryPath}`);
-  console.log(`      /${REALM}/me/leaflet@${FORK_VERSION}/${vendored.entryPath}`);
+  console.log(`      /${DEPOT}/lib/leaflet@${VERSION}/${vendored.entryPath}`);
+  console.log(`      /${DEPOT}/me/leaflet@${FORK_VERSION}/${vendored.entryPath}`);
   console.log(`\n   Both maps draw vector layers only — no tile server, so`);
   console.log(`   nothing on the page reaches the network at runtime.\n`);
 });

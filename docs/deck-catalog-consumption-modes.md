@@ -1,5 +1,11 @@
 # Catalog Consumption Modes: remix, install, use, import, browse, try
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Companion to `deck-semver-migration-spec.md` (§0a naming, §4 pinning),
 `deck-github-mirror-analysis.md` (catalog layout), and the use-case
 ladder. Written 2026-08-07. Today's app supports exactly one verb —

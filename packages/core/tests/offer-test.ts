@@ -13,7 +13,7 @@ import {
 import { packFromDir } from '../src/pack.ts';
 import { publishToStore, readStoreMeta } from '../src/store.ts';
 
-let realmDir: string;
+let depotDir: string;
 let storeDir: string;
 
 const UPSTREAM = 'acme/palette';
@@ -23,19 +23,19 @@ async function publishUpstream(version: string, tag = 'latest') {
     storeDir,
     UPSTREAM,
     version,
-    await packFromDir(join(realmDir, 'acme', 'palette')),
+    await packFromDir(join(depotDir, 'acme', 'palette')),
     { tag },
   );
 }
 
 async function writeUpstream(files: Record<string, string>, version: string) {
   await writeFile(
-    join(realmDir, 'acme', 'palette', 'importmap.json'),
+    join(depotDir, 'acme', 'palette', 'importmap.json'),
     JSON.stringify(
       {
         deck: {
           packages: {
-            palette: { version, entry: '$REALM/palette.js' },
+            palette: { version, entry: '$DECK/palette.js' },
           },
         },
       },
@@ -44,20 +44,20 @@ async function writeUpstream(files: Record<string, string>, version: string) {
     ) + '\n',
   );
   for (let [path, text] of Object.entries(files)) {
-    await writeFile(join(realmDir, 'acme', 'palette', path), text);
+    await writeFile(join(depotDir, 'acme', 'palette', path), text);
   }
 }
 
 async function offerFor(name: string) {
-  let offers = await discoverOffers(realmDir);
+  let offers = await discoverOffers(depotDir);
   return offers.find((offer) => offer.name === name)!;
 }
 
 module('offers: a fork that remembers where it came from', function (hooks) {
   hooks.beforeEach(async function () {
-    realmDir = join(await mkdtemp(join(tmpdir(), 'deck-offer-')), 'demo');
-    storeDir = join(realmDir, '.deck', 'store');
-    await mkdir(join(realmDir, 'acme', 'palette'), { recursive: true });
+    depotDir = join(await mkdtemp(join(tmpdir(), 'deck-offer-')), 'demo');
+    storeDir = join(depotDir, '.deck', 'store');
+    await mkdir(join(depotDir, 'acme', 'palette'), { recursive: true });
     await writeUpstream(
       {
         'palette.js': 'export const colors = 3;\n',
@@ -69,18 +69,18 @@ module('offers: a fork that remembers where it came from', function (hooks) {
   });
 
   hooks.afterEach(async function () {
-    await rm(join(realmDir, '..'), { recursive: true, force: true });
+    await rm(join(depotDir, '..'), { recursive: true, force: true });
   });
 
   test('a fork is discoverable as an offer, with an exact base', async function (assert) {
     let result = await forkDeck({
-      realmDir,
+      depotDir,
       storeDir,
       from: { publisher: 'acme', package: 'palette', spec: '1.0.0' },
       to: { publisher: 'you', package: 'palette' },
       actor: '@chris:boxel.ai',
     });
-    let offers = await discoverOffers(realmDir);
+    let offers = await discoverOffers(depotDir);
     assert.strictEqual(offers.length, 1, 'only the fork is an offer');
     assert.strictEqual(offers[0].name, 'you/palette');
     assert.strictEqual(offers[0].forkedFrom.package, UPSTREAM);
@@ -95,13 +95,13 @@ module('offers: a fork that remembers where it came from', function (hooks) {
 
   test('nothing published upstream since the base means nothing to do', async function (assert) {
     await forkDeck({
-      realmDir,
+      depotDir,
       storeDir,
       from: { publisher: 'acme', package: 'palette', spec: '1.0.0' },
       to: { publisher: 'you', package: 'palette' },
     });
     let plan = await planRebase({
-      realmDir,
+      depotDir,
       storeDir,
       offer: await offerFor('you/palette'),
     });
@@ -111,14 +111,14 @@ module('offers: a fork that remembers where it came from', function (hooks) {
 
   test('upstream moves, the proposal absorbs it, and the base moves with it', async function (assert) {
     await forkDeck({
-      realmDir,
+      depotDir,
       storeDir,
       from: { publisher: 'acme', package: 'palette', spec: '1.0.0' },
       to: { publisher: 'you', package: 'palette' },
     });
     // The proposal edits one file…
     await writeFile(
-      join(realmDir, 'you', 'palette', 'palette.js'),
+      join(depotDir, 'you', 'palette', 'palette.js'),
       'export const colors = 8;\n',
     );
     // …while upstream edits a different one and releases.
@@ -132,7 +132,7 @@ module('offers: a fork that remembers where it came from', function (hooks) {
     await publishUpstream('1.1.0');
 
     let plan = await planRebase({
-      realmDir,
+      depotDir,
       storeDir,
       offer: await offerFor('you/palette'),
     });
@@ -144,14 +144,14 @@ module('offers: a fork that remembers where it came from', function (hooks) {
     assert.true(applied.changed);
     assert.strictEqual(
       (
-        await readFile(join(realmDir, 'you', 'palette', 'notes.md'))
+        await readFile(join(depotDir, 'you', 'palette', 'notes.md'))
       ).toString(),
       'line one\nline TWO\nline three\n',
       "upstream's change arrived",
     );
     assert.strictEqual(
       (
-        await readFile(join(realmDir, 'you', 'palette', 'palette.js'))
+        await readFile(join(depotDir, 'you', 'palette', 'palette.js'))
       ).toString(),
       'export const colors = 8;\n',
       'and the proposal kept its own',
@@ -167,7 +167,7 @@ module('offers: a fork that remembers where it came from', function (hooks) {
     );
 
     let settled = await planRebase({
-      realmDir,
+      depotDir,
       storeDir,
       offer: after,
     });
@@ -176,13 +176,13 @@ module('offers: a fork that remembers where it came from', function (hooks) {
 
   test('a real conflict is reported and NOTHING is written', async function (assert) {
     await forkDeck({
-      realmDir,
+      depotDir,
       storeDir,
       from: { publisher: 'acme', package: 'palette', spec: '1.0.0' },
       to: { publisher: 'you', package: 'palette' },
     });
     await writeFile(
-      join(realmDir, 'you', 'palette', 'notes.md'),
+      join(depotDir, 'you', 'palette', 'notes.md'),
       'line one\nMINE\nline three\n',
     );
     await writeUpstream(
@@ -195,7 +195,7 @@ module('offers: a fork that remembers where it came from', function (hooks) {
     await publishUpstream('1.1.0');
 
     let plan = await planRebase({
-      realmDir,
+      depotDir,
       storeDir,
       offer: await offerFor('you/palette'),
     });
@@ -205,7 +205,7 @@ module('offers: a fork that remembers where it came from', function (hooks) {
     await assert.rejects(applyRebase(plan), /cannot apply a conflicted/);
     assert.strictEqual(
       (
-        await readFile(join(realmDir, 'you', 'palette', 'notes.md'))
+        await readFile(join(depotDir, 'you', 'palette', 'notes.md'))
       ).toString(),
       'line one\nMINE\nline three\n',
       "the contributor's tree is untouched — the daemon never damages work",
@@ -213,16 +213,16 @@ module('offers: a fork that remembers where it came from', function (hooks) {
   });
 
   test('a base that is not in the store is unresolvable, and says why', async function (assert) {
-    await mkdir(join(realmDir, 'you', 'ghost'), { recursive: true });
+    await mkdir(join(depotDir, 'you', 'ghost'), { recursive: true });
     await writeFile(
-      join(realmDir, 'you', 'ghost', 'importmap.json'),
+      join(depotDir, 'you', 'ghost', 'importmap.json'),
       JSON.stringify(
         {
           deck: {
             packages: {
               ghost: {
                 version: '1.0.0',
-                entry: '$REALM/g.js',
+                entry: '$DECK/g.js',
                 forkedFrom: { package: UPSTREAM, treeHash: 'f'.repeat(64) },
               },
             },
@@ -238,7 +238,7 @@ module('offers: a fork that remembers where it came from', function (hooks) {
     );
     await publishUpstream('1.1.0');
     let plan = await planRebase({
-      realmDir,
+      depotDir,
       storeDir,
       offer: await offerFor('you/ghost'),
     });
@@ -248,7 +248,7 @@ module('offers: a fork that remembers where it came from', function (hooks) {
 
   test('--onto picks which upstream state to chase', async function (assert) {
     await forkDeck({
-      realmDir,
+      depotDir,
       storeDir,
       from: { publisher: 'acme', package: 'palette', spec: '1.0.0' },
       to: { publisher: 'you', package: 'palette' },
@@ -259,7 +259,7 @@ module('offers: a fork that remembers where it came from', function (hooks) {
     );
     await publishUpstream('1.1.0-dev.1', 'dev');
     let onLatest = await planRebase({
-      realmDir,
+      depotDir,
       storeDir,
       offer: await offerFor('you/palette'),
     });
@@ -269,7 +269,7 @@ module('offers: a fork that remembers where it came from', function (hooks) {
       'by default a proposal chases the RELEASE, not the dev line',
     );
     let onDev = await planRebase({
-      realmDir,
+      depotDir,
       storeDir,
       offer: await offerFor('you/palette'),
       onto: 'dev',
@@ -279,10 +279,10 @@ module('offers: a fork that remembers where it came from', function (hooks) {
 
   test('a plain deck with no base is not an offer', async function (assert) {
     let mapText = await readFile(
-      join(realmDir, 'acme', 'palette', 'importmap.json'),
+      join(depotDir, 'acme', 'palette', 'importmap.json'),
       'utf8',
     );
     assert.strictEqual(readForkedFrom(mapText, 'palette'), undefined);
-    assert.deepEqual(await discoverOffers(realmDir), []);
+    assert.deepEqual(await discoverOffers(depotDir), []);
   });
 });

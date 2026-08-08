@@ -6,7 +6,7 @@ pnpm demo
 ```
 
 One command, one URL, every demo. The hub starts each example as its own
-process on its own port — because each one really *is* a separate realm with
+process on its own port — because each one really *is* a separate depot with
 its own content-addressed store, and pretending otherwise would be the first
 lie — and serves a console that puts three things side by side for each:
 

@@ -61,10 +61,10 @@ export interface WatchOptions {
   // Tier-2 history. Absent = tier 1: the store is still the history, just
   // at published-state granularity.
   history?: HistoryBackend;
-  // Where the history repo lives. A realm seals as ONE tree, the way a
-  // realm server does, so several deck watchers inside a realm share the
-  // realm's repo; their paths are reported realm-relative. Defaults to the
-  // watched directory (a standalone deck is its own realm).
+  // Where the history repo lives. A depot seals as ONE tree, the way a
+  // realm server does, so several deck watchers inside a depot share the
+  // depot's repo; their paths are reported depot-relative. Defaults to the
+  // watched directory (a standalone deck is its own depot).
   historyDir?: string;
   onPublish?: (event: WatchPublishEvent) => void;
   // Fired as soon as a new treeHash is observed — before packing — so
@@ -99,7 +99,7 @@ export function watchAndPublish(options: WatchOptions): WatchController {
   // forever, with every pack swallowing the previous ones. Refuse it
   // outright rather than leave it as a footgun in a guide.
   // …unless it sits in a directory the tree hash ignores (`.deck`, `.jj`),
-  // which is exactly how a realm holds its own store without feeding itself.
+  // which is exactly how a depot holds its own store without feeding itself.
   let watchedRoot = resolve(dir);
   let storeRoot = resolve(storeDir);
   if (storeRoot === watchedRoot || storeRoot.startsWith(`${watchedRoot}/`)) {
@@ -115,7 +115,7 @@ export function watchAndPublish(options: WatchOptions): WatchController {
     }
   }
   let sealRoot = historyDir ? resolve(historyDir) : watchedRoot;
-  // Seal paths are reported relative to the repo, so a realm's log reads
+  // Seal paths are reported relative to the repo, so a depot's log reads
   // `chris/tier-maker/app.js` — the same path the URL uses.
   let sealPrefix = relative(sealRoot, watchedRoot);
   let timer: NodeJS.Timeout | undefined;

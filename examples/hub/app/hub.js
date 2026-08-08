@@ -74,7 +74,7 @@ function overview() {
       and a merge is a pure function of three content addresses.
     </p>
     <p class="body">
-      Each demo below is its own process, its own realm directory, and its own
+      Each demo below is its own process, its own depot directory, and its own
       content-addressed store. They are not sharing anything, which is why the
       numbers each one prints are its own.
     </p>
@@ -97,8 +97,8 @@ function overview() {
     </table>
     <p class="body small">
       The same module draws these in all five demos and in this page. The
-      realms publish it as a deck, <code>ui/pills@1.0.0</code>; the hub is not
-      a realm, so it serves the identical file at <code>/pills.js</code>. Same
+      depots publish it as a deck, <code>ui/pills@1.0.0</code>; the hub is not
+      a depot, so it serves the identical file at <code>/pills.js</code>. Same
       bytes, different carriage.
     </p>
 

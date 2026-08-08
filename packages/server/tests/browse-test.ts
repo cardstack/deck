@@ -8,11 +8,11 @@ import type { Server } from 'node:http';
 import { pack } from '@deck/core/pack';
 import { publishToStore } from '@deck/core/store';
 import { createDeckServer } from '../src/server.ts';
-import { storeDirFor, type RealmMount } from '../src/realm.ts';
+import { storeDirFor, type DepotMount } from '../src/depot.ts';
 
 let workDir: string;
 let storeDir: string;
-let realmDir: string;
+let depotDir: string;
 let liveDir: string;
 let server: Server;
 let origin: string;
@@ -20,16 +20,16 @@ let origin: string;
 module('deck browser API', function (hooks) {
   hooks.before(async function () {
     workDir = await mkdtemp(join(tmpdir(), 'deck-browse-test-'));
-    realmDir = join(workDir, 'demo');
-    storeDir = storeDirFor(realmDir);
-    liveDir = join(realmDir, 'acme', 'lib');
+    depotDir = join(workDir, 'demo');
+    storeDir = storeDirFor(depotDir);
+    liveDir = join(depotDir, 'acme', 'lib');
     await mkdir(liveDir, { recursive: true });
     await writeFile(
       join(liveDir, 'importmap.json'),
       JSON.stringify({
         imports: {},
         deck: {
-          packages: { lib: { version: '1.0.0', entry: '$REALM/index.js' } },
+          packages: { lib: { version: '1.0.0', entry: '$DECK/index.js' } },
         },
       }),
     );
@@ -45,7 +45,7 @@ module('deck browser API', function (hooks) {
             imports: {},
             deck: {
               packages: {
-                lib: { version: '1.0.0', entry: '$REALM/index.js' },
+                lib: { version: '1.0.0', entry: '$DECK/index.js' },
               },
             },
           }),
@@ -61,8 +61,8 @@ module('deck browser API', function (hooks) {
       tag: 'dev',
     });
 
-    let realm: RealmMount = { name: 'demo', dir: realmDir, storeDir };
-    server = createDeckServer({ realms: [realm] });
+    let depot: DepotMount = { name: 'demo', dir: depotDir, storeDir };
+    server = createDeckServer({ depots: [depot] });
     await new Promise<void>((resolve) => server.listen(0, resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -82,13 +82,13 @@ module('deck browser API', function (hooks) {
     assert.true(html.includes('/_packages'));
   });
 
-  test('GET /_packages lists realms, and their packages', async function (assert) {
+  test('GET /_packages lists depots, and their packages', async function (assert) {
     let res = await fetch(`${origin}/_packages`);
     assert.equal(res.status, 200);
     let body = await res.json();
     assert.equal(body.data.length, 1);
     assert.equal(body.data[0].name, 'demo');
-    assert.equal(body.data[0].type, 'realm');
+    assert.equal(body.data[0].type, 'depot');
     let pkg = body.data[0].packages[0];
     assert.equal(pkg.publisher, 'acme');
     assert.equal(pkg.name, 'lib');
@@ -103,7 +103,7 @@ module('deck browser API', function (hooks) {
     assert.equal(body.meta.history.historyd, false);
   });
 
-  test('GET /_browse/<realm> lists the decks that live there', async function (assert) {
+  test('GET /_browse/<depot> lists the decks that live there', async function (assert) {
     let res = await fetch(`${origin}/_browse/demo`);
     let listing = (await res.json()).data.attributes;
     assert.deepEqual(

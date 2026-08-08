@@ -6,7 +6,7 @@
 // text.
 //
 // `pill()` is the same module the demos publish as `ui/pills`; Node imports
-// it directly, the browser gets it from /pills.js, the realms serve it as a
+// it directly, the browser gets it from /pills.js, the depots serve it as a
 // deck. One definition of what a name means, three carriages.
 import { pill } from '../shared/ui/pills/pills.js';
 

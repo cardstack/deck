@@ -58,26 +58,26 @@ import {
 } from './live-events.ts';
 import { injectImportMap } from './inject-importmap.ts';
 import { rebasePass } from './rebase-daemon.ts';
-import { discoverDecks, type RealmMount } from './realm.ts';
+import { discoverDecks, type DepotMount } from './depot.ts';
 
-// The minimal Deck server: READ-ONLY serving of realms laid out on disk.
+// The minimal Deck server: READ-ONLY serving of depots laid out on disk.
 // All state changes happen through the CLI and the watcher (an agent
 // arranges state; distribution follows mechanically) — there is no write
 // endpoint here at all.
 //
-// The address space IS the disk layout (see realm.ts):
+// The address space IS the disk layout (see depot.ts):
 //
-//   /<realm>/<publisher>/<package>/<path>            live bytes, no-store
-//   /<realm>/<publisher>/<package>@<spec>/<path>     sealed, immutable
-//   /<realm>/_history/<changeId>/<path>              any sealed state
+//   /<depot>/<publisher>/<package>/<path>            live bytes, no-store
+//   /<depot>/<publisher>/<package>@<spec>/<path>     sealed, immutable
+//   /<depot>/_history/<changeId>/<path>              any sealed state
 //
 // A version-less URL is the working tree, the way a realm server serves a
-// realm file. Adding `@<version>` reads the same path out of a seal. The
-// realm's own machinery (`.deck`, `.jj`) is never servable.
+// depot file. Adding `@<version>` reads the same path out of a seal. The
+// depot's own machinery (`.deck`, `.jj`) is never servable.
 //
 // Reserved: a leading `_` on a path segment (`/_packages`, `/_browse`,
-// `/_live/*`, `/<realm>/_history`), matching the realm server's convention,
-// so no realm, publisher, or package can shadow an endpoint.
+// `/_live/*`, `/<depot>/_history`), matching the realm server's convention,
+// so no depot, publisher, or package can shadow an endpoint.
 //
 // Serving rules carried over from the protocol (and its unpkg/esm.sh
 // hardening):
@@ -97,25 +97,25 @@ import { discoverDecks, type RealmMount } from './realm.ts';
 // SEGMENT comes from preload.ts so the router and the closure walk cannot
 // disagree about what a name is.
 const SEALED_PATH = new RegExp(
-  `^/(?<realm>${SEGMENT})/(?<publisher>${SEGMENT})/(?<pkg>${SEGMENT})@(?<spec>[^/]+)(?<rest>/.*)?$`,
+  `^/(?<depot>${SEGMENT})/(?<publisher>${SEGMENT})/(?<pkg>${SEGMENT})@(?<spec>[^/]+)(?<rest>/.*)?$`,
 );
 const HISTORY_PATH = new RegExp(
-  `^/(?<realm>${SEGMENT})/_history(?:/(?<rev>[^/]+))?(?<rest>/.*)?$`,
+  `^/(?<depot>${SEGMENT})/_history(?:/(?<rev>[^/]+))?(?<rest>/.*)?$`,
 );
-const LIVE_PATH = new RegExp(`^/(?<realm>${SEGMENT})(?<rest>/.*)?$`);
+const LIVE_PATH = new RegExp(`^/(?<depot>${SEGMENT})(?<rest>/.*)?$`);
 const BROWSE_PATH = new RegExp(
-  `^/_browse/(?<realm>${SEGMENT})(?:/(?<publisher>${SEGMENT}))?(?:/(?<pkg>${SEGMENT})(?:@(?<spec>[^/]+))?)?(?<rest>/.*)?$`,
+  `^/_browse/(?<depot>${SEGMENT})(?:/(?<publisher>${SEGMENT}))?(?:/(?<pkg>${SEGMENT})(?:@(?<spec>[^/]+))?)?(?<rest>/.*)?$`,
 );
 const PACKAGES_INDEX = /^\/_packages\/?$/;
 const PACKAGES_PATH = new RegExp(
-  `^/_packages/(?<realm>${SEGMENT})/(?<publisher>${SEGMENT})/(?<pkg>${SEGMENT})$`,
+  `^/_packages/(?<depot>${SEGMENT})/(?<publisher>${SEGMENT})/(?<pkg>${SEGMENT})$`,
 );
-const OFFERS_PATH = new RegExp(`^/(?<realm>${SEGMENT})/_offers/?$`);
+const OFFERS_PATH = new RegExp(`^/(?<depot>${SEGMENT})/_offers/?$`);
 // L9: endorsements are addressed by TREE, not by package or version, because
 // that is what they are about — and it is what lets a fork of the same bytes
 // read the same answer (L10).
 const SIGNATURES_PATH = new RegExp(
-  `^/(?<realm>${SEGMENT})/_trees/(?<treeHash>[0-9a-f]{64})/signatures/?$`,
+  `^/(?<depot>${SEGMENT})/_trees/(?<treeHash>[0-9a-f]{64})/signatures/?$`,
 );
 const LIVE_EVENTS_PATH = '/_live/events';
 const LIVE_HMR_PATH = '/_live/hmr.js';
@@ -156,9 +156,9 @@ function splitAtVersion(value: string): [string, string | undefined] {
   return at <= 0 ? [value, undefined] : [value.slice(0, at), value.slice(at + 1)];
 }
 
-// Overrides may be written with or without the realm they are already in.
-function stripRealm(name: string, realm: string): string {
-  return name.startsWith(`${realm}/`) ? name.slice(realm.length + 1) : name;
+// Overrides may be written with or without the depot they are already in.
+function stripDepot(name: string, depot: string): string {
+  return name.startsWith(`${depot}/`) ? name.slice(depot.length + 1) : name;
 }
 
 function digestOf(bytes: Buffer): string {
@@ -174,9 +174,9 @@ function reprDigest(bytes: Buffer): string {
 }
 
 export interface DeckServerOptions {
-  // The realms this server mounts. Each is a directory on disk whose
+  // The depots this server mounts. Each is a directory on disk whose
   // contents ARE its URL space.
-  realms: RealmMount[];
+  depots: DepotMount[];
   // Optional fallthrough for anything that is not a Deck route (demo
   // pages, health checks). Without it, non-routes 404.
   fallback?: (req: IncomingMessage, res: ServerResponse) => void;
@@ -218,9 +218,9 @@ interface CachedPack {
 }
 
 export function createDeckServer(options: DeckServerOptions): DeckServer {
-  let { realms, fallback } = options;
+  let { depots, fallback } = options;
   let liveBus = options.liveBus ?? createLiveBus();
-  let byName = new Map(realms.map((realm) => [realm.name, realm]));
+  let byName = new Map(depots.map((depot) => [depot.name, depot]));
   // Stored packs are immutable (published versions never change), so this
   // cache never invalidates; the cap only bounds memory.
   let packCache = new Map<string, CachedPack>();
@@ -236,26 +236,26 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   // from the tree manifest, a file comes from its own object, and the zip is
   // built only when someone actually asks for `?format=pack`.
   async function loadPack(
-    realm: RealmMount,
+    depot: DepotMount,
     name: string,
     version: string,
   ): Promise<CachedPack | undefined> {
-    let key = `${realm.name}/${name}@${version}`;
+    let key = `${depot.name}/${name}@${version}`;
     let hit = packCache.get(key);
     if (hit) {
       return hit;
     }
-    let meta = await readStoreMeta(realm.storeDir, name);
+    let meta = await readStoreMeta(depot.storeDir, name);
     let record = meta?.versions[version];
     if (!record) {
       return undefined;
     }
     let packlist = record.file
       ? undefined
-      : await readTree(realm.storeDir, record.treeHash);
+      : await readTree(depot.storeDir, record.treeHash);
     let legacyBytes = packlist
       ? undefined
-      : await readStoredPack(realm.storeDir, name, version);
+      : await readStoredPack(depot.storeDir, name, version);
     if (!packlist && !legacyBytes) {
       return undefined;
     }
@@ -279,7 +279,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         let outer =
           segments.length > 1 ? `${segments[0]}.pack.zip` : segments[0];
         let current = await readTreeFile(
-          realm.storeDir,
+          depot.storeDir,
           record.treeHash,
           outer,
         );
@@ -296,7 +296,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         return current;
       },
       bytes: () => {
-        archive ??= readStoredPack(realm.storeDir, name, version);
+        archive ??= readStoredPack(depot.storeDir, name, version);
         return archive;
       },
     };
@@ -347,7 +347,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       imports,
       scopes,
       read: async (target) => {
-        let mount = byName.get(target.realm);
+        let mount = byName.get(target.depot);
         if (!mount || !target.version) {
           return undefined;
         }
@@ -375,8 +375,8 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
 
   function historyCapability(): Record<string, unknown> {
     let kinds = new Set(
-      realms
-        .map((realm) => realm.history?.kind)
+      depots
+        .map((depot) => depot.history?.kind)
         .filter((kind): kind is 'jj' | 'historyd' => kind !== undefined),
     );
     if (kinds.size === 0) {
@@ -385,7 +385,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         kind: 'content-addressed-packs',
         jj: false,
         historyd: false,
-        note: 'Versions are pointers in meta.json → a tree in _trees/, whose files live once each in _objects/. No seals between publishes: attach a history backend for /<realm>/_history/<changeId>.',
+        note: 'Versions are pointers in meta.json → a tree in _trees/, whose files live once each in _objects/. No seals between publishes: attach a history backend for /<depot>/_history/<changeId>.',
       };
     }
     return {
@@ -393,11 +393,11 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       kind: 'sealed-tree',
       jj: kinds.has('jj'),
       historyd: kinds.has('historyd'),
-      realms: realms
-        .filter((realm) => realm.history)
-        .map((realm) => realm.name)
+      depots: depots
+        .filter((depot) => depot.history)
+        .map((depot) => depot.name)
         .sort(),
-      note: 'Every save is sealed. GET /<realm>/_history lists seals; /<realm>/_history/<changeId>/<path> serves any of them, published or not.',
+      note: 'Every save is sealed. GET /<depot>/_history lists seals; /<depot>/_history/<changeId>/<path> serves any of them, published or not.',
     };
   }
 
@@ -489,20 +489,20 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   }
 
-  // A realm's own machinery is not part of the realm's content.
+  // A depot's own machinery is not part of the depot's content.
   function isHiddenPath(path: string): boolean {
     return path.split('/').some((segment) => segment.startsWith('.'));
   }
 
   async function entryOfLiveDeck(
-    realm: RealmMount,
+    depot: DepotMount,
     publisher: string,
     pkg: string,
   ): Promise<string | undefined> {
     try {
       let map = parsePackages(
         await readFile(
-          join(realm.dir, publisher, pkg, IMPORT_MAP_PATH),
+          join(depot.dir, publisher, pkg, IMPORT_MAP_PATH),
           'utf8',
         ),
       );
@@ -516,7 +516,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   // The `imports` a document should carry: whatever the deck's own map
   // declares. `deck lock` is what puts resolved pins there.
   async function liveImports(
-    realm: RealmMount,
+    depot: DepotMount,
     treePath: string,
   ): Promise<{
     imports: Record<string, string>;
@@ -528,7 +528,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     }
     try {
       let text = await readFile(
-        join(realm.dir, segments[0], segments[1], IMPORT_MAP_PATH),
+        join(depot.dir, segments[0], segments[1], IMPORT_MAP_PATH),
         'utf8',
       );
       let parsed = JSON.parse(text);
@@ -564,7 +564,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     spec: string;
   }
 
-  function parseOverrides(url: URL, realm: RealmMount): Override[] {
+  function parseOverrides(url: URL, depot: DepotMount): Override[] {
     let overrides: Override[] = [];
     for (let raw of url.searchParams.getAll('with')) {
       let [left, right] = raw.split('=');
@@ -574,9 +574,9 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         // `?with=<left>=<right>` says which specifier explicitly.
         // `?with=<target>` does not — see specifiersFor.
         ...(right
-          ? { specifier: stripRealm(splitAtVersion(left)[0], realm.name) }
+          ? { specifier: stripDepot(splitAtVersion(left)[0], depot.name) }
           : {}),
-        name: stripRealm(name, realm.name),
+        name: stripDepot(name, depot.name),
         // No version asked for means the working tree — the point of trying
         // a fork is usually to see every save of it.
         spec: spec ?? 'live',
@@ -594,10 +594,10 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   // deck name is only the fallback for a page that imports it by that name.
   function specifiersFor(
     deck: string,
-    realm: string,
+    depot: string,
     current: Record<string, string>,
   ): string[] {
-    let prefix = `/${realm}/${deck}`;
+    let prefix = `/${depot}/${deck}`;
     let found = Object.entries(current)
       .filter(
         ([specifier, value]) =>
@@ -634,17 +634,17 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
 
   async function overrideImports(
     url: URL,
-    realm: RealmMount,
+    depot: DepotMount,
     current: Record<string, string> = {},
   ): Promise<Record<string, string>> {
-    let overrides = parseOverrides(url, realm);
+    let overrides = parseOverrides(url, depot);
     if (overrides.length === 0) {
       return {};
     }
     let resolutions = await resolveDependencies({
-      realmDir: realm.dir,
-      realmName: realm.name,
-      storeDir: realm.storeDir,
+      depotDir: depot.dir,
+      depotName: depot.name,
+      storeDir: depot.storeDir,
       dependencies: Object.fromEntries(
         overrides.map((override) => [override.name, override.spec]),
       ),
@@ -663,7 +663,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       // was derived from without the page changing a line.
       let bindings = override.specifier
         ? [override.specifier]
-        : specifiersFor(override.name, realm.name, current);
+        : specifiersFor(override.name, depot.name, current);
       for (let binding of bindings) {
         for (let [specifier, value] of Object.entries(resolution.imports)) {
           let suffix = specifier.endsWith('/') ? '/' : '';
@@ -675,7 +675,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   }
 
   async function readLiveBytes(
-    realm: RealmMount,
+    depot: DepotMount,
     treePath: string,
   ): Promise<{ bytes: Buffer; path: string } | undefined> {
     let candidates = /\.[^/]+$/.test(treePath)
@@ -683,7 +683,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       : [treePath, `${treePath}.js`, `${treePath}.mjs`];
     for (let candidate of candidates) {
       try {
-        let bytes = await readFile(join(realm.dir, ...candidate.split('/')));
+        let bytes = await readFile(join(depot.dir, ...candidate.split('/')));
         return { bytes, path: candidate };
       } catch {
         // keep probing
@@ -799,36 +799,36 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
 
     if (PACKAGES_INDEX.test(pathname)) {
       let data = [];
-      for (let realm of realms) {
+      for (let depot of depots) {
         let stored = new Map(
-          (await listStorePackages(realm.storeDir)).map((meta) => [
+          (await listStorePackages(depot.storeDir)).map((meta) => [
             meta.name,
             meta,
           ]),
         );
-        let decks = await discoverDecks(realm.dir);
+        let decks = await discoverDecks(depot.dir);
         let names = new Set([...stored.keys(), ...decks.map((d) => d.name)]);
         let live = new Set(decks.map((deck) => deck.name));
         data.push({
-          type: 'realm',
-          id: realm.name,
-          name: realm.name,
+          type: 'depot',
+          id: depot.name,
+          name: depot.name,
           // Honest at-rest paths — this is the layout, not a metaphor.
-          dir: realm.dir,
-          storePath: `${realm.name}/.deck/store/`,
-          history: realm.history?.kind ?? null,
-          historyPath: realm.history ? `/${realm.name}/_history` : undefined,
+          dir: depot.dir,
+          storePath: `${depot.name}/.deck/store/`,
+          history: depot.history?.kind ?? null,
+          historyPath: depot.history ? `/${depot.name}/_history` : undefined,
           packages: [...names].sort().map((name) => {
             let meta = stored.get(name);
             let [publisher, pkg] = name.split('/');
             return {
               type: 'package',
-              id: `${realm.name}/${name}`,
+              id: `${depot.name}/${name}`,
               publisher,
               name: pkg,
               live: live.has(name),
               livePath: live.has(name)
-                ? `/${realm.name}/${name}/`
+                ? `/${depot.name}/${name}/`
                 : undefined,
               storePath: `.deck/store/${name}/`,
               versions: Object.fromEntries(
@@ -849,7 +849,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           meta: {
             history: historyCapability(),
             layout:
-              '<realm>/<publisher>/<package>/ on disk and in the URL; sealed versions in <realm>/.deck/store/<publisher>/<package>/',
+              '<depot>/<publisher>/<package>/ on disk and in the URL; sealed versions in <depot>/.deck/store/<publisher>/<package>/',
           },
           data,
         },
@@ -860,15 +860,15 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
 
     let packagesMatch = pathname.match(PACKAGES_PATH);
     if (packagesMatch?.groups) {
-      let { realm: realmName, publisher, pkg } = packagesMatch.groups;
-      let realm = byName.get(realmName);
-      if (!realm) {
-        respondError(req, res, 404, 'realm-not-found', `no realm ${realmName}`);
+      let { depot: depotName, publisher, pkg } = packagesMatch.groups;
+      let depot = byName.get(depotName);
+      if (!depot) {
+        respondError(req, res, 404, 'depot-not-found', `no depot ${depotName}`);
         return;
       }
       let name = `${publisher}/${pkg}`;
-      let meta = await readStoreMeta(realm.storeDir, name);
-      let isLive = await stat(join(realm.dir, publisher, pkg, IMPORT_MAP_PATH))
+      let meta = await readStoreMeta(depot.storeDir, name);
+      let isLive = await stat(join(depot.dir, publisher, pkg, IMPORT_MAP_PATH))
         .then(() => true)
         .catch(() => false);
       if ((!meta || Object.keys(meta.versions).length === 0) && !isLive) {
@@ -877,7 +877,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           res,
           404,
           'package-not-found',
-          `no published versions for ${realmName}/${name}`,
+          `no published versions for ${depotName}/${name}`,
         );
         return;
       }
@@ -887,16 +887,16 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         {
           data: {
             type: 'package',
-            id: `${realmName}/${name}`,
+            id: `${depotName}/${name}`,
             attributes: {
-              realm: realmName,
+              depot: depotName,
               publisher,
               name: pkg,
               live: isLive,
-              livePath: isLive ? `/${realmName}/${name}/` : undefined,
-              history: realm.history !== undefined,
-              historyPath: realm.history
-                ? `/${realmName}/_history`
+              livePath: isLive ? `/${depotName}/${name}/` : undefined,
+              history: depot.history !== undefined,
+              historyPath: depot.history
+                ? `/${depotName}/_history`
                 : undefined,
               storePath: `.deck/store/${name}/`,
               versions: Object.fromEntries(
@@ -917,22 +917,22 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     let browseMatch = pathname.match(BROWSE_PATH);
     if (browseMatch?.groups) {
       let {
-        realm: realmName,
+        depot: depotName,
         publisher,
         pkg,
         spec,
         rest: browseRest,
       } = browseMatch.groups;
-      let realm = byName.get(realmName);
-      if (!realm) {
-        respondError(req, res, 404, 'realm-not-found', `no realm ${realmName}`);
+      let depot = byName.get(depotName);
+      if (!depot) {
+        respondError(req, res, 404, 'depot-not-found', `no depot ${depotName}`);
         return;
       }
       let rest = browseRest?.replace(/^\/+/, '') ?? '';
       try {
         if (!publisher || !pkg) {
-          // A realm or publisher listing: the decks that live there.
-          let decks = await discoverDecks(realm.dir);
+          // A depot or publisher listing: the decks that live there.
+          let decks = await discoverDecks(depot.dir);
           let scoped = publisher
             ? decks.filter((deck) => deck.publisher === publisher)
             : decks;
@@ -943,7 +943,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               data: {
                 type: 'directory',
                 attributes: {
-                  package: publisher ? `${realmName}/${publisher}` : realmName,
+                  package: publisher ? `${depotName}/${publisher}` : depotName,
                   version: 'live',
                   path: '',
                   kind: 'live',
@@ -961,7 +961,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         }
         let name = `${publisher}/${pkg}`;
         if (!spec) {
-          let dir = join(realm.dir, publisher, pkg);
+          let dir = join(depot.dir, publisher, pkg);
           if (rest) {
             let file = await readLiveFile(dir, rest);
             if (file) {
@@ -973,7 +973,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
                   data: {
                     type: 'file',
                     attributes: {
-                      package: `${realmName}/${name}`,
+                      package: `${depotName}/${name}`,
                       version: 'live',
                       path: rest,
                       kind: 'live',
@@ -981,7 +981,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
                       contentType: contentTypeFor(rest),
                       text: binary ? undefined : bytesToPreview(file.bytes),
                       binary,
-                      rawUrl: `/${realmName}/${name}/${rest}`,
+                      rawUrl: `/${depotName}/${name}/${rest}`,
                     },
                   },
                 },
@@ -991,7 +991,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
             }
           }
           let listing = await listingFromLiveDir(
-            `${realmName}/${name}`,
+            `${depotName}/${name}`,
             dir,
             rest,
           );
@@ -1004,14 +1004,14 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           return;
         }
 
-        let meta = await readStoreMeta(realm.storeDir, name);
+        let meta = await readStoreMeta(depot.storeDir, name);
         if (!meta || Object.keys(meta.versions).length === 0) {
           respondError(
             req,
             res,
             404,
             'package-not-found',
-            `no published versions for ${realmName}/${name}`,
+            `no published versions for ${depotName}/${name}`,
           );
           return;
         }
@@ -1039,7 +1039,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         }
         // Tags/ranges resolve in-place for the browser (no redirect hop).
         let version = resolution.version;
-        let pack = await loadPack(realm, name, version);
+        let pack = await loadPack(depot, name, version);
         if (!pack) {
           respondError(
             req,
@@ -1073,7 +1073,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
                 data: {
                   type: 'file',
                   attributes: {
-                    package: `${realmName}/${name}`,
+                    package: `${depotName}/${name}`,
                     version,
                     treeHash: pack.treeHash,
                     path: rest,
@@ -1083,7 +1083,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
                     contentType: contentTypeFor(rest),
                     text: binary ? undefined : bytesToPreview(bytes),
                     binary,
-                    rawUrl: `/${realmName}/${name}@${version}/${rest}`,
+                    rawUrl: `/${depotName}/${name}@${version}/${rest}`,
                   },
                 },
               },
@@ -1093,7 +1093,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           }
         }
         let listing = listingFromPacklist(
-          `${realmName}/${name}`,
+          `${depotName}/${name}`,
           version,
           packlist,
           rest,
@@ -1120,19 +1120,19 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
 
     let signaturesMatch = pathname.match(SIGNATURES_PATH);
     if (signaturesMatch?.groups) {
-      let realm = byName.get(signaturesMatch.groups.realm);
-      if (!realm) {
+      let depot = byName.get(signaturesMatch.groups.depot);
+      if (!depot) {
         respondError(
           req,
           res,
           404,
-          'realm-not-found',
-          `no realm ${signaturesMatch.groups.realm}`,
+          'depot-not-found',
+          `no depot ${signaturesMatch.groups.depot}`,
         );
         return;
       }
       let treeHash = signaturesMatch.groups.treeHash;
-      let envelope = await readEnvelope(realm.storeDir, treeHash);
+      let envelope = await readEnvelope(depot.storeDir, treeHash);
       if (!envelope) {
         respondError(
           req,
@@ -1152,28 +1152,28 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
 
     let offersMatch = pathname.match(OFFERS_PATH);
     if (offersMatch?.groups) {
-      let realm = byName.get(offersMatch.groups.realm);
-      if (!realm) {
+      let depot = byName.get(offersMatch.groups.depot);
+      if (!depot) {
         respondError(
           req,
           res,
           404,
-          'realm-not-found',
-          `no realm ${offersMatch.groups.realm}`,
+          'depot-not-found',
+          `no depot ${offersMatch.groups.depot}`,
         );
         return;
       }
       // Read-only: the daemon writes, this only reports. A maintainer wants
       // the three that stopped merging, not the hundred that are fine.
       let { outcomes, rebased, conflicted } = await rebasePass({
-        realm,
+        depot,
         dryRun: true,
       });
       respondJson(
         req,
         res,
         {
-          meta: { realm: realm.name, open: outcomes.length, conflicted },
+          meta: { depot: depot.name, open: outcomes.length, conflicted },
           data: outcomes.map((outcome) => ({
             type: 'offer',
             id: outcome.offer,
@@ -1194,44 +1194,44 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
 
     let historyMatch = pathname.match(HISTORY_PATH);
     if (historyMatch?.groups) {
-      let realm = byName.get(historyMatch.groups.realm);
-      if (!realm) {
+      let depot = byName.get(historyMatch.groups.depot);
+      if (!depot) {
         respondError(
           req,
           res,
           404,
-          'realm-not-found',
-          `no realm ${historyMatch.groups.realm}`,
+          'depot-not-found',
+          `no depot ${historyMatch.groups.depot}`,
         );
         return;
       }
-      let backend = realm.history;
+      let backend = depot.history;
       if (!backend) {
         respondError(
           req,
           res,
           404,
           'no-history',
-          `realm ${realm.name} has no history backend attached (tier 1: versions are the history)`,
+          `depot ${depot.name} has no history backend attached (tier 1: versions are the history)`,
         );
         return;
       }
       let revision = historyMatch.groups.rev;
       if (revision === undefined) {
-        // The seal log: every state this realm has been in, newest first.
+        // The seal log: every state this depot has been in, newest first.
         // It grows with every save, so nothing caches it.
-        let seals = await backend.list(realm.dir);
+        let seals = await backend.list(depot.dir);
         respondJson(
           req,
           res,
           {
-            meta: { backend: backend.kind, tier: 2, realm: realm.name },
+            meta: { backend: backend.kind, tier: 2, depot: depot.name },
             data: seals.map((seal) => ({
               type: 'seal',
               id: seal.changeId,
               attributes: {
                 ...seal,
-                filesUrl: `/${realm.name}/_history/${seal.changeId}`,
+                filesUrl: `/${depot.name}/_history/${seal.changeId}`,
               },
             })),
           },
@@ -1253,17 +1253,17 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       }
       let rest = historyMatch.groups.rest?.slice(1);
       if (rest === undefined || rest === '') {
-        // What was in the realm at this seal. `fileListAt` is optional on
+        // What was in the depot at this seal. `fileListAt` is optional on
         // the backend — an absent enumeration is reported as such, never as
         // an empty tree.
-        let files = await backend.fileListAt?.(realm.dir, revision);
+        let files = await backend.fileListAt?.(depot.dir, revision);
         if (files === undefined && backend.fileListAt) {
           respondError(
             req,
             res,
             404,
             'revision-not-found',
-            `${revision} is not a seal of ${realm.name}`,
+            `${revision} is not a seal of ${depot.name}`,
           );
           return;
         }
@@ -1275,7 +1275,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               type: 'seal',
               id: revision,
               attributes: {
-                realm: realm.name,
+                depot: depot.name,
                 changeId: revision,
                 files: files ?? null,
                 filesAvailable: files !== undefined,
@@ -1299,14 +1299,14 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         );
         return;
       }
-      let bytes = await backend.fileAt(realm.dir, revision, rest);
+      let bytes = await backend.fileAt(depot.dir, revision, rest);
       if (bytes === undefined) {
         respondError(
           req,
           res,
           404,
           'file-not-found',
-          `${rest} is not in seal ${revision} of ${realm.name}`,
+          `${rest} is not in seal ${revision} of ${depot.name}`,
         );
         return;
       }
@@ -1321,7 +1321,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           'cache-control': IMMUTABLE_CACHE,
           'repr-digest': reprDigest(bytes),
           'x-deck-seal': revision,
-          'x-deck-realm': realm.name,
+          'x-deck-depot': depot.name,
           'access-control-allow-origin': '*',
         },
         bytes,
@@ -1337,9 +1337,9 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
 
     let liveMatch = pathname.match(LIVE_PATH);
     if (liveMatch?.groups) {
-      let realm = byName.get(liveMatch.groups.realm);
-      if (realm) {
-        await serveLive(req, res, realm, liveMatch.groups.rest, search, url);
+      let depot = byName.get(liveMatch.groups.depot);
+      if (depot) {
+        await serveLive(req, res, depot, liveMatch.groups.rest, search, url);
         return;
       }
     }
@@ -1351,11 +1351,11 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     respondError(req, res, 404, 'not-found', `no route for ${pathname}`);
   }
 
-  // `/<realm>/<path>` — the working tree, exactly as it sits on disk.
+  // `/<depot>/<path>` — the working tree, exactly as it sits on disk.
   async function serveLive(
     req: IncomingMessage,
     res: ServerResponse,
-    realm: RealmMount,
+    depot: DepotMount,
     rawRest: string | undefined,
     search: string,
     url: URL,
@@ -1365,27 +1365,27 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       respondError(req, res, 404, 'file-not-found', 'invalid path', 'no-store');
       return;
     }
-    let found = rest === '' ? undefined : await readLiveBytes(realm, rest);
+    let found = rest === '' ? undefined : await readLiveBytes(depot, rest);
     if (!found) {
       // A directory: an index.html if there is one, otherwise the deck's
       // declared entry module. Both are answers that change with the tree,
       // so the redirect never caches.
       let segments = rest === '' ? [] : rest.split('/');
       let index = rest === '' ? 'index.html' : `${rest}/index.html`;
-      let candidate = await readLiveBytes(realm, index);
+      let candidate = await readLiveBytes(depot, index);
       if (candidate) {
         respond(req, res, 302, {
-          location: `/${realm.name}/${index}${search}`,
+          location: `/${depot.name}/${index}${search}`,
           'cache-control': 'no-store',
           'access-control-allow-origin': '*',
         });
         return;
       }
       if (segments.length === 2) {
-        let entry = await entryOfLiveDeck(realm, segments[0], segments[1]);
+        let entry = await entryOfLiveDeck(depot, segments[0], segments[1]);
         if (entry) {
           respond(req, res, 302, {
-            location: `/${realm.name}/${rest}/${entry}${search}`,
+            location: `/${depot.name}/${rest}/${entry}${search}`,
             'cache-control': 'no-store',
             'access-control-allow-origin': '*',
           });
@@ -1397,7 +1397,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         res,
         404,
         'file-not-found',
-        `${rest || '/'} does not exist in realm ${realm.name}`,
+        `${rest || '/'} does not exist in depot ${depot.name}`,
         'no-store',
       );
       return;
@@ -1406,8 +1406,8 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     let injected = false;
     let trying: string[] = [];
     if (found.path.endsWith('.html')) {
-      let live = await liveImports(realm, found.path);
-      let overrides = await overrideImports(url, realm, live.imports);
+      let live = await liveImports(depot, found.path);
+      let overrides = await overrideImports(url, depot, live.imports);
       trying = Object.keys(overrides).sort();
       ({ bytes, injected } = injectImportMap(
         bytes,
@@ -1424,7 +1424,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         'content-type': contentTypeFor(found.path),
         'cache-control': 'no-store',
         'repr-digest': reprDigest(bytes),
-        'x-deck-realm': realm.name,
+        'x-deck-depot': depot.name,
         ...(injected ? { 'x-deck-importmap': 'injected' } : {}),
         ...(trying.length > 0 ? { 'x-deck-with': trying.join(', ') } : {}),
         'access-control-allow-origin': '*',
@@ -1433,7 +1433,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     );
   }
 
-  // `/<realm>/<publisher>/<package>@<spec>/<path>` — the sealed read.
+  // `/<depot>/<publisher>/<package>@<spec>/<path>` — the sealed read.
   async function serveSealed(
     req: IncomingMessage,
     res: ServerResponse,
@@ -1441,23 +1441,23 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     search: string,
     groups: Record<string, string | undefined>,
   ): Promise<void> {
-    let realm = byName.get(groups.realm!);
-    if (!realm) {
-      respondError(req, res, 404, 'realm-not-found', `no realm ${groups.realm}`);
+    let depot = byName.get(groups.depot!);
+    if (!depot) {
+      respondError(req, res, 404, 'depot-not-found', `no depot ${groups.depot}`);
       return;
     }
     let name = `${groups.publisher}/${groups.pkg}`;
     let spec = groups.spec!;
     let rest = groups.rest?.slice(1);
 
-    let meta = await readStoreMeta(realm.storeDir, name);
+    let meta = await readStoreMeta(depot.storeDir, name);
     if (!meta || Object.keys(meta.versions).length === 0) {
       respondError(
         req,
         res,
         404,
         'package-not-found',
-        `no published versions for ${realm.name}/${name}`,
+        `no published versions for ${depot.name}/${name}`,
       );
       return;
     }
@@ -1485,7 +1485,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       return;
     }
     let version = resolution.version;
-    let pack = await loadPack(realm, name, version);
+    let pack = await loadPack(depot, name, version);
     if (!pack) {
       respondError(
         req,
@@ -1537,7 +1537,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       canonicalRest = aliasPath && aliasPath !== rest ? aliasPath : rest;
     }
 
-    let canonicalLocation = `/${realm.name}/${name}@${version}${
+    let canonicalLocation = `/${depot.name}/${name}@${version}${
       canonicalRest !== undefined ? `/${canonicalRest}` : ''
     }${search}`;
 
@@ -1599,9 +1599,9 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         {
           data: {
             type: 'package-meta',
-            id: `${realm.name}/${name}@${version}`,
+            id: `${depot.name}/${name}@${version}`,
             attributes: {
-              realm: realm.name,
+              depot: depot.name,
               publisher: groups.publisher,
               name: groups.pkg,
               version,
@@ -1613,14 +1613,14 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               baseApi: mapEntry?.baseApi ?? null,
               // Which seal this version was cut from, when the pack was
               // sealed by a tier-2 watcher — the link from a published
-              // version back into `/<realm>/_history/<changeId>`.
+              // version back into `/<depot>/_history/<changeId>`.
               sealChangeId: packlist.provenance?.sealChangeId ?? null,
               // L9/L10: who endorsed these BYTES. Public keys are not
               // included; the full envelope is one fetch away at
-              // /<realm>/_trees/<treeHash>/signatures.
+              // /<depot>/_trees/<treeHash>/signatures.
               signatures: summarizeEnvelope(
                 pack.treeHash,
-                await readEnvelope(realm.storeDir, pack.treeHash),
+                await readEnvelope(depot.storeDir, pack.treeHash),
               ),
               files: packlist.entries.map((entry) => entry.path),
             },
@@ -1686,7 +1686,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       } catch {
         imports = {};
       }
-      let overrides = await overrideImports(url, realm, imports);
+      let overrides = await overrideImports(url, depot, imports);
       trying = Object.keys(overrides).sort();
       // From the SAME seal — a sealed document and its map move together —
       // unless the caller is deliberately trying something else.
@@ -1706,7 +1706,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           // walked out of the package and no scope prefix matched, so the
           // closure came back empty and the response advertised nothing while
           // looking perfectly healthy.
-          `/${realm.name}/${name}@${version}/${rest}`,
+          `/${depot.name}/${name}@${version}/${rest}`,
           resolved,
           resolvedScopes,
         );
@@ -1735,7 +1735,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         ...(injected ? { 'x-deck-importmap': 'injected' } : {}),
         ...(trying.length > 0 ? { 'x-deck-with': trying.join(', ') } : {}),
         'x-deck-package': `${name}@${version}`,
-        'x-deck-realm': realm.name,
+        'x-deck-depot': depot.name,
         'x-deck-tree-hash': pack.treeHash,
         'access-control-allow-origin': '*',
       },

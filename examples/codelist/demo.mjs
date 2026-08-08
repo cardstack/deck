@@ -21,14 +21,14 @@ import { mergeTrees } from '@deck/core/merge';
 import { pack } from '@deck/core/pack';
 import { publishToStore } from '@deck/core/store';
 import { createDeckServer } from '@deck/server/server';
-import { storeDirFor } from '@deck/server/realm';
+import { storeDirFor } from '@deck/server/depot';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8790);
-const REALM = 'site';
-const realmDir = join(here, 'realm');
-const storeDir = storeDirFor(realmDir);
+const DEPOT = 'site';
+const depotDir = join(here, 'depot');
+const storeDir = storeDirFor(depotDir);
 
 // A real ISO-4217 slice, small enough to read on one screen. The shape is
 // the point, not the size — the live lists run to a few hundred keys.
@@ -66,7 +66,7 @@ function tree(pkg, version, codes, note) {
       'importmap.json',
       Buffer.from(
         JSON.stringify(
-          { deck: { packages: { [pkg]: { version, entry: '$REALM/index.js' } } } },
+          { deck: { packages: { [pkg]: { version, entry: '$DECK/index.js' } } } },
           null,
           2,
         ) + '\n',
@@ -163,17 +163,17 @@ console.log(`   The machine merged everything it could actually know.`);
 console.log(`   acme/currencies@1.5.0-acme.1 · ${absorbedHash.slice(0, 12)}…`);
 
 
-// The shared `ui/pills` deck, published into THIS realm's store from
+// The shared `ui/pills` deck, published into THIS depot's store from
 // examples/shared. Five demos, five stores, one source tree — and because
 // identity is the hash of the tree, the treeHash below is the same in all
 // five. Then the viewer's decklist is locked, so the pins that resolve
 // `ui/pills` are in the tree where you can read them.
 let [pills] = await publishShared(storeDir);
 let viewerLock = await lockAndWrite({
-  realmDir,
-  realmName: REALM,
+  depotDir,
+  depotName: DEPOT,
   storeDir,
-  deckDir: join(realmDir, 'app', 'viewer'),
+  deckDir: join(depotDir, 'app', 'viewer'),
 });
 console.log(`\n   shared: ${pills.name}@${pills.version} \u00b7 ${pills.treeHash.slice(0, 12)}\u2026 (same tree in every demo)`);
 if (viewerLock.changed) {
@@ -188,14 +188,14 @@ let states = [
   { deck: 'acme/currencies', version: '1.5.0-acme.1', label: 'the fork, rebased', hash: absorbedHash, note: 'absorbed upstream automatically, kept its own — only the version number needed a person' },
 ];
 await writeFile(
-  join(realmDir, 'app', 'viewer', 'states.json'),
-  JSON.stringify({ realm: REALM, states }, null, 2) + '\n',
+  join(depotDir, 'app', 'viewer', 'states.json'),
+  JSON.stringify({ depot: DEPOT, states }, null, 2) + '\n',
 );
 
 let server = createDeckServer({
-  realms: [{ name: REALM, dir: realmDir, storeDir }],
+  depots: [{ name: DEPOT, dir: depotDir, storeDir }],
   fallback: (req, res) => {
-    res.writeHead(302, { location: `/${REALM}/app/viewer/index.html` });
+    res.writeHead(302, { location: `/${DEPOT}/app/viewer/index.html` });
     res.end();
   },
 });
@@ -203,7 +203,7 @@ server.listen(PORT, () => {
   console.log(`\n6) serving — every state above is an immutable URL\n`);
   console.log(`      http://localhost:${PORT}/\n`);
   for (let s of states) {
-    console.log(`      /${REALM}/${s.deck}@${s.version}/currencies.json`);
+    console.log(`      /${DEPOT}/${s.deck}@${s.version}/currencies.json`);
   }
   console.log(`\n   No login and no write endpoint anywhere in this demo. The`);
   console.log(`   merge happened at seal time; these are the before and after.\n`);

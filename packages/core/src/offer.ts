@@ -32,13 +32,13 @@ import { treeHashFromDir } from './tree-hash.ts';
 // other save — so a rebase is visible, addressable, and revertable.
 //
 // Federation note: `forkedFrom.package` is `<publisher>/<package>` within
-// one realm today. When this lands in the realm server — Matrix identity,
-// many federated realms — the same field takes an origin, `actor` carries
+// one depot today. When this lands in the realm server — Matrix identity,
+// many federated depots — the same field takes an origin, `actor` carries
 // the Matrix user id that made the offer, and nothing else here changes:
 // the merge inputs are still three content addresses.
 
 export interface ForkedFrom {
-  // `<publisher>/<package>` in this realm.
+  // `<publisher>/<package>` in this depot.
   package: string;
   // The version forked, when a sealed one was. Absent means the live tree.
   version?: string;
@@ -112,10 +112,10 @@ export function writeForkedFrom(
   return JSON.stringify(parsed, null, 2) + '\n';
 }
 
-/** Every deck in the realm that declares a base — i.e. every open offer. */
-export async function discoverOffers(realmDir: string): Promise<Offer[]> {
+/** Every deck in the depot that declares a base — i.e. every open offer. */
+export async function discoverOffers(depotDir: string): Promise<Offer[]> {
   let offers: Offer[] = [];
-  for (let deck of await discoverDecks(realmDir)) {
+  for (let deck of await discoverDecks(depotDir)) {
     let mapText: string;
     try {
       mapText = await readFile(join(deck.dir, IMPORT_MAP_PATH), 'utf8');
@@ -165,7 +165,7 @@ async function treeAtVersion(
 }
 
 export interface PlanRebaseOptions {
-  realmDir: string;
+  depotDir: string;
   storeDir: string;
   offer: Offer;
   onto?: string;

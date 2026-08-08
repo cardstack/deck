@@ -391,7 +391,7 @@ export async function planVendorTree(
       exports: Object.fromEntries(
         Object.entries(sealed.subpathEntries).map(([subpath, treePath]) => [
           `./${subpath}`,
-          `$REALM/${treePath}`,
+          `$DECK/${treePath}`,
         ]),
       ),
       vendoredFrom: sealed.vendoredFrom,
@@ -462,7 +462,7 @@ export function vendorUnitImportMap(unit: VendoredUnit): Buffer {
           packages: {
             [name]: {
               version: unit.version,
-              entry: `$REALM/${unit.entry}`,
+              entry: `$DECK/${unit.entry}`,
               ...(Object.keys(unit.exports).length > 0
                 ? { exports: unit.exports }
                 : {}),

@@ -1,5 +1,11 @@
 # Deck UI — product requirements and design directions
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Status: for design exploration. The protocol, server, and CLI are **built and
 tested** (151 tests); every endpoint, field, and state referenced here is real
 and reachable today. What is *not* settled is the product: this document fixes

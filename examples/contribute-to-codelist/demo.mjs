@@ -45,14 +45,14 @@ import { publishToStore } from '@deck/core/store';
 import { readTreeFromDir } from '@deck/core/tree';
 import { createDeckServer } from '@deck/server/server';
 import { rebasePass } from '@deck/server/rebase-daemon';
-import { storeDirFor } from '@deck/server/realm';
+import { storeDirFor } from '@deck/server/depot';
 import { publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8794);
-const REALM = 'site';
-const realmDir = join(here, 'realm');
-const storeDir = storeDirFor(realmDir);
+const DEPOT = 'site';
+const depotDir = join(here, 'depot');
+const storeDir = storeDirFor(depotDir);
 const UPSTREAM = 'std/currencies';
 const APP = 'app/picker';
 
@@ -82,7 +82,7 @@ const KIM_FIX = { JPY: { name: 'Japanese Yen', minor: 0 } };
 
 // What upstream ships as 1.5.0. It adds ZWG — the SAME entry Kim added,
 // which is agreement, not conflict — and it renames JPY too, differently.
-// That single key is the only real disagreement in the whole realm, and it
+// That single key is the only real disagreement in the whole depot, and it
 // is the one the queue has to find.
 const RELEASE_ADD = { ZWG: { name: 'Zimbabwe Gold', minor: 2 } };
 const RELEASE_FIX = { JPY: { name: 'Yen (Japan)', minor: 0 } };
@@ -109,7 +109,7 @@ function upstreamTree(version, codes) {
       path: IMPORT_MAP_PATH,
       bytes: Buffer.from(
         JSON.stringify(
-          { deck: { packages: { currencies: { version, entry: '$REALM/index.js' } } } },
+          { deck: { packages: { currencies: { version, entry: '$DECK/index.js' } } } },
           null,
           2,
         ) + '\n',
@@ -133,11 +133,11 @@ async function amend(deckDir, change) {
 const codesIn = async (deckDir) =>
   JSON.parse(await readFile(join(deckDir, 'currencies.json'), 'utf8'));
 
-// The forks are WRITTEN by `deck fork` into the realm, so they are rebuilt
+// The forks are WRITTEN by `deck fork` into the depot, so they are rebuilt
 // from nothing on every run — and gitignored, because they are output.
 await rm(storeDir, { recursive: true, force: true });
 for (let publisher of ['ana', 'kim']) {
-  await rm(join(realmDir, publisher), { recursive: true, force: true });
+  await rm(join(depotDir, publisher), { recursive: true, force: true });
 }
 await mkdir(storeDir, { recursive: true });
 
@@ -145,7 +145,7 @@ console.log('\n  CONTRIBUTE TO A CODELIST — fork, amend, offer, review\n');
 
 // ---------------------------------------------------------------------------
 // 1. Upstream publishes. Note that `std/currencies` is NOT a directory in this
-//    realm: it is somebody else's published deck. A contributor does not check
+//    depot: it is somebody else's published deck. A contributor does not check
 //    it out — that is the point of step 3.
 // ---------------------------------------------------------------------------
 let base = await publishToStore(
@@ -157,7 +157,7 @@ let base = await publishToStore(
 );
 console.log(`1) ${UPSTREAM}@1.4.0 — ${Object.keys(BASE_CODES).length} codes · ${base.treeHash.slice(0, 12)}…`);
 
-// The shared `ui/pills` deck, published into this realm's store from
+// The shared `ui/pills` deck, published into this depot's store from
 // examples/shared. Same source tree in every demo, so the same treeHash.
 let [pills] = await publishShared(storeDir);
 console.log(`   shared: ${pills.name}@${pills.version} · ${pills.treeHash.slice(0, 12)}… (same tree in every demo)`);
@@ -165,8 +165,8 @@ console.log(`   shared: ${pills.name}@${pills.version} · ${pills.treeHash.slice
 // ---------------------------------------------------------------------------
 // 2. The app that consumes it, locked to the release and sealed.
 // ---------------------------------------------------------------------------
-let appDir = join(realmDir, ...APP.split('/'));
-let locked = await lockDeck({ realmDir, realmName: REALM, storeDir, deckDir: appDir });
+let appDir = join(depotDir, ...APP.split('/'));
+let locked = await lockDeck({ depotDir, depotName: DEPOT, storeDir, deckDir: appDir });
 if (locked.changed) {
   await writeFile(join(appDir, IMPORT_MAP_PATH), locked.text);
   console.log('   (the checked-in lock was stale and has been rewritten)');
@@ -195,7 +195,7 @@ for (let [actor, change] of [
   ['kim', { ...KIM_ADD, ...KIM_FIX }],
 ]) {
   let result = await forkDeck({
-    realmDir,
+    depotDir,
     storeDir,
     from: { publisher: 'std', package: 'currencies', spec: '1.4.0' },
     to: { publisher: actor, package: 'currencies' },
@@ -208,15 +208,15 @@ for (let [actor, change] of [
 console.log(`   both record forkedFrom.treeHash ${base.treeHash.slice(0, 12)}… — the merge base,`);
 console.log(`   exact, in the tree, not inferred from anything.`);
 
-let offers = await discoverOffers(realmDir);
+let offers = await discoverOffers(depotDir);
 console.log(`   discovered as offers: ${offers.map((o) => o.name).join(', ')}`);
 
 // ---------------------------------------------------------------------------
 // 4. The queue, before upstream moves.
 // ---------------------------------------------------------------------------
-const realm = { name: REALM, dir: realmDir, storeDir };
+const depot = { name: DEPOT, dir: depotDir, storeDir };
 async function queue(label, { dryRun = true } = {}) {
-  let result = await rebasePass({ realm, dryRun });
+  let result = await rebasePass({ depot, dryRun });
   console.log(`\n   ${label}`);
   for (let outcome of result.outcomes.sort((a, b) => a.offer.localeCompare(b.offer))) {
     let extra = outcome.conflicts.length > 0 ? `  ← ${outcome.conflicts.join(', ')}` : '';
@@ -260,11 +260,11 @@ if (!conflicted[0].conflicts.includes('currencies.json')) {
 //    touched — a conflicted merge writes NOTHING.
 // ---------------------------------------------------------------------------
 console.log(`\n6) the daemon, for real`);
-let anaBefore = Object.keys(await codesIn(join(realmDir, 'ana', 'currencies'))).length;
-let kimBefore = await readFile(join(realmDir, 'kim', 'currencies', 'currencies.json'), 'utf8');
+let anaBefore = Object.keys(await codesIn(join(depotDir, 'ana', 'currencies'))).length;
+let kimBefore = await readFile(join(depotDir, 'kim', 'currencies', 'currencies.json'), 'utf8');
 let applied = await queue('one pass, writes enabled:', { dryRun: false });
-let anaAfter = await codesIn(join(realmDir, 'ana', 'currencies'));
-let kimAfter = await readFile(join(realmDir, 'kim', 'currencies', 'currencies.json'), 'utf8');
+let anaAfter = await codesIn(join(depotDir, 'ana', 'currencies'));
+let kimAfter = await readFile(join(depotDir, 'kim', 'currencies', 'currencies.json'), 'utf8');
 
 if (kimAfter !== kimBefore) {
   throw new Error('the daemon modified a CONFLICTED proposal — it must write nothing');
@@ -287,9 +287,9 @@ console.log(`   ${applied.rebased} rebased on the first pass, ${settled.rebased}
 // 7. Serve. The reviewer's console is the app itself.
 // ---------------------------------------------------------------------------
 let server = createDeckServer({
-  realms: [realm],
+  depots: [depot],
   fallback: (req, res) => {
-    res.writeHead(302, { location: `/${REALM}/${APP}@1.0.0/index.html` });
+    res.writeHead(302, { location: `/${DEPOT}/${APP}@1.0.0/index.html` });
     res.end();
   },
 });
@@ -300,8 +300,8 @@ server.listen(PORT, () => {
   console.log(`      …/index.html?with=std/currencies@1.5.0        the next release`);
   console.log(`      …/index.html?with=std/currencies=ana/currencies   ana's proposal, live`);
   console.log(`      …/index.html?with=std/currencies=kim/currencies   kim's proposal, live`);
-  console.log(`\n      /${REALM}/_offers                              the queue, re-merged on read\n`);
+  console.log(`\n      /${DEPOT}/_offers                              the queue, re-merged on read\n`);
   console.log(`   Nothing was checked out to review any of it, and the two`);
   console.log(`   proposals are LIVE working trees — edit`);
-  console.log(`   realm/kim/currencies/currencies.json and reload.\n`);
+  console.log(`   depot/kim/currencies/currencies.json and reload.\n`);
 });

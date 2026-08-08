@@ -28,7 +28,7 @@ export interface PacklistEntry {
 }
 
 export interface PackProvenance {
-  sourceRealm?: string;
+  sourceDepot?: string;
   sealChangeId?: string;
   createdBy?: string;
   createdAt?: string; // caller-supplied ISO time; omitted by default

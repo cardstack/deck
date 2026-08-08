@@ -116,7 +116,7 @@ module('pack/unpack round-trip laws', function () {
 
   test('provenance is caller-supplied, never a clock', function (assert) {
     let withProvenance = unpack(
-      pack(sampleFiles(), { createdBy: 'chris', sourceRealm: 'test-realm' }),
+      pack(sampleFiles(), { createdBy: 'chris', sourceDepot: 'test-depot' }),
     );
     assert.strictEqual(withProvenance.packlist.provenance?.createdBy, 'chris');
     let plain = unpack(pack(sampleFiles()));

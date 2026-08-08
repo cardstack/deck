@@ -50,7 +50,7 @@ module('conformance: the reference implementation obeys its own laws', () => {
       atRest: false,
       target: {
         baseUrl: 'http://example.invalid',
-        realm: 'conformance',
+        depot: 'conformance',
         fetchImpl: liar,
       },
     });

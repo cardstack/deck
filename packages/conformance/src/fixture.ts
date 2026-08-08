@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-// The canonical fixture realm.
+// The canonical fixture depot.
 //
 // Every implementation builds THIS tree and must arrive at the same
 // treeHash. That is what makes L1 checkable across implementations rather
@@ -12,7 +12,7 @@ import { join } from 'node:path';
 // a nested path, a UTF-8 filename that sorts differently by code point than
 // by locale, an empty file, a file with no trailing newline, and CRLF.
 
-export const FIXTURE_REALM = 'conformance';
+export const FIXTURE_DEPOT = 'conformance';
 export const FIXTURE_PUBLISHER = 'deck';
 export const FIXTURE_PACKAGE = 'fixture';
 export const FIXTURE_VERSION = '1.0.0';
@@ -34,8 +34,8 @@ export function fixtureFiles(): FixtureFile[] {
               packages: {
                 [FIXTURE_PACKAGE]: {
                   version: FIXTURE_VERSION,
-                  entry: '$REALM/index.js',
-                  exports: { './alias.js': '$REALM/nested/deep.js' },
+                  entry: '$DECK/index.js',
+                  exports: { './alias.js': '$DECK/nested/deep.js' },
                 },
               },
             },
@@ -87,8 +87,13 @@ export function fixtureFiles(): FixtureFile[] {
 // Regenerate ONLY when the fixture content itself changes, never to make a
 // failing implementation pass:
 //   node -e "import('@deck/core/tree-hash').then(async m => …)"
+//
+// Moved once, on purpose: the fixture's importmap.json used to write the tree
+// root as `$REALM/` and now writes `$DECK/`. Different bytes, different tree,
+// different hash — which is L1 doing its job, not a break in it. The previous
+// value was ae0aeb21336ab653….
 export const FIXTURE_TREE_HASH =
-  'ae0aeb21336ab6539aa8cba256135d752001dc52f5180a5d9047d41eb0a0e42c';
+  'bdaf1081a608f0fd97d3734ffb1a63b85c8a9f2061dfbabc2132cf809b298b32';
 
 // ---------------------------------------------------------------------------
 // The scoped-graph fixture.
@@ -115,8 +120,8 @@ export const GRAPH_VERSION = '1.0.0';
 // without scopes, which is exactly why the denominator is worth asserting.
 export const GRAPH_MODULES = 3;
 
-export function graphModuleUrl(realm: string, pkg: string, file: string) {
-  return `/${realm}/${GRAPH_PUBLISHER}/${pkg}@${GRAPH_VERSION}/${file}`;
+export function graphModuleUrl(depot: string, pkg: string, file: string) {
+  return `/${depot}/${GRAPH_PUBLISHER}/${pkg}@${GRAPH_VERSION}/${file}`;
 }
 
 function manifest(pkg: string, entry: string, rest: Record<string, unknown> = {}) {
@@ -124,7 +129,7 @@ function manifest(pkg: string, entry: string, rest: Record<string, unknown> = {}
     JSON.stringify(
       {
         ...rest,
-        deck: { packages: { [pkg]: { version: GRAPH_VERSION, entry: `$REALM/${entry}` } } },
+        deck: { packages: { [pkg]: { version: GRAPH_VERSION, entry: `$DECK/${entry}` } } },
       },
       null,
       2,
@@ -134,7 +139,7 @@ function manifest(pkg: string, entry: string, rest: Record<string, unknown> = {}
 }
 
 export function graphFixtureDecks(
-  realm: string,
+  depot: string,
 ): { pkg: string; files: FixtureFile[] }[] {
   return [
     {
@@ -143,12 +148,12 @@ export function graphFixtureDecks(
         {
           path: 'importmap.json',
           bytes: manifest(GRAPH_APP, 'app.js', {
-            imports: { dep: graphModuleUrl(realm, GRAPH_DEP, 'index.js') },
+            imports: { dep: graphModuleUrl(depot, GRAPH_DEP, 'index.js') },
             // The whole point: `leaf` is not in `imports`. It resolves only
             // for modules living under dep's own prefix.
             scopes: {
-              [`/${realm}/${GRAPH_PUBLISHER}/${GRAPH_DEP}@${GRAPH_VERSION}/`]: {
-                leaf: graphModuleUrl(realm, GRAPH_LEAF, 'index.js'),
+              [`/${depot}/${GRAPH_PUBLISHER}/${GRAPH_DEP}@${GRAPH_VERSION}/`]: {
+                leaf: graphModuleUrl(depot, GRAPH_LEAF, 'index.js'),
               },
             },
           }),
@@ -157,7 +162,7 @@ export function graphFixtureDecks(
           path: 'page.html',
           bytes: Buffer.from(
             '<!doctype html>\n<html>\n<head></head>\n<body>\n' +
-              `<script type="module" src="${graphModuleUrl(realm, GRAPH_APP, 'app.js')}"></script>\n` +
+              `<script type="module" src="${graphModuleUrl(depot, GRAPH_APP, 'app.js')}"></script>\n` +
               '</body>\n</html>\n',
             'utf8',
           ),
@@ -185,22 +190,22 @@ export function graphFixtureDecks(
   ];
 }
 
-export async function writeFixtureRealm(
+export async function writeFixtureDepot(
   root: string,
-  realm: string = FIXTURE_REALM,
+  depot: string = FIXTURE_DEPOT,
 ): Promise<string> {
-  let realmDir = join(root, realm);
-  let deckDir = join(realmDir, FIXTURE_PUBLISHER, FIXTURE_PACKAGE);
+  let depotDir = join(root, depot);
+  let deckDir = join(depotDir, FIXTURE_PUBLISHER, FIXTURE_PACKAGE);
   await mkdir(join(deckDir, 'nested'), { recursive: true });
   for (let file of fixtureFiles()) {
     await writeFile(join(deckDir, ...file.path.split('/')), file.bytes);
   }
-  for (let { pkg, files } of graphFixtureDecks(realm)) {
-    let dir = join(realmDir, GRAPH_PUBLISHER, pkg);
+  for (let { pkg, files } of graphFixtureDecks(depot)) {
+    let dir = join(depotDir, GRAPH_PUBLISHER, pkg);
     await mkdir(dir, { recursive: true });
     for (let file of files) {
       await writeFile(join(dir, ...file.path.split('/')), file.bytes);
     }
   }
-  return realmDir;
+  return depotDir;
 }

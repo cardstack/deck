@@ -19,7 +19,7 @@ import { unpack } from './pack.ts';
 // its own packs/ directory. Both were measured, and both are the same
 // mistake: addressing at the wrong granularity.
 //
-//   <store>/_objects/<aa>/<sha256>     one file's bytes, once per realm
+//   <store>/_objects/<aa>/<sha256>     one file's bytes, once per depot
 //   <store>/_trees/<aa>/<treeHash>.json  the packlist, once per tree
 //
 // Both live at the STORE root, not under a package, so bytes are shared

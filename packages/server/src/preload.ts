@@ -26,7 +26,7 @@ import { moduleSpecifiers } from '@deck/core/es-lexer';
 //   bought, and what was clipped is reported.
 
 export interface DeckUrl {
-  realm: string;
+  depot: string;
   publisher: string;
   pkg: string;
   version?: string;
@@ -40,7 +40,7 @@ export interface DeckUrl {
 export const SEGMENT = '[a-z0-9][a-z0-9-]{0,63}';
 
 const DECK_URL = new RegExp(
-  `^/(?<realm>${SEGMENT})/(?<publisher>${SEGMENT})/(?<pkg>${SEGMENT})(?:@(?<version>[^/]+))?/(?<path>.+)$`,
+  `^/(?<depot>${SEGMENT})/(?<publisher>${SEGMENT})/(?<pkg>${SEGMENT})(?:@(?<version>[^/]+))?/(?<path>.+)$`,
 );
 
 export function parseDeckUrl(url: string): DeckUrl | undefined {
@@ -48,13 +48,13 @@ export function parseDeckUrl(url: string): DeckUrl | undefined {
   if (!match?.groups) {
     return undefined;
   }
-  let { realm, publisher, pkg, version, path } = match.groups;
-  return { realm, publisher, pkg, ...(version ? { version } : {}), path };
+  let { depot, publisher, pkg, version, path } = match.groups;
+  return { depot, publisher, pkg, ...(version ? { version } : {}), path };
 }
 
 export function formatDeckUrl(url: DeckUrl): string {
   let at = url.version ? `@${url.version}` : '';
-  return `/${url.realm}/${url.publisher}/${url.pkg}${at}/${url.path}`;
+  return `/${url.depot}/${url.publisher}/${url.pkg}${at}/${url.path}`;
 }
 
 // The import-map resolution a browser performs: an exact key wins; failing
@@ -132,7 +132,7 @@ export function documentEntries(options: {
       // `src="./app.js"`, dropped out of the walk and every page written
       // that way advertised an empty closure while looking like it worked.
       if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//')) {
-        continue; // another origin; not this realm's bytes to preload
+        continue; // another origin; not this depot's bytes to preload
       }
       entries.push(
         src.startsWith('/')

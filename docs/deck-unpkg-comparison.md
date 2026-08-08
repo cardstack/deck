@@ -1,5 +1,11 @@
 # Deck vs. unpkg (modern rewrite): what a production ES-module registry teaches us
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Status: APPLIED 2026-08-07 — P1.1–P1.5, P2.1–P2.4 are built and
 tested as the `deck/06-serving-hardening` stacked commit (003536b952);
 P3.x remain adoption notes for when their subsystems arrive. Error

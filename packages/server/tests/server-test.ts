@@ -8,10 +8,10 @@ import type { Server } from 'node:http';
 import { pack, unpack } from '@deck/core/pack';
 import { publishToStore, readStoreMeta } from '@deck/core/store';
 import { createDeckServer } from '../src/server.ts';
-import { storeDirFor, type RealmMount } from '../src/realm.ts';
+import { storeDirFor, type DepotMount } from '../src/depot.ts';
 
 let root: string;
-let realmDir: string;
+let depotDir: string;
 let storeDir: string;
 let server: Server;
 let origin: string;
@@ -30,8 +30,8 @@ function confettiFiles(version: string, source: string) {
             packages: {
               confetti: {
                 version,
-                entry: '$REALM/confetti.js',
-                exports: { './main': '$REALM/confetti.js' },
+                entry: '$DECK/confetti.js',
+                exports: { './main': '$DECK/confetti.js' },
                 baseApi: '^1.0.0',
               },
             },
@@ -48,25 +48,25 @@ function confettiFiles(version: string, source: string) {
   ];
 }
 
-module('deck server: realms on disk', function (hooks) {
+module('deck server: depots on disk', function (hooks) {
   hooks.before(async function () {
     root = await mkdtemp(join(tmpdir(), 'deck-server-test-'));
-    realmDir = join(root, 'demo');
-    storeDir = storeDirFor(realmDir);
+    depotDir = join(root, 'demo');
+    storeDir = storeDirFor(depotDir);
     // The live tree — the same paths the URL uses.
-    await mkdir(join(realmDir, 'acme', 'confetti'), { recursive: true });
+    await mkdir(join(depotDir, 'acme', 'confetti'), { recursive: true });
     await writeFile(
-      join(realmDir, 'acme', 'confetti', 'importmap.json'),
+      join(depotDir, 'acme', 'confetti', 'importmap.json'),
       JSON.stringify({
         deck: {
           packages: {
-            confetti: { version: '1.1.0', entry: '$REALM/confetti.js' },
+            confetti: { version: '1.1.0', entry: '$DECK/confetti.js' },
           },
         },
       }),
     );
     await writeFile(
-      join(realmDir, 'acme', 'confetti', 'confetti.js'),
+      join(depotDir, 'acme', 'confetti', 'confetti.js'),
       CONFETTI_JS_11,
     );
 
@@ -86,10 +86,10 @@ module('deck server: realms on disk', function (hooks) {
         path: 'importmap.json',
         bytes: Buffer.from(
           JSON.stringify({
-            imports: { 'confetti/': '$REALM/vendor/confetti.pack.zip!/' },
+            imports: { 'confetti/': '$DECK/vendor/confetti.pack.zip!/' },
             deck: {
               packages: {
-                app: { version: '1.0.0', entry: '$REALM/app.js' },
+                app: { version: '1.0.0', entry: '$DECK/app.js' },
               },
             },
           }),
@@ -122,7 +122,7 @@ module('deck server: realms on disk', function (hooks) {
               imports: { 'confetti/': '/demo/acme/confetti@1.0.0/' },
               deck: {
                 packages: {
-                  page: { version: '1.0.0', entry: '$REALM/boot.js' },
+                  page: { version: '1.0.0', entry: '$DECK/boot.js' },
                 },
               },
             }),
@@ -144,8 +144,8 @@ module('deck server: realms on disk', function (hooks) {
       { tag: 'latest' },
     );
 
-    let realm: RealmMount = { name: 'demo', dir: realmDir, storeDir };
-    server = createDeckServer({ realms: [realm] });
+    let depot: DepotMount = { name: 'demo', dir: depotDir, storeDir };
+    server = createDeckServer({ depots: [depot] });
     await new Promise<void>((resolve) => server.listen(0, resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -175,8 +175,8 @@ module('deck server: realms on disk', function (hooks) {
     assert.strictEqual(meta!.name, 'acme/confetti');
     assert.strictEqual(
       storeDir,
-      join(realmDir, '.deck', 'store'),
-      'a realm carries its own versions, inside itself',
+      join(depotDir, '.deck', 'store'),
+      'a depot carries its own versions, inside itself',
     );
     let body = await (await fetch(`${origin}/_packages/demo/acme/confetti`)).json();
     let attrs = body.data.attributes;
@@ -187,7 +187,7 @@ module('deck server: realms on disk', function (hooks) {
     assert.true(attrs.live, 'the deck is also on disk, live');
   });
 
-  test('a version-less path is the working tree, exactly as a realm serves it', async function (assert) {
+  test('a version-less path is the working tree, exactly as a depot serves it', async function (assert) {
     let response = await fetch(`${origin}/demo/acme/confetti/confetti.js`);
     assert.strictEqual(response.status, 200);
     assert.strictEqual(await response.text(), CONFETTI_JS_11);
@@ -196,7 +196,7 @@ module('deck server: realms on disk', function (hooks) {
       'no-store',
       'the live tree is never cached',
     );
-    assert.strictEqual(response.headers.get('x-deck-realm'), 'demo');
+    assert.strictEqual(response.headers.get('x-deck-depot'), 'demo');
 
     // …and the same path with a version reads the seal instead.
     let sealed = await fetch(`${origin}/demo/acme/confetti@1.0.0/confetti.js`);
@@ -215,7 +215,7 @@ module('deck server: realms on disk', function (hooks) {
     assert.strictEqual(response.headers.get('cache-control'), 'no-store');
   });
 
-  test("a realm's own machinery is not servable", async function (assert) {
+  test("a depot's own machinery is not servable", async function (assert) {
     for (let path of [
       '/demo/.deck/store/acme/confetti/meta.json',
       '/demo/.jj/repo',
@@ -224,8 +224,8 @@ module('deck server: realms on disk', function (hooks) {
       let response = await fetch(`${origin}${path}`);
       assert.strictEqual(response.status, 404, path);
     }
-    let unknownRealm = await fetch(`${origin}/nope/acme/confetti/confetti.js`);
-    assert.strictEqual(unknownRealm.status, 404);
+    let unknownDepot = await fetch(`${origin}/nope/acme/confetti/confetti.js`);
+    assert.strictEqual(unknownDepot.status, 404);
   });
 
   test('exact-version raw bytes: immutable + Content-Digest', async function (assert) {
@@ -339,7 +339,7 @@ module('deck server: realms on disk', function (hooks) {
     let response = await fetch(`${origin}/demo/acme/confetti@1.0.0?meta`);
     assert.strictEqual(response.status, 200);
     let attrs = (await response.json()).data.attributes;
-    assert.strictEqual(attrs.realm, 'demo');
+    assert.strictEqual(attrs.depot, 'demo');
     assert.strictEqual(attrs.publisher, 'acme');
     assert.strictEqual(attrs.name, 'confetti');
     assert.strictEqual(attrs.entry, 'confetti.js');
@@ -481,7 +481,7 @@ module('deck server: realms on disk', function (hooks) {
   // silently do nothing — which is exactly what every demo in examples/ hit.
   test('a fallback owns the root; /_browser is still the browser', async function (assert) {
     let other = createDeckServer({
-      realms: [{ name: 'demo', dir: realmDir, storeDir }],
+      depots: [{ name: 'demo', dir: depotDir, storeDir }],
       fallback: (_req, res) => {
         res.writeHead(302, { location: '/demo/acme/app@1.0.0/app.js' });
         res.end();

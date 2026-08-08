@@ -144,7 +144,7 @@ candidate entry and let a person choose.
 | `bundle` *(today)* | esm.sh | 1–few opaque modules | yes | consumers who will never edit |
 | `source` *(new)* | npm tarball | the published module tree | yes, when it is real ESM | **editing, forking, contributing** |
 | `map` *(built)* | bundle + `.map` | the pre-bundle tree with contents | **no — structurally** | reading, diffing, PRs |
-| `repo` *(later)* | git tarball at `gitHead` | the true source incl. tests | needs a build | deep upstream work |
+| `repo` *(later)* | git tarball at `gitHead` | the true source incl. tests | needs a build | deep upstream work — if the build’s `dist/` disagrees with npm, seal it as a **rebuild sibling** (`rebuild-v1`), not as the npm tree and not as a product fork; see [deck-rebuild-sibling-proposal.md](deck-rebuild-sibling-proposal.md) |
 
 Same command, same package name, same store. **A mode is a carriage
 choice, not a different deck** — which is exactly the carriage-mode idea
@@ -301,7 +301,7 @@ three@0.160.0 — 954 published files
   bundle  build/three.js          1 module(s), 1285 KB
   bundle  build/three.module.js   1 module(s), 1243 KB
 
-$ deck vendor npm:three@0.160.0 --verify-repo --realm ./work/site \
+$ deck vendor npm:three@0.160.0 --verify-repo --depot ./work/site \
     --publisher acme --tag latest
 repo check 374/374 blobs identical to github.com/mrdoob/three.js@d04539a767:src
 vendored 374 modules from three@0.160.0

@@ -1,5 +1,11 @@
 # esm.sh vs. Deck: framework sugar, testing, and server techniques
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Written 2026-08-07 from a full source read of `~/Projects/esm.sh`
 (the real esm.sh server: Go single binary, HEAD d1695bca). Companion
 to `deck-unpkg-comparison.md` (the unpkg rewrite). Three questions

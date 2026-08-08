@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { treeHashFromDir } from '@deck/core/tree-hash';
 import { readStoreMeta, readStoredPack } from '@deck/core/store';
-import { storeDirFor } from '@deck/server/realm';
+import { storeDirFor } from '@deck/server/depot';
 import { jjVersion } from '@deck/history/jj-cli';
 
 const execFileAsync = promisify(execFile);
@@ -27,16 +27,16 @@ async function deck(
 
 module('deck CLI end-to-end', function (hooks) {
   let work: string;
-  // The realm layout, on disk exactly as it is addressed:
+  // The depot layout, on disk exactly as it is addressed:
   //   <work>/demo/acme/my-lib/…   →  /demo/acme/my-lib@<version>/…
-  let realm: string;
+  let depot: string;
   let store: string;
   const DECK = 'demo/acme/my-lib';
 
   hooks.beforeEach(async function () {
     work = await mkdtemp(join(tmpdir(), 'deck-cli-test-'));
-    realm = join(work, 'demo');
-    store = storeDirFor(realm);
+    depot = join(work, 'demo');
+    store = storeDirFor(depot);
     let source = join(work, DECK);
     await mkdir(join(source, 'util'), { recursive: true });
     await writeFile(
@@ -44,7 +44,7 @@ module('deck CLI end-to-end', function (hooks) {
       JSON.stringify({
         deck: {
           packages: {
-            'my-lib': { version: '1.0.0', entry: '$REALM/index.js' },
+            'my-lib': { version: '1.0.0', entry: '$DECK/index.js' },
           },
         },
       }),
@@ -91,7 +91,7 @@ module('deck CLI end-to-end', function (hooks) {
       [
         'publish',
         'my-lib.pack.zip',
-        '--realm',
+        '--depot',
         'demo',
         '--publisher',
         'acme',
@@ -115,7 +115,7 @@ module('deck CLI end-to-end', function (hooks) {
         [
           'publish',
           'my-lib.pack.zip',
-          '--realm',
+          '--depot',
           'demo',
           '--publisher',
           'acme',
@@ -134,7 +134,7 @@ module('deck CLI end-to-end', function (hooks) {
       deck(
         [
           'tag',
-          '--realm',
+          '--depot',
           'demo',
           '--publisher',
           'acme',
@@ -159,7 +159,7 @@ module('deck CLI end-to-end', function (hooks) {
       [
         'publish',
         'my-lib.pack.zip',
-        '--realm',
+        '--depot',
         'demo',
         '--publisher',
         'acme',
@@ -176,7 +176,7 @@ module('deck CLI end-to-end', function (hooks) {
     let { stdout } = await deck(
       [
         'release',
-        '--realm',
+        '--depot',
         'demo',
         '--publisher',
         'acme',
@@ -209,7 +209,7 @@ module('deck CLI end-to-end', function (hooks) {
       deck(
         [
           'release',
-          '--realm',
+          '--depot',
           'demo',
           '--publisher',
           'acme',
@@ -234,7 +234,7 @@ module('deck CLI end-to-end', function (hooks) {
         [
           'publish',
           'my-lib.pack.zip',
-          '--realm',
+          '--depot',
           'demo',
           '--publisher',
           'acme',
@@ -251,7 +251,7 @@ module('deck CLI end-to-end', function (hooks) {
     await deck(
       [
         'release',
-        '--realm',
+        '--depot',
         'demo',
         '--publisher',
         'acme',
@@ -270,7 +270,7 @@ module('deck CLI end-to-end', function (hooks) {
     let { stdout } = await deck(
       [
         'prune',
-        '--realm',
+        '--depot',
         'demo',
         '--publisher',
         'acme',
@@ -297,13 +297,13 @@ module('deck CLI end-to-end', function (hooks) {
   });
 
   test('lock: ranges in the tree, pins in the map', async function (assert) {
-    // A second deck in the same realm, published, to depend on.
+    // A second deck in the same depot, published, to depend on.
     let lib = join(work, 'demo', 'acme', 'lib');
     await mkdir(lib, { recursive: true });
     await writeFile(
       join(lib, 'importmap.json'),
       JSON.stringify({
-        deck: { packages: { lib: { version: '1.0.0', entry: '$REALM/lib.js' } } },
+        deck: { packages: { lib: { version: '1.0.0', entry: '$DECK/lib.js' } } },
       }),
     );
     await writeFile(join(lib, 'lib.js'), 'export const LIB = 1;\n');
@@ -312,7 +312,7 @@ module('deck CLI end-to-end', function (hooks) {
       [
         'publish',
         'lib.pack.zip',
-        '--realm',
+        '--depot',
         'demo',
         '--publisher',
         'acme',
@@ -336,7 +336,7 @@ module('deck CLI end-to-end', function (hooks) {
       deck(
         [
           'lock',
-          '--realm',
+          '--depot',
           'demo',
           '--publisher',
           'acme',
@@ -351,7 +351,7 @@ module('deck CLI end-to-end', function (hooks) {
     );
 
     let { stdout } = await deck(
-      ['lock', '--realm', 'demo', '--publisher', 'acme', '--name', 'my-lib'],
+      ['lock', '--depot', 'demo', '--publisher', 'acme', '--name', 'my-lib'],
       work,
     );
     assert.true(stdout.includes('acme/lib  ^1.0.0 → /demo/acme/lib@1.0.0/lib.js'), stdout);
@@ -368,7 +368,7 @@ module('deck CLI end-to-end', function (hooks) {
     );
 
     let { stdout: again } = await deck(
-      ['lock', '--realm', 'demo', '--publisher', 'acme', '--name', 'my-lib'],
+      ['lock', '--depot', 'demo', '--publisher', 'acme', '--name', 'my-lib'],
       work,
     );
     assert.true(again.includes('already locked'), again);
@@ -381,7 +381,7 @@ module('deck CLI end-to-end', function (hooks) {
       return;
     }
     await writeFile(join(source, 'index.js'), 'export const LIB = 1;\n');
-    await deck(['history', 'demo'], work); // listing seals the realm
+    await deck(['history', 'demo'], work); // listing seals the depot
     await writeFile(join(source, 'index.js'), 'export const LIB = 2;\n');
 
     let { stdout: log } = await deck(['history', 'demo'], work);

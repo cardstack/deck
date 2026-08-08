@@ -28,9 +28,9 @@ import { readZipEntry } from './canonical-zip.ts';
 //
 // Three levels of volatility, all expressible, all just URLs:
 //
-//   "live"      → /<realm>/<pub>/<pkg>/…        every save, instantly (YOLO)
-//   "dev"       → /<realm>/<pub>/<pkg>@0.2.0-dev.7/…  the freshest seal
-//   "^1.0.0"    → /<realm>/<pub>/<pkg>@1.2.0/…  dependable; moves when you say
+//   "live"      → /<depot>/<pub>/<pkg>/…        every save, instantly (YOLO)
+//   "dev"       → /<depot>/<pub>/<pkg>@0.2.0-dev.7/…  the freshest seal
+//   "^1.0.0"    → /<depot>/<pub>/<pkg>@1.2.0/…  dependable; moves when you say
 //
 // Prereleases are excluded from range matching (the npm rule), so a `^1.0.0`
 // dependency never silently picks up somebody's auto-published dev line.
@@ -38,9 +38,9 @@ import { readZipEntry } from './canonical-zip.ts';
 export const LIVE_SPEC = 'live';
 
 export interface DependencyResolution {
-  // The declared key: `<publisher>/<package>` or `<realm>/<publisher>/<package>`.
+  // The declared key: `<publisher>/<package>` or `<depot>/<publisher>/<package>`.
   key: string;
-  realm: string;
+  depot: string;
   publisher: string;
   package: string;
   spec: string;
@@ -58,8 +58,8 @@ export interface DependencyResolution {
 }
 
 export interface ResolveOptions {
-  realmDir: string;
-  realmName: string;
+  depotDir: string;
+  depotName: string;
   storeDir: string;
   dependencies: Record<string, string>;
   // The map being locked, so the report can say what moved.
@@ -68,14 +68,14 @@ export interface ResolveOptions {
 
 function parseKey(
   key: string,
-  defaultRealm: string,
-): { realm: string; publisher: string; package: string } | undefined {
+  defaultDepot: string,
+): { depot: string; publisher: string; package: string } | undefined {
   let segments = key.split('/');
   if (segments.length === 2) {
-    return { realm: defaultRealm, publisher: segments[0], package: segments[1] };
+    return { depot: defaultDepot, publisher: segments[0], package: segments[1] };
   }
   if (segments.length === 3) {
-    return { realm: segments[0], publisher: segments[1], package: segments[2] };
+    return { depot: segments[0], publisher: segments[1], package: segments[2] };
   }
   return undefined;
 }
@@ -131,7 +131,7 @@ function resolveSpec(
 
 async function entryOf(
   options: ResolveOptions,
-  target: { realm: string; publisher: string; package: string },
+  target: { depot: string; publisher: string; package: string },
   version: string | undefined,
 ): Promise<string | undefined> {
   if (version === undefined) {
@@ -139,7 +139,7 @@ async function entryOf(
     try {
       let text = await readFile(
         join(
-          options.realmDir,
+          options.depotDir,
           target.publisher,
           target.package,
           IMPORT_MAP_PATH,
@@ -174,25 +174,25 @@ export async function resolveDependencies(
     // BE the deck name, because nothing else says which deck to resolve.
     // With one, the key is free — which is what lets a vendored package's
     // bare npm specifier (`three`, `tslib`) point at a deck.
-    if (alias === undefined && parseKey(key, options.realmName) === undefined) {
+    if (alias === undefined && parseKey(key, options.depotName) === undefined) {
       throw new Error(
-        `dependency "${key}" is not <publisher>/<package> or <realm>/<publisher>/<package>`,
+        `dependency "${key}" is not <publisher>/<package> or <depot>/<publisher>/<package>`,
       );
     }
-    let target = parseKey(alias ?? key, options.realmName);
+    let target = parseKey(alias ?? key, options.depotName);
     if (!target) {
       throw new Error(
-        `dependency "${key}" aliases "${alias}", which is not <publisher>/<package> or <realm>/<publisher>/<package>`,
+        `dependency "${key}" aliases "${alias}", which is not <publisher>/<package> or <depot>/<publisher>/<package>`,
       );
     }
-    if (target.realm !== options.realmName) {
-      // Cross-realm dependencies need that realm's store, which this realm
+    if (target.depot !== options.depotName) {
+      // Cross-depot dependencies need that depot's store, which this depot
       // does not have. Refusing beats writing a pin nobody can serve.
       throw new Error(
-        `dependency "${key}" is in realm ${target.realm}; only ${options.realmName} can be locked from here`,
+        `dependency "${key}" is in depot ${target.depot}; only ${options.depotName} can be locked from here`,
       );
     }
-    let base = `/${target.realm}/${target.publisher}/${target.package}`;
+    let base = `/${target.depot}/${target.publisher}/${target.package}`;
     let version: string | undefined;
     if (spec !== LIVE_SPEC) {
       let meta = await readStoreMeta(
@@ -217,7 +217,7 @@ export async function resolveDependencies(
     }
     resolutions.push({
       key,
-      realm: target.realm,
+      depot: target.depot,
       publisher: target.publisher,
       package: target.package,
       spec,
@@ -265,12 +265,12 @@ async function sealedDependencies(
 // Walk what the resolved decks themselves depend on, breadth-first, and emit
 // one scope per deck. Cycles terminate on the visited set.
 export async function resolveScopes(options: {
-  realmName: string;
+  depotName: string;
   storeDir: string;
   roots: readonly DependencyResolution[];
   maxDepth?: number;
 }): Promise<ScopedResolution[]> {
-  let { realmName, storeDir, roots, maxDepth = 8 } = options;
+  let { depotName, storeDir, roots, maxDepth = 8 } = options;
   let scopes = new Map<string, Record<string, string>>();
   let visited = new Set<string>();
   let queue = roots
@@ -289,13 +289,13 @@ export async function resolveScopes(options: {
     }
     visited.add(key);
     let dependencies = await sealedDependencies(storeDir, job.deck, job.version);
-    let scope = `/${realmName}/${job.deck}@${job.version}/`;
+    let scope = `/${depotName}/${job.deck}@${job.version}/`;
     for (let [specifier, declared] of Object.entries(dependencies)) {
       let { target, spec } = parseDependencyValue(declared);
       if (!target) {
         continue; // a range against itself; nothing to scope
       }
-      let child = parseKey(target, realmName);
+      let child = parseKey(target, depotName);
       if (!child) {
         continue;
       }
@@ -308,7 +308,7 @@ export async function resolveScopes(options: {
       if (!version) {
         continue;
       }
-      let base = `/${child.realm}/${childDeck}@${version}`;
+      let base = `/${child.depot}/${childDeck}@${version}`;
       let { entry, exports } = await entryAndExportsOf(
         storeDir,
         childDeck,
@@ -366,7 +366,7 @@ export function applyLock(
   mapText: string,
   resolutions: readonly DependencyResolution[],
   scoped: readonly ScopedResolution[] = [],
-  realmName?: string,
+  depotName?: string,
 ): LockResult {
   let parsed = JSON.parse(mapText);
   let imports: Record<string, string> = { ...(parsed.imports ?? {}) };
@@ -386,7 +386,7 @@ export function applyLock(
   // is the author's and is never touched — a pin is recognised by pointing
   // at the very package its specifier names.
   for (let [specifier, target] of Object.entries(imports)) {
-    if (desired.has(specifier) || !isPin(specifier, target, realmName)) {
+    if (desired.has(specifier) || !isPin(specifier, target, depotName)) {
       continue;
     }
     delete imports[specifier];
@@ -421,19 +421,19 @@ export function applyLock(
 // "/site/lib/highlight-js@11.9.0/es/index.js"` is a pin the lock wrote, and
 // under the old rule the lock could not recognise its own work — so dropping
 // the dependency left the pin behind, still resolving, until the day the
-// deck it names is pruned. L11 caught exactly this on a real realm.
+// deck it names is pruned. L11 caught exactly this on a real depot.
 //
-// The rule now: a pin is anything pointing INTO this realm's deck space.
-// Given the realm name it is exact; without one it falls back to the old
+// The rule now: a pin is anything pointing INTO this depot's deck space.
+// Given the depot name it is exact; without one it falls back to the old
 // name-matching test, which is conservative and never deletes a stranger.
 function isPin(
   specifier: string,
   target: string,
-  realmName?: string,
+  depotName?: string,
 ): boolean {
-  if (realmName) {
+  if (depotName) {
     return new RegExp(
-      `^/${realmName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*(@[^/]+)?/`,
+      `^/${depotName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*(@[^/]+)?/`,
     ).test(target);
   }
   let name = specifier.replace(/\/$/, '');
@@ -446,8 +446,8 @@ function isPin(
 }
 
 export async function lockDeck(options: {
-  realmDir: string;
-  realmName: string;
+  depotDir: string;
+  depotName: string;
   storeDir: string;
   deckDir: string;
 }): Promise<{ resolutions: DependencyResolution[]; text: string; changed: boolean }> {
@@ -459,14 +459,14 @@ export async function lockDeck(options: {
     string
   >;
   let resolutions = await resolveDependencies({
-    realmDir: options.realmDir,
-    realmName: options.realmName,
+    depotDir: options.depotDir,
+    depotName: options.depotName,
     storeDir: options.storeDir,
     dependencies,
     currentImports,
   });
   let scoped = await resolveScopes({
-    realmName: options.realmName,
+    depotName: options.depotName,
     storeDir: options.storeDir,
     roots: resolutions,
   });
@@ -474,7 +474,7 @@ export async function lockDeck(options: {
     mapText,
     resolutions,
     scoped,
-    options.realmName,
+    options.depotName,
   );
   return { resolutions, text, changed };
 }

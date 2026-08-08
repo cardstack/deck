@@ -18,7 +18,7 @@ patching a 140 KB bundle.
 
 ## What the demo does
 
-1. **Vendors `leaflet@1.9.4` from npm source** into the realm's own store,
+1. **Vendors `leaflet@1.9.4` from npm source** into the depot's own store,
    with provenance: registry, integrity, and the repo and commit npm
    declared. Not a CDN bundle — the tree npm published.
 2. **Forks it** to `me/leaflet@1.9.4-mine.0` and changes

@@ -116,7 +116,7 @@ module('B: wire compression', () => {
 module('C: closure preload', () => {
   test('deck URLs parse and format', (assert) => {
     assert.deepEqual(parseDeckUrl('/site/lib/three@0.160.0/src/Three.js'), {
-      realm: 'site',
+      depot: 'site',
       publisher: 'lib',
       pkg: 'three',
       version: '0.160.0',
@@ -167,7 +167,7 @@ module('C: closure preload', () => {
   });
 
   function reader(files: Record<string, string>) {
-    return async (url: { realm: string; publisher: string; pkg: string; version?: string; path: string }) => {
+    return async (url: { depot: string; publisher: string; pkg: string; version?: string; path: string }) => {
       let key = formatDeckUrl(url);
       return files[key] ? Buffer.from(files[key]) : undefined;
     };
@@ -302,7 +302,7 @@ module('C: closure preload', () => {
         fromUrl: '/site/me/app@1.0.0/index.html',
       }),
       [],
-      'a foreign origin is not this realm’s bytes to preload',
+      'a foreign origin is not this depot’s bytes to preload',
     );
   });
 

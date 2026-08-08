@@ -1,5 +1,11 @@
 # Deck Spec: SemVer Version-Bump Protocol & Required Migrations
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Status (updated 2026-08-07): this spec covers the FULL protocol. The
 **at-rest subset is BUILT AND TESTED** — stack L0–L5, branches
 `deck/01`–`deck/05`; current description in `deck-at-rest-protocol.md`.

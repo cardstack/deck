@@ -46,7 +46,7 @@ export function parseNpmSpec(spec: string): NpmSpec {
 // The fix here is Nix's, not Debian's. Debian's answer to a flat namespace
 // is a central authority refusing collisions at registration; Deck is
 // federated and has no such authority, so refusal can only fire late — in
-// somebody's realm, at publish time. Nix's answer is `<hash>-<name>`: the
+// somebody's depot, at publish time. Nix's answer is `<hash>-<name>`: the
 // name is decoration and identity lives elsewhere, which Deck already
 // believes, since L1 makes identity the treeHash.
 //
@@ -383,7 +383,7 @@ export async function verifyAgainstGithubTree(options: {
 // The vocabulary is pnpm's, deliberately: `minimumReleaseAge` in MINUTES and
 // `minimumReleaseAgeExclude`, the same two settings the boxel monorepo
 // already carries in pnpm-workspace.yaml (1440, with two @glint packages
-// excluded). A realm's policy is therefore copy-pasteable from the
+// excluded). A depot's policy is therefore copy-pasteable from the
 // workspace it serves, and means the same thing on both sides.
 //
 // npm's registry has no such gate, so it lives here, at the moment bytes
@@ -522,12 +522,12 @@ export function newestAged(
   return aged.sort((a, b) => Date.parse(times[a]) - Date.parse(times[b])).at(-1);
 }
 
-// A realm carries its own policy, so the gate is a property of the place
+// A depot carries its own policy, so the gate is a property of the place
 // bytes land rather than of whoever typed the command. The file is the same
 // two keys pnpm uses, so it can be lifted straight out of a
 // pnpm-workspace.yaml:
 //
-//   <realm>/.deck/policy.json
+//   <depot>/.deck/policy.json
 //   { "minimumReleaseAge": 1440, "minimumReleaseAgeExclude": ["@glint/template"] }
 export const POLICY_FILE = 'policy.json';
 

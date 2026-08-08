@@ -52,7 +52,7 @@ export interface LinkReport {
 }
 
 export interface VerifyLinksOptions {
-  realmName: string;
+  depotName: string;
   storeDir: string;
   // Exactly one of these: a live deck directory, or sealed pack bytes.
   deckDir?: string;
@@ -65,12 +65,12 @@ export interface VerifyLinksOptions {
 
 // A pin written by the lock, as it would be written today.
 function expectedPin(
-  realmName: string,
+  depotName: string,
   target: { publisher: string; package: string },
   version: string | undefined,
   entry: string | undefined,
 ): { prefix: string; entry?: string } {
-  let base = `/${realmName}/${target.publisher}/${target.package}`;
+  let base = `/${depotName}/${target.publisher}/${target.package}`;
   let versioned = version === undefined ? base : `${base}@${version}`;
   return {
     prefix: `${versioned}/`,
@@ -80,14 +80,14 @@ function expectedPin(
 
 function parseDeckRef(
   value: string,
-  realmName: string,
-): { realm: string; publisher: string; package: string } | undefined {
+  depotName: string,
+): { depot: string; publisher: string; package: string } | undefined {
   let segments = value.split('/');
   if (segments.length === 2) {
-    return { realm: realmName, publisher: segments[0], package: segments[1] };
+    return { depot: depotName, publisher: segments[0], package: segments[1] };
   }
   if (segments.length === 3) {
-    return { realm: segments[0], publisher: segments[1], package: segments[2] };
+    return { depot: segments[0], publisher: segments[1], package: segments[2] };
   }
   return undefined;
 }
@@ -95,7 +95,7 @@ function parseDeckRef(
 export async function verifyLinks(
   options: VerifyLinksOptions,
 ): Promise<LinkReport> {
-  let { realmName, storeDir, deck, deckDir, packBytes } = options;
+  let { depotName, storeDir, deck, deckDir, packBytes } = options;
   let findings: LinkFinding[] = [];
   let checked = 0;
 
@@ -162,20 +162,20 @@ export async function verifyLinks(
   for (let [specifier, declared] of Object.entries(dependencies)) {
     checked++;
     let { target: alias, spec } = parseDependencyValue(declared);
-    let target = parseDeckRef(alias ?? specifier, realmName);
+    let target = parseDeckRef(alias ?? specifier, depotName);
     if (!target) {
       findings.push({
         code: 'link-missing-record',
         specifier,
-        detail: `"${declared}" names no deck this realm can resolve`,
+        detail: `"${declared}" names no deck this depot can resolve`,
       });
       continue;
     }
-    if (target.realm !== realmName) {
+    if (target.depot !== depotName) {
       findings.push({
         code: 'link-unresolvable',
         specifier,
-        detail: `realm ${target.realm} is not served from here`,
+        detail: `depot ${target.depot} is not served from here`,
       });
       continue;
     }
@@ -234,7 +234,7 @@ export async function verifyLinks(
       }
     }
 
-    let expected = expectedPin(realmName, target, version, entry);
+    let expected = expectedPin(depotName, target, version, entry);
     let actualPrefix = imports[`${specifier}/`];
     let actualEntry = imports[specifier];
     if (actualPrefix === undefined && actualEntry === undefined) {
@@ -275,7 +275,7 @@ export async function verifyLinks(
     let match = /^\/([a-z0-9][a-z0-9-]*)\/([a-z0-9][a-z0-9-]*)\/([a-z0-9][a-z0-9-]*)(@[^/]+)?\//.exec(
       targetUrl,
     );
-    if (match && match[1] === realmName) {
+    if (match && match[1] === depotName) {
       checked++;
       findings.push({
         code: 'link-missing-record',

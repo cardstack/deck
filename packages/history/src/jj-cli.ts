@@ -22,7 +22,7 @@ const execFileAsync = promisify(execFile);
 // historyd (src/historyd.ts) is the faster swap-in, not the definition.
 //
 // Ported from the vetted realm-server sidecar (packages/realm-server/lib/
-// realm-history.ts), minus everything realm-specific: no bookmarks (the
+// depot-history.ts), minus everything depot-specific: no bookmarks (the
 // STORE's meta.json is the version registry in the standalone protocol), no
 // logger, no fs-extra.
 
@@ -307,7 +307,7 @@ export class JjCliHistory implements HistoryBackend {
   }
 
   // What jj seals must be exactly what the tree hash covers. Without this,
-  // a realm's own `.deck` store would be sealed WITH the realm — every seal
+  // a depot's own `.deck` store would be sealed WITH the depot — every seal
   // carrying a copy of every pack, and a restore rewinding the published
   // versions themselves.
   //

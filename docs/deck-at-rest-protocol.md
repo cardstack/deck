@@ -21,10 +21,10 @@ The working vocabulary, borrowed from trading-card games:
 
 | Term | Meaning here |
 | --- | --- |
-| collection | the realm — all your cards, live |
+| collection | the depot — all your cards, live |
 | **deck** | a package: an arrangement from the collection |
 | **decklist** | the manifest entry: the exact contents (`boxel.packages` + exports; `?meta` shows it) — the tournament-registered enumeration the gate checks |
-| **live tree** | the realm's current state: where editing happens; published versions never read it |
+| **live tree** | the depot's current state: where editing happens; published versions never read it |
 | **sealed deck** | a published version — seal + deck, immutable |
 | sideboard | optional exports and extras |
 | **cardpack / pack** | the closure carrier ACROSS BOTH PLANES: an archive (file form `.pack.zip` — a plain zip + packlist + per-file hashes) holding instances AND the definitions they need, movable as one artifact |
@@ -67,17 +67,17 @@ production lessons from the unpkg comparison
 
 ## 1. What "at rest" means
 
-The protocol is a set of states, not a set of workflows. A realm is
+The protocol is a set of states, not a set of workflows. A depot is
 a package registry when its state has these five parts:
 
-1. **Content.** The realm holds files. Paths are IDs. No placement
-   rule exists. Many apps and many packages can share one realm.
+1. **Content.** The depot holds files. Paths are IDs. No placement
+   rule exists. Many apps and many packages can share one depot.
 2. **The import map.** A plain JSON file, `importmap.json`, at the
-   realm root. It is not a card. It declares the realm's packages
+   depot root. It is not a card. It declares the depot's packages
    and resolves `@` references. Section 3 gives the syntax.
 3. **History.** The history sidecar makes a seal for each save. Each
    seal has a changeId. A changeId points to one full state of the
-   realm, and that state includes the map.
+   depot, and that state includes the map.
 4. **Version pointers.** A bookmark `pkg/<name>/<version>` points to
    one changeId. This is a published version. It cannot move. A
    bookmark `tag/<name>/<alias>` is a dist-tag. It can move. The
@@ -85,7 +85,7 @@ a package registry when its state has these five parts:
 5. **Records (optional).** JSON records in `_registry/` help search
    and audit. The server does not need them to serve content.
 
-An agent can put a realm in this state with file writes and two
+An agent can put a depot in this state with file writes and two
 endpoint calls. Then distribution starts. No review and no approval
 are necessary for the at-rest part.
 
@@ -93,28 +93,28 @@ are necessary for the at-rest part.
 
 1. A reference is relative (`../accounting/account`), unless it
    starts with `@`. Then the import map resolves it.
-2. `$REALM/` is the realm-root token, from the platform RRI work.
-   It always means the live realm root.
+2. `$DECK/` is the depot-root token, from the platform RRI work.
+   It always means the live depot root.
 3. A pin never comes from the token. A pin comes from the route in
    the value. A value through `@name@version` is pinned. A value to
    a plain tree path follows the live tree.
-4. The full cross-realm reference form is
+4. The full cross-depot reference form is
    `@<place>/<publisher>/<name>@<version>/<path>`. The short form
-   `@<name>@<version>/<path>` serves inside one realm.
+   `@<name>@<version>/<path>` serves inside one depot.
 
 ## 3. The import map file
 
 ```json
 {
   "imports": {
-    "@ui/": "$REALM/lib/ui/"
+    "@ui/": "$DECK/lib/ui/"
   },
   "scopes": {
-    "$REALM/crm/": {
+    "$DECK/crm/": {
       "@money/":   "https://catalog.example/@boxel/maria/money@2.1.0/",
-      "@contact/": "$REALM/@crm@1.2.0/contact/"
+      "@contact/": "$DECK/@crm@1.2.0/contact/"
     },
-    "$REALM/gym/": {
+    "$DECK/gym/": {
       "@money/": "https://catalog.example/@boxel/maria/money@3.0.0/"
     }
   },
@@ -122,10 +122,10 @@ are necessary for the at-rest part.
     "packages": {
       "crm": {
         "version": "1.2.0",
-        "entry": "$REALM/crm/app",
-        "exports": { "./account": "$REALM/crm/account" }
+        "entry": "$DECK/crm/app",
+        "exports": { "./account": "$DECK/crm/account" }
       },
-      "gym": { "version": "3.1.0", "entry": "$REALM/gym/app" }
+      "gym": { "version": "3.1.0", "entry": "$DECK/gym/app" }
     }
   }
 }
@@ -140,19 +140,19 @@ Rules:
   publish gate reads `boxel.packages[<name>].version`. The map is
   the package manifest. A `package.json` is optional metadata only.
 - `scopes` gives each app its own alias set. Two apps can hold
-  `@money/` at two different versions in one realm.
+  `@money/` at two different versions in one depot.
 - Pins live in values, never in keys. A version bump is a one-value
   edit.
 - Do not name an alias after a Boxel language word. `@field` is the
   card-api decorator. Use content nouns: `@ui/`, `@money/`.
 - The three source kinds are visible in each value: local live
-  (`$REALM/<path>/`), pinned own realm (`$REALM/@<name>@<version>/`),
+  (`$DECK/<path>/`), pinned own depot (`$DECK/@<name>@<version>/`),
   and catalog (absolute URL with the full reference form).
 
-The `RealmConfig` card (`realm.json`, already a card) is the
+The `RealmConfig` card (`depot.json`, already a card) is the
 authoring surface. Intent fields hold ranges and sources. Computed
 fields give previews and warnings. The save action writes
-`importmap.json` as an explicit realm write. The card is a
+`importmap.json` as an explicit depot write. The card is a
 convenience, never a dependency. Module resolution reads only the
 plain file, never the index and never card compute.
 
@@ -162,27 +162,27 @@ State changes:
 
 | Endpoint | Function |
 | --- | --- |
-| `POST <realm>/_history/commit` | Write files and make a seal with a message and an actor |
-| `POST <realm>/_packages/<name>/publish` | Give a version name to a changeId |
-| `POST <realm>/_packages/<name>/dist-tags` | Move a dist-tag to a version |
+| `POST <depot>/_history/commit` | Write files and make a seal with a message and an actor |
+| `POST <depot>/_packages/<name>/publish` | Give a version name to a changeId |
+| `POST <depot>/_packages/<name>/dist-tags` | Move a dist-tag to a version |
 
 Publish rules: correct semver; the version must be new (published
 versions cannot change); the map at the changeId must declare the
 same name and version; each major line ascends separately, so
 backports stay legal; `latest` cannot point to a prerelease; a
-dist-tag rollback needs an explicit flag and the realm-owner
+dist-tag rollback needs an explicit flag and the depot-owner
 permission.
 
 Reads and serving:
 
 | Request | Result |
 | --- | --- |
-| `GET <realm>/_packages/<name>` | The versions and the dist-tags |
-| `GET <realm>/@<name>@<version>/<tree-path>` | The file at that version |
-| `GET <realm>/@<name>@<version>` | 301 to the entry module |
-| `GET <realm>/@<name>@<version>/<export-alias>` | 301 to the tree path |
-| `GET <realm>/@<name>@<range-or-tag>/<path>` | 302 to the best exact version, in one hop |
-| `GET <realm>/@<name>@<version>?meta` | The version listing: entry, exports, changeId, all files |
+| `GET <depot>/_packages/<name>` | The versions and the dist-tags |
+| `GET <depot>/@<name>@<version>/<tree-path>` | The file at that version |
+| `GET <depot>/@<name>@<version>` | 301 to the entry module |
+| `GET <depot>/@<name>@<version>/<export-alias>` | 301 to the tree path |
+| `GET <depot>/@<name>@<range-or-tag>/<path>` | 302 to the best exact version, in one hop |
+| `GET <depot>/@<name>@<version>?meta` | The version listing: entry, exports, changeId, all files |
 
 Serve rules, the unpkg pattern with the unpkg-comparison hardening:
 
@@ -213,7 +213,7 @@ Serve rules, the unpkg pattern with the unpkg-comparison hardening:
 - A range never matches a prerelease. A specifier without an
   extension finds the `.gts` file. HEAD gives the GET headers with
   no body.
-- **The serve grammar is reserved.** A literal realm file with a
+- **The serve grammar is reserved.** A literal depot file with a
   root path shaped like `@<name>@<spec>` is shadowed by the route.
 
 ## 5. Why snapshots stay whole
@@ -221,13 +221,13 @@ Serve rules, the unpkg pattern with the unpkg-comparison hardening:
 A version names a full seal, and the URL path is the tree path. So a
 relative import resolves inside the same versioned tree. An `@alias`
 import resolves through the sealed map, which pins it. A plain
-`$REALM/path` import is a deliberate live reference — the escape
+`$DECK/path` import is a deliberate live reference — the escape
 hatch, visible in the file. Packages published from one seal always
 agree with each other. One seal can carry many package versions.
 
 ## 6. The three use cases
 
-### Simple: many versions in one realm
+### Simple: many versions in one depot
 
 Write a card type. Add its entry to the map. Publish `1.0.0`. Point
 an important document to `@tier-list@1.0.0/...`. Point test
@@ -236,7 +236,7 @@ cannot break the important document. Publish `1.1.0` when ready.
 
 ### Medium: many apps, release channels
 
-One realm holds a CRM app and a Gym app, at different versions, with
+One depot holds a CRM app and a Gym app, at different versions, with
 different pins for the same dependencies — the `scopes` section
 carries this. Publish stable versions with the `latest` tag and test
 versions with the `next` tag. User documents point to exact
@@ -245,9 +245,9 @@ good, move `latest` and update documents at your own time.
 
 ### Complex: a catalog with many publishers
 
-Each author publishes in the author's own realm. The catalog assigns
+Each author publishes in the author's own depot. The catalog assigns
 publisher handles and lists or copies packages (advertise mode for
-durable data realms; re-home mode for personal realms). Consumers
+durable data depots; re-home mode for personal depots). Consumers
 reference `@<place>/<publisher>/<name>@<version>/<path>` and resolve
 the location through VirtualNetwork mappings. Identity stays in the
 reference; hosting stays in the mapping. (Catalog intake endpoints
@@ -258,7 +258,7 @@ are planned work; the state model supports them today.)
 Planned, not included: the publish gate with required migrations and
 fixtures; fleet migrations; security responses (advisory, yank,
 quarantine); AppDef-generated dependency intent; fine authorization
-tiers (today: read for GET, write for publish, realm-owner for
+tiers (today: read for GET, write for publish, depot-owner for
 rollback). The planned functions do not change the state model.
 
 ## 8. Status
@@ -280,7 +280,7 @@ rollback). The planned functions do not change the state model.
 
 | Part | File |
 | --- | --- |
-| Bookmark primitives | `packages/realm-server/lib/realm-history.ts` |
+| Bookmark primitives | `packages/realm-server/lib/depot-history.ts` |
 | Publish rules (pure functions) | `packages/realm-server/lib/package-registry.ts` |
 | Registry endpoints | `packages/realm-server/handlers/handle-package-registry.ts` |
 | Versioned serving | `packages/realm-server/handlers/handle-package-serve.ts` |

@@ -1,5 +1,11 @@
 # What is missing to replace git + GitHub + npm + unpkg
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 A gap ledger, reconciled against what the Boxel realm server and CLI have
 already built, and classified by who supplies each answer.
 

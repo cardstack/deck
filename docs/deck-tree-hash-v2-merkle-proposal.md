@@ -1,5 +1,11 @@
 # Proposal: `tree-hash-v2` — Merkle directory identity
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 > ## ❌ REJECTED — 2026-08-08
 >
 > **`tree-hash-v1` is the identity for everything. There is no v2.**

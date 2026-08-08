@@ -17,14 +17,14 @@ import { assert, assertEqual, Checks, type CheckResult } from './laws.ts';
 // the same run measures the reference server and the Boxel realm server with
 // no changes and no shared code to be wrong in the same way.
 //
-// The target must be serving the canonical fixture realm, live at
-// /<realm>/deck/fixture/ and sealed at /<realm>/deck/fixture@1.0.0/.
+// The target must be serving the canonical fixture depot, live at
+// /<depot>/deck/fixture/ and sealed at /<depot>/deck/fixture@1.0.0/.
 
 export interface HttpTarget {
   // e.g. "http://localhost:8788"
   baseUrl: string;
   // e.g. "conformance"
-  realm: string;
+  depot: string;
   fetchImpl?: typeof fetch;
 }
 
@@ -41,10 +41,10 @@ export async function runHttpChecks(
   target: HttpTarget,
 ): Promise<CheckResult[]> {
   let checks = new Checks();
-  let { baseUrl, realm, fetchImpl = fetch } = target;
+  let { baseUrl, depot, fetchImpl = fetch } = target;
   let base = baseUrl.replace(/\/$/, '');
-  let live = `${base}/${realm}/${FIXTURE_PUBLISHER}/${FIXTURE_PACKAGE}`;
-  let sealed = `${base}/${realm}/${FIXTURE_PUBLISHER}/${FIXTURE_PACKAGE}@${FIXTURE_VERSION}`;
+  let live = `${base}/${depot}/${FIXTURE_PUBLISHER}/${FIXTURE_PACKAGE}`;
+  let sealed = `${base}/${depot}/${FIXTURE_PUBLISHER}/${FIXTURE_PACKAGE}@${FIXTURE_VERSION}`;
   let get = (url: string, init?: RequestInit) =>
     fetchImpl(url, { redirect: 'manual', ...init });
 
@@ -71,7 +71,7 @@ export async function runHttpChecks(
 
   await checks.run('L5', 'a range resolves in ONE hop to the exact address', async () => {
     let response = await get(
-      `${base}/${realm}/${FIXTURE_PUBLISHER}/${FIXTURE_PACKAGE}@^1.0.0/index.js`,
+      `${base}/${depot}/${FIXTURE_PUBLISHER}/${FIXTURE_PACKAGE}@^1.0.0/index.js`,
     );
     assertEqual(response.status, 302, 'status');
     let location = response.headers.get('location') ?? '';
@@ -201,7 +201,7 @@ export async function runHttpChecks(
   await checks.run('L12', 'a permanent error is not cached like a transient one', async () => {
     let absent = await get(`${sealed}/definitely-absent.js`);
     let bogus = await get(
-      `${base}/${realm}/${FIXTURE_PUBLISHER}/${FIXTURE_PACKAGE}@%%%/index.js`,
+      `${base}/${depot}/${FIXTURE_PUBLISHER}/${FIXTURE_PACKAGE}@%%%/index.js`,
     );
     assert(
       absent.headers.get('cache-control') !== null ||
@@ -287,7 +287,7 @@ export async function runHttpChecks(
 
   await checks.run('L9', 'endorsements are addressed by tree hash', async () => {
     let response = await get(
-      `${base}/${realm}/_trees/${FIXTURE_TREE_HASH}/signatures`,
+      `${base}/${depot}/_trees/${FIXTURE_TREE_HASH}/signatures`,
     );
     assert(
       response.status === 200 || response.status === 404,
@@ -308,7 +308,7 @@ export async function runHttpChecks(
 
   await checks.run('L10', 'a nonsense tree hash is refused, not invented', async () => {
     let response = await get(
-      `${base}/${realm}/_trees/${'0'.repeat(64)}/signatures`,
+      `${base}/${depot}/_trees/${'0'.repeat(64)}/signatures`,
     );
     assertEqual(response.status, 404, 'unknown tree');
   });
@@ -323,7 +323,7 @@ export async function runHttpChecks(
     'L12',
     'the advertised closure crosses a scoped edge',
     async () => {
-      let page = `${base}/${realm}/${GRAPH_PUBLISHER}/${GRAPH_APP}@${GRAPH_VERSION}/page.html`;
+      let page = `${base}/${depot}/${GRAPH_PUBLISHER}/${GRAPH_APP}@${GRAPH_VERSION}/page.html`;
       let response = await get(page);
       assertEqual(response.status, 200, 'status');
       let advertised = response.headers.get('x-deck-preload');
@@ -341,7 +341,7 @@ export async function runHttpChecks(
           `reads as complete.`,
       );
       let html = await response.text();
-      let leaf = graphModuleUrl(realm, GRAPH_LEAF, 'index.js');
+      let leaf = graphModuleUrl(depot, GRAPH_LEAF, 'index.js');
       if (sent >= total) {
         assert(
           html.includes(leaf),

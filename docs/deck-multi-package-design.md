@@ -1,5 +1,11 @@
 # Multi-Package Realms and the Import Map (Design, Current State)
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Status: IMPLEMENTED, 2026-08-07. Commit `cc0be4c532` on the branch
 `deck/05-package-map`. All tests pass. This file stays as the design
 record. The current protocol description is
@@ -12,7 +18,7 @@ Technical English.
    system. Paths are IDs. They cannot change.
 2. A reference is relative (`../accounting/account`), unless it
    starts with `@`. Then a resolver maps it.
-3. `$REALM/` is the realm-root token. It comes from the RRI work
+3. `$DECK/` is the realm-root token. It comes from the RRI work
    (the branch `@cardstack/base-rris-everywhere-cs-10750` renamed
    `$thisRealm` to `$REALM`). The `$` sigil marks tokens. The `@`
    sigil marks scoped names. They cannot collide.
@@ -34,26 +40,26 @@ truth.
 ```json
 {
   "imports": {
-    "@ui/": "$REALM/lib/ui/"
+    "@ui/": "$DECK/lib/ui/"
   },
   "scopes": {
-    "$REALM/crm/": {
+    "$DECK/crm/": {
       "@money/":   "https://catalog.example/@boxel/maria/money@2.1.0/",
-      "@contact/": "$REALM/@crm@1.2.0/contact/"
+      "@contact/": "$DECK/@crm@1.2.0/contact/"
     },
-    "$REALM/gym/": {
+    "$DECK/gym/": {
       "@money/":    "https://catalog.example/@boxel/maria/money@3.0.0/",
-      "@schedule/": "$REALM/gym/schedule/"
+      "@schedule/": "$DECK/gym/schedule/"
     }
   },
   "boxel": {
     "packages": {
       "crm": {
         "version": "1.2.0",
-        "entry": "$REALM/crm/app",
-        "exports": { "./account": "$REALM/crm/account" }
+        "entry": "$DECK/crm/app",
+        "exports": { "./account": "$DECK/crm/account" }
       },
-      "gym": { "version": "3.1.0", "entry": "$REALM/gym/app" }
+      "gym": { "version": "3.1.0", "entry": "$DECK/gym/app" }
     }
   }
 }
@@ -87,8 +93,8 @@ The three source kinds, visible in each value:
 
 | Kind | Value form |
 | --- | --- |
-| Local, live | `$REALM/<path>/` |
-| Pinned, own realm | `$REALM/@<name>@<version>/` |
+| Local, live | `$DECK/<path>/` |
+| Pinned, own realm | `$DECK/@<name>@<version>/` |
 | Catalog | absolute URL with `@<place>/<publisher>/<name>@<version>/` |
 
 ## 3. The authoring layer: the RealmConfig card
@@ -147,7 +153,7 @@ published from one seal always agree with each other.
 The map is a file in the tree. Each seal carries its own map. Inside
 a published version: a relative import resolves in the snapshot; an
 `@alias` import resolves through the sealed map, which pins it; a
-plain `$REALM/path` import is a deliberate live reference — the
+plain `$DECK/path` import is a deliberate live reference — the
 escape hatch, visible in the file.
 
 ## 6. Remaining choices (my leans)

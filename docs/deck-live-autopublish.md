@@ -1,5 +1,11 @@
 # Live-tree serving + auto-publish: the filesystem endpoint design
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Status: TIER 1 BUILT AND TESTED (2026-08-07) — watcher auto-publish, /live/ routes, and the no-copies release (content-addressed store + `deck release`) are implemented; tier 2 (historyd) remains design.
 Question answered: can historyd attach to the standalone Deck server
 so a plain directory becomes an auto-versioning module publisher

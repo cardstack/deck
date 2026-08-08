@@ -7,17 +7,17 @@ import type { AddressInfo } from 'node:net';
 import { createDeckServer, type DeckServer } from '../src/server.ts';
 import {
   storeDirFor,
-  watchRealm,
-  type RealmMount,
-  type RealmWatchController,
-} from '../src/realm.ts';
+  watchDepot,
+  type DepotMount,
+  type DepotWatchController,
+} from '../src/depot.ts';
 
 let workDir: string;
-let realmDir: string;
+let depotDir: string;
 let deckDir: string;
 let server: DeckServer;
 let origin: string;
-let controller: RealmWatchController;
+let controller: DepotWatchController;
 
 async function readSseChange(
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -53,8 +53,8 @@ async function readSseChange(
 module('live HMR-lite (SSE)', function (hooks) {
   hooks.before(async function () {
     workDir = await mkdtemp(join(tmpdir(), 'deck-hmr-test-'));
-    realmDir = join(workDir, 'demo');
-    deckDir = join(realmDir, 'me', 'mylib');
+    depotDir = join(workDir, 'demo');
+    deckDir = join(depotDir, 'me', 'mylib');
     await mkdir(deckDir, { recursive: true });
     await writeFile(
       join(deckDir, 'importmap.json'),
@@ -62,21 +62,21 @@ module('live HMR-lite (SSE)', function (hooks) {
         imports: {},
         deck: {
           packages: {
-            mylib: { version: '0.1.0', entry: '$REALM/lib.js' },
+            mylib: { version: '0.1.0', entry: '$DECK/lib.js' },
           },
         },
       }),
     );
     await writeFile(join(deckDir, 'lib.js'), 'export const v = 1;\n');
 
-    let realm: RealmMount = {
+    let depot: DepotMount = {
       name: 'demo',
-      dir: realmDir,
-      storeDir: storeDirFor(realmDir),
+      dir: depotDir,
+      storeDir: storeDirFor(depotDir),
     };
-    server = createDeckServer({ realms: [realm] });
-    controller = watchRealm({
-      realm,
+    server = createDeckServer({ depots: [depot] });
+    controller = watchDepot({
+      depot,
       debounceMs: 40,
       onLiveChange: (event) => server.liveBus.emit(event),
     });

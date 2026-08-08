@@ -2,7 +2,7 @@
 // The Deck demo hub.
 //
 // One command, one URL. It starts every example as its own process on its own
-// port — because each one really is a separate realm with its own store, and
+// port — because each one really is a separate depot with its own store, and
 // pretending otherwise would be the first lie — and serves a console that
 // puts each demo's explanation, its live app, and its actual console
 // transcript side by side.
@@ -150,7 +150,7 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // The hub is not a realm, so it cannot depend on `ui/pills` the way the
+  // The hub is not a depot, so it cannot depend on `ui/pills` the way the
   // demos do. It serves the same source file instead — one definition, two
   // carriages, which is the L2/L3 point restated as a build step that is not
   // a build step.
@@ -199,6 +199,6 @@ server.listen(PORT, () => {
   console.log('\n  THE DECK DEMO HUB\n');
   console.log(`   ${DEMOS.length} demos starting — the ones that vendor from npm take a moment.\n`);
   console.log(`      http://localhost:${PORT}/\n`);
-  console.log('   Each demo is its own process, its own realm, and its own store.');
+  console.log('   Each demo is its own process, its own depot, and its own store.');
   console.log('   Ctrl-C stops all of them.\n');
 });

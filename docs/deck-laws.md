@@ -15,6 +15,19 @@ Each law is checkable, and each is checked by `deck conform`
 implements Deck by passing that suite**, not by reading this file — the file
 exists so a human can tell what the suite is protecting.
 
+### One word about the first URL segment
+
+It is a **depot**: a named place on a Deck server — a live tree, a
+content-addressed store, and a URL prefix. Standalone Deck does not say
+*realm*; that is Boxel's word for something richer, and using it here would
+teach the wrong boundary and make the eventual backport sound like a rename
+instead of an embedding. See
+[deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
+No law below depends on the word. A depot's **name** is whatever its operator
+chose (`site`, `demo`, …) and appears verbatim in every URL, so the rename
+moved no bytes and broke no address.
+
 ---
 
 ## L1 · Identity
@@ -26,7 +39,7 @@ Not zip framing, not compression, not the order bytes landed on disk, not
 the storage layout, not the version or tag a human attached. Two trees with
 the same files have the same hash on every implementation, forever.
 
-`DEFAULT_IGNORE` is part of the algorithm: a realm's own bookkeeping
+`DEFAULT_IGNORE` is part of the algorithm: a depot's own bookkeeping
 (`.deck`, `.jj`, `.git`, `node_modules`, `.DS_Store`, `.boxel-history`)
 cannot change what a deck IS. A caller may extend that set; it cannot shrink
 it, or two implementations could hash one directory differently.
@@ -57,7 +70,7 @@ What **is** settled is the direction. A Merkle directory identity was
 proposed and rejected on 2026-08-08: it does not solve what it was proposed
 for, because a directory node is not a binary Merkle node, so a proof costs
 the full child list of every ancestor — and both published packages and
-realms are fat and shallow enough that the proof measures larger than
+depots are fat and shallow enough that the proof measures larger than
 shipping the whole gzipped manifest. See
 `deck-tree-hash-v2-merkle-proposal.md` for the rejection and
 `deck-tree-hash-v2-review.md` for the numbers.
@@ -210,7 +223,7 @@ that the files those pins name actually exist.
 
 How bytes are stored. Whether packs are kept or rebuilt. Whether objects are
 compressed. What the tree object looks like on disk. Which parser reads a
-module. What a realm's cooldown policy is set to.
+module. What a depot's cooldown policy is set to.
 
 Those are implementation choices, and the two that were most prescriptive in
 the old spec are precisely the two that measurement overturned. If a choice

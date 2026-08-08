@@ -23,7 +23,7 @@ function libFiles(base: string, body: string) {
       bytes: Buffer.from(
         JSON.stringify({
           deck: {
-            packages: { lib: { version: base, entry: '$REALM/lib.js' } },
+            packages: { lib: { version: base, entry: '$DECK/lib.js' } },
           },
         }),
       ),
@@ -373,7 +373,7 @@ module('store: content addressing and pruning', function (hooks) {
               packages: {
                 'babel-runtime': {
                   version,
-                  entry: '$REALM/lib.js',
+                  entry: '$DECK/lib.js',
                   vendoredFrom: { registry: 'npm', name: npmName, version },
                 },
               },

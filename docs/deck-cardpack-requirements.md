@@ -1,5 +1,11 @@
 # Cardpack: recovered requirements, and the two-plane model with Deck
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Written 2026-08-07. Source: a full read of the cardpack implementation
 on `boxel-cli` branch `origin/feature/cardpack-and-integration-tests`
 (~5,000 lines: `src/pack/*`, `src/commands/pack.ts`, `test/pack/*`).

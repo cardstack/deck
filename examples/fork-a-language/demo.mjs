@@ -25,17 +25,17 @@ import { hashBytes } from '@deck/core/tree-hash';
 import { packFromDir } from '@deck/core/pack';
 import { publishToStore, inspectStore } from '@deck/core/store';
 import { createDeckServer } from '@deck/server/server';
-import { storeDirFor } from '@deck/server/realm';
+import { storeDirFor } from '@deck/server/depot';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8792);
-const REALM = 'site';
-const realmDir = join(here, 'realm');
-const storeDir = storeDirFor(realmDir);
+const DEPOT = 'site';
+const depotDir = join(here, 'depot');
+const storeDir = storeDirFor(depotDir);
 
-const UPSTREAM = { deck: 'lang/jqish', dir: join(realmDir, 'lang', 'jqish'), version: '1.0.0' };
-const FORK = { deck: 'me/jqish', dir: join(realmDir, 'me', 'jqish'), version: '1.0.0-feel.0' };
+const UPSTREAM = { deck: 'lang/jqish', dir: join(depotDir, 'lang', 'jqish'), version: '1.0.0' };
+const FORK = { deck: 'me/jqish', dir: join(depotDir, 'me', 'jqish'), version: '1.0.0-feel.0' };
 
 // The same question, asked in both dialects. If the fork is honest, each
 // pair returns the same answer.
@@ -137,17 +137,17 @@ console.log(`\n4) store: ${report.objects} objects for two 4-file decks`);
 console.log(`   two full copies would be 8`);
 
 
-// The shared `ui/pills` deck, published into THIS realm's store from
+// The shared `ui/pills` deck, published into THIS depot's store from
 // examples/shared. Five demos, five stores, one source tree — and because
 // identity is the hash of the tree, the treeHash below is the same in all
 // five. Then the viewer's decklist is locked, so the pins that resolve
 // `ui/pills` are in the tree where you can read them.
 let [pills] = await publishShared(storeDir);
 let viewerLock = await lockAndWrite({
-  realmDir,
-  realmName: REALM,
+  depotDir,
+  depotName: DEPOT,
   storeDir,
-  deckDir: join(realmDir, 'app', 'viewer'),
+  deckDir: join(depotDir, 'app', 'viewer'),
 });
 console.log(`\n   shared: ${pills.name}@${pills.version} \u00b7 ${pills.treeHash.slice(0, 12)}\u2026 (same tree in every demo)`);
 if (viewerLock.changed) {
@@ -155,10 +155,10 @@ if (viewerLock.changed) {
 }
 
 await writeFile(
-  join(realmDir, 'app', 'viewer', 'build.json'),
+  join(depotDir, 'app', 'viewer', 'build.json'),
   JSON.stringify(
     {
-      realm: REALM,
+      depot: DEPOT,
       data: DATA,
       changed,
       shared,
@@ -175,15 +175,15 @@ await writeFile(
 );
 
 let server = createDeckServer({
-  realms: [{ name: REALM, dir: realmDir, storeDir }],
+  depots: [{ name: DEPOT, dir: depotDir, storeDir }],
   fallback: (req, res) => {
-    res.writeHead(302, { location: `/${REALM}/app/viewer/index.html` });
+    res.writeHead(302, { location: `/${DEPOT}/app/viewer/index.html` });
     res.end();
   },
 });
 server.listen(PORT, () => {
   console.log(`\n5) serving both dialects\n`);
   console.log(`      http://localhost:${PORT}/\n`);
-  console.log(`      /${REALM}/${UPSTREAM.deck}@${UPSTREAM.version}/parse.js`);
-  console.log(`      /${REALM}/${FORK.deck}@${FORK.version}/parse.js   ← the only difference\n`);
+  console.log(`      /${DEPOT}/${UPSTREAM.deck}@${UPSTREAM.version}/parse.js`);
+  console.log(`      /${DEPOT}/${FORK.deck}@${FORK.version}/parse.js   ← the only difference\n`);
 });

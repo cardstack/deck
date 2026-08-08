@@ -3,7 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 // tree-hash-v1: the canonical identity of a deck, independent of its
-// container (realm tree at a seal, .pack.zip artifact, or a pack mounted
+// container (depot tree at a seal, .pack.zip artifact, or a pack mounted
 // inside a deck). Every implementation — CLI, minimal server, and later the
 // realm server — must produce byte-identical results from the same logical
 // tree. The zip's own bytes are NEVER an identity: two byte-different zips
@@ -139,10 +139,10 @@ export function treeHashFromEntries(
 
 // Default names never part of a deck's logical tree, whichever container
 // it sits in. Callers can extend but not shrink protocol-reserved names.
-// A realm carries its own machinery in dot-directories, the way a Boxel
-// realm carries `.jj` and `.boxel-history`: `.deck` holds the sealed-pack
-// store. They live INSIDE the realm so a realm directory is self-contained
-// and movable, and they are ignored here so a realm's own bookkeeping can
+// A depot carries its own machinery in dot-directories, the way a Boxel
+// depot carries `.jj` and `.boxel-history`: `.deck` holds the sealed-pack
+// store. They live INSIDE the depot so a depot directory is self-contained
+// and movable, and they are ignored here so a depot's own bookkeeping can
 // never change the hash of the tree it is keeping.
 export const DEFAULT_IGNORE = new Set([
   '.git',

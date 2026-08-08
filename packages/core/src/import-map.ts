@@ -65,13 +65,29 @@ export function packagesFromPack(
   return raw ? parsePackages(raw.toString('utf8')) : undefined;
 }
 
-// Map values point into the tree as `$REALM/<path>`, `./<path>`, or a bare
+// The token for "the root of this deck's own tree".
+//
+// It used to be `$DECK/`, which was wrong twice over: the value points at
+// the DECK's root, not at the enclosing mount, and "realm" is Boxel's word
+// for something richer than a depot (docs/deck-depot-and-realm-backport.md).
+//
+// `$DECK/` is still accepted, and always will be. It is not a deprecation
+// to be swept up later: it appears inside SEALED trees, and L4 says a
+// published version never changes. A pack written last year must keep
+// resolving, byte for byte, forever. New trees write `$DECK/`.
+export const TREE_ROOT = '$DECK/';
+export const LEGACY_TREE_ROOTS = ['$REALM/'];
+
+// Map values point into the tree as `$DECK/<path>`, `./<path>`, or a bare
 // relative path. Absolute URLs (references to web decks) and traversal
 // shapes are not tree paths. `!` is legal only as the mount separator.
 export function treePathFromMapValue(value: string): string | undefined {
   let path = value;
-  if (path.startsWith('$REALM/')) {
-    path = path.slice('$REALM/'.length);
+  let root = [TREE_ROOT, ...LEGACY_TREE_ROOTS].find((prefix) =>
+    path.startsWith(prefix),
+  );
+  if (root) {
+    path = path.slice(root.length);
   } else if (path.startsWith('./')) {
     path = path.slice('./'.length);
   }

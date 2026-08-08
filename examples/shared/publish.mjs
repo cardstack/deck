@@ -1,6 +1,6 @@
 // Publish the shared decks into a demo's own store.
 //
-// Every demo is a separate realm with a separate store — they share nothing
+// Every demo is a separate depot with a separate store — they share nothing
 // at runtime, which is what makes each one's numbers its own. What they do
 // share is a source tree, right here, published into each store from the same
 // directory.

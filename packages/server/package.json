@@ -8,7 +8,7 @@
     "./server": "./src/server.ts",
     "./watcher": "./src/watcher.ts",
     "./live-events": "./src/live-events.ts",
-    "./realm": "./src/realm.ts",
+    "./depot": "./src/depot.ts",
     "./inject-importmap": "./src/inject-importmap.ts",
     "./rebase-daemon": "./src/rebase-daemon.ts",
     "./compression": "./src/compression.ts",

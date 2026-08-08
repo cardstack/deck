@@ -5,7 +5,7 @@ import { DEFAULT_IGNORE, isValidTreePath } from './tree-hash.ts';
 // Reading and writing a deck's tree as plain bytes. Everything that moves
 // trees around — fork, rebase, restore — goes through here, so they all
 // agree on what a tree IS: the same files the tree hash covers, and nothing
-// a realm keeps for its own bookkeeping.
+// a depot keeps for its own bookkeeping.
 
 export async function readTreeFromDir(
   dir: string,

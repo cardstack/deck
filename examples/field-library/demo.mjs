@@ -11,7 +11,7 @@
 //      ^ import specifier   ^ the deck that answers to it
 //
 // That is ALIASING, and it is what lets vendored npm source stay unmodified
-// while the realm names things its own way.
+// while the depot names things its own way.
 //
 // The other two things this exercises are what happens when six decks want
 // overlapping libraries:
@@ -38,14 +38,14 @@ import { peekPacklist } from '@deck/core/pack';
 import { readTreeFromDir } from '@deck/core/tree';
 import { vendorFromNpmSource } from '@deck/core/vendor-npm';
 import { createDeckServer } from '@deck/server/server';
-import { storeDirFor } from '@deck/server/realm';
+import { storeDirFor } from '@deck/server/depot';
 import { publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8793);
-const REALM = 'site';
-const realmDir = join(here, 'realm');
-const storeDir = storeDirFor(realmDir);
+const DEPOT = 'site';
+const depotDir = join(here, 'depot');
+const storeDir = storeDirFor(depotDir);
 
 // The shelf. Exact versions, because a demo that resolves differently on
 // different days cannot make a claim about bytes.
@@ -78,14 +78,14 @@ await mkdir(storeDir, { recursive: true });
 
 console.log('\n  FIELD LIBRARY — aliasing, scopes, and dedupe across many decks\n');
 
-// The shared `ui/pills` deck, published into this realm's store from
+// The shared `ui/pills` deck, published into this depot's store from
 // examples/shared. Same source tree in every demo, so the same treeHash.
 let [pills] = await publishShared(storeDir);
 console.log(`   shared: ${pills.name}@${pills.version} · ${pills.treeHash.slice(0, 12)}… (same tree in every demo)\n`);
 
 // ---------------------------------------------------------------------------
 // 1. The shelf. Vendored from npm SOURCE — the module tree npm published, not
-//    a CDN bundle — and sealed into this realm.
+//    a CDN bundle — and sealed into this depot.
 // ---------------------------------------------------------------------------
 console.log('1) vendoring the shelf from npm source');
 let shelfInfo = [];
@@ -93,7 +93,7 @@ for (let library of LIBRARIES) {
   let vendored = await vendorFromNpmSource({
     spec: library.npm,
     ...(library.entry ? { entry: library.entry } : {}),
-    // A demo must not fail on the day someone runs it; a realm sets a real
+    // A demo must not fail on the day someone runs it; a depot sets a real
     // minimumReleaseAge (L11).
     policy: { minimumReleaseAge: 0 },
   });
@@ -110,7 +110,7 @@ for (let library of LIBRARIES) {
           packages: {
             [name]: {
               version: library.version,
-              entry: `$REALM/${vendored.entryPath}`,
+              entry: `$DECK/${vendored.entryPath}`,
               vendoredFrom: vendored.vendoredFrom,
             },
           },
@@ -154,10 +154,10 @@ for (let library of LIBRARIES) {
 console.log('\n2) locking and sealing the six field decks');
 let drifted = [];
 async function lockAndSeal(deckName) {
-  let deckDir = join(realmDir, ...deckName.split('/'));
+  let deckDir = join(depotDir, ...deckName.split('/'));
   let { text, changed, resolutions } = await lockDeck({
-    realmDir,
-    realmName: REALM,
+    depotDir,
+    depotName: DEPOT,
     storeDir,
     deckDir,
   });
@@ -199,7 +199,7 @@ for (let deckName of FIELDS) {
 let edges = 0;
 let urls = new Map();
 for (let deckName of FIELDS) {
-  let deckDir = join(realmDir, ...deckName.split('/'));
+  let deckDir = join(depotDir, ...deckName.split('/'));
   let files = await readTreeFromDir(deckDir);
   let declared = parseDependencies(files.get(IMPORT_MAP_PATH).toString('utf8')) ?? {};
   edges += Object.keys(declared).length;
@@ -257,10 +257,10 @@ console.log(`   if each field carried its own copies: ${ownCopies} files`);
 //    decks were sealed depending on.
 // ---------------------------------------------------------------------------
 await writeFile(
-  join(realmDir, 'app', 'library', 'shelf.json'),
+  join(depotDir, 'app', 'library', 'shelf.json'),
   JSON.stringify(
     {
-      realm: REALM,
+      depot: DEPOT,
       decks: LIBRARIES.length - 1 + FIELDS.length + 1,
       libraries: shelfInfo.filter((l) => l.consumers.length > 0),
       fields: fieldInfo,
@@ -295,9 +295,9 @@ if (drifted.length > 0) {
 // 5. Serve. Everything is at rest: no write endpoint, no login.
 // ---------------------------------------------------------------------------
 let server = createDeckServer({
-  realms: [{ name: REALM, dir: realmDir, storeDir }],
+  depots: [{ name: DEPOT, dir: depotDir, storeDir }],
   fallback: (req, res) => {
-    res.writeHead(302, { location: `/${REALM}/${APP}@${VERSION}/index.html` });
+    res.writeHead(302, { location: `/${DEPOT}/${APP}@${VERSION}/index.html` });
     res.end();
   },
 });
@@ -308,7 +308,7 @@ server.listen(PORT, async () => {
   // it stops at the first scoped edge and reports full coverage of a graph it
   // only half-walked.
   let head = await fetch(
-    `http://127.0.0.1:${PORT}/${REALM}/${APP}@${VERSION}/index.html`,
+    `http://127.0.0.1:${PORT}/${DEPOT}/${APP}@${VERSION}/index.html`,
     { method: 'HEAD' },
   );
   let closure = head.headers.get('x-deck-preload');
@@ -317,8 +317,8 @@ server.listen(PORT, async () => {
   console.log(`   modulepreload closure advertised: ${closure ?? 'none'}`);
   console.log(`   (links emitted / modules reachable — the rest is over budget)\n`);
   console.log(`      http://localhost:${PORT}/\n`);
-  console.log(`      /${REALM}/${APP}@${VERSION}/index.html`);
-  console.log(`      /${REALM}/fields/swatch@${VERSION}/importmap.json        ← the lock, readable`);
-  console.log(`      /${REALM}/lib/chroma-js@3.1.2/index.js`);
-  console.log(`      /${REALM}/lib/chroma-js@2.6.0/index.js   ← both, at once\n`);
+  console.log(`      /${DEPOT}/${APP}@${VERSION}/index.html`);
+  console.log(`      /${DEPOT}/fields/swatch@${VERSION}/importmap.json        ← the lock, readable`);
+  console.log(`      /${DEPOT}/lib/chroma-js@3.1.2/index.js`);
+  console.log(`      /${DEPOT}/lib/chroma-js@2.6.0/index.js   ← both, at once\n`);
 });

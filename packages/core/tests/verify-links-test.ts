@@ -17,7 +17,7 @@ function libPack(version: string) {
       path: 'importmap.json',
       bytes: Buffer.from(
         JSON.stringify({
-          deck: { packages: { lib: { version, entry: '$REALM/lib.js' } } },
+          deck: { packages: { lib: { version, entry: '$DECK/lib.js' } } },
         }),
       ),
     },
@@ -61,7 +61,7 @@ module('L11 the verify gate', function (hooks) {
 
   test('honest links pass', async function (assert) {
     let report = await verifyLinks({
-      realmName: 'demo',
+      depotName: 'demo',
       storeDir,
       deck: 'me/app',
       deckDir: await deckWith('app', honest),
@@ -74,7 +74,7 @@ module('L11 the verify gate', function (hooks) {
   // the browser 404s.
   test('a pin that disagrees with its record is link-integrity', async function (assert) {
     let report = await verifyLinks({
-      realmName: 'demo',
+      depotName: 'demo',
       storeDir,
       deck: 'me/app',
       deckDir: await deckWith('stale', {
@@ -93,7 +93,7 @@ module('L11 the verify gate', function (hooks) {
 
   test('a declared dependency with no pin is link-missing-pin', async function (assert) {
     let report = await verifyLinks({
-      realmName: 'demo',
+      depotName: 'demo',
       storeDir,
       deck: 'me/app',
       deckDir: await deckWith('unpinned', { ...honest, imports: {} }),
@@ -106,7 +106,7 @@ module('L11 the verify gate', function (hooks) {
 
   test('a pin with no record is link-missing-record', async function (assert) {
     let report = await verifyLinks({
-      realmName: 'demo',
+      depotName: 'demo',
       storeDir,
       deck: 'me/app',
       deckDir: await deckWith('orphan', {
@@ -122,7 +122,7 @@ module('L11 the verify gate', function (hooks) {
 
   test('an unsatisfiable range is link-unresolvable', async function (assert) {
     let report = await verifyLinks({
-      realmName: 'demo',
+      depotName: 'demo',
       storeDir,
       deck: 'me/app',
       deckDir: await deckWith('nope', {
@@ -141,13 +141,13 @@ module('L11 the verify gate', function (hooks) {
 
   test('a deck that does not contain its own entry is caught', async function (assert) {
     let report = await verifyLinks({
-      realmName: 'demo',
+      depotName: 'demo',
       storeDir,
       deck: 'me/app',
       deckDir: await deckWith('no-entry', {
         imports: {},
         deck: {
-          packages: { app: { version: '0.1.0', entry: '$REALM/missing.js' } },
+          packages: { app: { version: '0.1.0', entry: '$DECK/missing.js' } },
         },
       }),
     });
@@ -160,7 +160,7 @@ module('L11 the verify gate', function (hooks) {
   test('an alias is verified against the deck it names', async function (assert) {
     await publishToStore(storeDir, 'you/lib', '2.0.0', libPack('2.0.0'));
     let report = await verifyLinks({
-      realmName: 'demo',
+      depotName: 'demo',
       storeDir,
       deck: 'me/app',
       deckDir: await deckWith('aliased', {
@@ -180,7 +180,7 @@ module('L11 the verify gate', function (hooks) {
   test('a required endorsement that is absent is refused', async function (assert) {
     let treeHash = 'a'.repeat(64);
     let report = await verifyLinks({
-      realmName: 'demo',
+      depotName: 'demo',
       storeDir,
       deck: 'me/app',
       deckDir: await deckWith('unsigned', honest),
@@ -197,7 +197,7 @@ module('L11 the verify gate', function (hooks) {
       signTreeHash({ treeHash, key: generateKeyPair() }),
     );
     let after = await verifyLinks({
-      realmName: 'demo',
+      depotName: 'demo',
       storeDir,
       deck: 'me/app',
       deckDir: await deckWith('signed', honest),
@@ -209,7 +209,7 @@ module('L11 the verify gate', function (hooks) {
 
   test('assertLinksOk throws with every finding named', async function (assert) {
     let report = await verifyLinks({
-      realmName: 'demo',
+      depotName: 'demo',
       storeDir,
       deck: 'me/app',
       deckDir: await deckWith('bad', { ...honest, imports: {} }),

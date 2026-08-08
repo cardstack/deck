@@ -297,7 +297,7 @@
   <table>
     <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><strong>realm</strong></td><td>A directory that is also a URL space. Self-contained.</td></tr>
+      <tr><td><strong>depot</strong></td><td>A directory that is also a URL space. Self-contained.</td></tr>
       <tr><td><strong>deck</strong></td><td>A package: <code>&lt;publisher&gt;/&lt;name&gt;</code> with an <code>importmap.json</code>.</td></tr>
       <tr><td><strong>decklist</strong></td><td>The manifest entry: versions, entry, exports, declared deps.</td></tr>
       <tr><td><strong>live tree</strong></td><td>Bytes on disk right now. Editing surface.</td></tr>
@@ -314,7 +314,7 @@
   <h2>3. The layout is the address</h2>
   <p>
     What <code>ls</code> shows and what the URL says are the same shape.
-    A realm carries its machinery inside itself — <code>.deck/store/</code>
+    A depot carries its machinery inside itself — <code>.deck/store/</code>
     for sealed versions, <code>.jj/</code> for seals — both invisible to the
     tree hash, so copying the directory takes live files, published versions,
     and history with it.
@@ -328,7 +328,7 @@
   <div class="callout">
     <strong>Publisher segment = fork boundary.</strong>
     <code>acme/palette</code> and <code>you/palette</code> are different
-    decks with different version lines in the same realm. Undiverged forks
+    decks with different version lines in the same depot. Undiverged forks
     cost no extra pack bytes — the store is content-addressed.
   </div>
 </section>
@@ -360,7 +360,7 @@
 # → packFromDir → publish &lt;base&gt;-dev.N, tag:dev
 # → [tier 2] history backend seals the save too
 
-deck release --realm ./work/site --publisher acme --name palette \
+deck release --depot ./work/site --publisher acme --name palette \
   --version 1.1.0 --from dev --tag latest</code></pre>
   <div class="grid-2">
     <div class="card">
@@ -376,8 +376,8 @@ deck release --realm ./work/site --publisher acme --name palette \
 
 <section id="store">
   <h2>6. Store &amp; packs</h2>
-  <p>At rest, each package lives under the realm store:</p>
-<pre><code>&lt;realm&gt;/.deck/store/&lt;publisher&gt;/&lt;name&gt;/
+  <p>At rest, each package lives under the depot store:</p>
+<pre><code>&lt;depot&gt;/.deck/store/&lt;publisher&gt;/&lt;name&gt;/
   meta.json                          # versions + dist-tags (pointers)
   packs/&lt;treeHash&gt;.pack.zip          # bytes once per content hash</code></pre>
   <ul>
@@ -400,7 +400,7 @@ deck release --realm ./work/site --publisher acme --name palette \
       </tr>
       <tr>
         <td><strong>2 — jj / historyd</strong></td>
-        <td>Every save sealed; <code>/&lt;realm&gt;/_history/&lt;changeId&gt;/…</code>; <code>deck history</code> / <code>deck restore</code>; packlist can name <code>sealChangeId</code>.</td>
+        <td>Every save sealed; <code>/&lt;depot&gt;/_history/&lt;changeId&gt;/…</code>; <code>deck history</code> / <code>deck restore</code>; packlist can name <code>sealChangeId</code>.</td>
         <td><span class="badge ok">Implemented</span> when <code>--history auto|jj|historyd</code> attaches</td>
       </tr>
     </tbody>
@@ -425,7 +425,7 @@ deck restore ./work/site &lt;changeId&gt;   # leaves current state sealed first<
   </p>
 <pre><code>deck vendor https://esm.sh/simplex-noise@4.0.1 \
   --name simplex-noise --version 4.0.1 \
-  --realm ./work/site --publisher acme --tag latest</code></pre>
+  --depot ./work/site --publisher acme --tag latest</code></pre>
 <pre><code>&lt;script type="importmap"&gt;
 { "imports": { "simplex-noise": "/site/acme/simplex-noise@4.0.1" } }
 &lt;/script&gt;</code></pre>
@@ -435,13 +435,13 @@ deck restore ./work/site &lt;changeId&gt;   # leaves current state sealed first<
   <h2>9. Fork, lock, offers, rebase</h2>
   <p>Contribution is a <strong>version you can run</strong>, not a diff waiting for merge theater.</p>
   <h3>Fork</h3>
-<pre><code>deck fork --realm ./work/site \
+<pre><code>deck fork --depot ./work/site \
   --from acme/palette --as you/palette --use-in you/app</code></pre>
   <p>Copies into your publisher scope; optional <code>--use-in</code> repoints a consumer at the fork live. Records base (package, version, treeHash) so the fork <em>is</em> an offer.</p>
 
   <h3>Lock</h3>
-<pre><code>deck lock --realm ./work/site --publisher you --name app
-deck lock --realm ./work/site --publisher you --name app --check</code></pre>
+<pre><code>deck lock --depot ./work/site --publisher you --name app
+deck lock --depot ./work/site --publisher you --name app --check</code></pre>
   <p>Resolves declared ranges to exact pins in the import map — users never inherit someone else's working tree.</p>
 
   <h3>Try by URL</h3>
@@ -450,8 +450,8 @@ deck lock --realm ./work/site --publisher you --name app --check</code></pre>
   <p>Server rewrites resolution for that request only. No checkout, no build, not cached as sealed content.</p>
 
   <h3>Offers &amp; rebase</h3>
-<pre><code>deck offers --realm ./work/site
-deck rebase --realm ./work/site          # or: deck serve --rebase
+<pre><code>deck offers --depot ./work/site
+deck rebase --depot ./work/site          # or: deck serve --rebase
 GET /site/_offers</code></pre>
   <ul>
     <li>Clean merges write into the proposal tree (auto-publish + seal).</li>
@@ -467,18 +467,18 @@ GET /site/_offers</code></pre>
   <table>
     <thead><tr><th>Request</th><th>Result</th></tr></thead>
     <tbody>
-      <tr><td><code>GET /&lt;realm&gt;/&lt;pub&gt;/&lt;pkg&gt;/…</code></td><td>Live tree, <code>no-store</code></td></tr>
-      <tr><td><code>GET /&lt;realm&gt;/&lt;pub&gt;/&lt;pkg&gt;@&lt;exact&gt;/…</code></td><td>Immutable + <code>Content-Digest</code></td></tr>
+      <tr><td><code>GET /&lt;depot&gt;/&lt;pub&gt;/&lt;pkg&gt;/…</code></td><td>Live tree, <code>no-store</code></td></tr>
+      <tr><td><code>GET /&lt;depot&gt;/&lt;pub&gt;/&lt;pkg&gt;@&lt;exact&gt;/…</code></td><td>Immutable + <code>Content-Digest</code></td></tr>
       <tr><td><code>GET …@&lt;tag|range&gt;/…</code></td><td>One 302 hop to exact (short TTL)</td></tr>
       <tr><td><code>GET …@&lt;exact&gt;</code> (bare)</td><td>301 to entry module</td></tr>
       <tr><td><code>?meta</code></td><td>Machine-readable listing (incl. seal when present)</td></tr>
       <tr><td><code>?format=pack</code></td><td>Faithful stored pack bytes</td></tr>
       <tr><td><code>…/vendor.pack.zip!/inner.js</code></td><td>Mount into a nested pack (depth-capped)</td></tr>
-      <tr><td><code>GET /&lt;realm&gt;/_history</code></td><td>Seal log (tier 2)</td></tr>
-      <tr><td><code>GET /&lt;realm&gt;/_history/&lt;id&gt;/…</code></td><td>File at any seal</td></tr>
+      <tr><td><code>GET /&lt;depot&gt;/_history</code></td><td>Seal log (tier 2)</td></tr>
+      <tr><td><code>GET /&lt;depot&gt;/_history/&lt;id&gt;/…</code></td><td>File at any seal</td></tr>
       <tr><td><code>GET /_packages</code></td><td>Catalog + capability truth</td></tr>
       <tr><td><code>GET /_browse/…</code></td><td>Directory / file JSON for the store browser</td></tr>
-      <tr><td><code>GET /&lt;realm&gt;/_offers</code></td><td>Open proposals + merge status</td></tr>
+      <tr><td><code>GET /&lt;depot&gt;/_offers</code></td><td>Open proposals + merge status</td></tr>
       <tr><td><code>GET /_live/events</code></td><td>SSE change bus (HMR-lite)</td></tr>
       <tr><td><code>/</code> or <code>/_browser</code></td><td>Store browser UI</td></tr>
     </tbody>
@@ -559,7 +559,7 @@ node packages/cli/bin/deck.js serve --root ./playground --history auto --rebase<
       <tr><td>Import-map injection + HMR-lite SSE</td><td>Built &amp; tested</td></tr>
       <tr><td>Store browser <code>/</code></td><td>Built</td></tr>
       <tr><td>History backends (jj CLI + historyd)</td><td>Built; attaches when available</td></tr>
-      <tr><td>Cross-realm dependency pins</td><td>Not built — lock refuses them</td></tr>
+      <tr><td>Cross-depot dependency pins</td><td>Not built — lock refuses them</td></tr>
       <tr><td>Vendor/unvendor map-rewrite toggle</td><td>Designed; <code>!/</code> mounts already serve</td></tr>
       <tr><td>Blob store / verified links / sigs on treeHash</td><td>Specified — <code>docs/deck-cas-v2-spec.md</code></td></tr>
       <tr><td>Derived minify trees / gzip at origin / <code>modulepreload</code> closure</td><td>Built &amp; tested — <code>docs/deck-efficient-delivery-spec.md</code>. Brotli and H2–3 are the edge's job, not the origin's</td></tr>

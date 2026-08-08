@@ -21,7 +21,7 @@ import {
 } from './object-store.ts';
 
 // A Deck store is pure at-rest state on disk — the standalone counterpart
-// of the realm's bookmarks. The server only READS it; all writes go through
+// of the depot's bookmarks. The server only READS it; all writes go through
 // the CLI/watcher (an agent arranges state; distribution follows).
 //
 //   <store>/_objects/<aa>/<sha256>             — one FILE's bytes, once
@@ -29,8 +29,8 @@ import {
 //   <store>/<publisher>/<package>/meta.json    — versions + dist-tags
 //
 // The store path mirrors the URL path: a package addressed as
-// `/<realm>/<publisher>/<package>@<version>/<file>` is stored under
-// `<realm>/.deck/store/<publisher>/<package>/`. Same shape on disk and on
+// `/<depot>/<publisher>/<package>@<version>/<file>` is stored under
+// `<depot>/.deck/store/<publisher>/<package>/`. Same shape on disk and on
 // the wire, so neither has to be translated into the other.
 //
 // The store is CONTENT-ADDRESSED PER FILE, and the objects are store-wide

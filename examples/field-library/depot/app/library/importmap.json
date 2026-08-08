@@ -1,0 +1,75 @@
+{
+  "deck": {
+    "packages": {
+      "library": {
+        "version": "1.0.0",
+        "entry": "$DECK/library.js"
+      }
+    },
+    "dependencies": {
+      "fields/audit-stamp": "^1.0.0",
+      "fields/brand-swatch": "^1.0.0",
+      "fields/due-date": "^1.0.0",
+      "fields/handle": "^1.0.0",
+      "fields/meeting-slot": "^1.0.0",
+      "fields/swatch": "^1.0.0",
+      "ui/pills": "^1.0.0"
+    }
+  },
+  "imports": {
+    "fields/audit-stamp/": "/site/fields/audit-stamp@1.0.0/",
+    "fields/audit-stamp": "/site/fields/audit-stamp@1.0.0/index.js",
+    "fields/brand-swatch/": "/site/fields/brand-swatch@1.0.0/",
+    "fields/brand-swatch": "/site/fields/brand-swatch@1.0.0/index.js",
+    "fields/due-date/": "/site/fields/due-date@1.0.0/",
+    "fields/due-date": "/site/fields/due-date@1.0.0/index.js",
+    "fields/handle/": "/site/fields/handle@1.0.0/",
+    "fields/handle": "/site/fields/handle@1.0.0/index.js",
+    "fields/meeting-slot/": "/site/fields/meeting-slot@1.0.0/",
+    "fields/meeting-slot": "/site/fields/meeting-slot@1.0.0/index.js",
+    "fields/swatch/": "/site/fields/swatch@1.0.0/",
+    "fields/swatch": "/site/fields/swatch@1.0.0/index.js",
+    "ui/pills/": "/site/ui/pills@1.0.0/",
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js"
+  },
+  "scopes": {
+    "/site/fields/audit-stamp@1.0.0/": {
+      "luxon": "/site/lib/luxon@3.5.0/src/luxon.js",
+      "luxon/": "/site/lib/luxon@3.5.0/",
+      "nanoid": "/site/lib/nanoid@5.0.9/index.browser.js",
+      "nanoid/": "/site/lib/nanoid@5.0.9/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    },
+    "/site/fields/brand-swatch@1.0.0/": {
+      "chroma-js": "/site/lib/chroma-js@2.6.0/index.js",
+      "chroma-js/": "/site/lib/chroma-js@2.6.0/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    },
+    "/site/fields/due-date@1.0.0/": {
+      "date-fns": "/site/lib/date-fns@4.1.0/index.js",
+      "date-fns/": "/site/lib/date-fns@4.1.0/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    },
+    "/site/fields/handle@1.0.0/": {
+      "nanoid": "/site/lib/nanoid@5.0.9/index.browser.js",
+      "nanoid/": "/site/lib/nanoid@5.0.9/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    },
+    "/site/fields/meeting-slot@1.0.0/": {
+      "luxon": "/site/lib/luxon@3.5.0/src/luxon.js",
+      "luxon/": "/site/lib/luxon@3.5.0/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    },
+    "/site/fields/swatch@1.0.0/": {
+      "chroma-js": "/site/lib/chroma-js@3.1.2/index.js",
+      "chroma-js/": "/site/lib/chroma-js@3.1.2/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    }
+  }
+}

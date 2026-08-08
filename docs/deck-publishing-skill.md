@@ -1,5 +1,11 @@
 # Skill: Publishing a Boxel Package Version (for AI agents)
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Status (updated 2026-08-07): the at-rest endpoints this skill uses
 (publish, dist-tags, versioned serving) are BUILT — see
 `deck-at-rest-protocol.md`. The migration steps (3, 5, 7) describe

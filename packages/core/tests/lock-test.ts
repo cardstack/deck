@@ -12,7 +12,7 @@ import {
   resolveDependencies,
 } from '../src/lock.ts';
 
-let realmDir: string;
+let depotDir: string;
 let storeDir: string;
 
 function confetti(version: string) {
@@ -23,7 +23,7 @@ function confetti(version: string) {
         JSON.stringify({
           deck: {
             packages: {
-              confetti: { version, entry: '$REALM/confetti.js' },
+              confetti: { version, entry: '$DECK/confetti.js' },
             },
           },
         }),
@@ -38,12 +38,12 @@ function confetti(version: string) {
 
 async function writeAppMap(dependencies: Record<string, string>) {
   await writeFile(
-    join(realmDir, 'me', 'app', 'importmap.json'),
+    join(depotDir, 'me', 'app', 'importmap.json'),
     JSON.stringify(
       {
         imports: { 'some-other/': '/elsewhere/' },
         deck: {
-          packages: { app: { version: '0.1.0', entry: '$REALM/app.js' } },
+          packages: { app: { version: '0.1.0', entry: '$DECK/app.js' } },
           dependencies,
         },
       },
@@ -55,16 +55,16 @@ async function writeAppMap(dependencies: Record<string, string>) {
 
 module('the decklist lock: ranges in, pins out', function (hooks) {
   hooks.beforeEach(async function () {
-    realmDir = join(await mkdtemp(join(tmpdir(), 'deck-lock-')), 'demo');
-    storeDir = join(realmDir, '.deck', 'store');
-    await mkdir(join(realmDir, 'me', 'app'), { recursive: true });
-    await mkdir(join(realmDir, 'acme', 'confetti'), { recursive: true });
+    depotDir = join(await mkdtemp(join(tmpdir(), 'deck-lock-')), 'demo');
+    storeDir = join(depotDir, '.deck', 'store');
+    await mkdir(join(depotDir, 'me', 'app'), { recursive: true });
+    await mkdir(join(depotDir, 'acme', 'confetti'), { recursive: true });
     await writeFile(
-      join(realmDir, 'acme', 'confetti', 'importmap.json'),
+      join(depotDir, 'acme', 'confetti', 'importmap.json'),
       JSON.stringify({
         deck: {
           packages: {
-            confetti: { version: '2.0.0', entry: '$REALM/confetti.js' },
+            confetti: { version: '2.0.0', entry: '$DECK/confetti.js' },
           },
         },
       }),
@@ -84,16 +84,16 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
   });
 
   hooks.afterEach(async function () {
-    await rm(join(realmDir, '..'), { recursive: true, force: true });
+    await rm(join(depotDir, '..'), { recursive: true, force: true });
   });
 
   test('a range resolves to the highest STABLE that satisfies it', async function (assert) {
     await writeAppMap({ 'acme/confetti': '^1.0.0' });
     let { resolutions, text, changed } = await lockDeck({
-      realmDir,
-      realmName: 'demo',
+      depotDir,
+      depotName: 'demo',
       storeDir,
-      deckDir: join(realmDir, 'me', 'app'),
+      deckDir: join(depotDir, 'me', 'app'),
     });
     assert.true(changed);
     assert.strictEqual(resolutions[0].version, '1.2.0');
@@ -122,10 +122,10 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
   test('a range never picks up a prerelease; the dev tag is how you opt in', async function (assert) {
     await writeAppMap({ 'acme/confetti': '^1.0.0' });
     let ranged = await lockDeck({
-      realmDir,
-      realmName: 'demo',
+      depotDir,
+      depotName: 'demo',
       storeDir,
-      deckDir: join(realmDir, 'me', 'app'),
+      deckDir: join(depotDir, 'me', 'app'),
     });
     assert.strictEqual(
       ranged.resolutions[0].version,
@@ -135,10 +135,10 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
 
     await writeAppMap({ 'acme/confetti': 'dev' });
     let tagged = await lockDeck({
-      realmDir,
-      realmName: 'demo',
+      depotDir,
+      depotName: 'demo',
       storeDir,
-      deckDir: join(realmDir, 'me', 'app'),
+      deckDir: join(depotDir, 'me', 'app'),
     });
     assert.strictEqual(tagged.resolutions[0].version, '1.3.0-dev.4');
   });
@@ -146,10 +146,10 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
   test('"live" pins to the working tree — the YOLO end of the dial', async function (assert) {
     await writeAppMap({ 'acme/confetti': 'live' });
     let { resolutions } = await lockDeck({
-      realmDir,
-      realmName: 'demo',
+      depotDir,
+      depotName: 'demo',
       storeDir,
-      deckDir: join(realmDir, 'me', 'app'),
+      deckDir: join(depotDir, 'me', 'app'),
     });
     assert.strictEqual(resolutions[0].version, undefined);
     assert.deepEqual(resolutions[0].imports, {
@@ -162,19 +162,19 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
   test('an exact pin, and a tag, resolve as themselves', async function (assert) {
     await writeAppMap({ 'acme/confetti': '2.0.0' });
     let exact = await lockDeck({
-      realmDir,
-      realmName: 'demo',
+      depotDir,
+      depotName: 'demo',
       storeDir,
-      deckDir: join(realmDir, 'me', 'app'),
+      deckDir: join(depotDir, 'me', 'app'),
     });
     assert.strictEqual(exact.resolutions[0].version, '2.0.0');
 
     await writeAppMap({ 'acme/confetti': 'latest' });
     let tagged = await lockDeck({
-      realmDir,
-      realmName: 'demo',
+      depotDir,
+      depotName: 'demo',
       storeDir,
-      deckDir: join(realmDir, 'me', 'app'),
+      deckDir: join(depotDir, 'me', 'app'),
     });
     assert.strictEqual(tagged.resolutions[0].version, '1.2.0');
   });
@@ -182,35 +182,35 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
   test('locking twice is a no-op; moving the range moves the pin', async function (assert) {
     await writeAppMap({ 'acme/confetti': '^1.0.0' });
     let first = await lockDeck({
-      realmDir,
-      realmName: 'demo',
+      depotDir,
+      depotName: 'demo',
       storeDir,
-      deckDir: join(realmDir, 'me', 'app'),
+      deckDir: join(depotDir, 'me', 'app'),
     });
-    await writeFile(join(realmDir, 'me', 'app', 'importmap.json'), first.text);
+    await writeFile(join(depotDir, 'me', 'app', 'importmap.json'), first.text);
 
     let again = await lockDeck({
-      realmDir,
-      realmName: 'demo',
+      depotDir,
+      depotName: 'demo',
       storeDir,
-      deckDir: join(realmDir, 'me', 'app'),
+      deckDir: join(depotDir, 'me', 'app'),
     });
     assert.false(again.changed, 'a settled lock writes nothing');
 
     // The publisher moves the dependency forward deliberately.
     let map = JSON.parse(
-      await readFile(join(realmDir, 'me', 'app', 'importmap.json'), 'utf8'),
+      await readFile(join(depotDir, 'me', 'app', 'importmap.json'), 'utf8'),
     );
     map.deck.dependencies['acme/confetti'] = '^2.0.0';
     await writeFile(
-      join(realmDir, 'me', 'app', 'importmap.json'),
+      join(depotDir, 'me', 'app', 'importmap.json'),
       JSON.stringify(map, null, 2) + '\n',
     );
     let moved = await lockDeck({
-      realmDir,
-      realmName: 'demo',
+      depotDir,
+      depotName: 'demo',
       storeDir,
-      deckDir: join(realmDir, 'me', 'app'),
+      deckDir: join(depotDir, 'me', 'app'),
     });
     assert.true(moved.changed);
     assert.strictEqual(moved.resolutions[0].version, '2.0.0');
@@ -242,23 +242,23 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
   });
 
   test('an alias repoints a specifier without renaming it', async function (assert) {
-    await mkdir(join(realmDir, 'you', 'confetti'), { recursive: true });
+    await mkdir(join(depotDir, 'you', 'confetti'), { recursive: true });
     await writeFile(
-      join(realmDir, 'you', 'confetti', 'importmap.json'),
+      join(depotDir, 'you', 'confetti', 'importmap.json'),
       JSON.stringify({
         deck: {
           packages: {
-            confetti: { version: '1.2.0', entry: '$REALM/confetti.js' },
+            confetti: { version: '1.2.0', entry: '$DECK/confetti.js' },
           },
         },
       }),
     );
     await writeAppMap({ 'acme/confetti': 'you/confetti@live' });
     let { resolutions, text } = await lockDeck({
-      realmDir,
-      realmName: 'demo',
+      depotDir,
+      depotName: 'demo',
       storeDir,
-      deckDir: join(realmDir, 'me', 'app'),
+      deckDir: join(depotDir, 'me', 'app'),
     });
     assert.strictEqual(resolutions[0].key, 'acme/confetti');
     assert.strictEqual(resolutions[0].alias, 'you/confetti');
@@ -280,10 +280,10 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     await publishToStore(storeDir, 'you/confetti', '1.5.0', confetti('1.5.0'));
     await writeAppMap({ 'acme/confetti': 'you/confetti@^1.0.0' });
     let { resolutions } = await lockDeck({
-      realmDir,
-      realmName: 'demo',
+      depotDir,
+      depotName: 'demo',
       storeDir,
-      deckDir: join(realmDir, 'me', 'app'),
+      deckDir: join(depotDir, 'me', 'app'),
     });
     assert.strictEqual(resolutions[0].version, '1.5.0');
     assert.deepEqual(resolutions[0].imports, {
@@ -296,20 +296,20 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     await writeAppMap({ 'acme/confetti': 'a/b/c/d@live' });
     await assert.rejects(
       lockDeck({
-        realmDir,
-        realmName: 'demo',
+        depotDir,
+        depotName: 'demo',
         storeDir,
-        deckDir: join(realmDir, 'me', 'app'),
+        deckDir: join(depotDir, 'me', 'app'),
       }),
       /aliases "a\/b\/c\/d"/,
     );
   });
 
-  test('unsatisfiable, unknown, and cross-realm dependencies are refused', async function (assert) {
+  test('unsatisfiable, unknown, and cross-depot dependencies are refused', async function (assert) {
     await assert.rejects(
       resolveDependencies({
-        realmDir,
-        realmName: 'demo',
+        depotDir,
+        depotName: 'demo',
         storeDir,
         dependencies: { 'acme/confetti': '^9.0.0' },
       }),
@@ -317,8 +317,8 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     );
     await assert.rejects(
       resolveDependencies({
-        realmDir,
-        realmName: 'demo',
+        depotDir,
+        depotName: 'demo',
         storeDir,
         dependencies: { 'acme/nope': '^1.0.0' },
       }),
@@ -326,8 +326,8 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     );
     await assert.rejects(
       resolveDependencies({
-        realmDir,
-        realmName: 'demo',
+        depotDir,
+        depotName: 'demo',
         storeDir,
         dependencies: { 'other/acme/confetti': '^1.0.0' },
       }),
@@ -336,8 +336,8 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     );
     await assert.rejects(
       resolveDependencies({
-        realmDir,
-        realmName: 'demo',
+        depotDir,
+        depotName: 'demo',
         storeDir,
         dependencies: { confetti: '^1.0.0' },
       }),
@@ -361,7 +361,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     let { text: locked, changed } = applyLock(text, [
       {
         key: 'acme/kept',
-        realm: 'demo',
+        depot: 'demo',
         publisher: 'acme',
         package: 'kept',
         spec: '^1.0.0',
@@ -381,7 +381,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     let { text: locked } = applyLock(text, [
       {
         key: 'acme/confetti',
-        realm: 'demo',
+        depot: 'demo',
         publisher: 'acme',
         package: 'confetti',
         spec: '^1.0.0',

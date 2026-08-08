@@ -191,7 +191,7 @@ nobody does, and the same integration is rebuilt privately a thousand times.
 In Deck it is a fork plus an extraction:
 
 ```bash
-deck fork --realm ./hub --from me/ship-notes --as team/message-to-doc
+deck fork --depot ./hub --from me/ship-notes --as team/message-to-doc
 # pull the hardcoded IDs out into config.schema.json; publish 1.0.0
 ```
 
@@ -359,9 +359,9 @@ diagram is really about.
 
 **Privacy → the boundary must be structural, not a setting.** And here Deck
 is honest about a limitation that is currently an accidental virtue: the
-**realm is the boundary**, cross-realm is unbuilt, so isolation is the
+**depot is the boundary**, cross-depot is unbuilt, so isolation is the
 default and there is no accidental-sharing mechanism to misconfigure. When
-federation lands, "which realm" must remain the privacy decision — not a
+federation lands, "which depot" must remain the privacy decision — not a
 per-deck flag, which is the setting everybody forgets to set.
 
 ### 5.3 The rule that follows: immutability is hostile to secrets
@@ -390,7 +390,7 @@ mechanism.
 
 The distinction is real and needs a design: *fork to propose* versus *fork to
 keep*. Candidates — an explicit flag at fork time; inferring it from whether
-an actor was recorded; letting a private realm hold the fork so it is
+an actor was recorded; letting a private depot hold the fork so it is
 structurally invisible; or letting the offer exist but requiring the
 contributor to *offer* it as a separate act. The last is probably closest to
 how people actually work: a fork is private until you point at it.
@@ -420,9 +420,9 @@ nothing to do with the work.
 
 ## 7. Where these are still weak (honest list)
 
-- **Cross-realm is not built.** Every example above assumes one realm. A
-  public adapter or codelist catalog spans realms; `deck lock` refuses
-  cross-realm dependencies today rather than writing a pin nobody can serve.
+- **Cross-depot is not built.** Every example above assumes one depot. A
+  public adapter or codelist catalog spans depots; `deck lock` refuses
+  cross-depot dependencies today rather than writing a pin nobody can serve.
   This is the single largest gap for use cases 2 and 3.
 - **Identity is filesystem-level.** "Publisher `acme`" means "whoever has the
   directory". Upstream adoption across a trust boundary needs signatures over

@@ -14,14 +14,14 @@ import { treeHashFromDir } from './tree-hash.ts';
 // Nothing new is needed to make that safe — the PUBLISHER SEGMENT already is
 // the boundary. `acme/palette` and `you/palette` are different names, with
 // different version lines, different dist-tags, different store entries, in
-// the same realm. So a fork is: copy the tree into your own scope, point
+// the same depot. So a fork is: copy the tree into your own scope, point
 // your app at it, and edit. Your saves auto-publish under YOUR name; acme's
 // versions never move.
 //
 // Two cheap properties fall out of the rest of the design:
 //   - a fork that has not diverged has the SAME treeHash as its source, so
 //     the content-addressed store holds one copy of the bytes, not two
-//   - the copy is an ordinary edit of the realm, so it is sealed like any
+//   - the copy is an ordinary edit of the depot, so it is sealed like any
 //     other — an experiment you can walk back from
 //
 // The source can be the live tree (what `ls` shows: the latest bytes) or any
@@ -52,7 +52,7 @@ export interface ForkResult {
 }
 
 export interface ForkOptions {
-  realmDir: string;
+  depotDir: string;
   storeDir: string;
   from: ForkSource;
   to: ForkTarget;
@@ -86,8 +86,8 @@ function rewriteMap(
 }
 
 export async function forkDeck(options: ForkOptions): Promise<ForkResult> {
-  let { realmDir, storeDir, from, to, force, actor } = options;
-  let targetDir = join(realmDir, to.publisher, to.package);
+  let { depotDir, storeDir, from, to, force, actor } = options;
+  let targetDir = join(depotDir, to.publisher, to.package);
   let exists = await stat(targetDir).then(
     () => true,
     () => false,
@@ -104,7 +104,7 @@ export async function forkDeck(options: ForkOptions): Promise<ForkResult> {
   // is the third input every later three-way merge needs.
   let baseTreeHash: string;
   if (from.spec === undefined) {
-    let sourceDir = join(realmDir, from.publisher, from.package);
+    let sourceDir = join(depotDir, from.publisher, from.package);
     files = await readTreeFromDir(sourceDir);
     baseTreeHash = (await treeHashFromDir(sourceDir)).treeHash;
   } else {

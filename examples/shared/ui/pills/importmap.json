@@ -1,7 +1,7 @@
 {
   "deck": {
     "packages": {
-      "pills": { "version": "1.0.0", "entry": "$REALM/pills.js" }
+      "pills": { "version": "1.0.0", "entry": "$DECK/pills.js" }
     }
   }
 }

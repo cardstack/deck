@@ -16,10 +16,10 @@ import { JjCliHistory, jjVersion } from '@deck/history/jj-cli';
 import { createDeckServer } from '../src/server.ts';
 import {
   storeDirFor,
-  watchRealm,
-  type RealmMount,
-  type RealmWatchController,
-} from '../src/realm.ts';
+  watchDepot,
+  type DepotMount,
+  type DepotWatchController,
+} from '../src/depot.ts';
 import type { WatchPublishEvent } from '../src/watcher.ts';
 
 // A backend with no daemon and no subprocess: the routes are the subject
@@ -91,10 +91,10 @@ module('history routes: serving states that were never published', function (
   hooks.before(async function () {
     storeDir = await mkdtemp(join(tmpdir(), 'deck-history-routes-'));
     server = createDeckServer({
-      realms: [
+      depots: [
         {
           name: 'demo',
-          dir: join(storeDir, 'realm'),
+          dir: join(storeDir, 'depot'),
           storeDir,
           history: new StubHistory(),
         },
@@ -120,7 +120,7 @@ module('history routes: serving states that were never published', function (
       'the log grows with every save',
     );
     let body = await response.json();
-    assert.deepEqual(body.meta, { backend: 'jj', tier: 2, realm: 'demo' });
+    assert.deepEqual(body.meta, { backend: 'jj', tier: 2, depot: 'demo' });
     assert.deepEqual(
       body.data.map((seal: { id: string }) => seal.id),
       ['wwwwwwww', 'vvvvvvvv'],
@@ -204,7 +204,7 @@ module('history routes: serving states that were never published', function (
     assert.strictEqual(unmounted.status, 404);
     assert.strictEqual(
       (await unmounted.json()).errors[0].code,
-      'realm-not-found',
+      'depot-not-found',
     );
   });
 
@@ -215,8 +215,8 @@ module('history routes: serving states that were never published', function (
       kind: 'sealed-tree',
       jj: true,
       historyd: false,
-      realms: ['demo'],
-      note: 'Every save is sealed. GET /<realm>/_history lists seals; /<realm>/_history/<changeId>/<path> serves any of them, published or not.',
+      depots: ['demo'],
+      note: 'Every save is sealed. GET /<depot>/_history lists seals; /<depot>/_history/<changeId>/<path> serves any of them, published or not.',
     });
   });
 });
@@ -229,7 +229,7 @@ module('history routes: a server without a backend', function (hooks) {
   hooks.before(async function () {
     storeDir = await mkdtemp(join(tmpdir(), 'deck-history-none-'));
     server = createDeckServer({
-      realms: [{ name: 'demo', dir: join(storeDir, 'realm'), storeDir }],
+      depots: [{ name: 'demo', dir: join(storeDir, 'depot'), storeDir }],
     });
     await new Promise<void>((resolve) => server.listen(0, resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -269,20 +269,20 @@ if (!version) {
 } else {
   module('history + auto-publish (jj)', function (hooks) {
     let workDir: string;
-    let realmDir: string;
+    let depotDir: string;
     let deckDir: string;
     let storeDir: string;
     let server: Server;
     let origin: string;
     let history: JjCliHistory;
-    let controller: RealmWatchController;
+    let controller: DepotWatchController;
     let published: WatchPublishEvent[] = [];
 
     hooks.before(async function () {
       workDir = await mkdtemp(join(tmpdir(), 'deck-history-e2e-'));
-      realmDir = join(workDir, 'demo');
-      deckDir = join(realmDir, 'me', 'mylib');
-      storeDir = storeDirFor(realmDir);
+      depotDir = join(workDir, 'demo');
+      deckDir = join(depotDir, 'me', 'mylib');
+      storeDir = storeDirFor(depotDir);
       await (await import('node:fs/promises')).mkdir(deckDir, {
         recursive: true,
       });
@@ -291,23 +291,23 @@ if (!version) {
         JSON.stringify({
           imports: {},
           deck: {
-            packages: { mylib: { version: '0.1.0', entry: '$REALM/app.js' } },
+            packages: { mylib: { version: '0.1.0', entry: '$DECK/app.js' } },
           },
         }),
       );
       await writeFile(join(deckDir, 'app.js'), 'export const v = 1;\n');
 
-      // The realm seals as ONE tree — the same unit a realm server seals —
+      // The depot seals as ONE tree — the same unit a realm server seals —
       // even though each deck under it publishes its own versions.
       history = new JjCliHistory({ debounceMs: 50 });
-      let realm: RealmMount = {
+      let depot: DepotMount = {
         name: 'demo',
-        dir: realmDir,
+        dir: depotDir,
         storeDir,
         history,
       };
-      controller = watchRealm({
-        realm,
+      controller = watchDepot({
+        depot,
         // A publish window well clear of the seal window, so the state
         // between them is observable rather than a race.
         debounceMs: 600,
@@ -320,7 +320,7 @@ if (!version) {
       // Mounting publishes the tree as it stands; count edits from there.
       await controller.settled();
       published = [];
-      server = createDeckServer({ realms: [realm] });
+      server = createDeckServer({ depots: [depot] });
       await new Promise<void>((resolve) => server.listen(0, resolve));
       origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     });
@@ -367,7 +367,7 @@ if (!version) {
         'and a client can follow a version back to its seal',
       );
 
-      // The seal is the REALM's, so its paths are realm-relative — the same
+      // The seal is the DEPOT's, so its paths are depot-relative — the same
       // path the URL uses.
       let sealed = await fetch(
         `${origin}/demo/_history/${event.sealChangeId}/me/mylib/app.js`,
@@ -377,7 +377,7 @@ if (!version) {
 
     test('states BETWEEN publishes are sealed and servable', async function (assert) {
       let publishesBefore = published.length;
-      let before = await history.head(realmDir);
+      let before = await history.head(depotDir);
       await writeFile(join(deckDir, 'app.js'), 'export const v = 3;\n');
       // The seal debounce (50ms) fires long before the publish debounce
       // (600ms): this is the tier-2 guarantee — the save is already safe
@@ -386,7 +386,7 @@ if (!version) {
       let intermediate = before;
       for (let attempt = 0; attempt < 50 && intermediate === before; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 10));
-        intermediate = await history.head(realmDir);
+        intermediate = await history.head(depotDir);
       }
       assert.notStrictEqual(intermediate, before, 'the save was sealed');
       assert.strictEqual(
@@ -408,12 +408,12 @@ if (!version) {
     test('the seal log outgrows the version list, and nothing runs away', async function (assert) {
       // Two saves inside ONE publish window: both are sealed, only the last
       // is published. The first is the state tier 1 cannot give back.
-      let head = await history.head(realmDir);
+      let head = await history.head(depotDir);
       await writeFile(join(deckDir, 'app.js'), 'export const v = 4;\n');
       let intermediate = head;
       for (let attempt = 0; attempt < 50 && intermediate === head; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 10));
-        intermediate = await history.head(realmDir);
+        intermediate = await history.head(depotDir);
       }
       await writeFile(join(deckDir, 'app.js'), 'export const v = 5;\n');
       await controller.settled();
@@ -437,7 +437,7 @@ if (!version) {
         'a save that never became a version is still there — that IS tier 2',
       );
 
-      // jj writes into .jj on every operation, inside the watched realm. If
+      // jj writes into .jj on every operation, inside the watched depot. If
       // those writes were treated as edits, sealing would feed itself: this
       // asserts the loop is closed.
       let before = published.length;
@@ -451,10 +451,10 @@ if (!version) {
 
     test('restore is an ordinary edit: the tree moves, history only grows', async function (assert) {
       let { applyRestore } = await import('@deck/history/backend');
-      let seals = await history.list(realmDir);
+      let seals = await history.list(depotDir);
       let first = seals.at(-1)!.changeId;
       let firstBytes = (await history.fileAt(
-        realmDir,
+        depotDir,
         first,
         'me/mylib/app.js',
       ))!;
@@ -463,7 +463,7 @@ if (!version) {
       let versionsBefore = Object.keys(
         (await readStoreMeta(storeDir, 'me/mylib'))!.versions,
       );
-      let result = await applyRestore(history, realmDir, first);
+      let result = await applyRestore(history, depotDir, first);
       assert.true(result.written.includes('me/mylib/app.js'));
       assert.strictEqual(
         (await readFile(join(deckDir, 'app.js'))).toString(),

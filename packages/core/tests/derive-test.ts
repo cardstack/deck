@@ -21,7 +21,7 @@ function sourcePack(version = '1.2.3') {
         JSON.stringify(
           {
             imports: {},
-            deck: { packages: { ink: { version, entry: '$REALM/ink.js' } } },
+            deck: { packages: { ink: { version, entry: '$DECK/ink.js' } } },
           },
           null,
           2,

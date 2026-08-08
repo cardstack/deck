@@ -29,7 +29,7 @@ is **exact** — not inferred from a commit graph. So `/site/_offers` can answer
 "does this still merge?" at any moment, for every open proposal, by re-merging
 on read.
 
-Note what is *not* in the realm: `std/currencies` has no directory here. It is
+Note what is *not* in the depot: `std/currencies` has no directory here. It is
 somebody else's published deck. A contributor never checks it out.
 
 ## What the demo runs
@@ -88,4 +88,4 @@ cannot move. That is what makes the `+1 ~1 −0` honest.
 
 It also renders `/site/_offers` inline, so the review console is the app
 itself. The forks are live working trees: edit
-`realm/kim/currencies/currencies.json` and reload.
+`depot/kim/currencies/currencies.json` and reload.

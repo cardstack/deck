@@ -142,7 +142,7 @@ module('vendor: bring a CDN library in-house', function () {
     assert.strictEqual(map.deck.packages.three.version, '0.160.0');
     assert.strictEqual(
       map.deck.packages.three.entry,
-      `$REALM/${result.entryPath}`,
+      `$DECK/${result.entryPath}`,
     );
     assert.strictEqual(
       map.deck.packages.three.vendoredFrom,

@@ -1,5 +1,11 @@
 # Deck → GitHub: the one-way mirror analysis
 
+> **Vocabulary note.** This document predates the depot ruling and says
+> **realm** where standalone Deck now says **depot** — the URL slot holding a
+> live tree, a store, and a prefix. Where a sentence is genuinely about the
+> Boxel construct, it means that. See
+> [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
+
 Companion to `deck-semver-migration-spec.md`, `deck-publishing-skill.md`,
 `deck-software-lifecycle.md`, `deck-realm-development-use-cases.md`.
 Written 2026-08-07; the four decisions below were made by Chris this

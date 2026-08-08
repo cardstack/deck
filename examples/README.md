@@ -18,7 +18,7 @@ Each one is a **use case from [docs/deck-use-cases.md](../docs/deck-use-cases.md
 built to show what the protocol makes possible — not to prove the code runs.
 That is what `pnpm test` and `deck conform` are for.
 
-Every example is a **realm directory** (`<publisher>/<package>/…`) served by
+Every example is a **depot directory** (`<publisher>/<package>/…`) served by
 the reference server, so the URLs you see in the browser are the protocol's
 real address space, not a demo router.
 
@@ -37,12 +37,12 @@ and the confusion changes what a claim means:
 
 | pill | is | example fact |
 | --- | --- | --- |
-| **deck** (teal) | a Deck address — where **this realm** serves it from | *the fork cost 2 objects* |
+| **deck** (teal) | a Deck address — where **this depot** serves it from | *the fork cost 2 objects* |
 | **npm** (red) | the published artifact that was fetched and hashed | *85 modules* |
 | **github** (neutral) | the source repository, `org/repo` | *fixed in 1.9.5* |
 
 One module draws them all: [`shared/ui/pills`](shared/), published into each
-demo's own store as `ui/pills@1.0.0`. Five separate realms, five separate
+demo's own store as `ui/pills@1.0.0`. Five separate depots, five separate
 stores, one source tree — and the same treeHash in all five, which each demo
 prints so you can check.
 
@@ -113,5 +113,5 @@ Or all of them, behind one console:
 pnpm demo
 ```
 
-The store each demo builds lives under `<example>/realm/.deck/` and is
+The store each demo builds lives under `<example>/depot/.deck/` and is
 gitignored — delete it and re-run to rebuild from nothing.
