@@ -90,13 +90,59 @@ module('npm carriage', () => {
     });
   });
 
-  test('flattens an npm name into one deck segment', (assert) => {
+  test('a name that loses nothing in the fold is left alone', (assert) => {
     assert.strictEqual(deckNameForNpm('three'), 'three');
-    assert.strictEqual(
-      deckNameForNpm('@tanstack/query-core'),
-      'tanstack-query-core',
+    assert.strictEqual(deckNameForNpm('babel-runtime'), 'babel-runtime');
+    assert.strictEqual(deckNameForNpm('query-core'), 'query-core');
+  });
+
+  // The fold is not injective, so where it loses information the true npm
+  // name is what disambiguates. Nix's `<hash>-<name>`, applied only where it
+  // is needed rather than to every package.
+  test('a lossy fold carries a digest of the true npm name', (assert) => {
+    let scoped = deckNameForNpm('@babel/runtime');
+    let plain = deckNameForNpm('babel-runtime');
+    assert.true(
+      scoped.startsWith('babel-runtime-'),
+      `readable stem preserved, got ${scoped}`,
     );
-    assert.strictEqual(deckNameForNpm('Chart.js'), 'chart-js');
+    assert.notStrictEqual(
+      scoped,
+      plain,
+      '@babel/runtime and babel-runtime are different libraries',
+    );
+
+    assert.notStrictEqual(
+      deckNameForNpm('three.js'),
+      deckNameForNpm('three-js'),
+      'a folded dot is not the same package as a literal hyphen',
+    );
+    assert.true(deckNameForNpm('Chart.js').startsWith('chart-js-'));
+    assert.true(
+      deckNameForNpm('@tanstack/query-core').startsWith('tanstack-query-core-'),
+    );
+  });
+
+  test('derived names are deterministic and fit one segment', (assert) => {
+    let segment = /^[a-z0-9][a-z0-9-]{0,63}$/;
+    for (let name of [
+      'three',
+      '@babel/runtime',
+      'three.js',
+      '@types/node',
+      'lodash.merge',
+      '_underscore',
+      `@scope/${'x'.repeat(120)}`,
+      '@#$%',
+    ]) {
+      let derived = deckNameForNpm(name);
+      assert.true(segment.test(derived), `${name} -> ${derived} is a segment`);
+      assert.strictEqual(
+        derived,
+        deckNameForNpm(name),
+        'the same name always derives the same deck',
+      );
+    }
   });
 
   test('reads a ustar archive', (assert) => {

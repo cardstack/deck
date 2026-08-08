@@ -33,15 +33,67 @@ export function parseNpmSpec(spec: string): NpmSpec {
 }
 
 // A deck package name is one lowercase segment (the publisher supplies the
-// other). `@tanstack/query-core` therefore has to flatten.
-export function deckNameForNpm(name: string): string {
+// other), so `@tanstack/query-core` has to flatten. Flattening npm's
+// namespace into `[a-z0-9-]` is necessarily lossy, and a lossy map is not
+// injective: `@babel/runtime` and `babel-runtime` are both real packages and
+// both fold to `babel-runtime`, as do `three.js` and `three-js`.
+//
+// That matters because a deck name is a RESOLUTION KEY. Two upstreams under
+// one name means a range picks between versions of two different libraries,
+// which breaks L7. Per-version provenance stays truthful throughout, so L8
+// never notices.
+//
+// The fix here is Nix's, not Debian's. Debian's answer to a flat namespace
+// is a central authority refusing collisions at registration; Deck is
+// federated and has no such authority, so refusal can only fire late — in
+// somebody's realm, at publish time. Nix's answer is `<hash>-<name>`: the
+// name is decoration and identity lives elsewhere, which Deck already
+// believes, since L1 makes identity the treeHash.
+//
+// Applied selectively, because most names lose nothing:
+//
+//   lodash                -> lodash                     (fold is identity)
+//   babel-runtime         -> babel-runtime              (fold is identity)
+//   @babel/runtime        -> babel-runtime-<h>          (scope dropped)
+//   three.js              -> three-js-<h>               (dot folded)
+//   @tanstack/query-core  -> tanstack-query-core-<h>
+//
+// The digest is over the TRUE npm name, so it separates exactly the names
+// the fold conflated. Six hex characters rather than four: a collision needs
+// the same fold AND the same prefix, and fold buckets hold two or three
+// names, so this is margin on an already small number. Whatever is left is
+// caught by the store's one-deck-one-upstream check — which also covers the
+// case no derivation can, a hand-passed `--name`.
+
+const NAME_DIGEST_LENGTH = 6;
+// The 64-character segment cap, less the digest and its separator.
+const NAME_BUDGET = 64 - NAME_DIGEST_LENGTH - 1;
+
+function foldNpmName(name: string): string {
   return name
     .replace(/^@/, '')
     .replace(/\//g, '-')
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
-    .replace(/^-+/, '')
-    .slice(0, 64);
+    .replace(/^-+/, '');
+}
+
+export function deckNameForNpm(name: string): string {
+  let folded = foldNpmName(name);
+  // Lossless means the fold changed nothing AND the result fits. Truncation
+  // loses information too, which is why the length belongs in this test
+  // rather than in a `slice` applied afterwards to whatever came out.
+  if (folded === name && folded.length <= 64) {
+    return folded;
+  }
+  let digest = createHash('sha256')
+    .update(name, 'utf8')
+    .digest('hex')
+    .slice(0, NAME_DIGEST_LENGTH);
+  // `|| 'npm'` keeps the segment alnum-led for a name that folds away
+  // entirely; trailing hyphens go so the join never doubles them.
+  let base = folded.slice(0, NAME_BUDGET).replace(/-+$/, '') || 'npm';
+  return `${base}-${digest}`;
 }
 
 export interface NpmVersionDoc {
