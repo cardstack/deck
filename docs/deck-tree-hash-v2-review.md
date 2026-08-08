@@ -1,8 +1,22 @@
 # Review: `tree-hash-v2` — what to keep, what to unbundle, what to drop
 
-**Status: REVIEW** (2026-08-08) of `deck-tree-hash-v2-merkle-proposal.md`.
-Companions: `deck-laws.md` (L1, L9), `packages/core/src/tree-hash.ts`,
-`packages/core/src/object-store.ts`.
+**Status: ACCEPTED — the proposal was REJECTED** (2026-08-08).
+**`tree-hash-v1` is the identity for everything; there is no v2.**
+Review of `deck-tree-hash-v2-merkle-proposal.md`. Companions:
+`deck-laws.md` (L1, L9), `packages/core/src/tree-hash.ts`,
+`packages/core/src/object-store.ts`, `deck-competitive-gaps.md` §2.4.1.
+
+The ruling, and the one thing still outstanding:
+
+- **Rejected** on the measurements in §2 and §2.2 — the Merkle shape does not
+  solve the problem it was proposed for, costs roughly double the metadata,
+  and carries a second identity spec, a golden regeneration, invalidated
+  seals, and a proof-encoding surface to buy it.
+- **Still outstanding, and now more urgent:** the Unicode normalisation hole
+  in L1 (§4.2). It was found while reviewing v2 but it is a v1 defect, and v1
+  is now permanent.
+- The subtree index (§1.1) stays available at any time. It is derived data,
+  so it never needs a law. Nothing currently needs it.
 
 The proposal is well argued and the Radicle read in §0.1 is the right kind of
 homework. This review does not disagree with its goals. It disagrees with

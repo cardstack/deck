@@ -249,6 +249,65 @@ Second thing Deck adds: sync should be **seal-grained**, not
 snapshot-grained. A push carries the seals, so history survives the wire
 and the remote can restore to any of them.
 
+#### 2.4.1 The comparison itself — where the user actually waits
+
+Measured against the real code and real realms (2026-08-08), because this is
+the single largest latency the CLI has and the reason it is worth naming
+here at all.
+
+**What happens today.** `getRemoteFileList` in `realm-sync-base.ts` walks the
+realm with **one HTTP request per directory**, recursively, through a
+`pLimit(10)` gate. It is called by `pull`, `push`, `status` and `sync` — every
+command pays it. Alongside it, `_mtimes` returns one flat map for the realm.
+
+On real staging realms, with RTT to `realms-staging.stack.cards` measured at
+~95 ms (36 ms connect):
+
+| Realm | Files | Directories = round trips | Flat manifest, gzipped |
+| --- | ---: | ---: | ---: |
+| `ctse/fragile-walrus` | 1,199 | 12 | 52 KB |
+| `ctse/personal` | 789 | **118** | 47 KB |
+| `ctse/military-pigeon` | 896 | 12 | 40 KB |
+| `ctse/pinecliff-gallery` | 437 | 7 | 22 KB |
+
+118 requests through a ten-slot limiter, serialised by recursion depth, is
+seconds of latency before any comparison begins.
+
+**And the comparison is asymmetric.** `classifyLocal` compares content
+hashes; `classifyRemote` compares **mtimes**. There is no remote content
+hash anywhere in the CLI. So any server-side rewrite that does not change
+bytes — a re-index, a normalisation pass — bumps mtime and reads as
+`changed`; combined with a real local edit, `determineAction` returns
+`conflict` for a file whose remote bytes are identical to what the user
+already holds. The wait is the visible half of this; the false conflicts are
+the expensive half.
+
+**What a Deck-managed realm gives, all of it under `tree-hash-v1`:**
+
+1. **“Has anything changed?” is one 64-hex comparison.** One request, no
+   listing, no manifest. Today that question costs the entire recursive
+   walk — and for `status` and for a no-op `sync`, the most common
+   invocations there are, it *is* the whole wait.
+2. **“What changed?” is one request** for the flat packlist: path plus
+   sha256 for the whole realm, 22–52 KB gzipped at the sizes above. It
+   replaces 7–118 round trips with one, and replaces mtime guessing with
+   content identity — which removes the false-conflict class rather than
+   mitigating it.
+
+Both fall out of the store as it already exists. Neither needs a new
+identity, and the rejected Merkle proposal
+(`deck-tree-hash-v2-merkle-proposal.md`) does not improve either: measured on
+these same realms, a node walk beats downloading the flat manifest for
+between 5% and 100% of files depending on realm, because realms are fat and
+shallow — depth 2–4, one directory holding 278–659 children. See
+`deck-tree-hash-v2-review.md`.
+
+**The condition.** All of this holds only if the realm server maintains
+hashes **at write time**, the way the Deck store does. A server that
+computes them by reading every file when the CLI asks has moved the wait
+rather than removed it. That discipline is the deliverable — not a data
+structure.
+
 ---
 
 ### 2.5 Matrix identity for authorship and publisher

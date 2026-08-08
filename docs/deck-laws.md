@@ -28,7 +28,18 @@ the same files have the same hash on every implementation, forever.
 
 `DEFAULT_IGNORE` is part of the algorithm: a realm's own bookkeeping
 (`.deck`, `.jj`, `.git`, `node_modules`, `.DS_Store`, `.boxel-history`)
-cannot change what a deck IS.
+cannot change what a deck IS. A caller may extend that set; it cannot shrink
+it, or two implementations could hash one directory differently.
+
+**Decided, so it is not re-litigated: the manifest stays flat.** A Merkle
+directory identity (`tree-hash-v2`) was proposed and rejected on 2026-08-08.
+It does not solve what it was proposed for — a directory node is not a binary
+Merkle node, so a proof costs the full child list of every ancestor, and both
+published packages and realms are fat and shallow enough that the proof
+measures larger than shipping the whole gzipped manifest. See
+`deck-tree-hash-v2-merkle-proposal.md` for the rejection and
+`deck-tree-hash-v2-review.md` for the numbers. Subtree hashes remain
+available as **derived** data at any time; identity is not where they belong.
 
 ## L2 · Round trip
 
