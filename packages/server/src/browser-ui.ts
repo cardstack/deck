@@ -1,5 +1,6 @@
 // Self-contained Deck browser — served at `/` and `/_browser`.
-// Honest about at-rest structure: <store>/<name>/{meta.json,packs/…}.
+// Honest about at-rest structure: <store>/<name>/meta.json points at a
+// tree in <store>/_trees/, whose files live once each in <store>/_objects/.
 // Tier-1 history only (sealed packs). No jj/historyd UI pretenses.
 
 export const BROWSER_HTML = `<!doctype html>
@@ -279,7 +280,7 @@ function fillVersions(p) {
     let rec = p.versions[v];
     opts.push({
       value: v,
-      label: \`\${v} → \${rec.file || ('packs/' + rec.treeHash + '.pack.zip')}\`,
+      label: \`\${v} → \${rec.file || ('_trees/' + rec.treeHash + '.json')}\`,
     });
   }
   versionEl.innerHTML = opts.map((o) => \`<option value="\${o.value}">\${o.label}</option>\`).join('');
@@ -302,12 +303,12 @@ function renderAtRest(p) {
   if (state.version === 'live') {
     atrest.innerHTML = \`<strong>Viewing</strong> live working tree<br/>
       <strong>livePath</strong> \${p.livePath || '—'}<br/>
-      <strong>store</strong> \${p.storePath}meta.json + packs/ (not what you're reading)\`;
+      <strong>store</strong> \${p.storePath}meta.json + _trees/ + _objects/ (not what you're reading)\`;
     return;
   }
   atrest.innerHTML = \`<strong>Viewing</strong> sealed pack tree<br/>
     <strong>meta</strong> \${p.storePath}meta.json · version <strong>\${resolved}</strong><br/>
-    <strong>pack</strong> \${p.storePath}\${rec?.file || 'packs/?.pack.zip'}<br/>
+    <strong>tree</strong> \${rec?.file || ('_trees/' + (rec?.treeHash ?? '?') + '.json')}<br/>
     <strong>treeHash</strong> \${rec?.treeHash || '—'}
     \${p.livePath ? '<br/><strong>also live</strong> ' + p.livePath : ''}\`;
 }

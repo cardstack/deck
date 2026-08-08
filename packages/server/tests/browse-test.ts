@@ -96,7 +96,8 @@ module('deck browser API', function (hooks) {
     assert.equal(pkg.distTags.latest, '1.0.0');
     assert.equal(pkg.livePath, '/demo/acme/lib/');
     assert.equal(pkg.storePath, '.deck/store/acme/lib/');
-    assert.true(pkg.versions['1.0.0'].file.startsWith('packs/'));
+    assert.strictEqual(pkg.versions['1.0.0'].file, undefined);
+    assert.true(/^[0-9a-f]{64}$/.test(pkg.versions['1.0.0'].treeHash));
     assert.equal(body.meta.history.tier, 1);
     assert.equal(body.meta.history.jj, false);
     assert.equal(body.meta.history.historyd, false);

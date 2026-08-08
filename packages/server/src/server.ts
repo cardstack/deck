@@ -10,13 +10,15 @@ import { join } from 'node:path';
 import { DECKBOOK_PATHS, loadDeckbookHtml } from './deckbook.ts';
 import { readZipEntry } from '@deck/core/canonical-zip';
 import {
-  packagesFromPack,
   parsePackages,
+  type PackageMapEntry,
   treePathFromMapValue,
   IMPORT_MAP_PATH,
   MOUNT_SEPARATOR,
 } from '@deck/core/import-map';
 import { peekPacklist } from '@deck/core/pack';
+import type { Packlist } from '@deck/core/packlist';
+import { readTree, readTreeFile } from '@deck/core/object-store';
 import {
   listStorePackages,
   readStoredPack,
@@ -35,7 +37,6 @@ import {
   listingFromPacklist,
   looksLikeText,
   findPackFile,
-  peekListing,
   readLiveFile,
 } from './browse.ts';
 import { BROWSER_HTML } from './browser-ui.ts';
@@ -183,8 +184,12 @@ function readTreePath(packBytes: Buffer, path: string): Buffer | undefined {
 }
 
 interface CachedPack {
-  bytes: Buffer;
   treeHash: string;
+  packlist: Packlist;
+  // One file, straight out of its object.
+  read(path: string): Promise<Buffer | undefined>;
+  // The sealed archive, rebuilt on first request and then held.
+  bytes(): Promise<Buffer | undefined>;
 }
 
 export function createDeckServer(options: DeckServerOptions): DeckServer {
@@ -196,6 +201,11 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   let packCache = new Map<string, CachedPack>();
   const PACK_CACHE_MAX = 50;
 
+  // A sealed version is opened LAZILY. The store keeps files as objects and
+  // rebuilds the archive on request, so decoding — or worse, re-deflating —
+  // 374 modules to serve one of them would be pure waste. The listing comes
+  // from the tree manifest, a file comes from its own object, and the zip is
+  // built only when someone actually asks for `?format=pack`.
   async function loadPack(
     realm: RealmMount,
     name: string,
@@ -206,12 +216,61 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     if (hit) {
       return hit;
     }
-    let bytes = await readStoredPack(realm.storeDir, name, version);
-    if (!bytes) {
+    let meta = await readStoreMeta(realm.storeDir, name);
+    let record = meta?.versions[version];
+    if (!record) {
       return undefined;
     }
-    let packlist = peekPacklist(bytes);
-    let cached = { bytes, treeHash: packlist.treeHash.hash };
+    let packlist = record.file
+      ? undefined
+      : await readTree(realm.storeDir, record.treeHash);
+    let legacyBytes = packlist
+      ? undefined
+      : await readStoredPack(realm.storeDir, name, version);
+    if (!packlist && !legacyBytes) {
+      return undefined;
+    }
+    let resolved = packlist ?? peekPacklist(legacyBytes!);
+    let archive: Promise<Buffer | undefined> | undefined = legacyBytes
+      ? Promise.resolve(legacyBytes)
+      : undefined;
+    let cached: CachedPack = {
+      treeHash: resolved.treeHash.hash,
+      packlist: resolved,
+      read: async (path) => {
+        if (legacyBytes) {
+          return readTreePath(legacyBytes, path);
+        }
+        // `!/` mounts still descend: the outer member is an object like any
+        // other file, and the nested pack is read out of it.
+        let segments = path.split(MOUNT_SEPARATOR);
+        if (segments.length - 1 > MAX_MOUNT_DEPTH) {
+          return undefined;
+        }
+        let outer =
+          segments.length > 1 ? `${segments[0]}.pack.zip` : segments[0];
+        let current = await readTreeFile(
+          realm.storeDir,
+          record.treeHash,
+          outer,
+        );
+        for (let index = 1; index < segments.length; index++) {
+          if (current === undefined) {
+            return undefined;
+          }
+          let inner =
+            index < segments.length - 1
+              ? `${segments[index]}.pack.zip`
+              : segments[index];
+          current = readZipEntry(current, inner);
+        }
+        return current;
+      },
+      bytes: () => {
+        archive ??= readStoredPack(realm.storeDir, name, version);
+        return archive;
+      },
+    };
     if (packCache.size >= PACK_CACHE_MAX) {
       let oldest = packCache.keys().next().value;
       if (oldest !== undefined) {
@@ -220,6 +279,13 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     }
     packCache.set(key, cached);
     return cached;
+  }
+
+  async function packageMapOf(
+    pack: CachedPack,
+  ): Promise<Record<string, PackageMapEntry> | undefined> {
+    let raw = await pack.read(IMPORT_MAP_PATH);
+    return raw ? parsePackages(raw.toString('utf8')) : undefined;
   }
 
   function historyCapability(): Record<string, unknown> {
@@ -234,7 +300,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         kind: 'content-addressed-packs',
         jj: false,
         historyd: false,
-        note: 'Versions are pointers in meta.json → packs/<treeHash>.pack.zip. No seals between publishes: attach a history backend for /<realm>/_history/<changeId>.',
+        note: 'Versions are pointers in meta.json → a tree in _trees/, whose files live once each in _objects/. No seals between publishes: attach a history backend for /<realm>/_history/<changeId>.',
       };
     }
     return {
@@ -577,7 +643,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               versions: Object.fromEntries(
                 Object.entries(meta?.versions ?? {}).map(([version, r]) => [
                   version,
-                  { treeHash: r.treeHash, file: r.file },
+                  { treeHash: r.treeHash, ...(r.file ? { file: r.file } : {}) },
                 ]),
               ),
               distTags: meta?.tags ?? {},
@@ -645,7 +711,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               versions: Object.fromEntries(
                 Object.entries(meta?.versions ?? {}).map(([version, r]) => [
                   version,
-                  { treeHash: r.treeHash, file: r.file },
+                  { treeHash: r.treeHash, ...(r.file ? { file: r.file } : {}) },
                 ]),
               ),
               distTags: meta?.tags ?? {},
@@ -793,11 +859,11 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           );
           return;
         }
-        let packlist = peekListing(pack.bytes);
+        let packlist = pack.packlist;
         if (rest) {
           let fileMeta = findPackFile(packlist, rest);
           if (fileMeta) {
-            let bytes = readTreePath(pack.bytes, rest);
+            let bytes = await pack.read(rest);
             if (!bytes) {
               respondError(
                 req,
@@ -1221,7 +1287,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       return;
     }
 
-    let mapEntry = packagesFromPack(pack.bytes)?.[groups.pkg!];
+    let mapEntry = (await packageMapOf(pack))?.[groups.pkg!];
     let canonicalRest: string | undefined;
     if (wantsMeta || wantsPack) {
       canonicalRest = undefined;
@@ -1263,7 +1329,20 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     }
 
     if (wantsPack) {
-      // Faithful by construction: these ARE the stored sealed bytes.
+      // Rebuilt from the objects, and byte-identical to what was sealed:
+      // the packlist fixes the order and every hash, and canonical-zip-v1
+      // is deterministic.
+      let archive = await pack.bytes();
+      if (!archive) {
+        respondError(
+          req,
+          res,
+          404,
+          'version-not-found',
+          `${name}@${version} has no stored content`,
+        );
+        return;
+      }
       respond(
         req,
         res,
@@ -1272,17 +1351,17 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           'content-type': 'application/zip',
           'content-disposition': `attachment; filename="${groups.pkg}-${version}.pack.zip"`,
           'cache-control': IMMUTABLE_CACHE,
-          'content-digest': contentDigest(pack.bytes),
+          'content-digest': contentDigest(archive),
           'x-deck-tree-hash': pack.treeHash,
           'access-control-allow-origin': '*',
         },
-        pack.bytes,
+        archive,
       );
       return;
     }
 
     if (wantsMeta) {
-      let packlist = peekPacklist(pack.bytes);
+      let packlist = pack.packlist;
       let exports: Record<string, string> = {};
       for (let [alias, value] of Object.entries(mapEntry?.exports ?? {})) {
         let treePath = treePathFromMapValue(value);
@@ -1333,11 +1412,11 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       return;
     }
 
-    let bytes = readTreePath(pack.bytes, rest!);
+    let bytes = await pack.read(rest!);
     if (bytes === undefined && !/\.[^/]+$/.test(rest!)) {
       // Extensionless specifiers probe .js then .mjs (vanilla serving).
       for (let candidate of [`${rest}.js`, `${rest}.mjs`]) {
-        bytes = readTreePath(pack.bytes, candidate);
+        bytes = await pack.read(candidate);
         if (bytes !== undefined) {
           rest = candidate;
           break;
@@ -1357,7 +1436,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     let injected = false;
     let trying: string[] = [];
     if (rest!.endsWith('.html')) {
-      let sealedMap = readZipEntry(pack.bytes, IMPORT_MAP_PATH);
+      let sealedMap = await pack.read(IMPORT_MAP_PATH);
       let imports: Record<string, string> = {};
       try {
         imports = sealedMap

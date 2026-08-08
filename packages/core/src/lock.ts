@@ -43,6 +43,9 @@ export interface DependencyResolution {
   publisher: string;
   package: string;
   spec: string;
+  // Set when the key is answered by a DIFFERENT deck than the key names —
+  // a fork standing in for its base under the base's own specifier.
+  alias?: string;
   // The exact version the range resolved to; undefined when pinned to live.
   version?: string;
   entry?: string;
@@ -74,6 +77,31 @@ function parseKey(
     return { realm: segments[0], publisher: segments[1], package: segments[2] };
   }
   return undefined;
+}
+
+// A dependency value is normally a range: `"acme/three": "^0.160.0"`, and
+// the key is both the deck and the import specifier.
+//
+// It may instead ALIAS another deck: `"acme/three": "you/three@live"`. Then
+// the key stays the specifier and the value says which deck answers to it.
+// That is what lets a fork stand in for its base without every consumer
+// rewriting its own `import` statements — the same substitution `?with=`
+// performs at serve time, made durable in the lock.
+export interface DependencyValue {
+  target?: string;
+  spec: string;
+}
+
+export function parseDependencyValue(value: string): DependencyValue {
+  if (!value.includes('/')) {
+    return { spec: value };
+  }
+  let at = value.lastIndexOf('@');
+  // A bare `you/three` means live, the same default a fork wants.
+  if (at <= 0) {
+    return { target: value, spec: LIVE_SPEC };
+  }
+  return { target: value.slice(0, at), spec: value.slice(at + 1) || LIVE_SPEC };
 }
 
 // npm's rule: a range never matches a prerelease. An exact prerelease pin or
@@ -139,11 +167,19 @@ export async function resolveDependencies(
   options: ResolveOptions,
 ): Promise<DependencyResolution[]> {
   let resolutions: DependencyResolution[] = [];
-  for (let [key, spec] of Object.entries(options.dependencies)) {
-    let target = parseKey(key, options.realmName);
-    if (!target) {
+  for (let [key, declared] of Object.entries(options.dependencies)) {
+    let { target: alias, spec } = parseDependencyValue(declared);
+    // The KEY is always the import specifier. The alias, when present, is
+    // the deck that answers to it.
+    if (parseKey(key, options.realmName) === undefined) {
       throw new Error(
         `dependency "${key}" is not <publisher>/<package> or <realm>/<publisher>/<package>`,
+      );
+    }
+    let target = parseKey(alias ?? key, options.realmName);
+    if (!target) {
+      throw new Error(
+        `dependency "${key}" aliases "${alias}", which is not <publisher>/<package> or <realm>/<publisher>/<package>`,
       );
     }
     if (target.realm !== options.realmName) {
@@ -182,6 +218,7 @@ export async function resolveDependencies(
       publisher: target.publisher,
       package: target.package,
       spec,
+      ...(alias ? { alias } : {}),
       version,
       entry,
       imports,

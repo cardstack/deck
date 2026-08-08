@@ -208,6 +208,9 @@ Design set in [docs/](docs/) — start with:
 
 - [deck-at-rest-protocol.md](docs/deck-at-rest-protocol.md) — the
   protocol: state model, endpoints, serving rules, vocabulary.
+- [deck-cas-v2-spec.md](docs/deck-cas-v2-spec.md) — next CAS work:
+  blob store (pack as transport), verified dependency links, and
+  signatures on treeHash.
 - [deck-pack-equivalence.md](docs/deck-pack-equivalence.md) — deck ⇄
   pack: four homes, treeHash identity, carriage modes, round-trip
   laws, `!/` mounts, canonical-zip-v1. All opens ruled.

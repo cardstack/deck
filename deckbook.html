@@ -552,11 +552,13 @@ node packages/cli/bin/deck.js serve --root ./playground --history auto --rebase<
       <tr><td>History backends (jj CLI + historyd)</td><td>Built; attaches when available</td></tr>
       <tr><td>Cross-realm dependency pins</td><td>Not built — lock refuses them</td></tr>
       <tr><td>Vendor/unvendor map-rewrite toggle</td><td>Designed; <code>!/</code> mounts already serve</td></tr>
+      <tr><td>Blob store / verified links / sigs on treeHash</td><td>Specified — <code>docs/deck-cas-v2-spec.md</code></td></tr>
     </tbody>
   </table>
   <p>
     Deeper design notes live in <code>docs/</code> —
     start with <code>deck-at-rest-protocol.md</code>,
+    <code>deck-cas-v2-spec.md</code>,
     <code>deck-live-autopublish.md</code>,
     <code>deck-pack-equivalence.md</code>,
     <code>deck-use-cases.md</code>.

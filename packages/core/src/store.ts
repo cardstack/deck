@@ -4,20 +4,26 @@ import {
   readFile,
   rename,
   rm,
-  stat,
   writeFile,
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import semver from 'semver';
 import { unpack } from './pack.ts';
 import { packagesFromPack } from './import-map.ts';
+import {
+  collectGarbage,
+  readTreeFile,
+  rebuildPack,
+  storePack,
+  type GcResult,
+} from './object-store.ts';
 
 // A Deck store is pure at-rest state on disk — the standalone counterpart
 // of the realm's bookmarks. The server only READS it; all writes go through
 // the CLI/watcher (an agent arranges state; distribution follows).
 //
-//   <store>/<publisher>/<package>/packs/<treeHash>.pack.zip
-//                                              — sealed bytes, ONCE per hash
+//   <store>/_objects/<aa>/<sha256>             — one FILE's bytes, once
+//   <store>/_trees/<aa>/<treeHash>.json        — one tree's packlist, once
 //   <store>/<publisher>/<package>/meta.json    — versions + dist-tags
 //
 // The store path mirrors the URL path: a package addressed as
@@ -25,14 +31,21 @@ import { packagesFromPack } from './import-map.ts';
 // `<realm>/.deck/store/<publisher>/<package>/`. Same shape on disk and on
 // the wire, so neither has to be translated into the other.
 //
-// The store is CONTENT-ADDRESSED: pack bytes are stored by treeHash, and a
-// version is a POINTER (version → treeHash) in meta.json. Two consequences,
-// both deliberate:
+// The store is CONTENT-ADDRESSED PER FILE, and the objects are store-wide
+// rather than per package. A version is a POINTER (version → treeHash) in
+// meta.json; the tree names its files; the files are shared by everyone.
+// Three consequences, all deliberate:
 //   - publishing a tree whose bytes are already stored writes no new bytes
-//   - RELEASING a new version from an existing sealed state (a dev
-//     prerelease, a tag, another version) is a metadata edit — never a
-//     copy. "Publish never seals new content" — the realm-server law —
-//     holds here as "release never writes new bytes."
+//   - editing ONE file in a 374-module package costs one object, not a
+//     second copy of the package
+//   - an undiverged fork costs nothing at all, across publishers
+// RELEASING a new version from an existing sealed state (a dev prerelease,
+// a tag, another version) remains a metadata edit — never a copy.
+// "Publish never seals new content" holds as "release never writes bytes."
+//
+// The pack is rebuilt from objects on demand rather than stored, which
+// keeps `pack(unpack(P)) === P` byte-exact because canonical-zip-v1 is
+// deterministic and the packlist fixes the order and the hashes.
 //
 // Invariants:
 //   - published versions are immutable: re-publishing refuses; meta updates
@@ -47,7 +60,11 @@ import { packagesFromPack } from './import-map.ts';
 
 export interface StoreVersionRecord {
   treeHash: string;
-  file: string; // relative to <store>/<name>/
+  // Legacy one-zip-per-tree stores wrote a path here, relative to
+  // <store>/<name>/. New records carry only the treeHash: the bytes live in
+  // the store-wide object and tree directories, and the pack is rebuilt on
+  // demand. Both shapes are read; only the second is written.
+  file?: string;
 }
 
 export interface StoreMeta {
@@ -188,15 +205,6 @@ function assertManifestAgreement(
   );
 }
 
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export async function publishToStore(
   storeDir: string,
   name: string,
@@ -225,20 +233,17 @@ export async function publishToStore(
   if (meta.versions[version]) {
     throw new Error(`version already published: ${name}@${version}`);
   }
-  // Content-addressed: bytes land once per treeHash; a re-publish of
-  // already-stored content is a pure pointer add.
-  let file = join('packs', `${treeHash}.pack.zip`);
-  let absolute = join(packageDir(storeDir, name), file);
-  if (!(await fileExists(absolute))) {
-    await mkdir(join(packageDir(storeDir, name), 'packs'), { recursive: true });
-    await writeFile(absolute, packBytes);
-  }
-  meta.versions[version] = { treeHash, file };
+  // Content-addressed per file, store-wide: only the objects this tree
+  // introduces are written, so a one-file edit costs one object and a
+  // re-publish of already-stored content costs nothing.
+  await mkdir(packageDir(storeDir, name), { recursive: true });
+  await storePack(storeDir, packBytes);
+  meta.versions[version] = { treeHash };
   if (tag) {
     meta.tags[tag] = version;
   }
   await writeStoreMeta(storeDir, meta);
-  return { treeHash, file };
+  return { treeHash };
 }
 
 // THE no-copies version update: name an EXISTING sealed state (found via a
@@ -282,7 +287,12 @@ export async function releaseVersion(
   // The sealed content must AGREE it is this version: the map inside the
   // seal declares it. Bumping the map version in the live tree — one edit,
   // part of the seal — is what makes a state releasable as that version.
-  let packBytes = await readFile(join(packageDir(storeDir, name), record.file));
+  let packBytes = await readRecordPack(storeDir, name, record);
+  if (!packBytes) {
+    throw new Error(
+      `${name}@${sourceVersion} has no stored content (treeHash ${record.treeHash})`,
+    );
+  }
   assertManifestAgreement(name, version, packBytes);
   meta.versions[version] = { ...record };
   if (tag) {
@@ -348,6 +358,23 @@ export function resolveVersionSpec(
   };
 }
 
+async function readRecordPack(
+  storeDir: string,
+  name: string,
+  record: StoreVersionRecord,
+): Promise<Buffer | undefined> {
+  if (record.file) {
+    // A store written before per-file addressing. Still readable, so
+    // nobody has to migrate to keep serving.
+    try {
+      return await readFile(join(packageDir(storeDir, name), record.file));
+    } catch {
+      return undefined;
+    }
+  }
+  return rebuildPack(storeDir, record.treeHash);
+}
+
 export async function readStoredPack(
   storeDir: string,
   name: string,
@@ -355,27 +382,46 @@ export async function readStoredPack(
 ): Promise<Buffer | undefined> {
   let meta = await readStoreMeta(storeDir, name);
   let record = meta?.versions[version];
+  return record ? readRecordPack(storeDir, name, record) : undefined;
+}
+
+// ONE file out of a published version. The server's hot path: serving
+// `src/math/Vector3.js` out of a 374-module deck reads one object instead
+// of decoding a 438 KB archive. Legacy records fall back to the archive.
+export async function readStoredFile(
+  storeDir: string,
+  name: string,
+  version: string,
+  path: string,
+): Promise<Buffer | undefined> {
+  let meta = await readStoreMeta(storeDir, name);
+  let record = meta?.versions[version];
   if (!record) {
     return undefined;
   }
-  return readFile(join(packageDir(storeDir, name), record.file));
+  if (!record.file) {
+    return readTreeFile(storeDir, record.treeHash, path);
+  }
+  let packBytes = await readRecordPack(storeDir, name, record);
+  return packBytes ? unpack(packBytes).files.get(path) : undefined;
 }
 
 export interface PruneResult {
   removedVersions: string[];
+  // Legacy per-package archives removed. Empty on a per-file store.
   deletedFiles: string[];
+  gc: GcResult;
 }
 
 // Auto-publishing accumulates dev prereleases, so the store needs a policy.
 // Only `-dev.N` prereleases are prunable — stables and anything a dist-tag
 // points at are never touched, so the public surface stays immutable.
 //
-// The content-addressed subtlety: several versions can share ONE pack file
-// (a release names a dev state without copying it). So dropping a version
-// record is not permission to delete its bytes — a file is deleted only
-// when NO surviving version still points at that treeHash. Without that
-// check, pruning a dev prerelease would silently break the stable released
-// from it.
+// The content-addressed subtlety is now store-wide. Several versions can
+// share one tree (a release names a dev state without copying it), and every
+// package in the store shares the same objects, so dropping a version record
+// is not permission to delete anything. Collection asks the whole store what
+// is still referenced, then deletes only what nothing names.
 export async function pruneDevVersions(
   storeDir: string,
   name: string,
@@ -384,7 +430,7 @@ export async function pruneDevVersions(
   let keep = options.keep ?? 10;
   let meta = await readStoreMeta(storeDir, name);
   if (!meta) {
-    return { removedVersions: [], deletedFiles: [] };
+    return { removedVersions: [], deletedFiles: [], gc: emptyGc() };
   }
   let tagged = new Set(Object.values(meta.tags));
   let devVersions = Object.keys(meta.versions)
@@ -395,28 +441,59 @@ export async function pruneDevVersions(
     Math.max(0, devVersions.length - keep),
   );
   if (removedVersions.length === 0) {
-    return { removedVersions: [], deletedFiles: [] };
+    return { removedVersions: [], deletedFiles: [], gc: emptyGc() };
   }
-  let condemned = new Map<string, string>(); // file → treeHash
+  let condemnedLegacy = new Set<string>();
   for (let version of removedVersions) {
     let record = meta.versions[version];
-    condemned.set(record.file, record.treeHash);
+    if (record.file) {
+      condemnedLegacy.add(record.file);
+    }
     delete meta.versions[version];
   }
-  // Garbage-collect only bytes nothing points at any more.
+  await writeStoreMeta(storeDir, meta);
+
+  // Legacy zips are per package, so they are collected the old way.
   let stillReferenced = new Set(
-    Object.values(meta.versions).map((record) => record.file),
+    Object.values(meta.versions)
+      .map((record) => record.file)
+      .filter((file): file is string => file !== undefined),
   );
   let deletedFiles: string[] = [];
-  for (let file of condemned.keys()) {
+  for (let file of condemnedLegacy) {
     if (stillReferenced.has(file)) {
       continue;
     }
     await rm(join(packageDir(storeDir, name), file), { force: true });
     deletedFiles.push(file);
   }
-  await writeStoreMeta(storeDir, meta);
-  return { removedVersions, deletedFiles };
+  return {
+    removedVersions,
+    deletedFiles,
+    gc: await collectStoreGarbage(storeDir),
+  };
+}
+
+function emptyGc(): GcResult {
+  return { treesDeleted: 0, objectsDeleted: 0, bytesFreed: 0 };
+}
+
+// Every treeHash any published version still points at, across every
+// package. Objects are shared, so nothing narrower is safe.
+export async function liveTreeHashes(storeDir: string): Promise<Set<string>> {
+  let live = new Set<string>();
+  for (let meta of await listStorePackages(storeDir)) {
+    for (let record of Object.values(meta.versions)) {
+      live.add(record.treeHash);
+    }
+  }
+  return live;
+}
+
+export async function collectStoreGarbage(
+  storeDir: string,
+): Promise<GcResult> {
+  return collectGarbage(storeDir, await liveTreeHashes(storeDir));
 }
 
 // The next auto-publish number for a dev line: `<base>-dev.<n>`.

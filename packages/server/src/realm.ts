@@ -16,7 +16,7 @@ import {
 //     <publisher>/<package>/            a deck — /<realm>/<publisher>/<package>/…
 //       importmap.json                  what makes the directory a deck
 //       app.js
-//     .deck/store/<publisher>/<package>/{meta.json,packs/*.pack.zip}
+//     .deck/store/{_objects/,_trees/,<publisher>/<package>/meta.json}
 //     .jj/                              seals for the whole realm
 //
 // Both dot-directories are ignored by the tree hash, so a realm carries its

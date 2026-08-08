@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { treeHashFromDir } from '@deck/core/tree-hash';
-import { readStoreMeta } from '@deck/core/store';
+import { readStoreMeta, readStoredPack } from '@deck/core/store';
 import { storeDirFor } from '@deck/server/realm';
 import { jjVersion } from '@deck/history/jj-cli';
 
@@ -290,12 +290,9 @@ module('deck CLI end-to-end', function (hooks) {
       'the stable and the tagged dev survive; dev.1 is gone',
     );
     assert.true(
-      (
-        await readFile(
-          join(store, 'acme', 'my-lib', meta!.versions['1.0.0'].file),
-        )
-      ).length > 0,
-      'the released stable still has its bytes',
+      ((await readStoredPack(store, 'acme/my-lib', '1.0.0')) ?? Buffer.alloc(0))
+        .length > 0,
+      'the released stable still rebuilds after the prune',
     );
   });
 

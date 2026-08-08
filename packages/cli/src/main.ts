@@ -691,9 +691,13 @@ async function main(): Promise<void> {
         let map = JSON.parse(await readFile(mapPath, 'utf8'));
         let vendor = (map.deck ??= {});
         let dependencies = (vendor.dependencies ??= {});
-        delete dependencies[fromName];
+        // ALIAS, not rename: the key stays the import specifier the
+        // consumer already writes, and the value says the fork answers to
+        // it. Renaming the key would make every `import … from
+        // '<base>'` in the consumer's own source wrong, which is exactly
+        // the friction a fork is supposed to remove.
         // `live` on purpose: the point of a fork is to see every save.
-        dependencies[result.to] = 'live';
+        dependencies[fromName] = `${result.to}@live`;
         await writeFile(mapPath, JSON.stringify(map, null, 2) + '\n');
         let locked = await lockDeck({
           realmDir,
@@ -703,7 +707,7 @@ async function main(): Promise<void> {
         });
         await writeFile(mapPath, locked.text);
         console.log(
-          `  ${values['use-in']} now imports ${result.to} live — every save, no publish`,
+          `  ${values['use-in']} now gets ${result.to} live wherever it imports ${fromName} — every save, no publish`,
         );
       }
       return;
@@ -740,7 +744,9 @@ async function main(): Promise<void> {
           resolution.previous && resolution.previous !== target
             ? `  (was ${resolution.previous})`
             : '';
-        console.log(`${resolution.key}  ${resolution.spec} → ${target}${moved}`);
+        console.log(
+          `${resolution.key}  ${resolution.alias ? `${resolution.alias}@` : ''}${resolution.spec} → ${target}${moved}`,
+        );
       }
       if (!changed) {
         console.log('already locked — nothing to write');

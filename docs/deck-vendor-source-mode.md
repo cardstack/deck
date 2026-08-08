@@ -208,15 +208,11 @@ Three payoffs, and the third is the one that matters.
 save. No build, no `patch-package`, no publish, and the pinned original
 keeps serving the bytes it always served.
 
-The fork itself is free while it is undiverged — same tree, same hash, one
-stored pack. **What is not free is each diverged revision.** The store is
-content-addressed *per tree*, not per file, so a two-character edit
-produces a whole new 438 KB pack, and so does every auto-published save
-after it (measured: §8). `deck prune` exists for exactly this, but the
-honest statement is that a large vendored package under active editing
-costs roughly its own size per kept revision. Per-file content addressing
-in the store would make it nearly free, and is now the most valuable
-change this work has surfaced.
+The fork is free while it is undiverged, and **nearly free once it
+diverges**: the store addresses content per FILE, store-wide, so an edited
+revision costs only the files it changed. Measured on three: two edits
+across two auto-published revisions cost **2,821 bytes**, against the
+438 KB per revision the earlier one-zip-per-tree store charged (§8.1).
 
 **2 — Upgrading keeps your patch.**
 Re-vendor `0.161.0` as a new base and the rebase daemon three-way merges
@@ -243,9 +239,9 @@ consequence of getting the carriage right rather than a separate feature.
    problem. `modulepreload` injection is the answer, and the server
    already injects import maps; it still needs measuring over a real
    network before it is claimed.
-1b. **Per-file storage.** The store dedupes trees, so each edited revision
-   of a 374-module package costs a full pack (§5, §8). This is the one
-   finding from building it that changes a design decision.
+1b. ~~Per-file storage.~~ **Done** — see §8.1. The store now keeps one
+   compressed object per file, store-wide, and rebuilds the archive on
+   demand.
 2. **Can one deck hold both carriages** — `src/` for editors and a built
    entry for consumers, chosen by the import map? Elegant, but the bundle
    goes stale the moment someone edits `src/`, and regenerating it needs
@@ -329,13 +325,67 @@ Store cost, measured: `acme/three` 438,064 bytes for one pack;
 `you/three` **438,223 and 438,227** for the two dev revisions after a
 two-character edit. That is the per-tree addressing limit, stated plainly.
 
-### 8.1 One wart the demo exposed
+### 8.1 Per-file storage — the wart, and the fix
+
+The first build charged a whole new 438 KB pack for a two-character edit,
+because the store kept one zip per tree and kept it *under the package*, so
+even an undiverged fork paid for a second copy.
+
+The store now keeps `_objects/<aa>/<sha256>` and `_trees/<aa>/<treeHash>.json`
+at the store ROOT, so bytes are shared across versions *and* across
+publishers. Objects are deflate-raw, named for the sha256 of their
+uncompressed content. The pack is not stored at all — it is rebuilt, which
+is safe because canonical-zip-v1 is deterministic and the packlist fixes
+the order and every hash.
+
+Measured on the same three.js loop:
+
+| | Before | After |
+| --- | --- | --- |
+| vendor three@0.160.0 | 438,064 B (1 pack) | **360,641 B** (374 objects, 1 tree) |
+| fork, undiverged | +438 KB (second copy) | **0 B** |
+| 2 edits → 2 dev revisions | +876 KB | **+2,821 B** |
+| `?format=pack` | stored bytes | rebuilt — 438,064 B, same treeHash, same Content-Digest, `deck verify` passes |
+
+Per-file is *smaller* even for the first copy, because a zip pays a local
+header and a central-directory record for each of 375 entries.
+
+Two consequences worth stating. Collection had to become store-wide: an
+object is garbage only when no live tree in the whole store names it.
+And serving had to become lazy — decoding, or worse re-deflating, 374
+modules to answer a request for one of them would have turned a storage
+win into a serving loss, so a sealed version now reads its listing from
+the tree manifest and each file from its own object, and builds the
+archive only when someone asks for `?format=pack`.
+
+Stores written the old way are still read, so nothing has to migrate.
+
+### 8.2 The specifier alias
 
 A dependency key *is* the import specifier, so `--use-in` swapping
-`acme/three` for `you/three` means the consumer's own source has to change
-`import … from 'acme/three'` to `'you/three'`. For "ask an agent to fork
-and edit any part", that is backwards: the fork should be able to stand in
-for its base **under the base's specifier**, which is exactly what `?with=`
-already does at serve time. The fix is an aliasing dependency value
-(`"acme/three": "you/three@live"`) so the map repoints and no source
-changes. Small, and it should land before this is put in front of anyone.
+`acme/three` for `you/three` used to mean the consumer's own source had to
+change `import … from 'acme/three'` to `'you/three'`. For "ask an agent to
+fork and edit any part", that is backwards.
+
+A dependency value may now name a different deck:
+
+```json
+"dependencies": { "acme/three": "you/three@live" }
+```
+
+The key stays the specifier; the value says which deck answers to it —
+the same substitution `?with=` performs at serve time, made durable in the
+lock. `deck fork --use-in` writes that form, so after a fork:
+
+```
+dependencies  { "acme/three": "you/three@live" }
+imports       { "acme/three": "/site/you/three/src/Three.js" }
+app.js        import * as THREE from 'acme/three';   ← unchanged
+```
+
+Verified in a browser: with the app's source untouched, the page renders
+`REVISION 160-you-forked · defaults 6×4`, while
+`/site/acme/three@0.160.0/src/constants.js` still serves `'160'`.
+
+A bare `you/three` means `live`, which is what a fork wants. An alias that
+is not a deck name is refused rather than silently treated as a range.

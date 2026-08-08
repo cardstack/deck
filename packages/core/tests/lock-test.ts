@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pack } from '../src/pack.ts';
 import { publishToStore } from '../src/store.ts';
-import { applyLock, lockDeck, resolveDependencies } from '../src/lock.ts';
+import {
+  applyLock,
+  lockDeck,
+  parseDependencyValue,
+  resolveDependencies,
+} from '../src/lock.ts';
 
 let realmDir: string;
 let storeDir: string;
@@ -213,6 +218,90 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       moved.resolutions[0].previous,
       '/demo/acme/confetti@1.2.0/confetti.js',
       'the report says what it moved from',
+    );
+  });
+
+  // A fork stands in for its base under the BASE's specifier, so the
+  // consumer's own `import … from 'acme/confetti'` keeps working.
+  test('a dependency value may alias another deck', async function (assert) {
+    assert.deepEqual(parseDependencyValue('^1.0.0'), { spec: '^1.0.0' });
+    assert.deepEqual(parseDependencyValue('live'), { spec: 'live' });
+    assert.deepEqual(parseDependencyValue('you/confetti@live'), {
+      target: 'you/confetti',
+      spec: 'live',
+    });
+    assert.deepEqual(parseDependencyValue('you/confetti@^1.0.0'), {
+      target: 'you/confetti',
+      spec: '^1.0.0',
+    });
+    assert.deepEqual(
+      parseDependencyValue('you/confetti'),
+      { target: 'you/confetti', spec: 'live' },
+      'a bare deck name means live — what a fork wants',
+    );
+  });
+
+  test('an alias repoints a specifier without renaming it', async function (assert) {
+    await mkdir(join(realmDir, 'you', 'confetti'), { recursive: true });
+    await writeFile(
+      join(realmDir, 'you', 'confetti', 'importmap.json'),
+      JSON.stringify({
+        deck: {
+          packages: {
+            confetti: { version: '1.2.0', entry: '$REALM/confetti.js' },
+          },
+        },
+      }),
+    );
+    await writeAppMap({ 'acme/confetti': 'you/confetti@live' });
+    let { resolutions, text } = await lockDeck({
+      realmDir,
+      realmName: 'demo',
+      storeDir,
+      deckDir: join(realmDir, 'me', 'app'),
+    });
+    assert.strictEqual(resolutions[0].key, 'acme/confetti');
+    assert.strictEqual(resolutions[0].alias, 'you/confetti');
+    assert.strictEqual(resolutions[0].publisher, 'you');
+    let map = JSON.parse(text);
+    assert.strictEqual(
+      map.imports['acme/confetti'],
+      '/demo/you/confetti/confetti.js',
+      'the specifier the consumer writes now resolves to the fork',
+    );
+    assert.strictEqual(
+      map.imports['you/confetti'],
+      undefined,
+      'no second specifier appears — nothing in the consumer has to change',
+    );
+  });
+
+  test('an alias to a published fork resolves its range', async function (assert) {
+    await publishToStore(storeDir, 'you/confetti', '1.5.0', confetti('1.5.0'));
+    await writeAppMap({ 'acme/confetti': 'you/confetti@^1.0.0' });
+    let { resolutions } = await lockDeck({
+      realmDir,
+      realmName: 'demo',
+      storeDir,
+      deckDir: join(realmDir, 'me', 'app'),
+    });
+    assert.strictEqual(resolutions[0].version, '1.5.0');
+    assert.deepEqual(resolutions[0].imports, {
+      'acme/confetti': '/demo/you/confetti@1.5.0/confetti.js',
+      'acme/confetti/': '/demo/you/confetti@1.5.0/',
+    });
+  });
+
+  test('an alias to a deck that does not parse is refused', async function (assert) {
+    await writeAppMap({ 'acme/confetti': 'a/b/c/d@live' });
+    await assert.rejects(
+      lockDeck({
+        realmDir,
+        realmName: 'demo',
+        storeDir,
+        deckDir: join(realmDir, 'me', 'app'),
+      }),
+      /aliases "a\/b\/c\/d"/,
     );
   });
 

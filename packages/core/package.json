@@ -10,6 +10,7 @@
     "./packlist": "./src/packlist.ts",
     "./pack": "./src/pack.ts",
     "./store": "./src/store.ts",
+    "./object-store": "./src/object-store.ts",
     "./import-map": "./src/import-map.ts",
     "./vendor": "./src/vendor.ts",
     "./vendor-npm": "./src/vendor-npm.ts",
