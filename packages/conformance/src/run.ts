@@ -13,6 +13,9 @@ import {
   FIXTURE_PUBLISHER,
   FIXTURE_REALM,
   FIXTURE_VERSION,
+  GRAPH_PUBLISHER,
+  GRAPH_VERSION,
+  graphFixtureDecks,
   writeFixtureRealm,
 } from './fixture.ts';
 
@@ -42,6 +45,18 @@ export async function withFixtureServer<T>(
     await packFromDir(deckDir),
     { tag: 'latest' },
   );
+  // The scoped graph is three decks, and it has to be sealed for the preload
+  // check to mean anything: the closure is advertised only for a sealed
+  // document, because a live one can change between the walk and the fetch.
+  for (let { pkg } of graphFixtureDecks(FIXTURE_REALM)) {
+    await publishToStore(
+      storeDirFor(realmDir),
+      `${GRAPH_PUBLISHER}/${pkg}`,
+      GRAPH_VERSION,
+      await packFromDir(join(realmDir, GRAPH_PUBLISHER, pkg)),
+      { tag: 'latest' },
+    );
+  }
   let server = createDeckServer({
     realms: [{ name: FIXTURE_REALM, dir: realmDir, storeDir: storeDirFor(realmDir) }],
   });

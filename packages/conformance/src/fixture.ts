@@ -90,12 +90,117 @@ export function fixtureFiles(): FixtureFile[] {
 export const FIXTURE_TREE_HASH =
   'ae0aeb21336ab6539aa8cba256135d752001dc52f5180a5d9047d41eb0a0e42c';
 
-export async function writeFixtureRealm(root: string): Promise<string> {
-  let realmDir = join(root, FIXTURE_REALM);
+// ---------------------------------------------------------------------------
+// The scoped-graph fixture.
+//
+// Kept as its own decks rather than folded into the tree above, because that
+// tree's hash is the golden value for L1 and must not move for a reason
+// unrelated to L1.
+//
+// The shape is the one that matters and the one a single-deck fixture cannot
+// express: `leaf` is reachable ONLY through a SCOPE on `dep`. A server that
+// walks the graph with the global map alone still finds `app` and `dep` — so
+// it looks like it is working — and silently never learns `leaf` exists.
+// That is not a preload that is merely incomplete: because the walk never
+// sees the module, the count it reports shrinks to match, and the response
+// claims full coverage of a graph it half-walked.
+
+export const GRAPH_PUBLISHER = 'deck';
+export const GRAPH_APP = 'graph-app';
+export const GRAPH_DEP = 'graph-dep';
+export const GRAPH_LEAF = 'graph-leaf';
+export const GRAPH_VERSION = '1.0.0';
+
+// app.js, dep/index.js, leaf/index.js. Two of the three are reachable
+// without scopes, which is exactly why the denominator is worth asserting.
+export const GRAPH_MODULES = 3;
+
+export function graphModuleUrl(realm: string, pkg: string, file: string) {
+  return `/${realm}/${GRAPH_PUBLISHER}/${pkg}@${GRAPH_VERSION}/${file}`;
+}
+
+function manifest(pkg: string, entry: string, rest: Record<string, unknown> = {}) {
+  return Buffer.from(
+    JSON.stringify(
+      {
+        ...rest,
+        deck: { packages: { [pkg]: { version: GRAPH_VERSION, entry: `$REALM/${entry}` } } },
+      },
+      null,
+      2,
+    ) + '\n',
+    'utf8',
+  );
+}
+
+export function graphFixtureDecks(
+  realm: string,
+): { pkg: string; files: FixtureFile[] }[] {
+  return [
+    {
+      pkg: GRAPH_APP,
+      files: [
+        {
+          path: 'importmap.json',
+          bytes: manifest(GRAPH_APP, 'app.js', {
+            imports: { dep: graphModuleUrl(realm, GRAPH_DEP, 'index.js') },
+            // The whole point: `leaf` is not in `imports`. It resolves only
+            // for modules living under dep's own prefix.
+            scopes: {
+              [`/${realm}/${GRAPH_PUBLISHER}/${GRAPH_DEP}@${GRAPH_VERSION}/`]: {
+                leaf: graphModuleUrl(realm, GRAPH_LEAF, 'index.js'),
+              },
+            },
+          }),
+        },
+        {
+          path: 'page.html',
+          bytes: Buffer.from(
+            '<!doctype html>\n<html>\n<head></head>\n<body>\n' +
+              `<script type="module" src="${graphModuleUrl(realm, GRAPH_APP, 'app.js')}"></script>\n` +
+              '</body>\n</html>\n',
+            'utf8',
+          ),
+        },
+        { path: 'app.js', bytes: Buffer.from("import 'dep';\n", 'utf8') },
+      ],
+    },
+    {
+      pkg: GRAPH_DEP,
+      files: [
+        { path: 'importmap.json', bytes: manifest(GRAPH_DEP, 'index.js') },
+        {
+          path: 'index.js',
+          bytes: Buffer.from("import 'leaf';\nexport const dep = 1;\n", 'utf8'),
+        },
+      ],
+    },
+    {
+      pkg: GRAPH_LEAF,
+      files: [
+        { path: 'importmap.json', bytes: manifest(GRAPH_LEAF, 'index.js') },
+        { path: 'index.js', bytes: Buffer.from('export const leaf = 1;\n', 'utf8') },
+      ],
+    },
+  ];
+}
+
+export async function writeFixtureRealm(
+  root: string,
+  realm: string = FIXTURE_REALM,
+): Promise<string> {
+  let realmDir = join(root, realm);
   let deckDir = join(realmDir, FIXTURE_PUBLISHER, FIXTURE_PACKAGE);
   await mkdir(join(deckDir, 'nested'), { recursive: true });
   for (let file of fixtureFiles()) {
     await writeFile(join(deckDir, ...file.path.split('/')), file.bytes);
+  }
+  for (let { pkg, files } of graphFixtureDecks(realm)) {
+    let dir = join(realmDir, GRAPH_PUBLISHER, pkg);
+    await mkdir(dir, { recursive: true });
+    for (let file of files) {
+      await writeFile(join(dir, ...file.path.split('/')), file.bytes);
+    }
   }
   return realmDir;
 }

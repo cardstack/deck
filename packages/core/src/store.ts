@@ -80,6 +80,10 @@ export interface StoreMeta {
   name: string;
   versions: Record<string, StoreVersionRecord>;
   tags: Record<string, string>;
+  // The upstream coordinate every version in this deck claims to come from,
+  // as `<registry>:<name>`. Recorded from the first vendored version and
+  // then enforced. Absent for decks nobody vendored.
+  upstream?: string;
 }
 
 // One path segment: kebab, alnum-led, no dots (a dot would let a name
@@ -134,7 +138,17 @@ export async function readStoreMeta(
     for (let record of Object.values(versions)) {
       record.storage ??= record.file ? 'pack-v1' : 'blobs-v1';
     }
-    return { name, versions, tags: parsed.tags ?? {} };
+    return {
+      name,
+      versions,
+      tags: parsed.tags ?? {},
+      // Carried through explicitly. A field that is written but not read
+      // back is worse than one that was never added: the enforcement it
+      // exists for compares against undefined every time and always passes.
+      ...(typeof parsed.upstream === 'string'
+        ? { upstream: parsed.upstream }
+        : {}),
+    };
   } catch {
     return undefined;
   }
@@ -217,6 +231,46 @@ function assertManifestAgreement(
   );
 }
 
+// One deck, one upstream.
+//
+// A deck name is a RESOLUTION KEY: a range picks a version out of this list,
+// so every version in the list has to be the same library. Nothing else
+// enforces that. `deckNameForNpm` folds npm's namespace into one lowercase
+// segment, which is not injective — `@babel/runtime` and `babel-runtime` are
+// both real packages and both land here as `babel-runtime` — and a hand-
+// passed `--name` can collide however careful the automatic mapping gets.
+//
+// Per-version provenance stays honest either way; L8 is not what breaks. L7
+// is: `^7.0.0` would be choosing between versions of two different libraries.
+//
+// This is a backstop, deliberately. It is the last line rather than the
+// answer, because it can only refuse at the moment of collision — the name
+// derivation is where the information was lost.
+function upstreamOf(packBytes: Buffer, name: string): string | undefined {
+  let entry = packagesFromPack(packBytes)?.[mapKeyFor(name)] as
+    | { vendoredFrom?: { registry?: string; name?: string } }
+    | undefined;
+  let from = entry?.vendoredFrom;
+  return from?.name ? `${from.registry ?? 'npm'}:${from.name}` : undefined;
+}
+
+function assertUpstreamAgreement(
+  meta: StoreMeta,
+  name: string,
+  version: string,
+  incoming: string | undefined,
+): void {
+  if (!incoming || !meta.upstream || meta.upstream === incoming) {
+    return;
+  }
+  throw new Error(
+    `${name} already holds versions vendored from ${meta.upstream}, but ` +
+      `${version} comes from ${incoming}. One deck name is one library — a ` +
+      `range resolving across both would be choosing between two. Vendor it ` +
+      `under a different name (--name).`,
+  );
+}
+
 export async function publishToStore(
   storeDir: string,
   name: string,
@@ -245,12 +299,17 @@ export async function publishToStore(
   if (meta.versions[version]) {
     throw new Error(`version already published: ${name}@${version}`);
   }
+  let upstream = upstreamOf(packBytes, name);
+  assertUpstreamAgreement(meta, name, version, upstream);
   // Content-addressed per file, store-wide: only the objects this tree
   // introduces are written, so a one-file edit costs one object and a
   // re-publish of already-stored content costs nothing.
   await mkdir(packageDir(storeDir, name), { recursive: true });
   await storePack(storeDir, packBytes);
   meta.versions[version] = { treeHash, storage: 'blobs-v1' };
+  if (upstream) {
+    meta.upstream = upstream;
+  }
   if (tag) {
     meta.tags[tag] = version;
   }

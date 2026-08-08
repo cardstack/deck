@@ -182,4 +182,37 @@ module('tree-hash-v1', function () {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  // L1 names DEFAULT_IGNORE as part of the algorithm. A caller may add to it
+  // — a realm carrying its own sidecar — but a caller that could REMOVE from
+  // it could make two conforming implementations hash the same directory
+  // differently, which is the drift the law exists to forbid.
+  test('a caller may extend the ignore set but never shrink it', async function (assert) {
+    let dir = await mkdtemp(join(tmpdir(), 'tree-hash-ignore-'));
+    try {
+      await mkdir(join(dir, '.git'), { recursive: true });
+      await writeFile(join(dir, '.git', 'config'), 'reserved');
+      await writeFile(join(dir, 'keep.js'), 'export {};');
+      await writeFile(join(dir, 'scratch.log'), 'mine');
+
+      // An empty set is the strongest possible attempt to opt out.
+      let optOut = await treeHashFromDir(dir, { ignore: new Set() });
+      assert.deepEqual(
+        optOut.entries.map((e) => e.path),
+        ['keep.js', 'scratch.log'],
+        '.git stays excluded however the caller asks',
+      );
+
+      let extended = await treeHashFromDir(dir, {
+        ignore: new Set(['scratch.log']),
+      });
+      assert.deepEqual(
+        extended.entries.map((e) => e.path),
+        ['keep.js'],
+        'extending still works',
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

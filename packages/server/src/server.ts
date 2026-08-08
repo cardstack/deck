@@ -306,11 +306,17 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   // Walk the sealed graph across decks. Every hop reads through the same
   // store the request would, so a URL that makes it into the list is one
   // the server can actually answer.
+  // Scopes are not optional here. A vendored dependency resolves its own
+  // bare specifiers through its own record, so walking with `{}` silently
+  // stops at the first scoped edge — and because the walk never sees those
+  // modules, `total` shrinks with `urls` and the response reports full
+  // coverage of a graph it only half-walked. A cap nobody can see reads as
+  // "we covered it"; a cap that lies about its own denominator is worse.
   async function closureFor(
     html: Buffer,
     imports: Record<string, string>,
+    scopes: Record<string, Record<string, string>>,
   ): Promise<Closure> {
-    let scopes: Record<string, Record<string, string>> = {};
     let entries: string[] = [];
     for (let match of html
       .toString('utf8')
@@ -1663,17 +1669,14 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       // From the SAME seal — a sealed document and its map move together —
       // unless the caller is deliberately trying something else.
       let resolved = { ...imports, ...overrides };
-      ({ bytes, injected } = injectImportMap(
-        bytes,
-        resolved,
-        rebindScopes(scopes, overrides),
-      ));
+      let resolvedScopes = rebindScopes(scopes, overrides);
+      ({ bytes, injected } = injectImportMap(bytes, resolved, resolvedScopes));
       // The closure is advertised only for a SEALED document. A trial has
       // substituted dependencies, so its graph is not the one the seal
       // describes, and preloading the sealed closure would fetch bytes the
       // page will not use.
       if (trying.length === 0) {
-        preload = await closureFor(bytes, resolved);
+        preload = await closureFor(bytes, resolved, resolvedScopes);
         if (preload.urls.length > 0) {
           bytes = injectModulePreload(bytes, preload.urls).bytes;
         }

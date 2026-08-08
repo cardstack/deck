@@ -111,7 +111,14 @@ export async function treeHashFromDir(
   dir: string,
   options: { ignore?: ReadonlySet<string> } = {},
 ): Promise<TreeHashResult> {
-  let ignore = options.ignore ?? DEFAULT_IGNORE;
+  // Union, never replacement. L1 names DEFAULT_IGNORE as part of the
+  // algorithm, so a caller that could shrink it could make two
+  // implementations disagree about the same directory — which is precisely
+  // the drift the law exists to forbid. `??` would have allowed exactly
+  // that, quietly, from any caller.
+  let ignore = options.ignore
+    ? new Set([...DEFAULT_IGNORE, ...options.ignore])
+    : DEFAULT_IGNORE;
   let entries: TreeHashEntry[] = [];
   async function walk(current: string, prefix: string): Promise<void> {
     for (let dirent of await readdir(current, { withFileTypes: true })) {

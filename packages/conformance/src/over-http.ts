@@ -4,6 +4,12 @@ import {
   FIXTURE_TREE_HASH,
   FIXTURE_VERSION,
   fixtureFiles,
+  GRAPH_APP,
+  GRAPH_LEAF,
+  GRAPH_MODULES,
+  GRAPH_PUBLISHER,
+  GRAPH_VERSION,
+  graphModuleUrl,
 } from './fixture.ts';
 import { assert, assertEqual, Checks, type CheckResult } from './laws.ts';
 
@@ -306,6 +312,53 @@ export async function runHttpChecks(
     );
     assertEqual(response.status, 404, 'unknown tree');
   });
+  // ---- L12 the preload closure -------------------------------------------
+  //
+  // A black-box check, and it has to be one: resolving with the global map
+  // alone still finds app and dep, so a scope-blind walk looks like it is
+  // working. Only the module sitting behind the scope tells the two apart,
+  // and only the wire can show whether the server found it.
+
+  await checks.run(
+    'L12',
+    'the advertised closure crosses a scoped edge',
+    async () => {
+      let page = `${base}/${realm}/${GRAPH_PUBLISHER}/${GRAPH_APP}@${GRAPH_VERSION}/page.html`;
+      let response = await get(page);
+      assertEqual(response.status, 200, 'status');
+      let advertised = response.headers.get('x-deck-preload');
+      if (advertised === null) {
+        // Preloading is an optimisation, not an obligation. Declining
+        // entirely is conformant; claiming a closure that is short is not.
+        return;
+      }
+      let [sent, total] = advertised.split('/').map(Number);
+      assert(
+        total >= GRAPH_MODULES,
+        `the graph has ${GRAPH_MODULES} modules and one of them is reachable ` +
+          `only through a scope, but the response counted ${total}. A walk ` +
+          `that ignores scopes reports the smaller denominator too, so it ` +
+          `reads as complete.`,
+      );
+      let html = await response.text();
+      let leaf = graphModuleUrl(realm, GRAPH_LEAF, 'index.js');
+      if (sent >= total) {
+        assert(
+          html.includes(leaf),
+          `nothing was clipped, so every module belongs in the document, but ${leaf} is absent`,
+        );
+      }
+      for (let match of html.matchAll(
+        /<link[^>]*rel=["']modulepreload["'][^>]*>/gi,
+      )) {
+        assert(
+          /\scrossorigin(\s|=|>)/i.test(match[0]),
+          `a modulepreload without crossorigin is fetched twice: ${match[0]}`,
+        );
+      }
+    },
+  );
+
   checks.skip('L11', 'the verify gate', 'checked at rest');
   checks.skip('L3', 'pointer semantics', 'checked at rest');
   checks.skip('L6', 'hermeticity', 'checked at rest');

@@ -357,4 +357,69 @@ module('store: content addressing and pruning', function (hooks) {
       undefined,
     );
   });
+
+  // `deckNameForNpm` folds npm's namespace into one segment and is therefore
+  // not injective: `@babel/runtime` and `babel-runtime` are both real
+  // packages and both arrive here as `babel-runtime`. Per-version provenance
+  // stays truthful, so L8 survives; what breaks is L7, because a range would
+  // be choosing between versions of two different libraries.
+  test('one deck name is one upstream library', async function (assert) {
+    let vendored = (npmName: string, version: string) => [
+      {
+        path: 'importmap.json',
+        bytes: Buffer.from(
+          JSON.stringify({
+            deck: {
+              packages: {
+                'babel-runtime': {
+                  version,
+                  entry: '$REALM/lib.js',
+                  vendoredFrom: { registry: 'npm', name: npmName, version },
+                },
+              },
+            },
+          }),
+        ),
+      },
+      {
+        path: 'lib.js',
+        bytes: Buffer.from(`export const from = '${npmName}';\n`),
+      },
+    ];
+
+    await publishToStore(
+      storeDir,
+      'babel-runtime',
+      '7.0.0',
+      pack(vendored('@babel/runtime', '7.0.0')),
+    );
+    assert.strictEqual(
+      (await readStoreMeta(storeDir, 'babel-runtime'))!.upstream,
+      'npm:@babel/runtime',
+      'the first vendored version records the coordinate',
+    );
+
+    await assert.rejects(
+      publishToStore(
+        storeDir,
+        'babel-runtime',
+        '6.26.0',
+        pack(vendored('babel-runtime', '6.26.0')),
+      ),
+      /already holds versions vendored from npm:@babel\/runtime/,
+      'the other babel-runtime cannot share the name',
+    );
+
+    // Same library, later version: unaffected.
+    await publishToStore(
+      storeDir,
+      'babel-runtime',
+      '7.1.0',
+      pack(vendored('@babel/runtime', '7.1.0')),
+    );
+    assert.deepEqual(
+      Object.keys((await readStoreMeta(storeDir, 'babel-runtime'))!.versions),
+      ['7.0.0', '7.1.0'],
+    );
+  });
 });
