@@ -225,6 +225,10 @@ Design set in [docs/](docs/) — start with:
 - [deck-use-cases.md](docs/deck-use-cases.md) — four workloads that
   need this protocol rather than merely benefit from it, written
   against the bottlenecks agentic engineering hits on git and npm.
+- [deck-vendor-source-mode.md](docs/deck-vendor-source-mode.md) — how to
+  vendor a package at its ESM module boundary instead of as a bundle, and
+  why the npm tarball turns out to be a verifiable checkout of the GitHub
+  repo: measured on three.js, 374/374 files byte-identical.
 - [deck-competitive-gaps.md](docs/deck-competitive-gaps.md) — what is
   missing to replace git + GitHub + npm + unpkg, reconciled against what
   the Boxel realm server and CLI already built, and classified by who

@@ -1,0 +1,274 @@
+# Breaking vendoring down to the module boundary
+
+*How to vendor three.js and then edit `Vector3.js` — and why that edit is
+a pull request against a known upstream commit.*
+
+---
+
+## 0. The problem with what we built
+
+`deck vendor` today pulls from esm.sh. Here is the entry it returns for
+three.js, in full:
+
+```js
+/* esm.sh - three@0.160.0 */
+export * from "/three@0.160.0/es2022/three.mjs";
+```
+
+Two lines, pointing at **one 1.21 MB file**. esm.sh's job is to make a
+package fast for a browser, and it does that by destroying the module
+boundary at build time. So vendoring works, the app runs, nothing touches
+a CDN — and there is nothing inside to edit.
+
+The fix is not a better walker. It is **a different carriage source.**
+
+---
+
+## 1. What npm actually ships — measured, not assumed
+
+The npm tarball for `three@0.160.0`, unpacked and walked from `src/Three.js`:
+
+| Measurement | Result |
+| --- | --- |
+| modules reachable from `src/Three.js` | **374** |
+| total source | 1.29 MB |
+| file extensions in the graph | `.js` only |
+| **bare specifiers** | **none** |
+| **unresolved relative imports** | **none** |
+| fetch cost | **one** tarball, 9.0 MB, 0.29 s |
+| built alternative | `build/three.module.js` — 1.21 MB, **1 file** |
+
+Every import in the tree looks like this:
+
+```js
+import * as MathUtils from './MathUtils.js';
+import { Quaternion } from './Quaternion.js';
+```
+
+Relative, extension-complete, self-contained. **A browser can load this
+tree as-is.** Vendoring three from its source needs *no rewriting at all*
+— only a graph walk we already have.
+
+And the package invites it. `three`'s own export map contains:
+
+```json
+"./src/*": "./src/*"
+```
+
+The source tree is a supported entry point, not an accident of packaging.
+
+Cost of the boundary: **374 addresses for 7% more bytes.**
+
+---
+
+## 2. The correlation to GitHub — proven, not inferred
+
+npm records the commit a version was published from:
+
+```
+gitHead: d04539a76736ff500cae883d6a38b3dd8643c548
+repository: https://github.com/mrdoob/three.js
+```
+
+That is a claim. It is checkable, and cheaply: git's blob SHA is
+`sha1("blob " + length + "\0" + content)`, and GitHub's tree API returns a
+blob SHA per path. So compute one and compare to the other.
+
+Result for `three@0.160.0` `src/` against `mrdoob/three.js@d04539a`:
+
+```
+github src blobs:                 374
+byte-identical to npm tarball:    374
+differing:                          0
+in github, absent from tarball:     0
+```
+
+**All 374 files, exact.** The vendored tree is not *like* the GitHub
+tree — it **is** the GitHub tree, verifiably, in one API call.
+
+That is the whole answer to "correlate to the open-source repo": the npm
+tarball is a checkout, and we can prove it.
+
+---
+
+## 3. Four package shapes, and the honest spread
+
+three is close to best case. Measured across a sample:
+
+| Package | What is published | Boundary | Editable how |
+| --- | --- | --- | --- |
+| **three** 0.160 | true source ESM, `./src/*` exported, 374 modules | **intact, runnable** | directly |
+| **zod** 4.4, **lit** 3.3 | per-file JS compiled from TS, mirroring the source layout (`development/` for lit) | **intact, runnable** — but it is compiled output | directly; provenance to the repo is one level removed (`.js` ← `.ts`) |
+| **chart.js** 4.5, **preact**, **@tanstack/query-core** | one built bundle | **destroyed at publish** | via the source map — see below |
+| **d3** 7.9 | 6 files re-exporting 30 `d3-*` packages | **the boundary is the package graph**, not files | vendor the family |
+
+### 3.1 The bundle case is not hopeless — source maps carry the tree
+
+`chart.js@4.5.1/dist/chart.js.map`:
+
+```
+sources:         53
+sourcesContent:  53
+sample paths:    ../src/core/core.animator.js  ../src/core/core.animation.js …
+```
+
+The map carries **both the original module paths and their full
+contents**. A bundle can therefore be exploded back into its pre-bundle
+module tree, at repo-relative paths.
+
+The honest caveat, and it must be stated in the UI: **a reconstructed tree
+does not necessarily run.** It is pre-bundle source — it may be TypeScript,
+it may rely on build-time substitutions. It is excellent for reading,
+diffing and producing a PR; it is not a drop-in replacement for the
+bundle. Treat `map` mode as *provenance and editing*, not *execution*.
+
+### 3.2 Detection needs no per-package configuration
+
+One measurement separates every case above:
+
+> **Count the modules reachable from a candidate entry. If the answer is
+> 1, the boundary is gone. If it is N, you have a tree.**
+
+That is mechanical, needs no allowlist, and works on packages nobody has
+looked at. `deck vendor --probe <pkg>` should report the count for each
+candidate entry and let a person choose.
+
+---
+
+## 4. The design
+
+### 4.1 `deck vendor --mode`
+
+| Mode | Source | Yields | Runs in a browser | Use for |
+| --- | --- | --- | --- | --- |
+| `bundle` *(today)* | esm.sh | 1–few opaque modules | yes | consumers who will never edit |
+| `source` *(new)* | npm tarball | the published module tree | yes, when it is real ESM | **editing, forking, contributing** |
+| `map` *(new)* | bundle + `.map` | the pre-bundle tree with contents | no | reading, diffing, PRs |
+| `repo` *(later)* | git tarball at `gitHead` | the true source incl. tests | needs a build | deep upstream work |
+
+Same command, same package name, same store. **A mode is a carriage
+choice, not a different deck** — which is exactly the carriage-mode idea
+already ruled in [deck-pack-equivalence.md](deck-pack-equivalence.md).
+
+### 4.2 Entry selection for `source` mode
+
+In order, stopping at the first that yields more than one module:
+
+1. `exports["./src/*"]` is present → the source tree is an advertised
+   entry point. (three)
+2. An unminified per-module tree exists — `development/`, `esm/`, `es/`.
+   (lit)
+3. `exports["."].import` or `module`, **if** it reaches N modules. (zod)
+4. Otherwise the package is bundle-only → offer `map`, else `bundle`.
+
+### 4.3 Rewriting rules
+
+| Specifier | Action |
+| --- | --- |
+| relative, with extension | **leave alone** — browser-native (all of three) |
+| relative, extensionless | resolve against the tarball's real file list and rewrite; exact, because we hold every file |
+| bare | map to another vendored deck, else fail hermetically (existing rule) |
+| `node:` builtin | refuse, or shim explicitly |
+| `.json` | convert to a JS module, or use an import attribute |
+| conditional `exports` | resolve with the browser condition |
+
+### 4.4 `vendoredFrom` grows a provenance block
+
+```json
+"vendoredFrom": {
+  "registry": "https://registry.npmjs.org",
+  "name": "three",
+  "version": "0.160.0",
+  "integrity": "sha512-DLU8lc0zNIPkM7rH5/e1Ks1Z8tWCGRq6g8mPowdDJpw1CFBJMU7UoJjC6PefXW7z//SSl0b2+GCw14LB+uDhng==",
+  "mode": "source",
+  "entry": "src/Three.js",
+  "subtree": "src",
+  "repo": "https://github.com/mrdoob/three.js",
+  "commit": "d04539a76736ff500cae883d6a38b3dd8643c548",
+  "repoVerified": { "matched": 374, "total": 374 }
+}
+```
+
+`repoVerified` is the line that earns its keep. It is one GitHub API call
+and a SHA-1 per file, and it turns "npm says this came from that commit"
+into a checked fact. For newer packages, npm's **provenance attestation**
+(`dist.attestations`, present on lit, zod, preact, @tanstack/query-core)
+gives the same link signed by a workflow, and should be preferred when
+available.
+
+---
+
+## 5. What this unlocks
+
+Three payoffs, and the third is the one that matters.
+
+**1 — Edit an internal bit.**
+`deck fork --from acme/three --as you/three`, change
+`src/math/Vector3.js`, and the app picks it up on the next save. No build,
+no `patch-package`, no publish. One file changed means one file's bytes
+changed; the store is content-addressed, so the other 373 are shared, and
+the fork costs almost nothing.
+
+**2 — Upgrading keeps your patch.**
+Re-vendor `0.161.0` as a new base and the rebase daemon three-way merges
+your `Vector3` change forward — the same machinery that keeps offers
+merged. That is `patch-package`, made permanent and automatic, and nothing
+in the npm world has it.
+
+**3 — Your edit is already a pull request.**
+Because the vendored tree is byte-identical to `mrdoob/three.js@d04539a`,
+your change is a diff against a known upstream commit, at the same paths,
+with no translation. `deck offer --to github` becomes mechanically
+possible: the base commit, the file paths and the content all line up.
+
+That is the bridge the ledger called G23, and it turns out to be a
+consequence of getting the carriage right rather than a separate feature.
+
+---
+
+## 6. Open questions
+
+1. **The waterfall.** 374 modules is 374 requests. `modulepreload`
+   injection is the answer, and the server already injects import maps —
+   but it should be measured before it is claimed.
+2. **Can one deck hold both carriages** — `src/` for editors and a built
+   entry for consumers, chosen by the import map? Elegant, but the bundle
+   goes stale the moment someone edits `src/`, and regenerating it needs
+   the build step Deck refuses to have. Possibly the honest answer is: edit
+   in source mode, distribute in whichever mode the publisher sealed.
+3. **How is a reconstructed (`map` mode) tree marked** so nobody expects
+   it to run?
+4. **d3-shaped packages.** Vendoring a family means N decks and a
+   dependency graph between them. That is the right answer, and it is also
+   the first real test of transitive resolution (G10).
+5. **`repo` mode needs a build**, which is the one thing the protocol has
+   no opinion about. Does a deck get to declare a build, or does `repo`
+   mode stay a reading tool?
+
+---
+
+## 7. Evidence log
+
+Everything above was measured on 2026-08-08, not inferred.
+
+```
+esm.sh entry            curl https://esm.sh/three@0.160.0
+                        → 2 lines, re-export of one 1.21 MB build
+
+npm metadata            registry.npmjs.org/three/0.160.0
+                        → type: module, exports["./src/*"], gitHead d04539a…,
+                          954 files, 31.5 MB unpacked
+
+tarball graph walk      374 modules, 1.29 MB, .js only,
+                        0 bare specifiers, 0 unresolved relative
+
+github correlation      api.github.com/repos/mrdoob/three.js/git/trees/
+                          d04539a…:src?recursive=1
+                        → 374/374 blobs byte-identical
+
+bundle source map       unpkg.com/chart.js@4.5.1/dist/chart.js.map
+                        → 53 sources, 53 sourcesContent, repo-relative paths
+
+package shapes          lit 3.3.3 · zod 4.4.3 · chart.js 4.5.1 ·
+                        preact 10.29.8 · @tanstack/query-core 5.101.4 · d3 7.9.0
+```
