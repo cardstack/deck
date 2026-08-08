@@ -5,4 +5,7 @@
 examples/*/realm/app/viewer/build.json
 examples/*/realm/app/viewer/states.json
 examples/*/realm/app/library/shelf.json
+# `deck fork` WRITES these into the realm: they are demo output, not source.
+examples/contribute-to-codelist/realm/ana/
+examples/contribute-to-codelist/realm/kim/
 node_modules/

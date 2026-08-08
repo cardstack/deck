@@ -11,6 +11,7 @@ real address space, not a demo router.
 | Example | Workload | Shows |
 | --- | --- | --- |
 | [codelist](codelist/) | W2 — shared reference data | Two people amend one table concurrently and both land. A fork absorbs upstream and keeps its own codes. Every state is at rest, at an immutable URL. |
+| [contribute-to-codelist](contribute-to-codelist/) | W2 — the write side | `deck fork` → amend → `_offers` → rebase daemon. Two proposals, one rebases itself and one stops merging; a reviewer runs either with `?with=` without checking anything out. |
 | [fork-an-app](fork-an-app/) | W3 — adapters and forks | Vendor Leaflet from npm source, change one file, run yours next to upstream. The fork costs 2 objects out of 87. Nothing reaches the network at runtime. |
 | [fork-a-language](fork-a-language/) | W3 — bespoke to generic | Replace a language's parser with a FEEL-shaped one. The evaluator stays byte-identical, so both dialects share it and provably run the same semantics. |
 | [field-library](field-library/) | W4 — patterns and fields | Six field decks over five vendored libraries. Aliasing, scopes (two chroma-js versions in one document), and dedupe: 13 dependency edges collapse to 6 URLs, and one URL is one module instance. |

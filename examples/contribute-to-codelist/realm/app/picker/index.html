@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Deck — review a proposal without checking it out</title>
+<link rel="icon" href="data:," />
+<!--
+  One app, four states, one URL each.
+
+      index.html                                    the released list
+      ?with=std/currencies@1.5.0                    the next release
+      ?with=std/currencies=ana/currencies           ana's open proposal
+      ?with=std/currencies=kim/currencies           kim's open proposal
+
+  Nothing is checked out to look at any of them. `?with=` resolves this
+  page's import map differently for ONE request — the same resolution rules
+  `deck lock` uses, applied at serve time instead of write time.
+-->
+<body>
+  <main id="app" class="loading">loading the list…</main>
+  <script type="module" src="./picker.js"></script>
+</body>

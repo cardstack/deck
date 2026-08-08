@@ -1,0 +1,17 @@
+{
+  "deck": {
+    "packages": {
+      "picker": {
+        "version": "1.0.0",
+        "entry": "$REALM/picker.js"
+      }
+    },
+    "dependencies": {
+      "std/currencies": "^1.4.0"
+    }
+  },
+  "imports": {
+    "std/currencies/": "/site/std/currencies@1.4.0/",
+    "std/currencies": "/site/std/currencies@1.4.0/index.js"
+  }
+}
