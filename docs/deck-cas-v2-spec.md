@@ -548,3 +548,118 @@ When slices land:
 
 Until then this document is the contract: **blobs for grain, links for
 SRI-of-deps, signatures for endorsement — one treeHash subject for all three.**
+
+---
+
+## 9. Implementation status (2026-08-08)
+
+### 9.1 Workstream A was already built, with two deliberate deviations
+
+Per-file addressing landed in commit `814124a`, before this spec was read.
+The layout differs from §1.2 in two ways, both measured rather than assumed:
+
+| §1.2 says | Built | Why |
+| --- | --- | --- |
+| `blobs/sha256/<aa>/<hex>`, `trees/<treeHash>/tree.json` | `_objects/<aa>/<hex>`, `_trees/<aa>/<treeHash>.json` | `_` cannot collide with a publisher segment, which must start alphanumeric — the same reservation the URL space uses |
+| blob bytes are raw, **no compression** (§7.4) | deflate-raw, named for the sha256 of the **uncompressed** bytes | raw costs 1.36 MB where the archive cost 438 KB, and only pays off after several edits. Compressed it is **360 KB** — smaller than the archive, because a zip pays a header per entry |
+| `tree.json` is `{spec, treeHash, entries}` | the serialized **packlist** | the packlist is what the archive contains, so storing it is what makes `?format=pack` rebuild byte-identically. §1.2's shape would lose the provenance block and break law 3 |
+
+Identity is untouched: `tree-hash-v1`, `DEFAULT_IGNORE`, semver rules and the
+canonical zip writer are all unchanged, and the rebuilt pack verifies with
+the same treeHash and Content-Digest.
+
+Still unbuilt from A: the explicit `storage` discriminator, `deck store
+migrate`, `deck store gc` as a verb. Legacy `packs/` stores are read.
+
+### 9.2 Workstream B, as built, is transitive vendoring
+
+§2 assumes the interesting case is a *reference* dependency across realms.
+Probing what the boxel cards actually import says otherwise: the blocking
+case is a **vendored** package whose own bare specifiers have nowhere to go.
+
+So the dependency record shipped in the form the corpus needed — an alias
+whose key is the specifier the source writes and whose value is the deck
+that answers to it:
+
+```json
+"dependencies": { "three": "lib/three@0.160.0" }
+```
+
+`deck vendor-tree` walks the graph, seals each package as its own deck, and
+wires them together. `deck lock` then emits import-map **scopes**, one per
+deck, so two decks may legitimately disagree about a version — and, more
+importantly here, so `three-bvh-csg` and `three-mesh-bvh` both resolve
+`three` to the *same* `three@0.160.0` the app pins. For a peer dependency
+that is not a disk saving, it is the difference between working and not.
+
+Measured on the real corpus: **13 library decks, 1,702 objects, 1.11 MB**,
+serving 250 requests to one origin with zero CDN traffic.
+
+The `mode`/`canonical`/`treeHash` verification record of §2.2.2 is **not**
+built; `vendoredFrom` carries registry, integrity, repo, commit and the
+cooldown verdict, which is the same provenance in a different shape. The
+verify-on-lock gate of §2.3 is unbuilt.
+
+### 9.3 Workstream C is unbuilt
+
+No keygen, no `deck sign`, no `verify-sig`. The payload and envelope in §3
+still look right and nothing built here contradicts them.
+
+### 9.4 What the spec does not cover, and the corpus needed
+
+**A cooldown policy**, in pnpm's vocabulary and units:
+
+```json
+<realm>/.deck/policy.json
+{ "minimumReleaseAge": 1440, "minimumReleaseAgeExclude": [] }
+```
+
+`minimumReleaseAge` is **minutes** — the same setting and units the boxel
+monorepo already carries in `pnpm-workspace.yaml` (1440, excluding two
+`@glint` packages), so a realm's policy is copy-pasteable from the workspace
+it serves. The default is 1440 to match. It fails **closed** on an unknown
+publish time, exempts listed packages, and is applied at *resolution* rather
+than as a veto: a range picks the newest release that is old enough instead
+of picking the newest and then refusing.
+
+`--minimum-release-age <minutes>` and `--min-age-days <days>` override it
+per invocation.
+
+### 9.5 Five bugs the corpus found that no unit test would have
+
+1. **`export var Marker = Layer.extend({…})`** matched `from "Interactive
+   layer"` ten lines later in a comment, because the import clause pattern
+   allowed any characters up to the next `from`. leaflet — a package with no
+   dependencies at all — looked non-hermetic. The clause is now restricted to
+   what an import clause can contain.
+2. **Libraries document their own import syntax.**
+   standardized-audio-context has `import defaultImport from './path';`
+   inside a block comment. Comments and regex literals are now blanked
+   before scanning, with strings left intact.
+3. **A one-module dependency is not a lost boundary.** `tslib` is one file
+   on purpose. Only the ROOT of a vendor is required to be an editable tree.
+4. **An ESM entry can hide a CommonJS core.** highlight.js publishes
+   `es/index.js`, which is real ESM and imports `../lib/index.js`, which is
+   not. The check now covers the whole graph, so highlight.js is refused
+   with a reason instead of sealing something that cannot load.
+5. **The same subpath exists in several builds.** dayjs ships both
+   `plugin/quarterOfYear.js` (UMD) and `esm/plugin/quarterOfYear/index.js`.
+   Subpaths resolve inside the entry's own tree first, and the resolved path
+   becomes a deck `export` so the specifier a consumer writes reaches the
+   file that actually loads.
+
+Plus one the spec would not have caught: `deck fork --use-in` matched the
+dependency by KEY, so forking `lib/leaflet` added an unused `lib/leaflet`
+entry and left `leaflet` pointing at the original. It now matches on what
+an entry TARGETS.
+
+### 9.6 What the corpus could not vendor, and why
+
+| Package | Reason |
+| --- | --- |
+| marked, jszip, country-data-find, marked-highlight | publish one bundle; no module tree to fork |
+| highlight.js | ESM shim over a CommonJS core |
+| ember-animated | 21 externals, mostly `@ember/*` and `@glimmer/*` build-time virtuals, plus a CommonJS dependency |
+
+Nine of the thirteen the cards import vendor cleanly. The four that do not
+are the argument for `map` mode.

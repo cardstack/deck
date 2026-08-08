@@ -20,12 +20,21 @@ const BODY_START = /<body[^>]*>/i;
 export function injectImportMap(
   html: Buffer,
   imports: Record<string, string>,
+  // Scopes carry each vendored deck's own bare specifiers, so tone's
+  // `standardized-audio-context` resolves inside tone's URL prefix without
+  // becoming a global name the app has to know about. Dropping them here
+  // was the difference between a page that loads and one that does not.
+  scopes: Record<string, Record<string, string>> = {},
 ): { bytes: Buffer; injected: boolean } {
-  if (Object.keys(imports).length === 0) {
+  if (Object.keys(imports).length === 0 && Object.keys(scopes).length === 0) {
     return { bytes: html, injected: false };
   }
   let text = html.toString('utf8');
-  let tag = `<script type="importmap">${JSON.stringify({ imports })}</script>`;
+  let map: Record<string, unknown> = { imports };
+  if (Object.keys(scopes).length > 0) {
+    map.scopes = scopes;
+  }
+  let tag = `<script type="importmap">${JSON.stringify(map)}</script>`;
   let existing = text.match(IMPORTMAP_TAG);
   if (existing) {
     if (!HAS_SRC.test(existing[0])) {

@@ -15,7 +15,7 @@ import {
 } from '@deck/core/store';
 import { forkDeck } from '@deck/core/fork';
 import { rebasePass, startRebaseDaemon } from '@deck/server/rebase-daemon';
-import { lockDeck } from '@deck/core/lock';
+import { lockDeck, parseDependencyValue } from '@deck/core/lock';
 import { vendorFromCdn, vendorImportMap } from '@deck/core/vendor';
 import {
   deckNameForNpm,
@@ -23,9 +23,14 @@ import {
   vendorFromNpmSource,
 } from '@deck/core/vendor-npm';
 import { fetchNpmPackage, verifyAgainstGithubTree } from '@deck/core/npm';
+import {
+  planVendorTree,
+  vendorUnitImportMap,
+} from '@deck/core/vendor-tree';
 import { createDeckServer } from '@deck/server/server';
 import {
   discoverDecks,
+  readRealmPolicy,
   storeDirFor,
   watchRealm,
   type RealmMount,
@@ -86,6 +91,16 @@ Usage:
                                         --verify-repo checks the tree against
                                         the GitHub commit npm recorded, blob
                                         by blob
+  deck vendor-tree npm:<pkg>[@<range>] --realm <dir> --publisher <p>
+              [--minimum-release-age <minutes>] [--min-age-days <days>]
+              [--max-depth <n>] [--allow-external] [--dry-run]
+                                        vendor a package AND its dependency
+                                        graph, each as its own deck, wired by
+                                        aliased dependency records. Refuses a
+                                        version published in the last
+                                        --min-age days (default 30) and
+                                        resolves ranges to the newest release
+                                        that IS old enough
   deck prune --realm <dir> --publisher <p> --name <n> [--keep <k>]
                                         drop old -dev.N prereleases (never
                                         stables or tag targets); bytes are
@@ -129,6 +144,22 @@ Usage:
 
 On a running server, open /deckbook.html for the teaching tour (Deckbook).
 `;
+
+// `--minimum-release-age` is pnpm's setting in pnpm's units (minutes);
+// `--min-age-days` is the same dial for humans who think in days. Either
+// overrides whatever the realm's policy.json declares.
+function cooldownOverride(values: {
+  'minimum-release-age'?: string;
+  'min-age-days'?: string;
+}): { minimumReleaseAge?: number } {
+  if (values['minimum-release-age'] !== undefined) {
+    return { minimumReleaseAge: Number(values['minimum-release-age']) };
+  }
+  if (values['min-age-days'] !== undefined) {
+    return { minimumReleaseAge: Number(values['min-age-days']) * 1440 };
+  }
+  return {};
+}
 
 // 8787 is jj-historyd's default; a deck server sharing a machine with one
 // would collide silently, so the server sits next door.
@@ -552,6 +583,96 @@ async function main(): Promise<void> {
       }
       return;
     }
+    case 'vendor-tree': {
+      let { values, positionals } = parseArgs({
+        args: rest,
+        allowPositionals: true,
+        options: {
+          realm: { type: 'string' },
+          publisher: { type: 'string' },
+          tag: { type: 'string' },
+          'minimum-release-age': { type: 'string' },
+          'min-age-days': { type: 'string' },
+          'max-depth': { type: 'string' },
+          'allow-external': { type: 'boolean', default: false },
+          'dry-run': { type: 'boolean', default: false },
+        },
+      });
+      let [target] = positionals;
+      if (!target || !values.realm || !values.publisher) {
+        fail(
+          'usage: deck vendor-tree npm:<pkg>[@<range>] --realm <dir> --publisher <p> [--min-age <days>] [--allow-external]',
+        );
+      }
+      if (!target.startsWith('npm:')) {
+        fail('vendor-tree takes an npm: spec — the tarball is what carries a module tree');
+      }
+      let realmDir = resolve(values.realm!);
+      let policy = {
+        ...(await readRealmPolicy(realmDir)),
+        ...cooldownOverride(values),
+      };
+      let plan = await planVendorTree({
+        spec: target.slice(4),
+        publisher: values.publisher!,
+        storeDir: storeDirFor(realmDir),
+        policy,
+        maxDepth: values['max-depth'] ? Number(values['max-depth']) : undefined,
+        allowExternal: values['allow-external'],
+      });
+      for (let unit of plan.units) {
+        let dependencyNote = Object.entries(unit.dependencies)
+          .map(([specifier, value]) => `${specifier}→${value}`)
+          .join(' ');
+        console.log(
+          `${'  '.repeat(unit.depth)}${unit.deck}@${unit.version}  ${unit.modules} modules${dependencyNote ? `  [${dependencyNote}]` : ''}`,
+        );
+      }
+      for (let miss of plan.bundleOnly) {
+        console.log(
+          `  skipped ${miss.npmName} (needed by ${miss.from}): ${miss.detail}`,
+        );
+      }
+      for (let miss of plan.unresolvable) {
+        console.log(`  unresolved ${miss.specifier} in ${miss.from}: ${miss.reason}`);
+      }
+      if (values['dry-run']) {
+        console.log('\ndry run — nothing written');
+        return;
+      }
+      for (let unit of plan.units) {
+        let bytes = pack([
+          { path: 'importmap.json', bytes: vendorUnitImportMap(unit) },
+          ...unit.files,
+        ]);
+        let name = unit.deck.split('/').at(-1)!;
+        try {
+          await publishToStore(
+            storeDirFor(realmDir),
+            unit.deck,
+            unit.version,
+            bytes,
+            { tag: unit.depth === 0 ? values.tag : undefined },
+          );
+          console.log(
+            `published ${unit.deck}@${unit.version} (${peekPacklist(bytes).treeHash.hash.slice(0, 12)})`,
+          );
+        } catch (error) {
+          // An already-published identical version is the dedupe case, not
+          // an error: two consumers wanting the same dependency is normal.
+          if (String(error).includes('already published')) {
+            console.log(`reused ${unit.deck}@${unit.version}`);
+          } else {
+            throw error;
+          }
+        }
+        void name;
+      }
+      console.log(
+        `\n${plan.units.length} deck(s) under /${basename(realmDir)}/${values.publisher}/`,
+      );
+      return;
+    }
     case 'prune': {
       let { values } = parseArgs({
         args: rest,
@@ -690,14 +811,27 @@ async function main(): Promise<void> {
         let mapPath = join(realmDir, usePublisher, usePackage, 'importmap.json');
         let map = JSON.parse(await readFile(mapPath, 'utf8'));
         let vendor = (map.deck ??= {});
-        let dependencies = (vendor.dependencies ??= {});
+        let dependencies = (vendor.dependencies ??= {}) as Record<
+          string,
+          string
+        >;
         // ALIAS, not rename: the key stays the import specifier the
         // consumer already writes, and the value says the fork answers to
-        // it. Renaming the key would make every `import … from
-        // '<base>'` in the consumer's own source wrong, which is exactly
-        // the friction a fork is supposed to remove.
+        // it. Renaming the key would make every `import … from '<base>'` in
+        // the consumer's own source wrong, which is the friction a fork is
+        // supposed to remove.
+        //
+        // The entry to repoint is found by what it TARGETS, not by its key:
+        // a vendored library is usually already aliased (`"leaflet":
+        // "lib/leaflet@1.9.4"`), and matching on the key alone would add a
+        // second, unused `lib/leaflet` entry and leave `leaflet` pointing
+        // at the original.
+        let existingKey = Object.entries(dependencies).find(
+          ([key, value]) =>
+            key === fromName || parseDependencyValue(value).target === fromName,
+        )?.[0];
         // `live` on purpose: the point of a fork is to see every save.
-        dependencies[fromName] = `${result.to}@live`;
+        dependencies[existingKey ?? fromName] = `${result.to}@live`;
         await writeFile(mapPath, JSON.stringify(map, null, 2) + '\n');
         let locked = await lockDeck({
           realmDir,

@@ -44,20 +44,118 @@ export interface VendorResult {
   externals: string[];
 }
 
-// Machine-emitted CDN modules only need a syntactic pass: static imports,
-// re-exports, side-effect imports, and string-literal dynamic imports.
+// Static imports, re-exports, side-effect imports, and string-literal
+// dynamic imports — a syntactic pass, not a parser.
+//
+// The import CLAUSE is deliberately narrow: only the characters an import or
+// export clause can actually contain (identifiers, braces, commas, `*`,
+// `as`, whitespace). Allowing anything up to the next `from` lets
+// `export var Marker = Layer.extend({ … })` run through ten lines of
+// comments and match `from "Interactive layer"` in prose — which is how
+// leaflet, a package with no dependencies at all, came out looking
+// non-hermetic.
 const SPECIFIER_PATTERNS = [
-  /(?:^|[\s;}])(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]/g,
+  /(?:^|[\s;}])(?:import|export)\s+[\w$*{},\s]*?\bfrom\s*['"]([^'"]+)['"]/g,
   /(?:^|[\s;}])import\s*['"]([^'"]+)['"]/g,
   /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
 ];
 
+// Comments are blanked before scanning, because libraries document their
+// own import syntax in prose:
+//
+//   /*
+//    * import defaultImport from './path';
+//    */
+//
+// standardized-audio-context has exactly that, and without this the walker
+// chases a module called `./path` that does not exist. Comment spans are
+// replaced with spaces rather than removed so offsets and line numbers stay
+// intact, and STRINGS ARE LEFT ALONE — the specifier we want to read lives
+// in one.
+//
+// Regex literals are skipped too. `IMPORT_STATEMENT_REGEX = /…\/\/…/` would
+// otherwise present a `//` that looks like the start of a line comment and
+// swallow the rest of the line. The test for "this `/` opens a regex" is the
+// usual one: the previous significant character cannot end an expression.
+const REGEX_MAY_FOLLOW = new Set([
+  '=', '(', ',', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*',
+  '%', '~', '^', '<', '>', 'n', 'f', 'o',
+]);
+
+export function stripComments(source: string): string {
+  let out = source.split('');
+  let index = 0;
+  let lastSignificant = '';
+  while (index < source.length) {
+    let char = source[index];
+    let next = source[index + 1];
+    if (char === '/' && next === '/') {
+      while (index < source.length && source[index] !== '\n') {
+        out[index++] = ' ';
+      }
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      out[index++] = ' ';
+      out[index++] = ' ';
+      while (index < source.length && !(source[index] === '*' && source[index + 1] === '/')) {
+        if (source[index] !== '\n') {
+          out[index] = ' ';
+        }
+        index++;
+      }
+      out[index++] = ' ';
+      out[index++] = ' ';
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      let quote = char;
+      index++;
+      while (index < source.length) {
+        if (source[index] === '\\') {
+          index += 2;
+          continue;
+        }
+        if (source[index] === quote) {
+          index++;
+          break;
+        }
+        index++;
+      }
+      lastSignificant = quote;
+      continue;
+    }
+    if (char === '/' && REGEX_MAY_FOLLOW.has(lastSignificant)) {
+      index++;
+      while (index < source.length) {
+        if (source[index] === '\\') {
+          index += 2;
+          continue;
+        }
+        if (source[index] === '/' || source[index] === '\n') {
+          index++;
+          break;
+        }
+        index++;
+      }
+      lastSignificant = '/';
+      continue;
+    }
+    if (!/\s/.test(char)) {
+      lastSignificant = char;
+    }
+    index++;
+  }
+  return out.join('');
+}
+
 export function extractSpecifiers(source: string): string[] {
+  let scanned = stripComments(source);
   let found = new Set<string>();
   for (let pattern of SPECIFIER_PATTERNS) {
     pattern.lastIndex = 0;
     let match: RegExpExecArray | null;
-    while ((match = pattern.exec(source)) !== null) {
+    while ((match = pattern.exec(scanned)) !== null) {
       found.add(match[1]);
     }
   }

@@ -1,4 +1,6 @@
+import { parsePolicy, POLICY_FILE, type CooldownPolicy } from '@deck/core/npm';
 import { watch, type FSWatcher } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { discoverDecks, type DeckRef } from '@deck/core/deck-scan';
 import type { HistoryBackend } from '@deck/history/backend';
@@ -151,4 +153,17 @@ export function watchRealm(options: WatchRealmOptions): RealmWatchController {
     },
     rescan,
   };
+}
+
+// The realm's cooldown policy, if it declares one. Absent means the default.
+export async function readRealmPolicy(
+  realmDir: string,
+): Promise<Partial<CooldownPolicy>> {
+  try {
+    return parsePolicy(
+      await readFile(join(realmDir, DECK_DIR, POLICY_FILE), 'utf8'),
+    );
+  } catch {
+    return {};
+  }
 }

@@ -12,6 +12,11 @@ export interface PackageMapEntry {
   entry?: string;
   exports?: Record<string, string>;
   baseApi?: string;
+  // The canonical identity of what was pulled in, when this deck is a
+  // vendored copy of something else. A plain string for a CDN vendor; the
+  // full provenance record (registry, integrity, repo, commit, cooldown
+  // verdict) for an npm source vendor.
+  vendoredFrom?: string | Record<string, unknown>;
 }
 
 export function parsePackages(

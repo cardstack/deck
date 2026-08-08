@@ -406,19 +406,29 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   async function liveImports(
     realm: RealmMount,
     treePath: string,
-  ): Promise<Record<string, string>> {
+  ): Promise<{
+    imports: Record<string, string>;
+    scopes: Record<string, Record<string, string>>;
+  }> {
     let segments = treePath.split('/');
     if (segments.length < 3) {
-      return {};
+      return { imports: {}, scopes: {} };
     }
     try {
       let text = await readFile(
         join(realm.dir, segments[0], segments[1], IMPORT_MAP_PATH),
         'utf8',
       );
-      return (JSON.parse(text).imports ?? {}) as Record<string, string>;
+      let parsed = JSON.parse(text);
+      return {
+        imports: (parsed.imports ?? {}) as Record<string, string>,
+        scopes: (parsed.scopes ?? {}) as Record<
+          string,
+          Record<string, string>
+        >,
+      };
     } catch {
-      return {};
+      return { imports: {}, scopes: {} };
     }
   }
 
@@ -1183,13 +1193,14 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     let injected = false;
     let trying: string[] = [];
     if (found.path.endsWith('.html')) {
-      let imports = await liveImports(realm, found.path);
+      let live = await liveImports(realm, found.path);
       let overrides = await overrideImports(url, realm);
       trying = Object.keys(overrides).sort();
-      ({ bytes, injected } = injectImportMap(bytes, {
-        ...imports,
-        ...overrides,
-      }));
+      ({ bytes, injected } = injectImportMap(
+        bytes,
+        { ...live.imports, ...overrides },
+        live.scopes,
+      ));
     }
     // The whole point: every save is visible on the next request.
     respond(

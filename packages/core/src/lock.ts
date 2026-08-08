@@ -9,6 +9,7 @@ import {
   IMPORT_MAP_PATH,
 } from './import-map.ts';
 import { readStoreMeta, readStoredPack } from './store.ts';
+import { readZipEntry } from './canonical-zip.ts';
 
 // The decklist lock.
 //
@@ -169,9 +170,11 @@ export async function resolveDependencies(
   let resolutions: DependencyResolution[] = [];
   for (let [key, declared] of Object.entries(options.dependencies)) {
     let { target: alias, spec } = parseDependencyValue(declared);
-    // The KEY is always the import specifier. The alias, when present, is
-    // the deck that answers to it.
-    if (parseKey(key, options.realmName) === undefined) {
+    // The KEY is always the import specifier. Without an alias it must also
+    // BE the deck name, because nothing else says which deck to resolve.
+    // With one, the key is free — which is what lets a vendored package's
+    // bare npm specifier (`three`, `tslib`) point at a deck.
+    if (alias === undefined && parseKey(key, options.realmName) === undefined) {
       throw new Error(
         `dependency "${key}" is not <publisher>/<package> or <realm>/<publisher>/<package>`,
       );
@@ -233,12 +236,136 @@ export interface LockResult {
   changed: boolean;
 }
 
+// A vendored deck's own bare specifiers — tone's `standardized-audio-context`,
+// three-bvh-csg's `three` — have to resolve too, and an import map is global
+// to the document. Hoisting them all flat would work only while no two decks
+// disagree about a version; `scopes` is the shape the platform already has
+// for exactly this, so each deck's dependencies resolve inside its own URL
+// prefix and two decks may legitimately use different versions of the same
+// library.
+export interface ScopedResolution {
+  // The URL prefix the scope applies to: "/site/lib/tone@14.7.77/".
+  scope: string;
+  imports: Record<string, string>;
+}
+
+async function sealedDependencies(
+  storeDir: string,
+  deck: string,
+  version: string,
+): Promise<Record<string, string>> {
+  let bytes = await readStoredPack(storeDir, deck, version);
+  if (!bytes) {
+    return {};
+  }
+  let raw = readZipEntry(bytes, IMPORT_MAP_PATH);
+  return raw ? (parseDependencies(raw.toString('utf8')) ?? {}) : {};
+}
+
+// Walk what the resolved decks themselves depend on, breadth-first, and emit
+// one scope per deck. Cycles terminate on the visited set.
+export async function resolveScopes(options: {
+  realmName: string;
+  storeDir: string;
+  roots: readonly DependencyResolution[];
+  maxDepth?: number;
+}): Promise<ScopedResolution[]> {
+  let { realmName, storeDir, roots, maxDepth = 8 } = options;
+  let scopes = new Map<string, Record<string, string>>();
+  let visited = new Set<string>();
+  let queue = roots
+    .filter((resolution) => resolution.version !== undefined)
+    .map((resolution) => ({
+      deck: `${resolution.publisher}/${resolution.package}`,
+      version: resolution.version!,
+      depth: 0,
+    }));
+
+  while (queue.length > 0) {
+    let job = queue.shift()!;
+    let key = `${job.deck}@${job.version}`;
+    if (visited.has(key) || job.depth > maxDepth) {
+      continue;
+    }
+    visited.add(key);
+    let dependencies = await sealedDependencies(storeDir, job.deck, job.version);
+    let scope = `/${realmName}/${job.deck}@${job.version}/`;
+    for (let [specifier, declared] of Object.entries(dependencies)) {
+      let { target, spec } = parseDependencyValue(declared);
+      if (!target) {
+        continue; // a range against itself; nothing to scope
+      }
+      let child = parseKey(target, realmName);
+      if (!child) {
+        continue;
+      }
+      let childDeck = `${child.publisher}/${child.package}`;
+      let version = semver.valid(spec) === spec ? spec : undefined;
+      if (!version) {
+        let meta = await readStoreMeta(storeDir, childDeck);
+        version = meta ? resolveSpec(spec, meta) : undefined;
+      }
+      if (!version) {
+        continue;
+      }
+      let base = `/${child.realm}/${childDeck}@${version}`;
+      let { entry, exports } = await entryAndExportsOf(
+        storeDir,
+        childDeck,
+        version,
+      );
+      let record = scopes.get(scope) ?? {};
+      record[`${specifier}/`] = `${base}/`;
+      if (entry) {
+        record[specifier] = `${base}/${entry}`;
+      }
+      // A subpath a consumer writes may not be the path the package
+      // publishes — dayjs's `plugin/quarterOfYear.js` is really
+      // `esm/plugin/quarterOfYear/index.js` — so the deck's exports become
+      // explicit scope entries rather than relying on the prefix mapping.
+      for (let [alias, target] of Object.entries(exports)) {
+        record[`${specifier}/${alias.replace(/^\.\//, '')}`] =
+          `${base}/${target}`;
+      }
+      scopes.set(scope, record);
+      queue.push({ deck: childDeck, version, depth: job.depth + 1 });
+    }
+  }
+  return [...scopes.entries()]
+    .map(([scope, imports]) => ({ scope, imports }))
+    .sort((a, b) => a.scope.localeCompare(b.scope));
+}
+
+async function entryAndExportsOf(
+  storeDir: string,
+  deck: string,
+  version: string,
+): Promise<{ entry?: string; exports: Record<string, string> }> {
+  let bytes = await readStoredPack(storeDir, deck, version);
+  if (!bytes) {
+    return { exports: {} };
+  }
+  let mapEntry = packagesFromPack(bytes)?.[deck.split('/').at(-1)!];
+  let exports: Record<string, string> = {};
+  for (let [alias, value] of Object.entries(mapEntry?.exports ?? {})) {
+    let treePath = treePathFromMapValue(value);
+    if (treePath) {
+      exports[alias] = treePath;
+    }
+  }
+  return {
+    entry: mapEntry?.entry ? treePathFromMapValue(mapEntry.entry) : undefined,
+    exports,
+  };
+}
+
 // Writes the pins into the map, leaving everything else — including the
 // ranges under `deck.dependencies` — exactly as the author wrote it. The
 // ranges are the intent; the pins are what that intent resolved to today.
 export function applyLock(
   mapText: string,
   resolutions: readonly DependencyResolution[],
+  scoped: readonly ScopedResolution[] = [],
 ): LockResult {
   let parsed = JSON.parse(mapText);
   let imports: Record<string, string> = { ...(parsed.imports ?? {}) };
@@ -265,6 +392,24 @@ export function applyLock(
     changed = true;
   }
   parsed.imports = imports;
+
+  // Scopes are wholly owned by the lock: they are derived from the sealed
+  // decks, never hand-written, so rewriting them entirely is correct and
+  // keeps a dropped dependency from leaving a scope behind.
+  let nextScopes: Record<string, Record<string, string>> = {};
+  for (let { scope, imports: scopeImports } of scoped) {
+    nextScopes[scope] = Object.fromEntries(
+      Object.entries(scopeImports).sort(([a], [b]) => a.localeCompare(b)),
+    );
+  }
+  if (JSON.stringify(parsed.scopes ?? {}) !== JSON.stringify(nextScopes)) {
+    changed = true;
+  }
+  if (Object.keys(nextScopes).length > 0) {
+    parsed.scopes = nextScopes;
+  } else {
+    delete parsed.scopes;
+  }
   return { text: JSON.stringify(parsed, null, 2) + '\n', changed };
 }
 
@@ -298,6 +443,11 @@ export async function lockDeck(options: {
     dependencies,
     currentImports,
   });
-  let { text, changed } = applyLock(mapText, resolutions);
+  let scoped = await resolveScopes({
+    realmName: options.realmName,
+    storeDir: options.storeDir,
+    roots: resolutions,
+  });
+  let { text, changed } = applyLock(mapText, resolutions, scoped);
   return { resolutions, text, changed };
 }

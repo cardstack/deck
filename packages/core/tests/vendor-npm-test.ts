@@ -4,6 +4,10 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import {
   deckNameForNpm,
   gitBlobSha,
+  judgeCooldown,
+  newestAged,
+  normalizePolicy,
+  parsePolicy,
   parseNpmSpec,
   readTar,
   repoUrlFor,
@@ -11,6 +15,7 @@ import {
   type NpmPackage,
   type NpmVersionDoc,
 } from '../src/npm.ts';
+import { stripComments } from '../src/vendor.ts';
 import {
   candidateEntries,
   commonSubtree,
@@ -210,6 +215,37 @@ module('vendor: source mode', () => {
     ]);
   });
 
+  // Both of these are real: leaflet documents inheritance in prose that
+  // ended in a `from "…"`, and standardized-audio-context documents import
+  // syntax inside a block comment.
+  test('an import example inside a comment is not a dependency', (assert) => {
+    let pkg = fakePackage({
+      'src/index.js': `/*\n * import defaultImport from './path';\n */\n// import { x } from 'ghost';\nimport { real } from './real.js';\n`,
+      'src/real.js': 'export const real = 1;\n',
+    });
+    let graph = walkSourceGraph(pkg.files, 'src/index.js');
+    assert.deepEqual(graph.modules, ['src/index.js', 'src/real.js']);
+    assert.deepEqual(graph.externals, [], 'the commented "ghost" is ignored');
+    assert.deepEqual(graph.unresolved, [], 'the commented "./path" is ignored');
+  });
+
+  test('prose that merely contains the word from is not an import', (assert) => {
+    let pkg = fakePackage({
+      'src/index.js':
+        'export var Marker = Layer.extend({\n  // Option inherited from "Interactive layer"\n  icon: 1,\n});\n',
+    });
+    assert.deepEqual(walkSourceGraph(pkg.files, 'src/index.js').externals, []);
+  });
+
+  test('a regex literal containing // does not swallow the next line', (assert) => {
+    let source = `const RX = /https?:\\/\\//;\nimport { a } from './a.js';\n`;
+    assert.deepEqual(
+      [...new Set(stripComments(source).match(/\.\/a\.js/g) ?? [])],
+      ['./a.js'],
+      'the import after the regex survives comment stripping',
+    );
+  });
+
   test('probing separates a tree from a bundle', (assert) => {
     let tree = fakePackage(
       {
@@ -256,7 +292,7 @@ module('vendor: source mode', () => {
         },
       },
     );
-    let result = await vendorFromNpmSource({ spec: 'demo@2.0.0', pkg });
+    let result = await vendorFromNpmSource({ spec: 'demo@2.0.0', pkg, policy: { minimumReleaseAge: 0 } });
     assert.strictEqual(result.entryPath, 'src/index.js');
     assert.deepEqual(
       result.files.map((file) => file.path),
@@ -280,6 +316,7 @@ module('vendor: source mode', () => {
       subtree: 'src',
       repo: 'https://github.com/demo/demo',
       commit: 'abc123',
+      minimumReleaseAge: 0,
     });
   });
 
@@ -292,7 +329,7 @@ module('vendor: source mode', () => {
       },
       { name: 'demo', version: '1.0.0', exports: { './src/*': './src/*' } },
     );
-    let result = await vendorFromNpmSource({ spec: 'demo@1.0.0', pkg });
+    let result = await vendorFromNpmSource({ spec: 'demo@1.0.0', pkg, policy: { minimumReleaseAge: 0 } });
     assert.deepEqual(result.rewritten, ['src/index.js']);
     assert.strictEqual(
       result.files.find((file) => file.path === 'src/index.js')!.bytes.toString(
@@ -308,7 +345,7 @@ module('vendor: source mode', () => {
       { name: 'demo', version: '1.0.0', module: './dist/bundle.js' },
     );
     await assert.rejects(
-      vendorFromNpmSource({ spec: 'demo@1.0.0', pkg }),
+      vendorFromNpmSource({ spec: 'demo@1.0.0', pkg, policy: { minimumReleaseAge: 0 } }),
       /publishes a bundle, not a module tree/,
     );
   });
@@ -322,13 +359,14 @@ module('vendor: source mode', () => {
       { name: 'demo', version: '1.0.0', exports: { './src/*': './src/*' } },
     );
     await assert.rejects(
-      vendorFromNpmSource({ spec: 'demo@1.0.0', pkg }),
+      vendorFromNpmSource({ spec: 'demo@1.0.0', pkg, policy: { minimumReleaseAge: 0 } }),
       /would not be hermetic.*lodash/s,
     );
     let allowed = await vendorFromNpmSource({
       spec: 'demo@1.0.0',
       pkg,
       allowExternal: true,
+      policy: { minimumReleaseAge: 0 },
     });
     assert.deepEqual(allowed.externals, ['lodash']);
   });
@@ -337,5 +375,166 @@ module('vendor: source mode', () => {
     assert.strictEqual(commonSubtree(['src/a.js', 'src/deep/b.js']), 'src');
     assert.strictEqual(commonSubtree(['src/a.js', 'lib/b.js']), undefined);
     assert.strictEqual(commonSubtree(['a.js']), undefined);
+  });
+});
+
+module('vendor: the cooldown policy', () => {
+  const NOW = Date.parse('2026-08-08T00:00:00.000Z');
+  const minutesAgo = (n: number) => new Date(NOW - n * 60_000).toISOString();
+  const DAY = 1440;
+  const policy = (over: Record<string, unknown> = {}) =>
+    normalizePolicy({ minimumReleaseAge: DAY, ...over });
+
+  test('the default matches the boxel monorepo: 1440 minutes', (assert) => {
+    assert.deepEqual(normalizePolicy(undefined), {
+      minimumReleaseAge: 1440,
+      minimumReleaseAgeExclude: [],
+    });
+  });
+
+  test('a version older than the policy passes', (assert) => {
+    let verdict = judgeCooldown({
+      name: 'demo',
+      version: '1.0.0',
+      publishedAt: minutesAgo(DAY * 45),
+      policy: policy(),
+      now: NOW,
+    });
+    assert.true(verdict.ok);
+    assert.strictEqual(Math.round(verdict.ageMinutes!), DAY * 45);
+  });
+
+  test('a fresh version is refused, in human units', (assert) => {
+    let verdict = judgeCooldown({
+      name: 'demo',
+      version: '1.0.1',
+      publishedAt: minutesAgo(120),
+      policy: policy(),
+      now: NOW,
+    });
+    assert.false(verdict.ok);
+    assert.true(verdict.reason!.includes('2 hour(s) ago'));
+    assert.true(verdict.reason!.includes('1 day(s)'));
+  });
+
+  // The whole point of a cooldown is defence against a compromised publish,
+  // so "I could not tell how old this is" must not read as "fine".
+  test('an unknown publish time fails CLOSED', (assert) => {
+    let verdict = judgeCooldown({
+      name: 'demo',
+      version: '1.0.0',
+      publishedAt: undefined,
+      policy: policy(),
+      now: NOW,
+    });
+    assert.false(verdict.ok);
+    assert.true(verdict.reason!.includes('no publish time'));
+  });
+
+  test('minimumReleaseAge 0 disables the gate', (assert) => {
+    assert.true(
+      judgeCooldown({
+        name: 'demo',
+        version: '1.0.0',
+        publishedAt: undefined,
+        policy: policy({ minimumReleaseAge: 0 }),
+        now: NOW,
+      }).ok,
+    );
+  });
+
+  test('an excluded package skips the gate and says so', (assert) => {
+    let verdict = judgeCooldown({
+      name: '@glint/template',
+      version: '1.0.0',
+      publishedAt: minutesAgo(1),
+      policy: policy({ minimumReleaseAgeExclude: ['@glint/template'] }),
+      now: NOW,
+    });
+    assert.true(verdict.ok);
+    assert.true(verdict.excluded);
+  });
+
+  test('newestAged picks the freshest version that is old enough', (assert) => {
+    let times = {
+      '1.0.0': minutesAgo(DAY * 200),
+      '1.1.0': minutesAgo(DAY * 90),
+      '1.2.0': minutesAgo(DAY * 2),
+      '1.3.0': minutesAgo(30),
+    };
+    assert.strictEqual(
+      newestAged('demo', times, Object.keys(times), policy(), NOW),
+      '1.2.0',
+      'the 30-minute-old release is skipped, not the whole package',
+    );
+    assert.strictEqual(
+      newestAged(
+        'demo',
+        times,
+        Object.keys(times),
+        policy({ minimumReleaseAge: 0 }),
+        NOW,
+      ),
+      '1.3.0',
+    );
+    assert.strictEqual(
+      newestAged(
+        'demo',
+        { '1.0.0': minutesAgo(10) },
+        ['1.0.0'],
+        policy(),
+        NOW,
+      ),
+      undefined,
+      'nothing old enough is undefined, not a guess',
+    );
+  });
+
+  // The realm's policy file is pnpm's two settings verbatim, so it can be
+  // lifted out of a pnpm-workspace.yaml unchanged.
+  test('a realm policy file parses pnpm\'s two settings', (assert) => {
+    assert.deepEqual(
+      parsePolicy(
+        JSON.stringify({
+          minimumReleaseAge: 1440,
+          minimumReleaseAgeExclude: ['@glint/ember-tsc', '@glint/template'],
+          somethingElse: true,
+        }),
+      ),
+      {
+        minimumReleaseAge: 1440,
+        minimumReleaseAgeExclude: ['@glint/ember-tsc', '@glint/template'],
+      },
+    );
+    assert.deepEqual(parsePolicy('{}'), {}, 'an empty policy takes defaults');
+  });
+
+  test('the gate runs before anything is written, and records its verdict', async (assert) => {
+    let pkg = fakePackage(
+      {
+        'src/index.js': "export * from './a.js';\n",
+        'src/a.js': 'export const a = 1;\n',
+      },
+      { name: 'demo', version: '1.0.0', exports: { './src/*': './src/*' } },
+    );
+    await assert.rejects(
+      vendorFromNpmSource({
+        spec: 'demo@1.0.0',
+        pkg,
+        policy: { minimumReleaseAge: DAY * 30 },
+        now: NOW,
+        publishedAt: minutesAgo(DAY * 5),
+      }),
+      /cooldown refused demo@1\.0\.0/,
+    );
+    let accepted = await vendorFromNpmSource({
+      spec: 'demo@1.0.0',
+      pkg,
+      policy: { minimumReleaseAge: DAY * 30 },
+      now: NOW,
+      publishedAt: minutesAgo(DAY * 60),
+    });
+    assert.strictEqual(accepted.vendoredFrom.minimumReleaseAge, DAY * 30);
+    assert.strictEqual(accepted.vendoredFrom.ageMinutesAtVendor, DAY * 60);
   });
 });

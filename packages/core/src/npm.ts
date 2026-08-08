@@ -319,3 +319,176 @@ export async function verifyAgainstGithubTree(options: {
     missing,
   };
 }
+
+// The cooldown policy.
+//
+// Most registry supply-chain attacks are caught within days: a compromised
+// maintainer account publishes a malicious patch, and it is yanked once
+// somebody notices. A consumer who refuses anything published in the last N
+// minutes misses almost the entire blast radius, at the cost of being N
+// minutes behind — which, for a dependency you pin anyway, costs nothing.
+//
+// The vocabulary is pnpm's, deliberately: `minimumReleaseAge` in MINUTES and
+// `minimumReleaseAgeExclude`, the same two settings the boxel monorepo
+// already carries in pnpm-workspace.yaml (1440, with two @glint packages
+// excluded). A realm's policy is therefore copy-pasteable from the
+// workspace it serves, and means the same thing on both sides.
+//
+// npm's registry has no such gate, so it lives here, at the moment bytes
+// enter the store. Only the FULL packument carries per-version publish
+// times — the abbreviated one does not — so this costs one extra fetch per
+// package and is worth it.
+
+// Minutes. Matches pnpm-workspace.yaml in the boxel monorepo.
+export const DEFAULT_MINIMUM_RELEASE_AGE = 1440;
+const MINUTE_MS = 60_000;
+
+export interface CooldownPolicy {
+  // Minutes a version must have existed before it may be vendored. 0 is off.
+  minimumReleaseAge: number;
+  // Package names exempt from the gate.
+  minimumReleaseAgeExclude: string[];
+}
+
+export function normalizePolicy(
+  partial: Partial<CooldownPolicy> | undefined,
+): CooldownPolicy {
+  return {
+    minimumReleaseAge:
+      partial?.minimumReleaseAge ?? DEFAULT_MINIMUM_RELEASE_AGE,
+    minimumReleaseAgeExclude: partial?.minimumReleaseAgeExclude ?? [],
+  };
+}
+
+const packumentCache = new Map<string, Record<string, string>>();
+
+export async function fetchPublishTimes(options: {
+  name: string;
+  fetchImpl?: typeof fetch;
+  registry?: string;
+}): Promise<Record<string, string>> {
+  let { name, fetchImpl = fetch, registry = NPM_REGISTRY } = options;
+  let key = `${registry}/${name}`;
+  let hit = packumentCache.get(key);
+  if (hit) {
+    return hit;
+  }
+  let url = `${registry}/${encodeURIComponent(name).replace('%40', '@')}`;
+  let response = await fetchImpl(url);
+  if (!response.ok) {
+    throw new Error(`npm: ${response.status} reading publish times for ${name}`);
+  }
+  let doc = (await response.json()) as { time?: Record<string, string> };
+  let time = doc.time ?? {};
+  packumentCache.set(key, time);
+  return time;
+}
+
+export interface CooldownVerdict {
+  name: string;
+  version: string;
+  publishedAt?: string;
+  ageMinutes?: number;
+  minimumReleaseAge: number;
+  ok: boolean;
+  excluded?: boolean;
+  reason?: string;
+}
+
+function describeMinutes(minutes: number): string {
+  if (minutes >= 1440) {
+    return `${(minutes / 1440).toFixed(minutes % 1440 === 0 ? 0 : 1)} day(s)`;
+  }
+  if (minutes >= 60) {
+    return `${(minutes / 60).toFixed(minutes % 60 === 0 ? 0 : 1)} hour(s)`;
+  }
+  return `${Math.round(minutes)} minute(s)`;
+}
+
+export function judgeCooldown(options: {
+  name: string;
+  version: string;
+  publishedAt: string | undefined;
+  policy: CooldownPolicy;
+  now: number;
+}): CooldownVerdict {
+  let { name, version, publishedAt, policy, now } = options;
+  let { minimumReleaseAge } = policy;
+  let base = { name, version, publishedAt, minimumReleaseAge };
+  if (minimumReleaseAge <= 0) {
+    return { ...base, ok: true };
+  }
+  if (policy.minimumReleaseAgeExclude.includes(name)) {
+    return { ...base, ok: true, excluded: true };
+  }
+  if (!publishedAt) {
+    // Fail closed: an unknown age is not a safe age.
+    return {
+      ...base,
+      ok: false,
+      reason: `the registry reports no publish time for ${version}, so its age cannot be checked`,
+    };
+  }
+  let ageMinutes = (now - Date.parse(publishedAt)) / MINUTE_MS;
+  if (Number.isNaN(ageMinutes)) {
+    return {
+      ...base,
+      ok: false,
+      reason: `unparsable publish time "${publishedAt}"`,
+    };
+  }
+  return {
+    ...base,
+    ageMinutes,
+    ok: ageMinutes >= minimumReleaseAge,
+    reason:
+      ageMinutes >= minimumReleaseAge
+        ? undefined
+        : `published ${describeMinutes(ageMinutes)} ago; policy requires ${describeMinutes(minimumReleaseAge)}`,
+  };
+}
+
+// The newest version of a package that satisfies the cooldown — what you
+// want when a range would otherwise pick something too fresh.
+export function newestAged(
+  name: string,
+  times: Record<string, string>,
+  candidates: string[],
+  policy: CooldownPolicy,
+  now: number,
+): string | undefined {
+  let aged = candidates.filter(
+    (version) =>
+      judgeCooldown({
+        name,
+        version,
+        publishedAt: times[version],
+        policy,
+        now,
+      }).ok,
+  );
+  return aged.sort((a, b) => Date.parse(times[a]) - Date.parse(times[b])).at(-1);
+}
+
+// A realm carries its own policy, so the gate is a property of the place
+// bytes land rather than of whoever typed the command. The file is the same
+// two keys pnpm uses, so it can be lifted straight out of a
+// pnpm-workspace.yaml:
+//
+//   <realm>/.deck/policy.json
+//   { "minimumReleaseAge": 1440, "minimumReleaseAgeExclude": ["@glint/template"] }
+export const POLICY_FILE = 'policy.json';
+
+export function parsePolicy(text: string): Partial<CooldownPolicy> {
+  let parsed = JSON.parse(text) as Record<string, unknown>;
+  let policy: Partial<CooldownPolicy> = {};
+  if (typeof parsed.minimumReleaseAge === 'number') {
+    policy.minimumReleaseAge = parsed.minimumReleaseAge;
+  }
+  if (Array.isArray(parsed.minimumReleaseAgeExclude)) {
+    policy.minimumReleaseAgeExclude = parsed.minimumReleaseAgeExclude.filter(
+      (entry): entry is string => typeof entry === 'string',
+    );
+  }
+  return policy;
+}

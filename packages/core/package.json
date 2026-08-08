@@ -14,6 +14,7 @@
     "./import-map": "./src/import-map.ts",
     "./vendor": "./src/vendor.ts",
     "./vendor-npm": "./src/vendor-npm.ts",
+    "./vendor-tree": "./src/vendor-tree.ts",
     "./npm": "./src/npm.ts",
     "./lock": "./src/lock.ts",
     "./fork": "./src/fork.ts",
