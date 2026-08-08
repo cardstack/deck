@@ -206,9 +206,10 @@ Design set in [docs/](docs/) — start with:
   laws, `!/` mounts, canonical-zip-v1. All opens ruled.
 - [deck-live-autopublish.md](docs/deck-live-autopublish.md) — the
   live tree, the auto-publish loop, and seal-grained history.
-- [deck-ui-spec.md](docs/deck-ui-spec.md) — product requirements and
-  screen flows for a UI over all of it, written against the endpoints
-  and states that exist.
+- [deck-ui-spec.md](docs/deck-ui-spec.md) — product requirements for a
+  UI, driven by the four workloads: fixed requirements and invariants,
+  open information architecture, and a rubric that catches a design
+  which secretly serves only one workload.
 - [deck-use-cases.md](docs/deck-use-cases.md) — four workloads that
   need this protocol rather than merely benefit from it, written
   against the bottlenecks agentic engineering hits on git and npm.

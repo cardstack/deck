@@ -1,44 +1,48 @@
-# Deck UI — specification and product requirements
+# Deck UI — product requirements and design directions
 
-Status: specification for design. The protocol, server, and CLI described
-here are **built and tested** (151 tests); every endpoint, field, and state
-below is real and can be hit today. Nothing in this document is aspirational
-unless it says so.
+Status: for design exploration. The protocol, server, and CLI are **built and
+tested** (151 tests); every endpoint, field, and state referenced here is real
+and reachable today. What is *not* settled is the product: this document fixes
+the requirements and the invariants, and deliberately leaves information
+architecture and interaction patterns open, with directions to explore.
 
-Audience: a designer with no prior Deck context, plus the engineer who will
-implement against it.
+Read §1–§6 as constraints. Read §7–§8 as an invitation. Use §9 to check any
+design against all four workloads in about twenty minutes.
+
+Companion: [deck-use-cases.md](deck-use-cases.md) — the four workloads in
+full, and why they break on git and npm.
 
 ---
 
-## 1. What Deck is, in one page
+## 1. The protocol in one page
 
-Deck is a way to develop, version, publish, and share packages of ES modules
-and JSON documents **without npm, GitHub, a build step, or a deploy**.
+Deck develops, versions, publishes, and shares packages of ES modules and JSON
+**without npm, GitHub, a build step, or a deploy**.
 
 A **realm** is a directory. Its layout IS its URL space:
 
 ```
 <root>/site/acme/palette/palette.js        on disk
-      /site/acme/palette/palette.js        live  — every save, immediately
+      /site/acme/palette/palette.js        live   — every save, immediately
       /site/acme/palette@1.1.0/palette.js  sealed — immutable forever
       /site/_history/<changeId>/…          any state it was ever in
 ```
 
-Four ideas carry the whole product, and the UI exists to make them visible:
+Four ideas carry the product:
 
-1. **The URL is the path.** `ls` and `cat` show the latest of everything.
-   Adding `@<version>` reads the same path out of a seal instead.
+1. **The URL is the path.** `ls` shows the latest of everything; `@<version>`
+   reads the same path out of a seal.
 2. **Every save is captured.** A settled edit auto-publishes an immutable
-   prerelease (`1.0.0-dev.7`, tagged `dev`) and is sealed in history — even
-   the states that were never published.
+   prerelease (`1.0.0-dev.7`, tagged `dev`) and is sealed — including states
+   never published.
 3. **Identity is content.** A tree's `treeHash` is its name. Publishing the
-   same content twice writes no new bytes; releasing a version is a pointer
-   move, not a copy.
-4. **A fork is a proposal.** Forking records its base (package + version +
-   treeHash), so a machine can keep every proposal merged against upstream
-   continuously, and a reviewer can run any proposal by changing a URL.
+   same content twice writes no bytes; releasing is a pointer move.
+4. **A fork is a proposal.** It records its base, so a daemon keeps every
+   proposal merged against upstream, and any proposal can be *run* by
+   changing a URL.
 
-**Vocabulary** (use these words in the UI, consistently):
+**Vocabulary** — use consistently; do not introduce branch, commit, merge
+request, checkout, or staging.
 
 | Term | Means |
 | --- | --- |
@@ -47,659 +51,576 @@ Four ideas carry the whole product, and the UI exists to make them visible:
 | deck | a package: a directory with an `importmap.json` |
 | live | the bytes on disk right now; no version in the URL |
 | dev | dist-tag on the freshest auto-published prerelease |
-| sealed / version | an immutable published state, addressed `@<version>` |
+| sealed / version | an immutable published state, `@<version>` |
 | seal | one point in realm history (`changeId`), published or not |
-| pack | a deck as one `.pack.zip`; canonical and verifiable |
-| decklist | the declared dependency **ranges** in a deck's map |
-| lock | those ranges resolved to exact **pins** in `imports` |
-| offer | a fork that records its base — i.e. a proposal / "PR" |
-| trial | viewing an app with one or more dependencies swapped (`?with=`) |
-
-Do **not** use: branch, commit, merge request, checkout, staging.
+| decklist | a deck's declared dependency **ranges** |
+| lock | those ranges resolved to exact **pins** |
+| offer | a fork that records its base — a proposal |
+| trial | running something with dependencies swapped (`?with=`) |
 
 ---
 
-## 2. Product requirements
+## 2. The four workloads, as the driver
 
-### 2.1 Who this is for
+From the use-case pass. These are not personas; they are shapes of work, and
+a design that serves all four is the product.
 
-- **P1 — The builder (primary).** Editing decks in a realm, often with
-  several agents editing simultaneously. Wants: is it running, what did I
-  just change, can I go back, is my dependency stable or moving.
-- **P2 — The maintainer.** Owns a deck others depend on. Wants: what is
-  proposed against me, does it still merge, does it work when I run it, ship
-  it or don't.
-- **P3 — The consumer.** Depends on someone else's deck. Wants: which
-  version am I on, what changed, is it safe to move.
+| | **W1 Swarm tool** | **W2 Codelists** | **W3 Adapters** | **W4 Skills** |
+| --- | --- | --- | --- | --- |
+| What | 8 agents build one dashboard | shared reference data | Zapier-style long tail | prompt + tools bundles |
+| Unit | component deck | a JSON list | one small adapter | one skill |
+| Decks in play | ~8, all changing | 1–20, many editors | 100s, mostly static | 10s, one hot |
+| Content | ES modules | JSON only | small modules + schema | markdown + JSON |
+| Edit cadence | continuous, parallel | bursty amendments | rare per deck, constant across catalog | 200 edits/hour on one |
+| "Is it good?" | the assembled app runs | consumers still render | the automation fires | the agent behaves |
+| Contribution | internal, trusted | many, shallow | long tail, unknown | fork-and-house-style |
+| Failure today | branches don't compose | JSON conflicts + stale forks | contribution costs 100× the change | iterations are lost |
 
-### 2.2 What must be true (acceptance-level)
+### 2.1 The finding that should shape IA: four centers of gravity
 
-- **R1.** A user can tell, at a glance and without reading a URL, whether
-  what they are looking at is **live, sealed, or a trial** — and can switch
-  between them in one action.
-- **R2.** Nothing the UI shows may imply mutability that the protocol does
-  not have. A sealed version is immutable; the UI must never offer to "edit
-  version 1.1.0".
-- **R3.** Every view exposes its **canonical URL**, copyable. The URL is the
-  product's core idea; hiding it would hide the thing.
-- **R4.** Provenance is always one hop away: this version → its seal → its
-  history; this fork → its base; this vendored module → its CDN origin.
-- **R5.** A maintainer can go from "somebody proposed something" to "I am
-  running it" in **one click**, with no checkout and no build.
-- **R6.** Conflicts are the only proposals that demand attention. The UI must
-  make 3-needing-a-person legible among 200-that-are-fine.
-- **R7.** Destructive-looking actions must show their true cost. Releasing
-  copies **zero bytes**; restoring is **undoable**; pruning deletes bytes
-  only when nothing points at them. Say so at the moment of action.
-- **R8.** The UI updates without a refresh when the filesystem changes (SSE
-  is already wired).
-- **R9.** Degraded capability is stated, never faked: no jj installed → the
-  history surface says tier 1 and how to get tier 2; a backend that cannot
-  enumerate a seal says so rather than showing an empty tree.
+Each workload wants a *different object at the center*, and any hierarchy that
+privileges one will fight the others:
 
-### 2.3 Non-goals (v1)
+- **W1 → composition.** The interesting object is *the assembled app right
+  now* and the volatility of each part. Realtime matters. Eight decks, one
+  answer.
+- **W2 → the data itself.** There is no app to run; the "preview" is the list
+  rendered as a table. Diffs are semantic (which keys moved), and the notable
+  event is *two additions that did not conflict*.
+- **W3 → the catalog and the queue.** Hundreds of siblings. Discovery, search,
+  and triage dominate; any individual deck is small and boring.
+- **W4 → the timeline.** Versions barely matter; *iterations* do. The core act
+  is comparing two moments and going back to one.
 
-- Not a code editor. File contents are read-only in the UI; editing happens
-  in the user's editor or by an agent. (A future "quick edit" is possible —
-  every save is sealed, so it is safe — but it is not v1.)
-- Not a chat/review-comment system. Discussion lives where the team already
-  talks. The UI shows state and runs things.
-- Not a multi-user permissions surface. Identity arrives with the realm
-  server (Matrix); v1 is a local, single-operator tool.
+A useful way to hold this without four products: **the same deck, read
+through different lenses** (code / data / running / timeline). Whether "lens"
+is the right construct is a design question — see §7.
 
----
+### 2.2 Where all four agree (the shared spine)
 
-## 3. Constraints the design must respect
+- Something is **live** and something is **frozen**, and the user constantly
+  chooses which they are looking at.
+- The **URL is the handle** for everything, including proposals and trials.
+- **Going back** must be cheap and safe, or people won't move fast.
+- **Somebody else's version of this** is a first-class, ever-present state —
+  not an edge case.
 
-These are protocol facts, not preferences.
+### 2.3 Where they pull apart (design against these)
 
-**C1 — The server is read-only.** `GET`/`HEAD` only; every other method
-returns 405. All state changes go through the CLI today. See §9 for the
-write-channel decision the UI forces.
-
-**C2 — Version-less means live.** There is no "latest" URL that means live.
-`latest` is a dist-tag on a *stable release*. Three distinct things the UI
-must never blur: `live`, `@dev`, `@latest`.
-
-**C3 — Ranges never match prereleases.** A `^1.0.0` dependency cannot pick
-up a dev line. Opting into churn is explicit — the UI should make that
-choice feel deliberate, not incidental.
-
-**C4 — A realm's own machinery is not content.** `.deck/` (the store) and
-`.jj/` (seals) are never listed or served. They appear in the UI only as
-facts *about* a realm ("2 version pointers", "tier 2 history"), never as
-files.
-
-**C5 — Trials are not sealed representations.** A `?with=` response is
-`no-store` and must be visually marked as temporary.
-
----
-
-## 4. Object model / information architecture
-
-```
-Realm  (directory; unit of history; has a store and optional seals)
- └── Publisher  (scope segment; the fork boundary)
-      └── Deck  (package = directory with importmap.json)
-           ├── Live tree        files on disk, right now
-           ├── Versions         dev.N prereleases + stable releases
-           │    └── each: treeHash, pack file, optional sealChangeId
-           ├── Dist-tags        dev, latest, …
-           ├── Decklist         dependency ranges → resolved pins
-           └── Offer (optional) if this deck records a base → it is a proposal
-
-Realm-level:
- ├── Seals       every save, published or not (changeId, time, files, author)
- └── Offers      every deck in the realm that records a base
-```
-
-Navigation hierarchy: **Realm → Deck → (Files | Versions | Seals |
-Dependencies | Preview)**, with **Offers** as a realm-level peer view.
-
----
-
-## 5. Core interaction concepts
-
-These four recur on many screens and should be designed once.
-
-### 5.1 The volatility dial
-
-The single most important control. Wherever a deck is shown, the user picks
-which of it they are looking at:
-
-```
-[ LIVE ]  [ dev ]  [ 1.1.0 ▾ ]        ← one control, three kinds of answer
-```
-
-- **LIVE** — bytes on disk. Changes under you. Badge: pulsing dot.
-- **dev** — the freshest seal, an immutable prerelease.
-- **a version** — pinned, immutable, cacheable forever.
-
-Selecting a value changes the address line (§5.2), the file tree, and the
-preview together. This same control appears in the deck header, in the
-dependency editor (choosing a spec), and in the trial composer.
-
-### 5.2 The address line
-
-Always visible on any deck/file/seal view: the canonical URL, copyable, with
-the version segment visually distinct.
-
-```
-/site/acme/palette@1.1.0/palette.js          [copy]
-        ▲publisher ▲package ▲version
-```
-
-For live: the `@version` segment is absent and the line reads `no-store`.
-For a trial: the `?with=…` suffix is shown as a removable chip.
-
-### 5.3 Provenance chips
-
-Small, consistent, clickable. Each navigates to the thing it names.
-
-| Chip | Shows | Goes to |
+| Tension | W1/W4 want | W2/W3 want |
 | --- | --- | --- |
-| `#a3f9c2…` | treeHash (12 chars) | the version(s) with this content |
-| `seal ktqmqx…` | `sealChangeId` | that seal in history |
-| `forked from acme/palette@1.0.0` | base | upstream deck at that version |
-| `vendored from esm.sh/three@0.160.0` | `vendoredFrom` | nothing (external, informational) |
-| `dev` / `latest` | dist-tag | the version it points at |
-
-### 5.4 Immutability signalling
-
-A consistent visual language, because it is the product's core promise:
-
-- **Sealed** — solid border, lock affordance, "immutable" in the cache line.
-- **Live** — dashed or pulsing edge, "no-store", timestamp of last save.
-- **Trial** — a distinctly coloured banner across the whole surface with a
-  one-click "exit trial". Never let a user think a trial is the real state.
+| Density | one thing, deeply, live | hundreds of things, scannably |
+| Time | the timeline is primary | the timeline is audit trail |
+| Preview | run the app | render the data / fire the automation |
+| Contribution | internal, implicit | external, queued, at volume |
+| Diff | line-level code | key-level data |
 
 ---
 
-## 6. Screens
+## 3. Product requirements (revised, workload-tagged)
 
-Each screen lists: purpose, the endpoint(s) that feed it, primary actions,
-and the states that must be designed.
+Each requirement names the workloads that demand it. A design may satisfy a
+requirement any way it likes.
+
+**R1 — Volatility is always answerable and always changeable.** At any moment
+the user can tell whether they are seeing live, a sealed version, or a trial,
+and can switch in one action. *(all four)*
+
+**R2 — Nothing implies mutability the protocol lacks.** A sealed version is
+immutable; never offer to edit `1.1.0`. *(all four)*
+
+**R3 — Every view exposes its canonical URL, copyable.** The URL is the
+product's central idea and the unit of sharing — a review, a trial, a bug
+report, and a dependency pin are all URLs. *(all four; W3 most)*
+
+**R4 — Provenance is one hop away.** version → its seal; fork → its base;
+vendored module → its origin; pin → the deck it points at. *(W2, W3, W4)*
+
+**R5 — Review is running, not reading.** Getting from "someone proposed
+something" to "I am running it" is one action, with no checkout or build.
+*(W3 primary, W4 strongly)*
+
+**R6 — The exceptional few must be legible among the healthy many.** 3
+conflicted among 200 fine; 1 misbehaving agent among 8. *(W1, W3)*
+
+**R7 — Actions state their true cost at the moment of action.** Releasing
+copies zero bytes; restoring is undoable; pruning frees bytes only when
+nothing points at them; adopting copies nothing. *(all four)*
+
+**R8 — Live means live.** The UI updates without refresh when the filesystem
+changes; sealed views never change under the user. *(W1 primary)*
+
+**R9 — Degraded capability is stated, never faked.** No jj → say tier 1 and
+how to get tier 2; a backend that cannot enumerate → say so, never show an
+empty tree. *(all four)*
+
+**R10 — Data decks are first-class, not code decks with JSON in them.** A
+deck whose content is data needs a data reading, a key-level diff, and a
+"these two additions merged cleanly" story. *(W2; also W4's schemas)*
+*(new — this is the largest gap in the previous draft)*
+
+**R11 — Many-deck views must scale before they are pretty.** Hundreds of
+sibling decks, thousands of versions, 200 open proposals. *(W3)*
+*(new)*
+
+**R12 — Iteration is the unit for some workloads.** Where 200 edits produce
+one release, the timeline is the primary object and versions are secondary.
+*(W4)* *(new)*
+
+**R13 — Simultaneous authorship is visible.** When several agents edit at
+once, the user can see what is moving and what is standing still. *(W1)*
+*(new)*
+
+### Non-goals (v1)
+
+Not a code editor (file contents are read-only; editing happens in the
+user's editor or by an agent). Not a discussion system. Not a permissions
+surface — identity arrives with the realm server.
 
 ---
 
-### S1 — Realms overview (home)
+## 4. Invariants any design must express
 
-**Purpose.** Where am I; what exists; what is live right now.
+Five primitives. The *names and forms below are placeholders* — inventing
+better ones is part of the work. What matters is that each concept is
+expressible and unambiguous.
 
-**Data.** `GET /_packages`
+1. **Volatility** — live / dev / a version. Three genuinely different
+   promises, never blurred. `latest` is a dist-tag on a stable release and is
+   **not** live.
+2. **Identity** — `treeHash`. Two versions with one hash are the same bytes;
+   that is what makes releases free. Sameness should be *visible*, not
+   inferred.
+3. **Provenance** — where this came from: a seal, a base, a CDN, a fork.
+4. **Immutability** — sealed is forever; live changes under you; a trial is
+   temporary and must never be mistaken for either.
+5. **Proposal state** — current / rebased / conflicted / unresolvable. Only
+   one of the four wants attention.
+
+---
+
+## 5. Jobs to be done
+
+Atomic intents, replacing a screen list. A design can distribute these
+however it likes; §9's rubric checks that they are all reachable.
+
+**Orient**
+- J1 What exists here? *(all)*
+- J2 What is changing right now? *(W1, W4)*
+- J3 What does this deck contain, at the volatility I choose? *(all)*
+
+**Iterate**
+- J4 Is my thing running, and did my last save land? *(W1, W4)*
+- J5 What changed between these two moments? *(W2, W4)*
+- J6 Go back to how it was. *(W4, W1)*
+- J7 Freeze this state as a real version. *(all)*
+
+**Depend**
+- J8 What am I depending on, and how exposed am I? *(W1, W2)*
+- J9 Move a dependency forward, deliberately. *(W2, W1)*
+- J10 Freeze one dependency while everything else keeps moving. *(W1)*
+
+**Contribute**
+- J11 Take someone's thing and start changing it. *(W3, W4, W2)*
+- J12 Show someone what I did — running. *(W3, W4)*
+- J13 What is proposed against me, and what needs me? *(W3)*
+- J14 Take it. *(W3)*
+
+**Trust**
+- J15 Where did this come from? *(W2, W3, W4)*
+- J16 Is this exactly what was published? *(all)*
+
+---
+
+## 6. Non-negotiable constraints
+
+**C1 — The server is read-only.** `GET`/`HEAD` only; everything else 405.
+Mutation needs a channel; see §10.
+
+**C2 — Version-less means live.** Three distinct things: `live`, `@dev`,
+`@latest`.
+
+**C3 — Ranges never match prereleases.** Opting into churn is explicit.
+
+**C4 — A realm's machinery is not content.** `.deck/` and `.jj/` are never
+listed or served; they appear only as facts *about* a realm.
+
+**C5 — Trials are `no-store`** and must be visually unmistakable.
+
+---
+
+## 7. Directions to explore — information architecture
+
+Five organizing principles, each real, each with a cost. **None is
+recommended.** The interesting work is probably a hybrid, or a sixth idea.
+
+### Direction A — Strict hierarchy with view modes
+`Realm → Publisher → Deck`, and inside a deck, modes for files / versions /
+history / dependencies / preview.
+*Favors:* W1, W4 (deep single-object work). *Fights:* W3 (a catalog of 300 is
+three clicks deep and unsearchable), W2 (data buried under a file tree).
+*Question:* can search and a strong locator rescue the catalog case?
+
+### Direction B — The running thing first
+The app is the home object; its dependency graph is the navigation; each node
+carries a volatility control.
+*Favors:* W1 decisively — composition is the screen. *Fights:* W2 (no app to
+run), W3 (adapters have no single app).
+*Question:* is "the running thing" generalizable — could a codelist's "app"
+be its rendered table, and an adapter's be its harness?
+
+### Direction C — Workspaces by activity
+Separate top-level spaces: **Build**, **Data**, **Proposals**, **History**.
+Each optimized for one center of gravity.
+*Favors:* all four, individually. *Fights:* coherence — the same deck appears
+in several places, and users must learn which space to be in.
+*Question:* are these genuinely different activities, or one activity with
+different content?
+
+### Direction D — Locator-first / addressable everything
+Minimal chrome. A command bar accepts any Deck URL, spec, or name and
+resolves it; the body renders whatever was addressed. Deep links are the
+primary navigation, and the UI is a viewer for the address space.
+*Favors:* the protocol's own logic, W3 (paste an adapter URL), sharing.
+*Fights:* discovery and orientation — you must know what to ask for.
+*Question:* is this a mode inside another direction rather than a whole one?
+
+### Direction E — Time as the spine
+An activity river: saves, publishes, seals, proposals, adoptions. Objects are
+reached through their events.
+*Favors:* W4 (iteration is the object), W1 (watch the swarm). *Fights:* W2,
+W3 (stable things vanish from a feed).
+*Question:* does a feed work as a *secondary* spine everywhere?
+
+### A cross-cutting idea worth testing: lenses
+One deck, several readings: **code** (tree + text), **data** (table +
+key-diff), **running** (iframe/harness), **timeline** (iterations). The lens
+persists as you navigate.
+*Attraction:* dissolves the four centers of gravity without four products,
+and makes W2 and W4 first-class rather than special cases.
+*Risk:* lens-switching becomes a hidden mode; the wrong default makes the
+tool feel wrong for a whole workload.
+*Question:* is the lens chosen by the user, or inferred from content and
+overridable?
+
+---
+
+## 8. Directions to explore — interaction patterns
+
+Eight recurring problems. Each states what must be true, then sketches
+possibilities without picking one.
+
+**P1 — Expressing volatility (R1, all workloads).**
+Must convey: three kinds of promise; that live changes under you; that pinned
+does not. Possibilities: a segmented live/dev/version control; one dropdown
+listing everything; a temperature or risk metaphor (hot/warm/frozen); a
+slider from "every save" to "pinned forever". *Test it against W1's
+per-dependency mixture — some hot, some frozen, in one view.*
+
+**P2 — Making zero-copy legible (R7, invariant 2).**
+Must convey: two versions can be the *same bytes*; a release copied nothing.
+Possibilities: alias lines linking timeline entries; identicon/color-hash for
+treeHash; explicit "same content as 1.0.0-dev.4" text. *Watch for: a
+hash-as-decoration that carries no meaning.*
+
+**P3 — Trial mode (R5, C5).**
+Must convey: this is not the real state; what is swapped; how to leave; how to
+share. Possibilities: a persistent banner; distinct frame chrome; side-by-side
+real vs trial; a "tray" of override chips that composes several at once (a
+slate). *Test with W3's review flow and W4's A/B of two skills.*
+
+**P4 — Triage at 200 (R6, R11).**
+Must convey: the few that need a person, without hiding the many that don't.
+Possibilities: conflicted-first list with a single collapsed "197 merging
+cleanly"; kanban by proposal state; inbox-zero; a heat strip over the
+catalog. *Test: can a maintainer find and act on 3 conflicts in under a
+minute?*
+
+**P5 — Reading data decks (R10).**
+Must convey: a JSON deck as *data*, and a key-level diff. Possibilities: a
+table with added/changed/removed keys; a schema-aware form view; a merge view
+that shows "you added 3 keys, they added 2, none collided". *This is
+currently unserved and is W2's whole experience.*
+
+**P6 — Scrubbing iterations (R12).**
+Must convey: hundreds of unnamed states, findable by time and by what
+changed. Possibilities: a video-style scrubber; bisect (better/worse) that
+narrows a range; pinning two points for comparison; sparklines of what files
+moved. *Test with W4: "the version 40 minutes ago was better."*
+
+**P7 — Simultaneous authorship (R8, R13).**
+Must convey: what is moving, who or what is moving it, and what is
+deliberately standing still. Possibilities: per-deck heartbeat/pulse;
+presence chips; an activity river; a "frozen" badge that reads as a choice
+rather than as staleness. *Test with W1's eight agents, including the
+quarantine move.*
+
+**P8 — Consequential moments (R7).**
+Restore, adopt, release, prune. Must convey the true cost — usually
+reassuring, occasionally not. Possibilities: inline confirmation stating the
+fact ("0 bytes copied", "the state you are leaving is sealed first");
+post-action undo affordance; a receipt. *Avoid generic "Are you sure?" — the
+whole point is that these actions are cheaper than they look.*
+
+---
+
+## 9. Making the use cases trivial to apply
+
+Everything below is drop-in. Fixtures are real shapes from live runs.
+
+### 9.1 Scenario cards
+
+Each card: the situation, what the person wants, and what must be visible for
+them to decide. Design against the cards; they are the acceptance test.
+
+**W1 — Swarm tool**
+- *C1.1* Eight agents editing; the dashboard is open. **Wants:** to see it
+  assemble live. **Must see:** which parts moved in the last minute; that the
+  app is composed of eight decks.
+- *C1.2* Chart 3 has gone wrong. **Wants:** to stop just that. **Must see:**
+  chart 3's current volatility, its last good version, and the effect of
+  freezing it on everything else (none).
+- *C1.3* The filter bar looks right. **Wants:** to freeze it as `1.2.0`.
+  **Must see:** which sealed state is being named, and that it copies nothing.
+- *C1.4* Something broke twenty minutes ago. **Wants:** to find and restore.
+  **Must see:** the states between publishes, what changed in each, and that
+  restoring is undoable.
+
+**W2 — Codelists**
+- *C2.1* Adding three currency codes. **Wants:** confidence it will not
+  conflict. **Must see:** the list as data, their additions as keys, that
+  nobody else touched those keys.
+- *C2.2* Two people amended simultaneously. **Wants:** to know both landed.
+  **Must see:** a merge that reads as *combination*, not as a resolved
+  conflict.
+- *C2.3* Consuming the list at `^1.0.0`; a `1.4.0` exists. **Wants:** to know
+  what changed before moving. **Must see:** a key-level diff, and what moving
+  the pin would change.
+- *C2.4* Maintaining a fork with three internal codes. **Wants:** to stay
+  current without losing the patch. **Must see:** that upstream amendments
+  are being absorbed automatically, and when they collide.
+
+**W3 — Adapters**
+- *C3.1* 300 adapters in the catalog. **Wants:** the one for Shopify.
+  **Must see:** search, and enough per-item signal to choose.
+- *C3.2* An adapter is broken. **Wants:** to fix it now. **Must see:** how to
+  fork it into their own scope and have it running immediately.
+- *C3.3* Maintainer, 200 open proposals. **Wants:** the ones needing them.
+  **Must see:** conflicted first; the rest as a single reassuring line.
+- *C3.4* Reviewing one proposal. **Wants:** to see it work. **Must see:** one
+  action that runs the real harness with this adapter substituted.
+- *C3.5* It works. **Wants:** to take it. **Must see:** what version is being
+  created, and that it copies zero bytes.
+
+**W4 — Skills**
+- *C4.1* 200 iterations in an hour. **Wants:** not to think about saving.
+  **Must see:** ambient confirmation that everything is kept.
+- *C4.2* Version from 40 minutes ago was better. **Wants:** to find it.
+  **Must see:** a scrubbable history with enough signal to recognize it.
+- *C4.3* Comparing two variants. **Wants:** A/B them. **Must see:** two
+  addressable runs, side by side or in two tabs.
+- *C4.4* Their fork of a community skill. **Wants:** upstream's improvements
+  without losing house style. **Must see:** what was absorbed, and when a
+  collision needs them.
+
+### 9.2 Fixtures
+
+Realm `site`, tier-2 history (jj). Paste into mocks.
+
+**W1**
+```
+tool/charts/revenue    live · dev 2.1.0-dev.14 · latest 2.0.0   ← moving
+tool/charts/funnel     live · dev 1.4.0-dev.3  · latest 1.4.0
+tool/ui/filter-bar     live · dev 0.9.0-dev.22                  ← moving
+tool/ui/table          live · dev 3.0.0-dev.7  · latest 2.9.1
+tool/data/warehouse    live · latest 1.2.0                      ← frozen by choice
+tool/app/dashboard     live · deps: 5 (3 live, 1 ^2.0.0, 1 dev)
+```
+
+**W2**
+```
+std/currencies   latest 1.4.0 · dev 1.5.0-dev.9 · 168 keys
+                 1.5.0-dev.9 adds: XCD, SRD, ZWG   (3 contributors, 0 conflicts)
+acme/currencies  fork of std/currencies@1.4.0 · +3 internal codes
+                 state: rebased (absorbed 1.4.0 → 1.5.0-dev.9 automatically)
+```
+
+**W3**
+```
+hub/stripe-slack     latest 2.1.0     · 41 dependents
+hub/github-linear    latest 1.7.2     · 12 dependents
+hub/shopify-sheets   latest 0.9.0     · 3 dependents
+… 297 more
+
+offers: 200 open — 197 current/rebased, 3 conflicted
+  you/stripe-slack   ← hub/stripe-slack@2.1.0   conflicted: auth.js
+  ana/webhook-any    ← hub/webhook-any@1.0.0    rebased
+  kim/notion-sync    ← hub/notion-sync@3.2.0    unresolvable (base pruned)
+```
+
+**W4**
+```
+skills/reviewer        latest 4.2.0 · dev 4.3.0-dev.171
+you/reviewer-strict    fork of skills/reviewer@4.2.0 · state: current
+  seals today: 171 · last: "save: prompt.md" 40s ago
+```
+
+**Sample payloads.** `GET /_packages`:
 
 ```json
-{
-  "meta": {
-    "history": { "tier": 2, "kind": "sealed-tree", "jj": true, "historyd": false,
-                 "realms": ["site"], "note": "Every save is sealed. …" },
-    "layout": "<realm>/<publisher>/<package>/ on disk and in the URL; …"
-  },
-  "data": [{
-    "type": "realm", "id": "site", "name": "site",
-    "dir": "/Users/chris/work/site",
-    "storePath": "site/.deck/store/",
+{ "meta": { "history": { "tier": 2, "kind": "sealed-tree", "jj": true,
+      "historyd": false, "realms": ["site"] },
+    "layout": "<realm>/<publisher>/<package>/ on disk and in the URL; …" },
+  "data": [{ "type": "realm", "id": "site", "name": "site",
     "history": "jj", "historyPath": "/site/_history",
-    "packages": [{
-      "type": "package", "id": "site/acme/palette",
+    "packages": [{ "type": "package", "id": "site/acme/palette",
       "publisher": "acme", "name": "palette",
       "live": true, "livePath": "/site/acme/palette/",
-      "storePath": ".deck/store/acme/palette/",
-      "versions": { "1.0.0-dev.1": { "treeHash": "bbbfb346…", "file": "packs/bbbfb346….pack.zip" },
-                    "1.0.0": { "treeHash": "bbbfb346…", "file": "packs/bbbfb346….pack.zip" } },
-      "distTags": { "dev": "1.1.0-dev.1", "latest": "1.1.0" }
-    }]
-  }]
-}
+      "versions": { "1.0.0-dev.1": { "treeHash": "bbbfb346…" },
+                    "1.0.0":       { "treeHash": "bbbfb346…" } },
+      "distTags": { "dev": "1.2.0-dev.1", "latest": "1.2.0" } }] }] }
 ```
 
-**Layout.** Realm cards; inside each, a grid of decks grouped by publisher.
-Each deck card: name, live indicator, version count, `dev` and `latest`
-chips, and a spark of recent activity.
+Note `1.0.0-dev.1` and `1.0.0` share a `treeHash`: that is a release that
+copied nothing, and it is the normal case, not a duplicate.
 
-**Primary actions.** Open deck · Open offers · Copy realm path · New deck
-(scaffold) · Open the realm's history.
+`GET /site/_offers`:
 
-**Note for design:** two versions pointing at the same `treeHash` (see the
-sample above — `1.0.0-dev.1` and `1.0.0`) is the **normal, desirable** case:
-that is a release that copied nothing. Show it as an alias, not a duplicate.
-
-**States.** Loading · no realms (onboarding: `deck hello`) · realm with no
-decks · tier-1 realm (no seals) · many realms (search/filter).
-
----
-
-### S2 — Deck detail (the core screen)
-
-**Purpose.** Everything about one deck, at the volatility the user chooses.
-
-**Data.**
-- `GET /_packages/<realm>/<pub>/<pkg>` — versions, tags, live flag, history flag
-- `GET /_browse/<realm>/<pub>/<pkg>[@spec][/path]` — file tree / file
-- `GET /<realm>/<pub>/<pkg>@<version>?meta` — entry, exports, files, `sealChangeId`, `baseApi`, treeHash
-
-**Layout.** Header: deck identity, the volatility dial (§5.1), the address
-line (§5.2), provenance chips. Body: five regions, tabbed or panelled.
-
-| Region | Content |
-| --- | --- |
-| **Files** | tree + file preview; sizes and `sha256` when sealed |
-| **Versions** | the timeline (S3) |
-| **Seals** | this deck's slice of realm history (S4) |
-| **Dependencies** | the decklist: ranges vs pins, lock state (S5) |
-| **Preview** | the running app in an iframe (S6) |
-
-**Primary actions.** Switch volatility · Copy URL · Download pack
-(`?format=pack`) · Release a version · Fork · Lock dependencies · Open in
-preview.
-
-**States.** Live-only (never published) · sealed-only (no live dir) · binary
-files (no preview, offer download) · large tree (virtualize) · a deck that
-is also an offer (show the offer banner + base chip).
-
----
-
-### S3 — Version timeline
-
-**Purpose.** What states exist, which are pointers to the same bytes, and
-what each was cut from.
-
-**Data.** versions + distTags from S2; `?meta` per version for
-`sealChangeId`.
-
-**Layout.** A vertical timeline, newest first. Two visually distinct tracks:
-
-```
-  ● 1.1.0            latest        #8c7f1a…   seal wovmru…      [release notes ▾]
-  ○ 1.1.0-dev.1      dev           #8c7f1a…   ← same bytes as 1.1.0
-  ○ 1.0.0-dev.2                    #4999a4…
-  ● 1.0.0                          #bbbfb3…   seal uywsqz…
+```json
+{ "meta": { "realm": "site", "open": 200, "conflicted": 3 },
+  "data": [{ "type": "offer", "id": "you/stripe-slack",
+    "attributes": { "upstream": "hub/stripe-slack", "state": "conflicted",
+      "upstreamVersion": "2.1.0", "conflicts": ["auth.js"],
+      "tryWith": "?with=hub/stripe-slack=you/stripe-slack" } }] }
 ```
 
-Stables are filled; prereleases hollow. **Identical `treeHash` values must be
-visually linked** — that is the zero-copy story made visible.
-
-**Primary actions.** Open a version · Compare two (S7) · Release from dev ·
-Move a dist-tag · Download pack · Prune old dev versions (with the count of
-bytes actually reclaimable, which is often zero).
-
-**States.** No versions yet · hundreds of dev versions (collapse runs) ·
-a version whose pack is missing (error, not empty).
-
----
-
-### S4 — Seals (realm history)
-
-**Purpose.** Every state the realm has been in, including the ones never
-published. This is the "you cannot lose work" surface.
-
-**Data.** `GET /<realm>/_history`
+`GET /site/_history`:
 
 ```json
 { "meta": { "backend": "jj", "tier": 2, "realm": "site" },
   "data": [{ "type": "seal", "id": "wovmruymqrvw…",
-    "attributes": { "changeId": "wovmruymqrvw…", "commitId": "93b2727…",
-      "timestamp": "2026-08-07T20:13:24-0400",
+    "attributes": { "timestamp": "2026-08-07T20:13:24-0400",
       "description": "save: you/app/app.js",
       "filesSummary": ["M you/app/app.js"],
-      "author": null,
       "filesUrl": "/site/_history/wovmruymqrvw…" } }] }
 ```
 
-Then `GET /<realm>/_history/<changeId>` for the file list, and
-`/<realm>/_history/<changeId>/<path>` for bytes.
+### 9.3 The four-workload rubric
 
-**Layout.** Chronological list; each row: time, description, changed-file
-summary, author when there is one. Selecting a seal shows its tree and lets
-the user open any file at that moment.
+Run any candidate design against this. It is the fastest way to find a
+design that is secretly single-workload.
 
-**Primary actions.** Open a file at this seal · **Restore the realm to this
-seal** · Copy the seal URL.
+1. **The quarantine test (W1).** From "chart 3 is broken", how many actions to
+   freeze only chart 3? Is it obvious that nothing else stopped?
+2. **The two-additions test (W2).** When two people add different keys, does
+   the interface communicate *combination* — or does it use conflict-resolution
+   language for something that was not a conflict?
+3. **The needle test (W3).** With 200 proposals of which 3 are conflicted, how
+   long to find and open all three? Do the 197 reassure or clutter?
+4. **The scrub test (W4).** With 171 unnamed iterations today, can a user find
+   "the one from 40 minutes ago" without reading them all?
+5. **The volatility test (all).** Point at any element on screen: can you say
+   whether it is live, sealed, or a trial, without clicking?
+6. **The share test (all).** Can any state on screen be handed to a colleague
+   as a URL that reproduces it?
+7. **The honesty test (all).** Does a release say it copied nothing? Does a
+   restore say it is undoable? Does a missing jj say tier 1 rather than showing
+   an empty history?
 
-**Restore is the moment R7 matters most.** The confirm must say plainly: the
-state you are leaving is sealed first, so this is undoable; the restored
-state will auto-publish as the next dev version; nothing is rewritten.
-
-**States.** Tier 1 (no history backend) → replace this tab with an
-explanation and the one command that enables it, **not** an empty list ·
-backend cannot enumerate a seal (`filesAvailable: false`) → say "this
-backend cannot list a seal's tree", never show an empty tree · a very long
-history (paginate).
-
----
-
-### S5 — Dependencies (the decklist)
-
-**Purpose.** Choose, per dependency, how much volatility you want — and see
-what that resolved to.
-
-**Data.** the deck's `importmap.json`: `deck.dependencies` (ranges) and
-`imports` (pins). Lock state comes from running the lock in check mode.
-
-**Layout.** One row per dependency:
-
-```
-acme/palette     range: [ ^1.0.0 ▾ ]     → pinned: /site/acme/palette@1.1.0/    ✓ current
-three            range: [ 0.160.0 ]      → pinned: /site/acme/three@0.160.0/    vendored
-you/palette      range: [ live ▾ ]       → /site/you/palette/                   ⚡ every save
-```
-
-The range control is the volatility dial again (§5.1): `live`, `dev`, a
-range, an exact version, or a tag.
-
-**Primary actions.** Change a range · **Lock** (resolve + write pins) ·
-Preview what locking would change *before* writing · Open the dependency's
-deck.
-
-**States.** Out of date (a newer version satisfies the range) — the primary
-call to action · already locked (say "nothing to write") · unsatisfiable
-range (error naming the range) · a cross-realm dependency (**currently
-refused** — must render as an explicit not-yet-supported state, not a
-failure) · a dependency pinned `live` (warn that consumers of a published
-version should not be on `live`).
+A design that passes 1–4 is serving all four workloads. 5–7 are the protocol's
+character; failing them yields a competent tool for a different product.
 
 ---
 
-### S6 — Preview / trial
+## 10. The write-channel decision (needs a product call)
 
-**Purpose.** Run the thing. This is the review surface and the answer to
-"does it work".
+The server is read-only by design (C1), but most jobs in §5 mutate. Three
+options:
 
-**Data.** an iframe of `/<realm>/<pub>/<pkg>/index.html` (or the declared
-entry), plus `?with=` overrides. SSE (`/_live/events`) drives reload.
+- **A — Read-only UI, copyable commands.** Every action renders the exact CLI
+  command. Honest, zero new surface, slowest.
+- **B — Local action endpoint (recommended).** `deck serve` gains a small,
+  **localhost-only**, non-protocol action API used only by the UI (release,
+  lock, fork, restore, adopt, rebase-now). The read-only protocol surface is
+  untouched; actions call the CLI's own functions. In the realm server this
+  becomes the Matrix-authenticated write path.
+- **C — UI writes files directly.** Rejected: bypasses the invariants the CLI
+  enforces (manifest agreement, immutability).
 
-**Layout.** The app in a frame, with a **trial bar** above it:
-
-```
-┌ TRIAL ─────────────────────────────────────────────────────────┐
-│ acme/palette → you/palette (live)              [x]  [+ add]    │
-│ URL: /site/you/app/index.html?with=acme/palette=you/palette     │
-│                                        [copy link]  [exit trial]│
-└─────────────────────────────────────────────────────────────────┘
-```
-
-Each override chip = one `?with=` parameter. Adding several is how a
-reviewer tries a **slate** of proposals together.
-
-**Primary actions.** Add/remove an override · Copy the trial link (this is
-how review is shared — the link IS the review environment) · Reload · Exit
-trial.
-
-**States.** No overrides (plain preview, no banner) · one or more overrides
-(banner visible, `no-store`) · an override that cannot be resolved → the
-server refuses the request with a reason; show the reason in the bar, never
-silently render the un-swapped app · app throws (surface console errors).
+Design should assume **B** and treat action affordances as a capability that
+can be absent, so the same components work in a read-only or remote context.
 
 ---
 
-### S7 — Compare
+## 11. Scale targets
 
-**Purpose.** What actually changed between two states.
-
-**Data.** two `?meta` file lists + file bytes from each side; any two of
-{live, a version, a seal}.
-
-**Layout.** Two-up pickers using the volatility dial, then a changed-file
-list with per-file diff. Include added/removed/renamed counts and a
-"same treeHash — identical" fast path.
-
-**States.** Identical (say so loudly; it is a common and meaningful answer) ·
-binary file (show size delta only) · very large diff (collapse).
-
----
-
-### S8 — Offers board (the contribution inbox)
-
-**Purpose.** P2's home. Which proposals exist, which still merge, which need
-a person.
-
-**Data.** `GET /<realm>/_offers`
-
-```json
-{ "meta": { "realm": "site", "open": 1, "conflicted": 1 },
-  "data": [{ "type": "offer", "id": "you/palette",
-    "attributes": { "offer": "you/palette", "upstream": "acme/palette",
-      "state": "conflicted", "upstreamVersion": "1.2.0",
-      "conflicts": ["palette.js"], "detail": null,
-      "tryWith": "?with=acme/palette=you/palette" } }] }
-```
-
-**Layout.** A board or table grouped by state, with the conflicted group
-pinned to the top. Each row: proposal → upstream, state chip, base vs
-upstream version, conflicted file list, and two buttons: **Try** and
-**Adopt**.
-
-The four states, each needing its own visual treatment:
-
-| State | Meaning | What the user should feel |
+| Dimension | Target | Driven by |
 | --- | --- | --- |
-| `current` | nothing published upstream since its base | calm; nothing to do |
-| `rebased` | upstream moved; the merge is clean | informational; the machine handled it |
-| `conflicted` | both sides changed the same thing | **this is the queue** |
-| `unresolvable` | the base tree is not in the store | needs explanation, not a retry button |
-
-**Primary actions.** **Try** (opens S6 with `tryWith` applied) · **Adopt**
-(publish the proposal's treeHash under upstream's name — a pointer move;
-show "0 bytes copied") · Open the proposal's deck · Open the conflicted file
-in Compare.
-
-**Scale requirement.** Designed for 200 rows where 197 are fine: conflicted
-first, everything else collapsible into a single summary line ("197 merging
-cleanly").
-
-**States.** No offers (explain what a fork is and how to make one) · daemon
-not running (the board is a snapshot; say when it was computed and offer
-"run a pass now") · a proposal whose upstream was deleted.
+| decks per realm | 100s | W3 |
+| versions per deck | 1000s | W4, W1 |
+| seals per realm | 10,000s | W4 |
+| open proposals | 200+ | W3 |
+| files per deck | 1000s | W1 |
+| keys per data deck | 10,000s | W2 |
+| concurrent editors | 20 | W1 |
 
 ---
 
-### S9 — Activity stream
+## 12. States that must exist somewhere
 
-**Purpose.** With several agents editing at once, what is happening right
-now.
-
-**Data.** SSE `GET /_live/events` — `{ name, treeHash }` per settled change;
-enrich from `/_packages`.
-
-**Layout.** A thin, always-available feed: `you/app` saved → published
-`0.1.0-dev.4` → sealed. Grouped by deck, collapsing bursts.
-
-**States.** Idle · storm (many agents; collapse aggressively) · disconnected
-(reconnect indicator — the SSE stream has heartbeats).
-
----
-
-### S10 — Action dialogs
-
-Small, high-stakes surfaces. Each states its true cost (R7).
-
-| Dialog | Must show |
-| --- | --- |
-| **Release** | source (dev/version), target version, "same sealed state; **zero bytes copied**"; refuse if the map does not declare that version, explaining that bumping the version in the tree is the fix |
-| **Fork** | source (live or a version), target scope, that the source's versions never move, and the option to repoint a dependent (`--use-in`) at the fork, live |
-| **Lock** | the before → after pin for each dependency, and that ranges are kept |
-| **Vendor** | the CDN URL, the module count pulled, and any reference that would leave the pack (the command **fails** rather than sealing a live external reference — that refusal is a feature and should read as one) |
-| **Prune** | versions dropped and **how many bytes are actually reclaimable** (often zero, because other versions point at the same pack) |
-| **Restore** | see S4 |
-| **Adopt** | proposal → upstream version being created; zero bytes copied |
-
----
-
-## 7. Screen flows
-
-Each flow below corresponds to a scenario that exists in the test suite, so
-mocks can use real data.
-
-**F1 — "Start something" (P1).**
-Home (no realms) → run `deck hello` → realm appears → deck detail, live →
-Preview → edit in editor → preview reloads via SSE → version timeline shows
-`0.1.0-dev.2` appear on its own.
-
-**F2 — "Ship it" (P1 → P3).**
-Deck detail → Versions → Release dialog (from `dev`) → timeline shows the
-new stable linked to the same treeHash as the dev it came from → dependents
-can now resolve `^1.0.0`.
-
-**F3 — "Get off the volatility" (P3).**
-Deck detail → Dependencies → a dependency shows "newer version satisfies
-range" → preview the change → Lock → pins update → Preview confirms.
-
-**F4 — "I broke something an hour ago" (P1).**
-Deck detail → Seals → scan by time and file summary → open the file at that
-seal to confirm → Restore → confirm dialog explains undoability → realm
-returns; timeline shows the restored state re-pointing `dev` **without
-minting a redundant version** (identical content is already published).
-
-**F5 — "Experiment on someone else's code" (P1).**
-Upstream deck detail → Fork → choose scope → optionally repoint my app at it
-`live` → my app's Preview now runs the fork → upstream's versions unchanged.
-
-**F6 — "Review a proposal" (P2).** *The flagship flow.*
-Offers board → a `rebased` row → **Try** → S6 opens the real app with the
-proposal swapped in → it works → **Adopt** → dialog shows zero bytes copied
-→ the offer becomes `current` and upstream has a new version.
-
-**F7 — "Triage 200 proposals" (P2).**
-Offers board, conflicted-first → 3 rows → open one → Compare shows the
-conflicting file → Try to see the behaviour → hand back to the contributor
-(v1: copy a link; the UI does not comment).
-
-**F8 — "Bring in a library safely" (P1).**
-Deck detail → Dependencies → Vendor → CDN URL → module count → sealed under
-your own publisher → the pin now points at your own server, and the
-provenance chip records the CDN origin.
-
-**F9 — "What is this thing?" (any).**
-Any address line → paste a Deck URL into the UI's locator → it resolves to
-the right screen and volatility. The URL is the universal handle.
-
----
-
-## 8. Real-time behaviour
-
-- Subscribe once to `/_live/events` (SSE, heartbeats every 15s).
-- On a change event for a deck currently in view: refresh the file tree, the
-  version list, and reload the preview iframe.
-- The **live** volatility is the only one that changes under the user;
-  sealed views must never silently change. If a *sealed* view's underlying
-  data appears to change, that is a bug — do not design for it.
-- Auto-publish lags a save by one debounce window (~500ms default). The UI
-  should show "saved → publishing…" rather than appearing stuck.
-
----
-
-## 9. The write-channel decision (needs a product call)
-
-The Deck server is **read-only by design** (C1): an agent arranges at-rest
-state, distribution follows. But S3/S5/S8/S10 all mutate. Three options:
-
-- **A — Read-only UI + copyable commands.** Every action renders the exact
-  CLI command. Zero new surface, honest, slowest. Good for v0.
-- **B — Local action endpoint (recommended).** The `deck serve` process
-  gains a small, **localhost-only**, non-protocol action API used solely by
-  the UI (release, lock, fork, restore, adopt, rebase-now). The protocol's
-  read-only serving surface is untouched; the actions are the CLI's own
-  functions. When Deck lands in the realm server, this becomes the
-  Matrix-authenticated write path.
-- **C — UI writes files directly.** Rejected: it bypasses the invariants
-  (manifest agreement, immutability checks) that the CLI enforces.
-
-Design should assume **B**, and mark every action button as belonging to the
-"local operator" capability so the same components can be disabled in a
-future read-only/remote context.
-
----
-
-## 10. Scale and performance
-
-| Dimension | Target | Implication |
-| --- | --- | --- |
-| decks per realm | 100s | grouped, searchable, virtualized |
-| versions per deck | 1000s (dev lines grow fast) | collapse runs of dev versions; paginate |
-| seals per realm | 10,000s | time-bucketed, paginated |
-| open offers | 200+ | conflicted-first; collapse the healthy majority |
-| file tree | 1000s of files | virtualized tree; lazy previews |
-| file preview | up to ~200KB text | truncate with a "download raw" escape |
-
----
-
-## 11. Cross-cutting states to design
-
-Every one of these is a real, reachable state (each is covered by a test):
+Each is real and reachable, and each is covered by a test.
 
 - **Empty:** no realms · realm with no decks · deck with no versions · no
-  offers · no seals yet.
-- **Degraded capability:** tier-1 history (no jj) · historyd cannot
-  enumerate a seal's tree · cross-realm dependency refused.
-- **Errors, distinguished by permanence** (the server already distinguishes
-  them, and the UI should too): *invalid* (a malformed version spec can
-  never resolve — a permanent refusal) vs *not-found-yet* (a legal tag that
-  nobody has published — transient). These should not look identical.
-- **Not servable:** a realm's `.deck`/`.jj` paths — must never appear.
-- **Binary content:** no preview; size + digest + download.
-- **Conflicted merge:** per-file, with the three-sided marker content
-  available in Compare.
-- **Trial active:** unmistakable, one click to exit.
+  proposals · no seals.
+- **Degraded:** tier-1 history (no jj) · backend cannot enumerate a seal's
+  tree · cross-realm dependency refused (not yet supported, not an error).
+- **Two flavours of miss, and they must not look alike:** *invalid* (a
+  malformed spec can never resolve — permanent) vs *not-found-yet* (a legal
+  tag nobody has published — transient).
+- **Never servable:** `.deck/`, `.jj/`.
+- **Binary content:** no preview; size, digest, download.
+- **Conflicted proposal:** per file, with the three-sided marker content
+  available in a comparison.
+- **Trial active:** unmistakable, one action to exit.
+- **Unresolvable proposal:** the base tree is gone; needs an explanation, not
+  a retry.
 
 ---
 
-## 12. Open questions for design
+## 13. Open questions for design
 
-1. **Is the volatility dial one control or three?** A segmented
-   live/dev/version control is compact but makes "version" a second-level
-   choice. Alternative: a single dropdown listing `live`, `dev`, `latest`,
-   then every version.
-2. **Where do offers live?** Realm-level board (as specified) or a per-deck
-   inbox on the upstream deck? The data supports both; 200-scale argues for
-   the board.
-3. **How much history belongs on the deck screen?** Seals are realm-level,
-   but users think per-deck. Filtering realm seals by deck path is possible —
-   worth it?
-4. **Do we show treeHashes prominently, or only on hover?** They are the
-   product's notion of identity and the proof behind "zero copies", but they
-   are 64 hex characters.
-5. **Is Compare a screen or a mode?** It could be an overlay on the file
-   view rather than a destination.
-6. **What does "adopt" look like when the maintainer disagrees?** There is no
-   reject mechanism in the protocol — an unadopted offer simply stays a fork
-   forever. Is that a state to display ("open, 47 days"), or is silence fine?
+1. Are lenses (§7) real, or four screens wearing a costume?
+2. Is the timeline one object with different densities, or genuinely
+   different objects for W4 (iterations) and W1 (audit)?
+3. Where do proposals live — realm-level board, per-deck inbox on upstream, or
+   in the contributor's own space? The data supports all three.
+4. How prominent should `treeHash` be? It is the notion of identity and the
+   proof behind "zero copies", but it is 64 hex characters.
+5. Is a data deck a different *kind of thing* in the IA, or the same thing
+   read differently?
+6. What does "we looked and said no" look like, given the protocol has no
+   reject — an unadopted proposal just stays a fork forever?
+7. Should the UI ever show the CLI command it is about to run? (It is a
+   teaching surface, and it is the honest answer under option A.)
 
 ---
 
-## Appendix A — Endpoint reference for mock data
+## Appendix — endpoint reference
 
-| Endpoint | Feeds | Cache |
+| Endpoint | Provides | Cache |
 | --- | --- | --- |
-| `GET /_packages` | S1 | no-store |
-| `GET /_packages/<realm>/<pub>/<pkg>` | S2, S3 | 60s |
-| `GET /_browse/<realm>[/<pub>[/<pkg>[@<spec>]]][/path]` | S2 files | live: no-store; sealed: 60s |
-| `GET /<realm>/<pub>/<pkg>/<path>` | live bytes, preview | no-store |
-| `GET /<realm>/<pub>/<pkg>@<spec>/<path>` | sealed bytes | immutable 1y |
-| `GET /<realm>/<pub>/<pkg>@<v>?meta` | S3 detail | 60s |
-| `GET /<realm>/<pub>/<pkg>@<v>?format=pack` | download | immutable |
-| `…?with=<spec>` (repeatable) | S6 trials | no-store |
-| `GET /<realm>/_history` | S4 | no-store |
-| `GET /<realm>/_history/<changeId>[/<path>]` | S4 | immutable |
-| `GET /<realm>/_offers` | S8 | no-store |
-| `GET /_live/events` | S9, live reload | SSE |
+| `GET /_packages` | realms, decks, versions, tags, history capability | no-store |
+| `GET /_packages/<realm>/<pub>/<pkg>` | one deck's versions/tags/flags | 60s |
+| `GET /_browse/<realm>[/<pub>[/<pkg>[@<spec>]]][/path]` | tree listing / file with text preview, size, sha256 | live: no-store; sealed: 60s |
+| `GET /<realm>/<pub>/<pkg>/<path>` | live bytes | no-store |
+| `GET /<realm>/<pub>/<pkg>@<spec>/<path>` | sealed bytes (302 for tag/range, 301 for form) | immutable |
+| `GET /<realm>/<pub>/<pkg>@<v>?meta` | entry, exports, files, `sealChangeId`, treeHash | 60s |
+| `GET /<realm>/<pub>/<pkg>@<v>?format=pack` | the pack | immutable |
+| `…?with=<spec>` (repeatable) | trial override | no-store |
+| `GET /<realm>/_history[/<changeId>[/<path>]]` | seals; tree at a seal; bytes at a seal | log: no-store; seal: immutable |
+| `GET /<realm>/_offers` | proposals with state, conflicts, `tryWith` | no-store |
+| `GET /_live/events` | SSE change events `{name, treeHash}` | stream |
 
-Useful response headers to surface in a "details" affordance:
-`content-digest` (RFC 9530), `x-deck-tree-hash`, `x-deck-seal`,
-`x-deck-package`, `x-deck-realm`, `x-deck-with`, `x-deck-importmap`.
-
-## Appendix B — A realistic mock dataset
-
-Realm `site`, tier 2 (jj):
-
-- `acme/palette` — versions `1.0.0-dev.1`, `1.0.0`, `1.0.0-dev.2`,
-  `1.1.0-dev.1`, `1.1.0`, `1.2.0`; tags `dev: 1.2.0-dev.1`, `latest: 1.2.0`.
-  Live. Note `1.0.0-dev.1` and `1.0.0` share treeHash `bbbfb346…`.
-- `you/app` — version `0.1.0-dev.3`; depends on `acme/palette: ^1.0.0`
-  pinned to `/site/acme/palette@1.1.0/palette.js`. Live. Has `index.html`,
-  `app.js`, `importmap.json`.
-- `you/palette` — an **offer**: `forkedFrom { package: "acme/palette",
-  version: "1.0.0", treeHash: "bbbfb346…", actor: "@chris:boxel.ai" }`,
-  state `conflicted`, conflicts `["palette.js"]`, `tryWith:
-  "?with=acme/palette=you/palette"`.
-- Seals: `wovmruymqrvw… "save: you/app/app.js"`, `uywsqzrlnyqr… "save"` with
-  `["A you/app/app.js", "A you/app/importmap.json", "A you/app/index.html"]`.
+Headers worth surfacing in a details affordance: `content-digest` (RFC 9530),
+`x-deck-tree-hash`, `x-deck-seal`, `x-deck-package`, `x-deck-realm`,
+`x-deck-with`, `x-deck-importmap`.
