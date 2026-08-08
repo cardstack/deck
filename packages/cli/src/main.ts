@@ -17,6 +17,12 @@ import { forkDeck } from '@deck/core/fork';
 import { rebasePass, startRebaseDaemon } from '@deck/server/rebase-daemon';
 import { lockDeck } from '@deck/core/lock';
 import { vendorFromCdn, vendorImportMap } from '@deck/core/vendor';
+import {
+  deckNameForNpm,
+  probeEntries,
+  vendorFromNpmSource,
+} from '@deck/core/vendor-npm';
+import { fetchNpmPackage, verifyAgainstGithubTree } from '@deck/core/npm';
 import { createDeckServer } from '@deck/server/server';
 import {
   discoverDecks,
@@ -69,6 +75,17 @@ Usage:
                                         rewrite every reference to stay
                                         inside the pack, and seal it — your
                                         own unpkg, hermetic by default
+  deck vendor npm:<pkg>@<version> [--entry <path>] [--verify-repo] [--probe]
+              [--name <n>] [--version <v>] [--realm <dir> --publisher <p>] [--tag <t>]
+                                        SOURCE mode: vendor the module tree
+                                        npm published instead of a CDN's
+                                        bundle, so every file is a separate
+                                        address you can fork and edit.
+                                        --probe reports what each candidate
+                                        entry reaches without vendoring.
+                                        --verify-repo checks the tree against
+                                        the GitHub commit npm recorded, blob
+                                        by blob
   deck prune --realm <dir> --publisher <p> --name <n> [--keep <k>]
                                         drop old -dev.N prereleases (never
                                         stables or tag targets); bytes are
@@ -381,10 +398,44 @@ async function main(): Promise<void> {
           output: { type: 'string' },
           'allow-external': { type: 'boolean', default: false },
           'allow-host': { type: 'string', multiple: true, default: [] },
+          entry: { type: 'string' },
+          probe: { type: 'boolean', default: false },
+          'verify-repo': { type: 'boolean', default: false },
         },
       });
       let [url] = positionals;
-      if (!url || !values.name || !values.version) {
+      if (!url) {
+        fail(
+          'usage: deck vendor <cdn-url|npm:pkg@version> --name <n> --version <v> [--realm <dir> --publisher <p>] [--output <file>]',
+        );
+      }
+      let isNpm = url.startsWith('npm:');
+
+      // Source mode: the tree npm published, not a CDN's bundle. Probing
+      // reports what each candidate entry reaches and stops there, because
+      // "how many modules is this actually" is the question you want
+      // answered BEFORE you seal anything.
+      if (isNpm && values.probe) {
+        let pkg = await fetchNpmPackage({ spec: url.slice(4) });
+        let probes = probeEntries(pkg);
+        console.log(
+          `${pkg.name}@${pkg.version} — ${pkg.files.size} published files`,
+        );
+        if (probes.length === 0) {
+          console.log('  no ES module entry found');
+        }
+        for (let probe of probes) {
+          console.log(
+            `  ${probe.modules === 1 ? 'bundle ' : 'tree   '} ${probe.entry}  ${probe.modules} module(s), ${(probe.bytes / 1024).toFixed(0)} KB${probe.externals ? `, ${probe.externals} external` : ''}${probe.unresolved ? `, ${probe.unresolved} unresolved` : ''}`,
+          );
+        }
+        console.log(
+          '\na candidate reaching 1 module is a bundle: the boundary was lost at publish time.',
+        );
+        return;
+      }
+
+      if (!isNpm && (!values.name || !values.version)) {
         fail(
           'usage: deck vendor <cdn-url> --name <n> --version <v> [--realm <dir> --publisher <p>] [--output <file>]',
         );
@@ -392,32 +443,92 @@ async function main(): Promise<void> {
       if ((values.realm === undefined) !== (values.publisher === undefined)) {
         fail('publishing a vendored pack needs both --realm and --publisher');
       }
-      let result = await vendorFromCdn({
-        entryUrl: url,
-        allowExternal: values['allow-external'],
-        allowHosts: values['allow-host'],
-      });
+
+      let entryPath: string;
+      let vendoredFiles: { path: string; bytes: Buffer }[];
+      let moduleCount: number;
+      let externals: string[];
+      let provenance: string | Record<string, unknown>;
+      let deckName: string;
+      let deckVersion: string;
+
+      if (isNpm) {
+        let source = await vendorFromNpmSource({
+          spec: url.slice(4),
+          entry: values.entry,
+          allowExternal: values['allow-external'],
+        });
+        if (values['verify-repo']) {
+          let { repo, commit, subtree } = source.vendoredFrom;
+          if (!repo || !commit) {
+            fail(
+              'verify-repo: the registry recorded no repository/commit for this version',
+            );
+          }
+          let verification = await verifyAgainstGithubTree({
+            repo: repo!,
+            commit: commit!,
+            subtree: subtree ?? '',
+            files: source.pkg.files,
+          });
+          source.vendoredFrom.repoVerified = {
+            matched: verification.matched,
+            total: verification.total,
+          };
+          console.log(
+            `repo check ${verification.matched}/${verification.total} blobs identical to ${repo}@${commit.slice(0, 10)}${subtree ? `:${subtree}` : ''}`,
+          );
+          if (verification.differing.length > 0) {
+            console.log(
+              `  differing: ${verification.differing.slice(0, 5).join(', ')}`,
+            );
+          }
+        }
+        entryPath = source.entryPath;
+        vendoredFiles = source.files;
+        moduleCount = source.modules.length;
+        externals = source.externals;
+        provenance = source.vendoredFrom as unknown as Record<string, unknown>;
+        deckName = values.name ?? deckNameForNpm(source.pkg.name);
+        deckVersion = values.version ?? source.pkg.version;
+        console.log(
+          `vendored ${moduleCount} modules from ${source.pkg.name}@${source.pkg.version} (entry ${entryPath}${source.rewritten.length ? `, ${source.rewritten.length} rewritten` : ', 0 rewritten — byte-identical to what npm published'})`,
+        );
+      } else {
+        let result = await vendorFromCdn({
+          entryUrl: url,
+          allowExternal: values['allow-external'],
+          allowHosts: values['allow-host'],
+        });
+        entryPath = result.entryPath;
+        vendoredFiles = result.files;
+        moduleCount = result.modules.length;
+        externals = result.externals;
+        provenance = url;
+        deckName = values.name!;
+        deckVersion = values.version!;
+        console.log(`vendored ${moduleCount} modules from ${url}`);
+      }
+
       let bytes = pack([
         {
           path: 'importmap.json',
           bytes: vendorImportMap(
-            values.name,
-            values.version,
-            result.entryPath,
-            url,
+            deckName,
+            deckVersion,
+            entryPath,
+            provenance,
           ),
         },
-        ...result.files,
+        ...vendoredFiles,
       ]);
       let packlist = peekPacklist(bytes);
-      console.log(
-        `vendored ${result.modules.length} modules from ${url} (treeHash ${packlist.treeHash.hash})`,
-      );
-      if (result.externals.length > 0) {
+      console.log(`  treeHash ${packlist.treeHash.hash}`);
+      if (externals.length > 0) {
         console.log(
-          `  warning: ${result.externals.length} reference(s) still point outside the pack:`,
+          `  warning: ${externals.length} reference(s) still point outside the pack:`,
         );
-        for (let external of result.externals.slice(0, 5)) {
+        for (let external of externals.slice(0, 5)) {
           console.log(`    ${external}`);
         }
       }
@@ -425,18 +536,17 @@ async function main(): Promise<void> {
         let realmDir = resolve(values.realm);
         await publishToStore(
           storeDirFor(realmDir),
-          `${values.publisher}/${values.name}`,
-          values.version,
+          `${values.publisher}/${deckName}`,
+          deckVersion,
           bytes,
           { tag: values.tag },
         );
         console.log(
-          `published ${values.publisher}/${values.name}@${values.version}${values.tag ? ` tag ${values.tag}` : ''} — import it as /${basename(realmDir)}/${values.publisher}/${values.name}@${values.version}/`,
+          `published ${values.publisher}/${deckName}@${deckVersion}${values.tag ? ` tag ${values.tag}` : ''} — import it as /${basename(realmDir)}/${values.publisher}/${deckName}@${deckVersion}/`,
         );
       }
       if (values.output || !values.realm) {
-        let output =
-          values.output ?? `${values.name}-${values.version}.pack.zip`;
+        let output = values.output ?? `${deckName}-${deckVersion}.pack.zip`;
         await writeFile(output, bytes);
         console.log(`wrote ${output}`);
       }

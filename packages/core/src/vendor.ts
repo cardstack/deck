@@ -52,7 +52,7 @@ const SPECIFIER_PATTERNS = [
   /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
 ];
 
-function extractSpecifiers(source: string): string[] {
+export function extractSpecifiers(source: string): string[] {
   let found = new Set<string>();
   for (let pattern of SPECIFIER_PATTERNS) {
     pattern.lastIndex = 0;
@@ -246,7 +246,10 @@ export function vendorImportMap(
   name: string,
   version: string,
   entryPath: string,
-  vendoredFrom: string,
+  // A CDN vendor has one canonical URL to record. An npm source vendor has
+  // a whole provenance chain — registry, integrity, repo, commit — so the
+  // field carries an object there.
+  vendoredFrom: string | Record<string, unknown>,
 ): Buffer {
   return Buffer.from(
     JSON.stringify(

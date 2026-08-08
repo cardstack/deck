@@ -204,10 +204,19 @@ Three payoffs, and the third is the one that matters.
 
 **1 — Edit an internal bit.**
 `deck fork --from acme/three --as you/three`, change
-`src/math/Vector3.js`, and the app picks it up on the next save. No build,
-no `patch-package`, no publish. One file changed means one file's bytes
-changed; the store is content-addressed, so the other 373 are shared, and
-the fork costs almost nothing.
+`src/geometries/SphereGeometry.js`, and the app picks it up on the next
+save. No build, no `patch-package`, no publish, and the pinned original
+keeps serving the bytes it always served.
+
+The fork itself is free while it is undiverged — same tree, same hash, one
+stored pack. **What is not free is each diverged revision.** The store is
+content-addressed *per tree*, not per file, so a two-character edit
+produces a whole new 438 KB pack, and so does every auto-published save
+after it (measured: §8). `deck prune` exists for exactly this, but the
+honest statement is that a large vendored package under active editing
+costs roughly its own size per kept revision. Per-file content addressing
+in the store would make it nearly free, and is now the most valuable
+change this work has surfaced.
 
 **2 — Upgrading keeps your patch.**
 Re-vendor `0.161.0` as a new base and the rebase daemon three-way merges
@@ -228,9 +237,15 @@ consequence of getting the carriage right rather than a separate feature.
 
 ## 6. Open questions
 
-1. **The waterfall.** 374 modules is 374 requests. `modulepreload`
-   injection is the answer, and the server already injects import maps —
-   but it should be measured before it is claimed.
+1. **The waterfall.** 374 modules is 374 requests. Measured on localhost
+   it is 248 requests / 1.13 MB finishing in **102 ms**, so it is not
+   catastrophic — but localhost has no latency, which is the entire
+   problem. `modulepreload` injection is the answer, and the server
+   already injects import maps; it still needs measuring over a real
+   network before it is claimed.
+1b. **Per-file storage.** The store dedupes trees, so each edited revision
+   of a 374-module package costs a full pack (§5, §8). This is the one
+   finding from building it that changes a design decision.
 2. **Can one deck hold both carriages** — `src/` for editors and a built
    entry for consumers, chosen by the import map? Elegant, but the bundle
    goes stale the moment someone edits `src/`, and regenerating it needs
@@ -272,3 +287,55 @@ bundle source map       unpkg.com/chart.js@4.5.1/dist/chart.js.map
 package shapes          lit 3.3.3 · zod 4.4.3 · chart.js 4.5.1 ·
                         preact 10.29.8 · @tanstack/query-core 5.101.4 · d3 7.9.0
 ```
+
+---
+
+## 8. Built and run — what the implementation measured
+
+`deck vendor npm:<pkg>@<version>` ships with `--probe`, `--entry`,
+`--verify-repo` and `--allow-external`. What it did on three:
+
+```
+$ deck vendor npm:three@0.160.0 --probe
+three@0.160.0 — 954 published files
+  tree    src/Three.js          374 module(s), 1324 KB
+  bundle  build/three.js          1 module(s), 1285 KB
+  bundle  build/three.module.js   1 module(s), 1243 KB
+
+$ deck vendor npm:three@0.160.0 --verify-repo --realm ./work/site \
+    --publisher acme --tag latest
+repo check 374/374 blobs identical to github.com/mrdoob/three.js@d04539a767:src
+vendored 374 modules from three@0.160.0
+  (entry src/Three.js, 0 rewritten — byte-identical to what npm published)
+  treeHash 8ddbc3ba8f142209fe27ab2fcba152b7890afb60e048553d8a527876ddf02cc7
+published acme/three@0.160.0 tag latest
+                                        ← 0.73 s, including the repo check
+```
+
+Then the loop the whole design exists for, verified in a browser:
+
+| Step | Result |
+| --- | --- |
+| app imports `acme/three` `^0.160.0`, locked to `@0.160.0` | renders — `REVISION 160`, `SphereGeometry defaults 32×16` |
+| `deck fork --from acme/three@0.160.0 --as you/three --use-in you/app` | 375 files, **0.16 s** |
+| edit `src/geometries/SphereGeometry.js` and `src/constants.js` **inside three** | auto-published `you/three@0.160.0-dev.2`, sealed |
+| reload | `REVISION 160-you-forked`, `defaults 6×4`, the sphere is visibly faceted |
+| `GET /site/acme/three@0.160.0/src/constants.js` | still `'160'` — the pinned original never moved |
+
+Load cost of the module tree, measured in the page: **248 requests,
+1.13 MB, last module at 102 ms** (localhost, so latency-free — see §6).
+
+Store cost, measured: `acme/three` 438,064 bytes for one pack;
+`you/three` **438,223 and 438,227** for the two dev revisions after a
+two-character edit. That is the per-tree addressing limit, stated plainly.
+
+### 8.1 One wart the demo exposed
+
+A dependency key *is* the import specifier, so `--use-in` swapping
+`acme/three` for `you/three` means the consumer's own source has to change
+`import … from 'acme/three'` to `'you/three'`. For "ask an agent to fork
+and edit any part", that is backwards: the fork should be able to stand in
+for its base **under the base's specifier**, which is exactly what `?with=`
+already does at serve time. The fix is an aliasing dependency value
+(`"acme/three": "you/three@live"`) so the map repoints and no source
+changes. Small, and it should land before this is put in front of anyone.

@@ -23,6 +23,7 @@ await import('./tree-hash-test.ts');
 await import('./pack-test.ts');
 await import('./store-test.ts');
 await import('./vendor-test.ts');
+await import('./vendor-npm-test.ts');
 await import('./lock-test.ts');
 await import('./fork-test.ts');
 await import('./merge-test.ts');
