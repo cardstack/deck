@@ -95,6 +95,16 @@ dependency resolves to a version **already present** rather than to the
 newest. A peer dependency resolved twice is two incompatible copies of the
 same library in one document.
 
+Second corollary: **one deck name is one library.** A range picks a version
+out of a deck's list, so every version in that list must come from the same
+upstream, and a name derived from somewhere else has to be derived
+injectively. Flattening npm's namespace into one segment is lossy —
+`@babel/runtime` and `babel-runtime` are both real — so the derivation
+carries a digest of the true name wherever the fold loses something, and the
+store refuses a version whose upstream disagrees with what the deck already
+holds. Nothing in L8 notices this: per-version provenance stays perfectly
+truthful while the resolution key quietly means two things.
+
 ## L8 · Provenance
 
 > A deck that is a copy of something else records what it is a copy of, in a
