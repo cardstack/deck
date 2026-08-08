@@ -206,6 +206,11 @@ Design set in [docs/](docs/) — start with:
   laws, `!/` mounts, canonical-zip-v1. All opens ruled.
 - [deck-live-autopublish.md](docs/deck-live-autopublish.md) — the
   live tree, the auto-publish loop, and seal-grained history.
+- [deck-fitted-thesis.md](docs/deck-fitted-thesis.md) — the UX thesis: a
+  deck is a card that authors its own fitted format, so the catalog is a
+  wall of running things. Eight domain cards at three sizes each, the
+  protocol reduced to a badge vocabulary, and the four surfaces that fall
+  out.
 - [deck-ui-spec.md](docs/deck-ui-spec.md) — product requirements for a
   UI, driven by the four workloads: fixed requirements and invariants,
   open information architecture, and a rubric that catches a design
