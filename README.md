@@ -206,6 +206,10 @@ store/packs, history tiers, vendor, fork/lock/offers, HTTP + CLI maps, and use c
 
 Design set in [docs/](docs/) — start with:
 
+- **[deck-laws.md](docs/deck-laws.md) — the contract.** Twelve invariants,
+  each one checkable, each one checked by `deck conform`. Everything else
+  here is commentary, design history, or a record of how something was
+  measured. An implementation implements Deck by passing the suite.
 - [deck-at-rest-protocol.md](docs/deck-at-rest-protocol.md) — the
   protocol: state model, endpoints, serving rules, vocabulary.
 - [deck-cas-v2-spec.md](docs/deck-cas-v2-spec.md) — next CAS work:

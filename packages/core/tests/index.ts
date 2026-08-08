@@ -22,6 +22,7 @@ QUnit.on('runEnd', (runEnd) => {
 await import('./tree-hash-test.ts');
 await import('./pack-test.ts');
 await import('./store-test.ts');
+await import('./es-lexer-test.ts');
 await import('./vendor-test.ts');
 await import('./vendor-npm-test.ts');
 await import('./lock-test.ts');

@@ -1,0 +1,34 @@
+{
+  "name": "@deck/conformance",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The executable contract: an implementation implements Deck by passing this",
+  "exports": {
+    "./laws": "./src/laws.ts",
+    "./fixture": "./src/fixture.ts",
+    "./at-rest": "./src/at-rest.ts",
+    "./over-http": "./src/over-http.ts",
+    "./run": "./src/run.ts"
+  },
+  "scripts": {
+    "test": "node tests/index.ts",
+    "lint": "pnpm run lint:js && pnpm run lint:types",
+    "lint:js": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "lint:types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deck/core": "workspace:*",
+    "@deck/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/qunit": "catalog:",
+    "@typescript-eslint/eslint-plugin": "catalog:",
+    "@typescript-eslint/parser": "catalog:",
+    "eslint": "catalog:",
+    "qunit": "catalog:",
+    "typescript": "catalog:"
+  }
+}

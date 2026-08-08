@@ -65,12 +65,46 @@ importers:
 
   packages/cli:
     dependencies:
+      '@deck/conformance':
+        specifier: workspace:*
+        version: link:../conformance
       '@deck/core':
         specifier: workspace:*
         version: link:../core
       '@deck/history':
         specifier: workspace:*
         version: link:../history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../server
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      '@types/qunit':
+        specifier: 'catalog:'
+        version: 2.19.14
+      '@typescript-eslint/eslint-plugin':
+        specifier: 'catalog:'
+        version: 8.66.0(@typescript-eslint/parser@8.66.0(eslint@8.57.1)(typescript@5.9.3))(eslint@8.57.1)(typescript@5.9.3)
+      '@typescript-eslint/parser':
+        specifier: 'catalog:'
+        version: 8.66.0(eslint@8.57.1)(typescript@5.9.3)
+      eslint:
+        specifier: 'catalog:'
+        version: 8.57.1
+      qunit:
+        specifier: 'catalog:'
+        version: 2.26.0
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
+  packages/conformance:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../core
       '@deck/server':
         specifier: workspace:*
         version: link:../server

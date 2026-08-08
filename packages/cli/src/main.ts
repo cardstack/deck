@@ -35,6 +35,8 @@ import {
   watchRealm,
   type RealmMount,
 } from '@deck/server/realm';
+import { formatReport } from '@deck/conformance/laws';
+import { runConformance } from '@deck/conformance/run';
 import { applyRestore } from '@deck/history/backend';
 import { createHistory, isValidHistoryKind } from '@deck/history/create';
 
@@ -134,6 +136,14 @@ Usage:
                                         upstream; clean ones are written back
                                         (and auto-publish), conflicted ones are
                                         reported and left untouched
+  deck conform [--url <base> --realm <name>] [--at-rest] [--http] [--json]
+                                        run the executable contract. With no
+                                        --url it stands the canonical fixture
+                                        realm up on the reference server and
+                                        measures that; with one it measures
+                                        ANY implementation black-box, which is
+                                        how the Boxel realm server will show
+                                        it implements Deck. See docs/deck-laws.md
   deck history <realm-dir> [--limit <n>] [--json]
                                         list a realm's seals — every state it
                                         has been in, published or not
@@ -671,6 +681,41 @@ async function main(): Promise<void> {
       console.log(
         `\n${plan.units.length} deck(s) under /${basename(realmDir)}/${values.publisher}/`,
       );
+      return;
+    }
+    case 'conform': {
+      let { values } = parseArgs({
+        args: rest,
+        options: {
+          url: { type: 'string' },
+          realm: { type: 'string' },
+          'at-rest': { type: 'boolean', default: false },
+          http: { type: 'boolean', default: false },
+          json: { type: 'boolean', default: false },
+        },
+      });
+      // Neither flag means both halves; either means only that half.
+      let both = !values['at-rest'] && !values.http;
+      let report = await runConformance({
+        atRest: both || values['at-rest'],
+        http: both || values.http,
+        ...(values.url
+          ? {
+              target: {
+                baseUrl: values.url,
+                realm: values.realm ?? 'conformance',
+              },
+            }
+          : {}),
+      });
+      if (values.json) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        console.log(formatReport(report));
+      }
+      if (report.failed > 0) {
+        process.exitCode = 1;
+      }
       return;
     }
     case 'prune': {

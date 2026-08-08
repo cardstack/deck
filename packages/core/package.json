@@ -13,6 +13,7 @@
     "./object-store": "./src/object-store.ts",
     "./import-map": "./src/import-map.ts",
     "./vendor": "./src/vendor.ts",
+    "./es-lexer": "./src/es-lexer.ts",
     "./vendor-npm": "./src/vendor-npm.ts",
     "./vendor-tree": "./src/vendor-tree.ts",
     "./npm": "./src/npm.ts",

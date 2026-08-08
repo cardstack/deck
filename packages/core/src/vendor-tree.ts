@@ -15,6 +15,7 @@ import {
   walkSourceGraph,
   type VendoredFrom,
 } from './vendor-npm.ts';
+import { isCommonJsModule } from './es-lexer.ts';
 import { listStorePackages, readStoredPack } from './store.ts';
 import { packagesFromPack } from './import-map.ts';
 
@@ -174,14 +175,9 @@ export interface VendorTreePlan {
 
 // A single-file dependency is normal — tslib is one module of helpers. What
 // is NOT usable is a file that speaks CommonJS, because no import map can
-// make `require` exist in a browser.
-export function looksCommonJs(source: string): boolean {
-  let hasEsm = /(^|[\s;}])(?:import|export)[\s{*]/.test(source);
-  let hasCjs = /(^|[\s;=(])(?:require\s*\(|module\.exports|exports\.)/.test(
-    source,
-  );
-  return hasCjs && !hasEsm;
-}
+// make `require` exist in a browser. The tokenizer answers this, so
+// `module.exports` in a comment or a string does not count.
+export { isCommonJsModule as looksCommonJs } from './es-lexer.ts';
 
 async function resolveVersion(options: {
   name: string;
@@ -323,7 +319,7 @@ export async function planVendorTree(
     // imports `../lib/index.js`, which is CommonJS. The entry looks fine
     // and the deck does not load.
     let cjsModule = walkSourceGraph(pkg.files, probes[0].entry).modules.find(
-      (module) => looksCommonJs(pkg.files.get(module)?.toString('utf8') ?? ''),
+      (module) => isCommonJsModule(pkg.files.get(module)?.toString('utf8') ?? ''),
     );
     if (cjsModule) {
       notEsm.push({ npmName: name, entry: cjsModule });

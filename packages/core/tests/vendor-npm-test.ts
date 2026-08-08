@@ -15,7 +15,6 @@ import {
   type NpmPackage,
   type NpmVersionDoc,
 } from '../src/npm.ts';
-import { stripComments } from '../src/vendor.ts';
 import {
   candidateEntries,
   commonSubtree,
@@ -235,15 +234,6 @@ module('vendor: source mode', () => {
         'export var Marker = Layer.extend({\n  // Option inherited from "Interactive layer"\n  icon: 1,\n});\n',
     });
     assert.deepEqual(walkSourceGraph(pkg.files, 'src/index.js').externals, []);
-  });
-
-  test('a regex literal containing // does not swallow the next line', (assert) => {
-    let source = `const RX = /https?:\\/\\//;\nimport { a } from './a.js';\n`;
-    assert.deepEqual(
-      [...new Set(stripComments(source).match(/\.\/a\.js/g) ?? [])],
-      ['./a.js'],
-      'the import after the regex survives comment stripping',
-    );
   });
 
   test('probing separates a tree from a bundle', (assert) => {

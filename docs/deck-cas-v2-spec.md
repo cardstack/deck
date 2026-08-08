@@ -1,6 +1,14 @@
 # Deck CAS v2: blob store, verified links, signatures on treeHash
 
-Status: **SPEC** (2026-08-08) — design for three coupled workstreams that
+> **HISTORICAL (2026-08-08).** Superseded by [deck-laws.md](deck-laws.md) and
+> the executable contract in [packages/conformance](../packages/conformance).
+> Do not implement from this document — §9 records where measurement
+> overturned it, and it was overtaken inside one working session of building
+> against it. Kept because §3 (signatures) is still the best statement of a
+> design that has not been built, and because the errata are worth reading
+> once. Everything durable in it now lives in the laws.
+
+Original status: **SPEC** (2026-08-08) — design for three coupled workstreams that
 harden content addressing without changing `tree-hash-v1` identity.
 Companions: `deck-pack-equivalence.md` (homes, carriage, round-trip laws),
 `deck-competitive-gaps.md` (G5 signatures, G1 distribution),
