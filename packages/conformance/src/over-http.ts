@@ -95,19 +95,77 @@ export async function runHttpChecks(
     );
   });
 
-  await checks.run('L12', 'a sealed response carries a Content-Digest', async () => {
+  await checks.run('L12', 'a sealed response digests its representation', async () => {
     let response = await get(`${sealed}/index.js`);
-    let digest = response.headers.get('content-digest') ?? '';
+    // Repr-Digest is the stable one: the module bytes, encoding aside. It is
+    // what a client can verify after decoding, and the only one that stays
+    // put when an edge re-compresses.
+    let digest = response.headers.get('repr-digest') ?? '';
     assert(
       /^sha-256=:[A-Za-z0-9+/=]+:$/.test(digest),
-      `Content-Digest must be RFC 9530 sha-256, got "${digest}"`,
+      `Repr-Digest must be RFC 9530 sha-256, got "${digest}"`,
     );
     let body = Buffer.from(await response.arrayBuffer());
     let expected = (await import('node:crypto'))
       .createHash('sha256')
       .update(body)
       .digest('base64');
-    assertEqual(digest, `sha-256=:${expected}:`, 'digest of the served bytes');
+    assertEqual(digest, `sha-256=:${expected}:`, 'digest of the decoded bytes');
+  });
+
+  // Amendment A1/A6. Without Vary a shared cache hands a compressed body to
+  // a client that asked for none; without the two-digest split, an edge that
+  // re-encodes makes the digest look like corruption.
+  await checks.run('L12', 'compression is negotiated, varied, and digested twice', async () => {
+    let raw = await fetchImpl(`${sealed}/bulky.js`, {
+      redirect: 'manual',
+      headers: { 'accept-encoding': 'identity' },
+    });
+    assertEqual(raw.status, 200, 'identity status');
+    assert(
+      (raw.headers.get('vary') ?? '').toLowerCase().includes('accept-encoding'),
+      'a negotiated response must Vary: Accept-Encoding',
+    );
+    assertEqual(
+      raw.headers.get('content-encoding'),
+      null,
+      'identity must not be encoded',
+    );
+    assertEqual(
+      raw.headers.get('content-digest'),
+      raw.headers.get('repr-digest'),
+      'with no coding applied the two digests are the same claim',
+    );
+
+    let zipped = await fetchImpl(`${sealed}/bulky.js`, {
+      redirect: 'manual',
+      headers: { 'accept-encoding': 'gzip' },
+    });
+    assertEqual(
+      zipped.headers.get('content-encoding'),
+      'gzip',
+      'gzip must be offered at origin',
+    );
+    assertEqual(
+      zipped.headers.get('repr-digest'),
+      raw.headers.get('repr-digest'),
+      'Repr-Digest is stable across encodings — that is its whole job',
+    );
+    assert(
+      zipped.headers.get('content-digest') !== zipped.headers.get('repr-digest'),
+      'Content-Digest must describe the ENCODED bytes, not the module',
+    );
+    // fetch decodes for us, so this also proves the body survived the trip.
+    let decoded = Buffer.from(await zipped.arrayBuffer());
+    let expected = (await import('node:crypto'))
+      .createHash('sha256')
+      .update(decoded)
+      .digest('base64');
+    assertEqual(
+      zipped.headers.get('repr-digest'),
+      `sha-256=:${expected}:`,
+      'Repr-Digest verifies after decoding',
+    );
   });
 
   await checks.run('L12', 'writes are refused', async () => {

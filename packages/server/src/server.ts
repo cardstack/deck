@@ -20,9 +20,16 @@ import { peekPacklist } from '@deck/core/pack';
 import type { Packlist } from '@deck/core/packlist';
 import { readTree, readTreeFile } from '@deck/core/object-store';
 import { readEnvelope, summarizeEnvelope } from '@deck/core/signature';
+import { negotiateBody } from './compression.ts';
+import {
+  injectModulePreload,
+  moduleClosure,
+  type Closure,
+} from './preload.ts';
 import {
   listStorePackages,
   readStoredPack,
+  readStoredFile,
   readStoreMeta,
   resolveVersionSpec,
 } from '@deck/core/store';
@@ -151,8 +158,16 @@ function stripRealm(name: string, realm: string): string {
   return name.startsWith(`${realm}/`) ? name.slice(realm.length + 1) : name;
 }
 
-function contentDigest(bytes: Buffer): string {
+function digestOf(bytes: Buffer): string {
   return `sha-256=:${createHash('sha256').update(bytes).digest('base64')}:`;
+}
+
+// The representation digest: the module bytes, encoding aside. A caller
+// sets this; `respond` derives `Content-Digest` from whatever it actually
+// puts on the wire. Keeping the derivation in one place is what stops the
+// two from drifting apart at some call site nobody re-read.
+function reprDigest(bytes: Buffer): string {
+  return digestOf(bytes);
 }
 
 export interface DeckServerOptions {
@@ -288,6 +303,47 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     return cached;
   }
 
+  // Walk the sealed graph across decks. Every hop reads through the same
+  // store the request would, so a URL that makes it into the list is one
+  // the server can actually answer.
+  async function closureFor(
+    html: Buffer,
+    imports: Record<string, string>,
+  ): Promise<Closure> {
+    let scopes: Record<string, Record<string, string>> = {};
+    let entries: string[] = [];
+    for (let match of html
+      .toString('utf8')
+      .matchAll(/<script[^>]*type\s*=\s*["']module["'][^>]*\ssrc\s*=\s*["']([^"']+)["']/gi)) {
+      let src = match[1];
+      if (src.startsWith('/')) {
+        entries.push(src);
+      }
+    }
+    for (let value of Object.values(imports)) {
+      if (value.startsWith('/') && !value.endsWith('/')) {
+        entries.push(value);
+      }
+    }
+    return moduleClosure({
+      entries,
+      imports,
+      scopes,
+      read: async (target) => {
+        let mount = byName.get(target.realm);
+        if (!mount || !target.version) {
+          return undefined;
+        }
+        return readStoredFile(
+          mount.storeDir,
+          `${target.publisher}/${target.pkg}`,
+          target.version,
+          target.path,
+        );
+      },
+    });
+  }
+
   async function packageMapOf(
     pack: CachedPack,
   ): Promise<Record<string, PackageMapEntry> | undefined> {
@@ -330,11 +386,38 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     headers: Record<string, string>,
     body?: Buffer | string,
   ): void {
+    let sent: Buffer | string | undefined = body;
+    if (body !== undefined) {
+      let bytes = Buffer.isBuffer(body) ? body : Buffer.from(body, 'utf8');
+      let negotiated = negotiateBody({
+        body: bytes,
+        contentType: headers['content-type'],
+        acceptEncoding: req.headers['accept-encoding'] as string | undefined,
+        alreadyEncoded: headers['content-encoding'] !== undefined,
+      });
+      if (negotiated.encoding) {
+        headers = { ...headers, 'content-encoding': negotiated.encoding };
+      }
+      if (negotiated.vary) {
+        headers = { ...headers, vary: 'Accept-Encoding' };
+      }
+      // Content-Digest describes the bytes on the wire; Repr-Digest, set by
+      // the caller, describes the module. They differ exactly when a coding
+      // was applied — and that difference is the point.
+      if (headers['repr-digest']) {
+        headers = { ...headers, 'content-digest': digestOf(negotiated.body) };
+      }
+      headers = {
+        ...headers,
+        'content-length': String(negotiated.body.length),
+      };
+      sent = negotiated.body;
+    }
     res.writeHead(status, headers);
-    if (req.method === 'HEAD' || body === undefined) {
+    if (req.method === 'HEAD' || sent === undefined) {
       res.end();
     } else {
-      res.end(body);
+      res.end(sent);
     }
   }
 
@@ -1145,7 +1228,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         {
           'content-type': contentTypeFor(rest),
           'cache-control': IMMUTABLE_CACHE,
-          'content-digest': contentDigest(bytes),
+          'repr-digest': reprDigest(bytes),
           'x-deck-seal': revision,
           'x-deck-realm': realm.name,
           'access-control-allow-origin': '*',
@@ -1249,7 +1332,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       {
         'content-type': contentTypeFor(found.path),
         'cache-control': 'no-store',
-        'content-digest': contentDigest(bytes),
+        'repr-digest': reprDigest(bytes),
         'x-deck-realm': realm.name,
         ...(injected ? { 'x-deck-importmap': 'injected' } : {}),
         ...(trying.length > 0 ? { 'x-deck-with': trying.join(', ') } : {}),
@@ -1401,7 +1484,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           'content-type': 'application/zip',
           'content-disposition': `attachment; filename="${groups.pkg}-${version}.pack.zip"`,
           'cache-control': IMMUTABLE_CACHE,
-          'content-digest': contentDigest(archive),
+          'repr-digest': reprDigest(archive),
           'x-deck-tree-hash': pack.treeHash,
           'access-control-allow-origin': '*',
         },
@@ -1492,6 +1575,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     }
     let injected = false;
     let trying: string[] = [];
+    let preload: Closure | undefined;
     if (rest!.endsWith('.html')) {
       let sealedMap = await pack.read(IMPORT_MAP_PATH);
       let imports: Record<string, string> = {};
@@ -1509,10 +1593,18 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       trying = Object.keys(overrides).sort();
       // From the SAME seal — a sealed document and its map move together —
       // unless the caller is deliberately trying something else.
-      ({ bytes, injected } = injectImportMap(bytes, {
-        ...imports,
-        ...overrides,
-      }));
+      let resolved = { ...imports, ...overrides };
+      ({ bytes, injected } = injectImportMap(bytes, resolved));
+      // The closure is advertised only for a SEALED document. A trial has
+      // substituted dependencies, so its graph is not the one the seal
+      // describes, and preloading the sealed closure would fetch bytes the
+      // page will not use.
+      if (trying.length === 0) {
+        preload = await closureFor(bytes, resolved);
+        if (preload.urls.length > 0) {
+          bytes = injectModulePreload(bytes, preload.urls).bytes;
+        }
+      }
     }
     respond(
       req,
@@ -1523,7 +1615,14 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         // A trial is NOT the sealed representation, so it never inherits the
         // sealed response's immutability.
         'cache-control': trying.length > 0 ? 'no-store' : IMMUTABLE_CACHE,
-        'content-digest': contentDigest(bytes),
+        'repr-digest': reprDigest(bytes),
+        ...(preload && preload.total > 0
+          ? {
+              // Say what was clipped. A cap nobody can see reads as
+              // "we covered it".
+              'x-deck-preload': `${preload.urls.length}/${preload.total}`,
+            }
+          : {}),
         ...(injected ? { 'x-deck-importmap': 'injected' } : {}),
         ...(trying.length > 0 ? { 'x-deck-with': trying.join(', ') } : {}),
         'x-deck-package': `${name}@${version}`,

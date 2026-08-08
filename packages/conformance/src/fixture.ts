@@ -60,6 +60,20 @@ export function fixtureFiles(): FixtureFile[] {
     { path: 'crlf.txt', bytes: Buffer.from('a\r\nb\r\n', 'utf8') },
     // Empty file: present in the tree, contributes its path and zero bytes.
     { path: 'empty.txt', bytes: Buffer.alloc(0) },
+    // Big enough to cross the compression threshold, so a conformance run
+    // actually exercises content negotiation rather than skipping past it.
+    {
+      path: 'bulky.js',
+      bytes: Buffer.from(
+        'export const filler = [\n' +
+          Array.from(
+            { length: 200 },
+            (_ignored, index) => `  'row ${index} of highly compressible filler',`,
+          ).join('\n') +
+          '\n];\n',
+        'utf8',
+      ),
+    },
     // Sorting is by UTF-8 bytes, not by locale: "z" < "ä" byte-wise.
     { path: 'z-ascii.txt', bytes: Buffer.from('z\n', 'utf8') },
     { path: 'ä-utf8.txt', bytes: Buffer.from('a-umlaut\n', 'utf8') },
@@ -74,7 +88,7 @@ export function fixtureFiles(): FixtureFile[] {
 // failing implementation pass:
 //   node -e "import('@deck/core/tree-hash').then(async m => …)"
 export const FIXTURE_TREE_HASH =
-  '49176d5d0b9a80d03ee5b9f109c96e1cdff2580b5ad7142ab2f2b0a5a7dc5b85';
+  'ae0aeb21336ab6539aa8cba256135d752001dc52f5180a5d9047d41eb0a0e42c';
 
 export async function writeFixtureRealm(root: string): Promise<string> {
   let realmDir = join(root, FIXTURE_REALM);
