@@ -68,12 +68,13 @@ a design that serves all four is the product.
 | | **W1 Swarm tool** | **W2 Codelists** | **W3 Adapters** | **W4 Skills** |
 | --- | --- | --- | --- | --- |
 | What | 8 agents build one dashboard | shared reference data | Zapier-style long tail | prompt + tools bundles |
-| Unit | component deck | a JSON list | one small adapter | one skill |
+| Unit | component deck | a JSON list | four strata: adapter / bespoke pattern / generic pattern / instance | one skill |
 | Decks in play | ~8, all changing | 1–20, many editors | 100s, mostly static | 10s, one hot |
 | Content | ES modules | JSON only | small modules + schema | markdown + JSON |
 | Edit cadence | continuous, parallel | bursty amendments | rare per deck, constant across catalog | 200 edits/hour on one |
 | "Is it good?" | the assembled app runs | consumers still render | the automation fires | the agent behaves |
 | Contribution | internal, trusted | many, shallow | long tail, unknown | fork-and-house-style |
+| Privacy | internal | public | **mixed within one workload** | often private |
 | Failure today | branches don't compose | JSON conflicts + stale forks | contribution costs 100× the change | iterations are lost |
 
 ### 2.1 The finding that should shape IA: four centers of gravity
@@ -95,6 +96,37 @@ privileges one will fight the others:
 A useful way to hold this without four products: **the same deck, read
 through different lenses** (code / data / running / timeline). Whether "lens"
 is the right construct is a design question — see §7.
+
+### 2.1a The axes underneath: velocity, width, privacy
+
+From [deck-use-cases.md §5](deck-use-cases.md). Every deck sits somewhere on
+three correlated axes, and its position determines what the user needs from
+it:
+
+- **Velocity** — per-keystroke to per-quarter.
+- **Width** — one consumer to thousands.
+- **Privacy** — full of my specifics, or free of them.
+
+Fast things are private and have one consumer; wide things are slow and
+public. W3 is the workload that contains the *whole* spectrum inside itself:
+
+| Stratum | Velocity | Width | Private | Wants |
+| --- | --- | --- | --- | --- |
+| adapter (`hub/slack`) | monthly | thousands | no | pinned semver, trust |
+| bespoke pattern (`me/ship-notes`) | hourly, then never | **one** | yes | zero ceremony, restore |
+| generic pattern (`team/message-to-doc`) | weekly | many | no | a contract + a config schema |
+| instance (my binding) | occasional | **one** | **maximally** | to be data, and to hold secret *references* |
+
+Two consequences the design has to carry:
+
+1. **Position on the axes is a property worth showing.** "Frozen and widely
+   used" and "moving and mine" should not look the same, even though both are
+   decks. This is the same information as volatility, read at the level of a
+   whole deck rather than a single dependency.
+2. **The promotion path is a product moment.** Bespoke → generic is a fork
+   plus an extraction of specifics into a config schema, with the private
+   original untouched. It is the transition Zapier cannot do at all, and it
+   deserves to feel like an event.
 
 ### 2.2 Where all four agree (the shared spine)
 
@@ -170,6 +202,24 @@ one release, the timeline is the primary object and versions are secondary.
 **R13 — Simultaneous authorship is visible.** When several agents edit at
 once, the user can see what is moving and what is standing still. *(W1)*
 *(new)*
+
+**R14 — A deck that declares a config schema is configurable, for free.** The
+schema generates a form; an instance is a JSON document validated against it.
+The "configure an integration in a UI" product and the "read a data deck"
+product are the same product. *(W3 strata S2b/S3; W2 and W4 schemas)*
+*(new)*
+
+**R15 — A fork is private until it is offered.** Forking to hack something for
+yourself must not enqueue a proposal against a maintainer who never asked.
+Proposing is a separate, deliberate act. *(W3 bespoke stratum; W4 house-style
+forks)* *(new — the current implementation conflates these; see §13.8)*
+
+**R16 — Secrets are references, never values, and the UI must make that
+visible.** Immutability is hostile to secrets: a key sealed into a pack is
+content-addressed forever and cannot be recalled. A config deck names a
+secret; the host resolves it at runtime. Show the name, never a value, and
+make an unresolved reference a legible state rather than a blank. *(W3
+instances; anything with auth)* *(new)*
 
 ### Non-goals (v1)
 
@@ -411,6 +461,23 @@ them to decide. Design against the cards; they are the acceptance test.
   action that runs the real harness with this adapter substituted.
 - *C3.5* It works. **Wants:** to take it. **Must see:** what version is being
   created, and that it copies zero bytes.
+- *C3.6* Vibe-coding a one-off: their Slack rule, hardcoded, for themselves.
+  **Wants:** speed, and no publishing decision. **Must see:** that it is
+  captured anyway — addressable, versioned, restorable — without having asked
+  for any of that, and that it is **not** proposed to anyone.
+- *C3.7* Four colleagues want that one-off. **Wants:** to generalize it.
+  **Must see:** the promotion path — fork to a new name, extract the
+  hardcoded specifics into a config schema, publish — with the private
+  original still running, untouched.
+- *C3.8* Configuring the generic pattern for a new team. **Wants:** to fill in
+  a form, not read code. **Must see:** a form generated from the schema, and
+  their instance saved as data.
+- *C3.9* An instance needs a Slack token. **Wants:** it to work without the
+  token ending up anywhere permanent. **Must see:** a named secret reference,
+  never a value, and a clear state when it is unresolved.
+- *C3.10* Their pattern depends on a moving thing and a frozen thing.
+  **Wants:** to reason about exposure. **Must see:** per-dependency
+  volatility in one view — `hub/slack` pinned, `me/format` live.
 
 **W4 — Skills**
 - *C4.1* 200 iterations in an hour. **Wants:** not to think about saving.
@@ -445,12 +512,17 @@ acme/currencies  fork of std/currencies@1.4.0 · +3 internal codes
                  state: rebased (absorbed 1.4.0 → 1.5.0-dev.9 automatically)
 ```
 
-**W3**
+**W3** — note the four strata coexisting in one realm
 ```
-hub/stripe-slack     latest 2.1.0     · 41 dependents
-hub/github-linear    latest 1.7.2     · 12 dependents
-hub/shopify-sheets   latest 0.9.0     · 3 dependents
-… 297 more
+hub/slack             latest 2.1.0 · 41 dependents · frozen, wide, public
+hub/gdocs             latest 1.4.0 · 38 dependents
+… 297 more adapters
+
+team/message-to-doc   latest 1.2.0 · 9 dependents · config.schema.json
+me/ship-notes         dev 0.1.0-dev.212 · 1 dependent (me) · private fork of
+                      team/message-to-doc@1.0.0 · deps: hub/slack ^2.0.0,
+                      me/format live
+me/ship-notes-config  instance data · secrets: [SLACK_TOKEN, GDOCS_SA] (refs)
 
 offers: 200 open — 197 current/rebased, 3 conflicted
   you/stripe-slack   ← hub/stripe-slack@2.1.0   conflicted: auth.js
@@ -602,6 +674,18 @@ Each is real and reachable, and each is covered by a test.
    reject — an unadopted proposal just stays a fork forever?
 7. Should the UI ever show the CLI command it is about to run? (It is a
    teaching surface, and it is the honest answer under option A.)
+8. **How does a fork say whether it is a proposal?** (R15.) Candidates: a
+   choice at fork time; inferred from whether an actor was recorded; a
+   private realm making it structurally invisible; or a fork that is private
+   by default and becomes an offer only when someone points at it. The last
+   matches how people work, and it changes the offers board from "everything
+   anyone forked" to "everything anyone offered".
+9. **Is an instance a deck, or a document inside one?** A configured
+   automation is data, one-of-a-kind, private, and edited through a form. It
+   may not want to look like a package at all.
+10. **Should a deck's position on the axes (§2.1a) be shown, and how?** It is
+    derivable — velocity from seal frequency, width from dependent count,
+    privacy from realm and content — but derived signals can mislead.
 
 ---
 

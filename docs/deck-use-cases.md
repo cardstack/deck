@@ -153,64 +153,108 @@ went stale.
 
 ---
 
-## 3. Adapters and integrations
+## 3. Adapters, patterns, and the automation you wrote for yourself
 
-*Genre: the Zapier long tail. `stripe→slack`, `github→linear`, `shopify→
-sheets`, `webhook→anything`. Small, numerous, and written by the person who
-needed it at 2am.*
+*Genre: the Zapier long tail. But it is not one genre — it is four strata
+with completely different physics, and today each is exiled to a different
+system.*
 
-**What is being built.** A catalog of small ES modules with a shared shape —
-auth, triggers, actions, a schema — where the value is entirely in the
-breadth of the tail, and every adapter has exactly one person who cares
-about it deeply for about a week.
+### 3.1 The stratum nobody notices
 
-**How it goes today.** The economics are absurd and everyone accepts them: to
-contribute forty lines to a connector catalog you fork the monorepo, clone
-several hundred megabytes, install a toolchain, run a test suite that
-exercises 900 adapters you have never heard of, open a PR, sign a CLA, and
-wait for a maintainer who has 300 other PRs. Meanwhile the fix you need is
-running in your own patched copy, which will never go back upstream — because
-the overhead exceeds the contribution by two orders of magnitude.
+"Slack → Google Doc" sounds like one thing. It is four:
 
-The maintainer's side is just as bad: 300 open PRs, each of which needs a
-rebase the moment anything lands, and each of which they must evaluate by
-reading rather than running.
+| | What it is | Changes | Consumers | Contains secrets or specifics |
+| --- | --- | --- | --- | --- |
+| **S1 Adapter** | the Slack client / MCP shim: auth, endpoints, types | when Slack changes — monthly at most | thousands | no |
+| **S2a Bespoke pattern** | *my* rule: this channel, tagged `#ship`, into that quarterly doc, formatted my way | hourly while being built, then never | **one** | yes, throughout |
+| **S2b Generic pattern** | "message → document", parameterized, configurable | weekly | many | no — the specifics were extracted into a schema |
+| **S3 Instance** | the actual binding: channel `C08…`, doc `1aZ…`, every weekday 09:00 | when I tweak it | **one** | yes, maximally |
+| *(S4 Runtime data)* | the messages themselves | constantly | — | **never Deck's business** |
 
-**In Deck.** An adapter is a deck. The whole contribution is:
+The adapter is the boring, stable part. Everyone talks about it because it is
+the part that has a home (npm, an MCP registry). The interesting part — the
+pattern and the instance — has no good home at all, which is why Zapier's
+actual product is a proprietary database of things you cannot version, fork,
+diff, or run anywhere else.
+
+### 3.2 The move that matters: bespoke → generic
+
+The valuable transition is S2a → S2b. You vibe-code something absurdly
+specific because that is the fastest way to get it working; then it turns out
+four colleagues want it; then it wants a config form instead of hardcoded
+IDs.
+
+Today that transition is a **rewrite in a different system**. You cannot
+promote your Zap to a shared template; you rebuild it as one. So mostly
+nobody does, and the same integration is rebuilt privately a thousand times.
+
+In Deck it is a fork plus an extraction:
 
 ```bash
-deck fork --realm ./hub --from hub/stripe-slack --as you/stripe-slack --use-in you/automations
-# edit two files; it is live in your automations before you switch windows
+deck fork --realm ./hub --from me/ship-notes --as team/message-to-doc
+# pull the hardcoded IDs out into config.schema.json; publish 1.0.0
 ```
 
-Your version is running in your workspace immediately, published under your
-name, sealed. Upstream is untouched. Then:
+Your private one keeps working, untouched, pinned to whatever it was pinned
+to. The generic one has its own version line from birth. Nothing migrated.
 
-- **The maintainer reviews by running.** One URL — `?with=hub/stripe-slack=
-  you/stripe-slack` — runs the real harness with your adapter substituted.
-  No checkout, no CI job, no preview deploy. They see it work or they see it
-  fail.
-- **Nobody rebases 300 proposals.** The daemon keeps them all merged against
-  upstream and surfaces only the handful that stopped merging. The queue
-  becomes "3 need a person", not "300 need a rebase".
-- **Accepting is a pointer move.** Upstream publishes the treeHash your
-  proposal already holds. Zero bytes copied. Or they don't accept it, and
-  your version keeps working forever, which is a legitimate outcome rather
-  than a failure.
-- **Adoption is the signal.** Which adapters do other people's decklists
-  actually pin? That is measurable, and it beats argument as a ranking for
-  what deserves maintainer attention.
+And the extraction pays twice: **a pattern that declares a config schema
+becomes configurable without any UI work** — the schema generates the form,
+and an instance (S3) is just a JSON document validated against it. The
+"configure it in a UI" product and the "it's a data deck" product are the
+same product.
 
-**Why the protocol is necessary.** The tail only gets covered if the cost of
-contributing is smaller than the cost of the private patch. Publisher-scoped
-forks (instant, no permission), review-by-running, and pointer-move
-acceptance are what get it below that line.
+### 3.3 What each stratum needs, and why one address space
 
-**Delight.** You fix a webhook adapter, it is live in your automation four
-seconds later, and the maintainer merges it two days after by clicking a
-button that copies no bytes.
+The strata compose — an instance imports a pattern which imports adapters —
+so they must be addressable in one space or people will copy instead of
+depend. That is the whole argument, and it is worth being concrete:
 
----
+- **S1 wants immutability and trust.** Pinned semver, bit-identical forever
+  (content-addressing proves it), hermetically vendored so it never phones a
+  CDN at runtime, and eventually a signature — it is the layer holding
+  credentials.
+- **S2a wants no ceremony at all.** It is vibe-coded; the point is speed. Every
+  save sealed, `live` addressing, restore to twenty minutes ago. No commit
+  message, no publish decision, no name negotiation.
+- **S2b wants a contract.** Semver, a config schema, a changelog by way of a
+  version timeline, and the contribution queue.
+- **S3 wants to be data.** Validated, versioned, private, and — critically —
+  holding *references* to secrets, never secrets.
+
+The mismatch across strata is the everyday pain: **my hourly-changing pattern
+depends on a monthly-changing adapter.** Deck expresses that in one line each:
+
+```json
+"dependencies": {
+  "hub/slack":  "^2.0.0",   ← frozen; I am not debugging Slack today
+  "hub/gdocs":  "^1.4.0",
+  "me/format":  "live"      ← mine, moving under me, every save
+}
+```
+
+Nothing else lets one composition mix "pinned forever" and "every keystroke".
+Zapier has no pinning; npm has no `live`.
+
+### 3.4 The catalog and the queue (unchanged, and still the load)
+
+For S1 and S2b, contribution volume is the problem. The economics today are
+absurd: to contribute forty lines you fork a monorepo, clone hundreds of
+megabytes, install a toolchain, run a test suite over 900 adapters you have
+never heard of, open a PR, sign a CLA, and wait for a maintainer with 300
+other PRs. Your fix runs in your private copy and never goes back.
+
+In Deck: fork into your own scope (running immediately), the maintainer
+reviews by opening one URL that runs the real harness with your adapter
+substituted, the daemon keeps all 200 proposals merged so only the genuine
+conflicts surface, and acceptance is a pointer move that copies zero bytes.
+Adoption count — whose decklists actually pin you — beats argument as a
+ranking for what deserves attention.
+
+**Delight.** You fix a webhook adapter and it is live in *your* automation
+four seconds later. Two days on, the maintainer clicks a button that copies
+no bytes. And the absurdly specific thing you built for yourself last month
+becomes the team's configurable template without being rewritten.
 
 ## 4. Skills and agent capabilities
 
@@ -261,7 +305,100 @@ knowing the hour you are abandoning is also sealed, in case you were wrong.
 
 ---
 
-## 5. What the four have in common
+## 5. Velocity, width, and privacy — the three axes
+
+The adapter strata expose an axis system that runs through all four
+workloads, and it explains what Deck is actually for better than any feature
+list.
+
+### 5.1 The axes
+
+- **Velocity** — how often it changes. Per-keystroke (a bespoke pattern, a
+  skill under tuning) to per-quarter (a currency list, a Slack adapter).
+- **Width** — how many consumers. One (my automation, my house-style skill)
+  to thousands (an adapter, a codelist).
+- **Privacy** — whether it contains specifics: my IDs, my customers, my
+  prompts, my org's rules.
+
+They are not independent. **Velocity and width are inversely correlated, and
+privacy tracks specificity.** The fast-changing things are private and have
+one consumer; the widely-used things are slow and public.
+
+```
+   high velocity ┃  S2a bespoke pattern        skill under tuning
+                 ┃  S3 instance                swarm component (W1)
+                 ┃
+                 ┃         ← the promotion path runs this way ←
+                 ┃
+    low velocity ┃  S1 adapter    codelist (W2)    S2b generic pattern
+                 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    width = 1                              width = many
+                    private                                public
+```
+
+### 5.2 What each axis demands, and what Deck answers with
+
+**Velocity → the cost of capturing a change must approach zero at the top of
+the axis, and the cost of *changing* must approach infinity at the bottom.**
+Those are opposite requirements, and most systems pick one. Git picks
+capture-with-ceremony; Zapier picks capture-with-no-history; npm picks
+immutable-with-ceremony. Deck answers with **auto-publish plus seals** at the
+top (no commit, no message, no decision — and you can still go back to any
+moment) and **content-addressed immutability** at the bottom (a pinned
+version is bit-identical forever, provably).
+
+**Width → the cost of distribution must be zero at width=1.** This is the one
+everybody gets wrong. If publishing is a decision, the private case pays for
+a benefit it does not want, so people keep it out of the system entirely —
+and then it has no history, no versions, and no path to being shared. Deck
+answers by making *everything* published into your own scope automatically.
+Width=1 costs nothing: you get a URL, versions, and history, and nobody has
+any reason to look. Width grows later, by fork and extraction, with **no
+migration** — that is the promotion path, and it is the thing the axis
+diagram is really about.
+
+**Privacy → the boundary must be structural, not a setting.** And here Deck
+is honest about a limitation that is currently an accidental virtue: the
+**realm is the boundary**, cross-realm is unbuilt, so isolation is the
+default and there is no accidental-sharing mechanism to misconfigure. When
+federation lands, "which realm" must remain the privacy decision — not a
+per-deck flag, which is the setting everybody forgets to set.
+
+### 5.3 The rule that follows: immutability is hostile to secrets
+
+Every property that makes Deck good for code makes it dangerous for secrets.
+Packs are content-addressed and immutable; the store dedups by hash; history
+keeps everything; restore is forward-only. **A secret sealed into a pack is a
+secret you cannot recall.**
+
+So the rule, and it should be enforced rather than documented: a deck carries
+*references* to secrets — a key name the host resolves at runtime — never
+values. (Boxel's server-injected-key proxy pattern is the precedent.) The
+right shape of enforcement is an open question: scanning on publish, a
+declared `secrets` block in the map that is the only legal way to name one,
+or both.
+
+### 5.4 The gap this exposes: forking privately
+
+Today `deck fork` records a base, and recording a base is what makes a fork
+an **offer**. That is exactly right for S2b and for the adapter catalog.
+
+It is exactly wrong for S2a. Forking `hub/slack` to hack in a workaround for
+my own automation should not enqueue a proposal against a maintainer who
+never asked. Privacy and contribution are being conflated by a single
+mechanism.
+
+The distinction is real and needs a design: *fork to propose* versus *fork to
+keep*. Candidates — an explicit flag at fork time; inferring it from whether
+an actor was recorded; letting a private realm hold the fork so it is
+structurally invisible; or letting the offer exist but requiring the
+contributor to *offer* it as a separate act. The last is probably closest to
+how people actually work: a fork is private until you point at it.
+
+Related: `?with=` trials let anyone run an app with a substituted dependency.
+That is a capability, and in a shared context it needs to be one.
+
+## 6. What the four have in common
 
 The pattern that predicts "Deck is the right tool":
 
@@ -281,7 +418,7 @@ nothing to do with the work.
 
 ---
 
-## 6. Where these are still weak (honest list)
+## 7. Where these are still weak (honest list)
 
 - **Cross-realm is not built.** Every example above assumes one realm. A
   public adapter or codelist catalog spans realms; `deck lock` refuses
@@ -300,3 +437,9 @@ nothing to do with the work.
   artifacts, not as live source.
 - **Discovery is absent.** These use cases assume you know the deck you want.
   Search, ranking by adoption, and a catalog view are unbuilt.
+- **No private fork.** Every fork is an offer (§5.4). The bespoke stratum
+  needs the opposite default.
+- **No secret discipline.** Nothing stops a key being sealed into a pack,
+  where it is immutable and content-addressed forever (§5.3).
+- **No config schemas yet.** A pattern that declares one becomes configurable
+  for free (§3.2); the convention and the form generation are unbuilt.
