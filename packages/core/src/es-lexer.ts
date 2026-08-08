@@ -267,6 +267,15 @@ function readDeclarationSpecifier(
         readString(cursor);
         continue;
       }
+      // An EXPORT only has a specifier after `from`, and that case is
+      // handled where `from` is read. A bare string here is therefore a
+      // value, not a module — `export default 'ffffffff-…'` in uuid was
+      // being reported as a dependency on a package named after a UUID,
+      // which then failed the hermeticity check for a reason that did not
+      // exist. `import` is different: `import 'side-effect.js'` is real.
+      if (isExport) {
+        return undefined;
+      }
       return readString(cursor);
     }
     if (char === ';') {
@@ -295,7 +304,12 @@ function readDeclarationSpecifier(
       if (
         depth === 0 &&
         isExport &&
-        ['const', 'let', 'var', 'function', 'class', 'async'].includes(word)
+        // `default` belongs here for the same reason as the rest: whatever
+        // follows it is a value. `export { default } from 'x'` is inside
+        // braces, so it never reaches this branch.
+        ['const', 'let', 'var', 'function', 'class', 'async', 'default'].includes(
+          word,
+        )
       ) {
         return undefined;
       }

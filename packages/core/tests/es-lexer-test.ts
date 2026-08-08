@@ -182,6 +182,35 @@ module('the ES module lexer', () => {
     );
   });
 
+  // Found by vendoring uuid@11.0.5, which has `export default
+  // 'ffffffff-ffff-ffff-ffff-ffffffffffff'`. That string was read as a
+  // specifier, so the package looked like it depended on a package named
+  // after a UUID and failed the hermeticity check for a reason that did not
+  // exist. An EXPORT only has a specifier after `from`.
+  test('export default <value> is a value, not a specifier', (assert) => {
+    assert.deepEqual(
+      moduleSpecifiers("export default 'ffffffff-ffff-ffff-ffff-ffffffffffff';\n"),
+      [],
+      'the uuid case exactly',
+    );
+    assert.deepEqual(moduleSpecifiers('export default function () {}'), []);
+    assert.deepEqual(
+      moduleSpecifiers('export const NIL = "00000000-0000-0000-0000-000000000000";'),
+      [],
+    );
+    // And the real re-export forms still resolve.
+    assert.deepEqual(moduleSpecifiers('export * from "./real.js";'), ['./real.js']);
+    assert.deepEqual(moduleSpecifiers('export { a } from "./x.js";'), ['./x.js']);
+    assert.deepEqual(moduleSpecifiers('export { default } from "./y.js";'), [
+      './y.js',
+    ]);
+    assert.deepEqual(moduleSpecifiers('export * as ns from "./z.js";'), ['./z.js']);
+    // An IMPORT is different: a bare string really is a module there.
+    assert.deepEqual(moduleSpecifiers("import './side-effect.js';"), [
+      './side-effect.js',
+    ]);
+  });
+
   // Without an identifier-boundary check the tail matched by prefix.
   test('module.exportsSomething is not module.exports', (assert) => {
     assert.false(isCommonJsModule('export const a = 1;\nmodule.exportsAll();\n'));
