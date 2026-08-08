@@ -496,14 +496,43 @@ and terser is pure JS.
 
 | Piece | State |
 | --- | --- |
-| Exact `immutable` + `Content-Digest` | Built & tested |
+| Exact `immutable` + `Repr-Digest`/`Content-Digest` | **Built & tested** |
 | Import-map injection | Built & tested |
-| Modulepreload injection | **Not built** (specified here) |
-| Wire gzip/br | **Not built** |
-| Minify derived release | **Not built** |
-| HTTP/2 or HTTP/3 on reference server | **Not built** (proxy-OK) |
+| Modulepreload injection, scope-aware closure | **Built & tested** |
+| Wire gzip at origin | **Built & tested** |
+| Brotli, HTTP/2, HTTP/3 | **Cloudflare's** — deliberately not at origin [A10] |
+| Minify derived release (`deck derive`, terser) | **Built & tested** |
+| `deck verify-derivation` | **Built & tested** |
 | Bundling as identity | **Ruled out** |
 | Derived app bundle | Optional later; not required for this spec |
+| WAN measurement of §4.4 | **Not done** — the claim is unproven [A9] |
+
+### Measured, 2026-08-08
+
+Whole-tree derivation of the vendored three.js:
+
+```
+282 files minified, 1324 KB → 737 KB (44% smaller), in 1.2 s
+verify-derivation: re-ran and reproduced 400d527034ae
+```
+
+One real module, the two projections stacking:
+
+| | identity | gzip |
+| --- | --- | --- |
+| `three@0.160.0/src/renderers/WebGLRenderer.js` | 68,979 | 14,824 |
+| `three@0.160.0-min.0/…` | 30,489 | **9,707** |
+
+7.1× off the source bytes with both applied, and `Repr-Digest` is stable
+across encodings while `Content-Digest` tracks the wire.
+
+The whole page still renders: the demo card pinned to `lib/three@production`
+loads 196 modules, all from the minified tree, and draws the same scene.
+`x-deck-preload: 200/843` on the sealed page.
+
+**What is still unmeasured is the thing §4.4 actually claims.** Every number
+above is localhost, which has no latency and therefore cannot show a
+waterfall. The bundle-like-cold-path claim stays unproven until A9.
 
 Until the slices land, prod efficiency is: pin exact versions, put a
 compressing HTTP/2 edge in front of the reference server, and hand-author

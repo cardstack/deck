@@ -9,6 +9,7 @@
     "./canonical-zip": "./src/canonical-zip.ts",
     "./packlist": "./src/packlist.ts",
     "./pack": "./src/pack.ts",
+    "./derive": "./src/derive.ts",
     "./store": "./src/store.ts",
     "./object-store": "./src/object-store.ts",
     "./signature": "./src/signature.ts",
@@ -38,14 +39,15 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/qunit": "catalog:",
+    "@types/semver": "catalog:",
     "@typescript-eslint/eslint-plugin": "catalog:",
     "@typescript-eslint/parser": "catalog:",
     "eslint": "catalog:",
     "qunit": "catalog:",
-    "typescript": "catalog:",
-    "@types/semver": "catalog:"
+    "typescript": "catalog:"
   },
   "dependencies": {
-    "semver": "catalog:"
+    "semver": "catalog:",
+    "terser": "^5.49.2"
   }
 }

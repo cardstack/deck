@@ -17,12 +17,19 @@ import {
   generateKeyPair,
   readEnvelope,
   signingPayload,
+  summarizeEnvelope,
   signTreeHash,
   verifyEnvelope,
   verifySignature,
 } from '@deck/core/signature';
 import { parseDependencyValue } from '@deck/core/lock';
 import { verifyLinks } from '@deck/core/verify-links';
+import {
+  deriveMinified,
+  derivedPack,
+  terserVersion,
+  verifyDerivation,
+} from '@deck/core/derive';
 import {
   FIXTURE_PACKAGE,
   FIXTURE_PUBLISHER,
@@ -293,6 +300,48 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
         1,
         'the second publisher of identical bytes sees the endorsement',
       );
+    });
+
+    // ---- A3/A4: derived trees are their own subject ----------------------
+    await checks.run('L9', 'a derived tree does not inherit the source endorsement', async () => {
+      let derived = await deriveMinified({
+        packBytes: sealed,
+        sourceVersion: FIXTURE_VERSION,
+        packageName: name,
+        terserVersion: await terserVersion(),
+      });
+      let derivedHash = unpack(derivedPack(derived)).treeHash;
+      assert(
+        derivedHash !== FIXTURE_TREE_HASH,
+        'a minified tree must be a different subject',
+      );
+      // FIXTURE_TREE_HASH was endorsed earlier in this run.
+      let envelope = await readEnvelope(storeDir, derivedHash);
+      assertEqual(
+        summarizeEnvelope(derivedHash, envelope).length,
+        0,
+        'signing the source must not endorse a projection of it',
+      );
+    });
+
+    await checks.run('L11', 'a derivation re-runs to the same tree', async () => {
+      let tool = await terserVersion();
+      let derived = await deriveMinified({
+        packBytes: sealed,
+        sourceVersion: FIXTURE_VERSION,
+        packageName: name,
+        terserVersion: tool,
+      });
+      let verdict = await verifyDerivation({
+        sourcePack: sealed,
+        derivedTreeHash: unpack(derivedPack(derived)).treeHash,
+        derivation: derived.derivation,
+        sourceVersion: FIXTURE_VERSION,
+        packageName: name,
+        version: derived.version,
+        terserVersion: tool,
+      });
+      assert(verdict.ok, verdict.detail ?? 'the derivation did not reproduce');
     });
 
     // ---- L11 fail closed -------------------------------------------------

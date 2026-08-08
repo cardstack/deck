@@ -7,12 +7,14 @@ import {
   hashBytes,
 } from '@deck/core/tree-hash';
 import { pack, packFromDir, peekPacklist, unpack } from '@deck/core/pack';
+import { readZipEntry } from '@deck/core/canonical-zip';
 import {
   collectStoreGarbage,
   inspectStore,
   migrateStore,
   pruneDevVersions,
   publishToStore,
+  readStoredPack,
   readStoreMeta,
   releaseVersion,
   setDistTag,
@@ -21,6 +23,13 @@ import { forkDeck } from '@deck/core/fork';
 import { rebasePass, startRebaseDaemon } from '@deck/server/rebase-daemon';
 import { lockDeck, parseDependencyValue } from '@deck/core/lock';
 import { assertLinksOk, verifyLinks } from '@deck/core/verify-links';
+import {
+  derivationFromMap,
+  deriveMinified,
+  derivedPack,
+  terserVersion,
+  verifyDerivation,
+} from '@deck/core/derive';
 import { vendorFromCdn, vendorImportMap } from '@deck/core/vendor';
 import {
   deckNameForNpm,
@@ -56,6 +65,37 @@ import { runConformance } from '@deck/conformance/run';
 import { applyRestore } from '@deck/history/backend';
 import { createHistory, isValidHistoryKind } from '@deck/history/create';
 
+// Seal a SECOND tree beside a published version: same source, minified,
+// its own treeHash, its own version, its own address, tagged `production`.
+// Nothing about the source version changes; a consumer opts in.
+async function deriveMinifiedRelease(
+  storeDir: string,
+  scoped: string,
+  sourceVersion: string,
+): Promise<void> {
+  let sourcePack = await readStoredPack(storeDir, scoped, sourceVersion);
+  if (!sourcePack) {
+    fail(`${scoped}@${sourceVersion} has no stored content to derive from`);
+  }
+  let derived = await deriveMinified({
+    packBytes: sourcePack!,
+    sourceVersion,
+    packageName: scoped,
+    terserVersion: await terserVersion(),
+  });
+  let bytes = derivedPack(derived);
+  await publishToStore(storeDir, scoped, derived.version, bytes, {
+    tag: 'production',
+  });
+  let saved = derived.sourceBytes - derived.derivedBytes;
+  console.log(
+    `derived ${scoped}@${derived.version} — ${derived.minifiedPaths.length} file(s) minified, ${(derived.sourceBytes / 1024).toFixed(0)} KB → ${(derived.derivedBytes / 1024).toFixed(0)} KB (${((saved / derived.sourceBytes) * 100).toFixed(0)}% smaller), tag production`,
+  );
+  console.log(
+    `  derivedFrom ${derived.derivedFrom.slice(0, 12)} via ${derived.derivation.tool} — \`deck verify-derivation\` re-runs it`,
+  );
+}
+
 // The Deck CLI is the WRITE side of the standalone protocol: it arranges
 // at-rest state (packs, the store). The server is read-only. Together they
 // are the reference implementation any other implementor (the Boxel realm
@@ -88,7 +128,7 @@ Usage:
   deck tag --realm <dir> --publisher <p> --name <n> --tag <t> --version <v>
                                         move a dist-tag
   deck release --realm <dir> --publisher <p> --name <n> --version <v>
-               --from <tag-or-version> [--tag <t>] [--require-signature]
+               --from <tag-or-version> [--tag <t>] [--require-signature] [--minify]
                                         name an existing sealed state as a new
                                         version — a pointer, never a copy
   deck vendor <cdn-url> --name <n> --version <v> [--realm <dir> --publisher <p>]
@@ -168,6 +208,17 @@ Usage:
                                         byte-identical before deleting
                                         anything. gc: drop trees and objects
                                         no published version points at
+  deck derive --realm <dir> --publisher <p> --name <n> --version <v> [--minify]
+                                        seal a minified tree beside a
+                                        published version: own treeHash, own
+                                        version <v>-min.0, tag "production".
+                                        The source version does not change
+  deck verify-derivation --realm <dir> --publisher <p> --name <n> --version <v>
+                                        re-run a derived tree's recorded
+                                        derivation over its source and
+                                        require the same treeHash. A
+                                        derivation nobody can reproduce is
+                                        decoration, so this refuses
   deck verify-links --realm <dir> [--publisher <p> --name <n>]
                     [--require-signature <n>]
                                         L11: check that every pin still
@@ -449,6 +500,7 @@ async function main(): Promise<void> {
           from: { type: 'string' },
           tag: { type: 'string' },
           'require-signature': { type: 'boolean', default: false },
+          minify: { type: 'boolean', default: false },
         },
       });
       if (
@@ -491,15 +543,23 @@ async function main(): Promise<void> {
         }
       }
       let record = await releaseVersion(
-        storeDirFor(resolve(values.realm)),
+        storeDirFor(resolve(values.realm!)),
         scoped,
-        values.version,
+        values.version!,
         from,
         { tag: values.tag },
       );
       console.log(
         `released ${scoped}@${values.version} from ${values.from}: same sealed state (treeHash ${record.treeHash}), zero bytes copied${values.tag ? `, tag ${values.tag}` : ''}${values['require-signature'] ? ' — endorsed' : ''}`,
       );
+
+      if (values.minify) {
+        await deriveMinifiedRelease(
+          storeDirFor(resolve(values.realm!)),
+          scoped,
+          values.version!,
+        );
+      }
       return;
     }
     case 'vendor': {
@@ -887,6 +947,101 @@ async function main(): Promise<void> {
         return;
       }
       fail(`unknown store subcommand "${subcommand}" (status | migrate | gc)`);
+      return;
+    }
+    case 'derive': {
+      let { values } = parseArgs({
+        args: rest,
+        options: {
+          realm: { type: 'string' },
+          publisher: { type: 'string' },
+          name: { type: 'string' },
+          version: { type: 'string' },
+          minify: { type: 'boolean', default: true },
+        },
+      });
+      if (!values.realm || !values.publisher || !values.name || !values.version) {
+        fail(
+          'usage: deck derive --realm <dir> --publisher <p> --name <n> --version <v> [--minify]',
+        );
+      }
+      await deriveMinifiedRelease(
+        storeDirFor(resolve(values.realm!)),
+        `${values.publisher}/${values.name}`,
+        values.version!,
+      );
+      return;
+    }
+    case 'verify-derivation': {
+      let { values } = parseArgs({
+        args: rest,
+        options: {
+          realm: { type: 'string' },
+          publisher: { type: 'string' },
+          name: { type: 'string' },
+          version: { type: 'string' },
+        },
+      });
+      if (!values.realm || !values.publisher || !values.name || !values.version) {
+        fail(
+          'usage: deck verify-derivation --realm <dir> --publisher <p> --name <n> --version <v>',
+        );
+      }
+      let storeDir = storeDirFor(resolve(values.realm!));
+      let scoped = `${values.publisher}/${values.name}`;
+      let meta = await readStoreMeta(storeDir, scoped);
+      let record = meta?.versions[values.version!];
+      if (!record) {
+        fail(`${scoped}@${values.version} is not a published version`);
+      }
+      let derivedPackBytes = await readStoredPack(
+        storeDir,
+        scoped,
+        values.version!,
+      );
+      let mapText = derivedPackBytes
+        ? readZipEntry(derivedPackBytes, 'importmap.json')?.toString('utf8')
+        : undefined;
+      let { derivedFrom, derivation } = mapText
+        ? derivationFromMap(mapText, scoped)
+        : {};
+      if (!derivedFrom || !derivation) {
+        fail(
+          `${scoped}@${values.version} records no derivation — it is a source tree, not a derived one`,
+        );
+      }
+      // Find which published version holds the source tree it claims.
+      let sourceVersion = Object.entries(meta!.versions).find(
+        ([, candidate]) => candidate.treeHash === derivedFrom,
+      )?.[0];
+      if (!sourceVersion) {
+        fail(
+          `L11: ${scoped}@${values.version} claims derivedFrom ${derivedFrom!.slice(0, 12)}, which no published version holds`,
+        );
+      }
+      let sourcePack = await readStoredPack(storeDir, scoped, sourceVersion!);
+      let tool = await terserVersion();
+      let verdict = await verifyDerivation({
+        sourcePack: sourcePack!,
+        derivedTreeHash: record!.treeHash,
+        derivation: derivation!,
+        sourceVersion: sourceVersion!,
+        packageName: scoped,
+        version: values.version!,
+        terserVersion: tool,
+      });
+      console.log(
+        `${scoped}@${values.version} ← ${sourceVersion} via ${derivation!.tool}`,
+      );
+      if (verdict.ok) {
+        console.log(
+          `  ok  re-running the derivation reproduced ${verdict.expected.slice(0, 12)}`,
+        );
+        return;
+      }
+      console.log(`  expected ${verdict.expected}`);
+      console.log(`  actual   ${verdict.actual ?? '(not produced)'}`);
+      fail(`L11: ${verdict.detail ?? 'the derivation did not reproduce'}`);
       return;
     }
     case 'verify-links': {

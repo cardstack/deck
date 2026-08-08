@@ -32,5 +32,6 @@ await import('./merge-test.ts');
 await import('./offer-test.ts');
 await import('./signature-test.ts');
 await import('./verify-links-test.ts');
+await import('./derive-test.ts');
 
 QUnit.start();
