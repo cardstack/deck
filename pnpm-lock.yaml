@@ -45,16 +45,7 @@ importers:
         specifier: 'catalog:'
         version: 3.9.6
 
-  examples/neon-drift:
-    dependencies:
-      '@deck/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@deck/server':
-        specifier: workspace:*
-        version: link:../../packages/server
-
-  examples/vanilla-app:
+  examples/codelist:
     dependencies:
       '@deck/core':
         specifier: workspace:*

@@ -1,0 +1,10 @@
+{
+  "deck": {
+    "packages": {
+      "viewer": {
+        "version": "1.0.0",
+        "entry": "$REALM/viewer.js"
+      }
+    }
+  }
+}
