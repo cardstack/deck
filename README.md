@@ -195,6 +195,20 @@ revives the CatalogJS-era idea with modern mechanics: pin + hash +
 review, then serve forever. It falls out of the vendoring design
 (carriage modes) rather than being a bolt-on.
 
+## Run it
+
+```bash
+pnpm install
+pnpm demo
+# open http://localhost:8789/
+```
+
+[`examples/hub`](examples/hub/) starts every example at once — each in its own
+process, its own realm, its own store — and serves one console: the Deckbook,
+and for each demo its explanation, its live app, and the transcript it actually
+printed while building its store. See [examples/](examples/) to run one on its
+own.
+
 ## Deckbook
 
 Open [deckbook.html](deckbook.html) (or `http://localhost:<port>/deckbook.html`
@@ -225,6 +239,12 @@ Design set in [docs/](docs/) — start with:
   proposed for, and costs a second identity spec to find that out.
   `tree-hash-v1` is the identity for everything. The measurements are in
   [deck-tree-hash-v2-review.md](docs/deck-tree-hash-v2-review.md).
+- [deck-rebuild-sibling-proposal.md](docs/deck-rebuild-sibling-proposal.md)
+  — when git+build ≠ npm bytes: `rebuild-v1` derivation (sibling, not
+  fork); explicit `match` exact/mismatch.
+- [deck-depot-and-realm-backport.md](docs/deck-depot-and-realm-backport.md)
+  — standalone Deck says **depot** (a place), not realm; publishers sit
+  inside; Boxel realm is placement-free and may become deck-enabled.
 - [deck-pack-equivalence.md](docs/deck-pack-equivalence.md) — deck ⇄
   pack: four homes, treeHash identity, carriage modes, round-trip
   laws, `!/` mounts, canonical-zip-v1. All opens ruled.

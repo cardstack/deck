@@ -62,8 +62,8 @@ app.innerHTML = `
 
 let s = document.createElement('style');
 s.textContent = `
-:root{--bg:#0f1115;--panel:#171a21;--line:#262b36;--ink:#e6e9ef;--dim:#8b93a7;--up:#3fb950;--fk:#d29922}
-@media(prefers-color-scheme:light){:root{--bg:#f6f7f9;--panel:#fff;--line:#e2e5ea;--ink:#1c2028;--dim:#666f80}}
+/* Boxel light surface tier. Light only — see the note in codelist. */
+:root{--bg:#f7f8fa;--panel:#fff;--line:#e2e8f0;--ink:#272330;--dim:#5a586a;--up:#0c9d7c;--fk:#b45309}
 *{box-sizing:border-box}
 body{margin:0;padding:3rem 1.5rem 5rem;background:var(--bg);color:var(--ink);font:15px/1.6 ui-sans-serif,system-ui,sans-serif}
 #app{max-width:70rem;margin:0 auto}#app.loading{color:var(--dim)}
@@ -81,7 +81,7 @@ td{padding:.7rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
 tr:last-child td{border-bottom:none}
 .ask{color:var(--dim)}.out code{color:var(--up)}
 .verdict{font-size:1.1rem;color:var(--up);text-align:center}
-tr.diff .verdict{color:#f85149}
+tr.diff .verdict{color:#d92d20}
 .added{margin-top:2rem;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1rem 1.2rem}
 .added h3{margin:0 0 .5rem;font-size:1rem}
 .added p{margin:.3rem 0}.dim{color:var(--dim);font-size:.86rem}

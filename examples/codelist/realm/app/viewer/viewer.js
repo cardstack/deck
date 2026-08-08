@@ -129,17 +129,13 @@ app.innerHTML = `
 // ship CSS as another file in the same deck.
 let style = document.createElement('style');
 style.textContent = `
+  /* Boxel light surface tier — one stage colour, white panels, hairline
+     borders. Light only: the demo hub frames this page in the same palette,
+     and two themes fighting inside one console reads as two products. */
   :root {
-    --bg: #0f1115; --panel: #171a21; --line: #262b36;
-    --ink: #e6e9ef; --dim: #8b93a7;
-    --base: #3d4657; --added: #3fb950; --acme: #d29922;
-  }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #f6f7f9; --panel: #fff; --line: #e2e5ea;
-      --ink: #1c2028; --dim: #666f80;
-      --base: #c9ced8; --added: #1a7f37; --acme: #9a6700;
-    }
+    --bg: #f7f8fa; --panel: #fff; --line: #e2e8f0;
+    --ink: #272330; --dim: #5a586a;
+    --base: #c9ced8; --added: #0c9d7c; --acme: #b45309;
   }
   * { box-sizing: border-box; }
   body {
@@ -185,7 +181,6 @@ style.textContent = `
     font: 600 .72rem/1 ui-monospace, monospace; padding: .3rem .35rem;
     border-radius: 3px; background: var(--base); color: #fff; min-width: 2.6rem; text-align: center;
   }
-  @media (prefers-color-scheme: light) { .keys li { color: #1c2028; } }
   .keys li.added { background: var(--added); color: #fff; }
   .keys li.acme { background: var(--acme); color: #fff; }
   .keys li.absent { background: transparent; color: var(--line); }

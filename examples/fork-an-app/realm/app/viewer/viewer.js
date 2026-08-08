@@ -111,31 +111,38 @@ const SHAPE = [
   [51.49, -0.13],
 ];
 
-for (let [kind, side] of [
-  ['upstream', upstream],
-  ['fork', fork],
-]) {
-  let L = await import(urlFor(side));
-  let map = L.map(`map-${kind}`, {
+// Leaflet reads the container's size once, at `L.map()`, and sizes its SVG
+// viewBox from it. Two things here can make that size wrong: the page's own
+// stylesheet is injected below (so `.map { height: 19rem }` may not have
+// applied yet), and this page is embedded in a resizable frame by the demo
+// hub. Getting it wrong is silent — the map builds, the controls render, and
+// the vector layers land in a 0×0 viewBox. So each map watches its own box
+// and re-measures.
+function mount(kind, side, L) {
+  let container = document.getElementById(`map-${kind}`);
+  let map = L.map(container, {
     center: [51.51, -0.105],
     zoom: 12,
     attributionControl: false,
   });
   // Vector layers only — the map never asks the network for a tile.
-  L.polygon(SHAPE, { color: kind === 'fork' ? '#d29922' : '#3fb950', weight: 2 }).addTo(map);
-  L.circleMarker([51.51, -0.105], { radius: 7, color: '#58a6ff' })
+  L.polygon(SHAPE, { color: kind === 'fork' ? '#b45309' : '#0c9d7c', weight: 2 }).addTo(map);
+  L.circleMarker([51.51, -0.105], { radius: 7, color: '#0069f9' })
     .addTo(map)
     .bindPopup(`${side.deck}@${side.version}`);
+  new ResizeObserver(() => {
+    map.invalidateSize({ animate: false });
+    map.setView([51.51, -0.105], 12, { animate: false });
+  }).observe(container);
+  return map;
 }
 
 let style = document.createElement('style');
 style.textContent = `
+  /* Boxel light surface tier. Light only — see the note in codelist. */
   :root {
-    --bg:#0f1115; --panel:#171a21; --line:#262b36; --ink:#e6e9ef; --dim:#8b93a7;
-    --up:#3fb950; --fork:#d29922;
-  }
-  @media (prefers-color-scheme: light) {
-    :root { --bg:#f6f7f9; --panel:#fff; --line:#e2e5ea; --ink:#1c2028; --dim:#666f80; }
+    --bg:#f7f8fa; --panel:#fff; --line:#e2e8f0; --ink:#272330; --dim:#5a586a;
+    --up:#0c9d7c; --fork:#b45309;
   }
   * { box-sizing: border-box; }
   body {
@@ -159,9 +166,8 @@ style.textContent = `
   .version { margin-left:auto; padding:.1rem .45rem; border-radius:4px; background:var(--line); }
   .map-card h2 { font-size:1rem; margin:0 0 .2rem; }
   .sub { color:var(--dim); margin:0 0 .8rem; font-size:.85rem; }
-  .map { height:19rem; border-radius:7px; overflow:hidden; background:#0b0d12; border:1px solid var(--line); }
-  @media (prefers-color-scheme: light) { .map { background:#eef1f5; } }
-  .hash { color:var(--line); font:.7rem ui-monospace, monospace; margin:.5rem 0 0; }
+  .map { height:19rem; border-radius:7px; overflow:hidden; background:#eef1f5; border:1px solid var(--line); }
+  .hash { color:#b7b7bd; font:.7rem ui-monospace, monospace; margin:.5rem 0 0; }
 
   /* Make the forked glyphs unmissable. */
   .leaflet-control-zoom a { font-size:1.05rem; }
@@ -180,3 +186,11 @@ style.textContent = `
   .reading strong { color:var(--ink); font-weight:600; }
 `;
 document.head.append(style);
+
+// Only now, with the layout settled, are the containers their real size.
+for (let [kind, side] of [
+  ['upstream', upstream],
+  ['fork', fork],
+]) {
+  mount(kind, side, await import(urlFor(side)));
+}

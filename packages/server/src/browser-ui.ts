@@ -10,19 +10,24 @@ export const BROWSER_HTML = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Deck store browser</title>
 <style>
+  /* Boxel light surface tier — the same tokens the workspace chrome uses,
+     so the browser does not read as a different product from the pages it
+     is serving. */
   :root {
-    --bg: #0e1116;
-    --panel: #161b22;
-    --panel-2: #1c2330;
-    --line: #30363d;
-    --text: #e6edf3;
-    --muted: #8b949e;
-    --accent: #3fb950;
-    --accent-dim: #238636;
-    --warn: #d29922;
-    --link: #58a6ff;
-    --danger: #ff7b72;
-    --mono: "JetBrains Mono", "SF Mono", "Menlo", ui-monospace, monospace;
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --panel-2: #f6f7f9;
+    --line: #e2e8f0;
+    --hairline: #eceef1;
+    --text: #272330;
+    --muted: #8b8b93;
+    --accent: #0c9d7c;
+    --accent-dim: #0a7d63;
+    --warn: #b45309;
+    --link: #0069f9;
+    --danger: #d92d20;
+    --shadow: 0 2px 8px rgba(28, 28, 50, 0.05);
+    --mono: "IBM Plex Mono", "SF Mono", "Menlo", ui-monospace, monospace;
     --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
@@ -41,9 +46,9 @@ export const BROWSER_HTML = `<!doctype html>
   header.app a.book:hover { text-decoration: underline; }
   .truth {
     padding: 0.55rem 1rem; border-bottom: 1px solid var(--line);
-    background: #1a1510; color: #e3c07a; font-size: 0.8rem; line-height: 1.4;
+    background: #fff9f2; color: #7a4a10; font-size: 0.8rem; line-height: 1.4;
   }
-  .truth code { font-family: var(--mono); color: #ffe8a3; }
+  .truth code { font-family: var(--mono); color: #8a4b06; }
   .truth strong { color: var(--warn); font-weight: 600; }
   .layout { display: grid; grid-template-columns: 260px 1fr; min-height: 0; }
   @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } aside { max-height: 32vh; } }
@@ -62,7 +67,7 @@ export const BROWSER_HTML = `<!doctype html>
   .pkg:hover { background: var(--panel-2); }
   .pkg.active { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); }
   .pkg .name { font-family: var(--mono); font-size: 0.86rem; }
-  .pkg .meta { display: block; color: var(--muted); font-size: 0.7rem; margin-top: 0.15rem; font-family: var(--mono); }
+  .pkg .meta { display: block; color: var(--muted); font-size: 0.7rem; margin-top: 0.15rem; font-family: var(--mono); overflow-wrap: anywhere; }
   .pkg .tag { color: var(--accent); }
   main { display: grid; grid-template-rows: auto auto auto 1fr; min-height: 0; min-width: 0; }
   .toolbar {
@@ -121,7 +126,7 @@ export const BROWSER_HTML = `<!doctype html>
     display: inline-block; padding: 0.1rem 0.4rem; border: 1px solid var(--line);
     border-radius: 999px; font-size: 0.7rem; color: var(--accent); margin-left: 0.35rem;
   }
-  .pill.warn { color: var(--warn); border-color: #6e5a2a; }
+  .pill.warn { color: var(--warn); border-color: #f4e6d4; background: #fff9f2; }
 </style>
 </head>
 <body>

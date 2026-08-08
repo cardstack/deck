@@ -476,6 +476,43 @@ module('deck server: realms on disk', function (hooks) {
     );
   });
 
+  // `/` is the store browser by default. An embedder that passes a fallback
+  // has an app to put at the root, and taking `/` from it made the option
+  // silently do nothing — which is exactly what every demo in examples/ hit.
+  test('a fallback owns the root; /_browser is still the browser', async function (assert) {
+    let other = createDeckServer({
+      realms: [{ name: 'demo', dir: realmDir, storeDir }],
+      fallback: (_req, res) => {
+        res.writeHead(302, { location: '/demo/acme/app@1.0.0/app.js' });
+        res.end();
+      },
+    });
+    await new Promise<void>((resolve) => other.listen(0, resolve));
+    let base = `http://127.0.0.1:${(other.address() as AddressInfo).port}`;
+    try {
+      let root = await fetch(base, { redirect: 'manual' });
+      assert.strictEqual(root.status, 302, 'the root belongs to the app');
+      assert.strictEqual(
+        root.headers.get('location'),
+        '/demo/acme/app@1.0.0/app.js',
+      );
+      let browser = await fetch(`${base}/_browser`);
+      assert.ok(
+        (await browser.text()).includes('Deck store browser'),
+        'and the browser is still one path away',
+      );
+      // Without a fallback the root is unchanged.
+      assert.ok(
+        (await (await fetch(origin)).text()).includes('Deck store browser'),
+        'the default root is still the store browser',
+      );
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        other.close((e) => (e ? reject(e) : resolve())),
+      );
+    }
+  });
+
   test('writes are refused — the server is read-only at-rest serving', async function (assert) {
     let response = await fetch(
       `${origin}/demo/acme/confetti@1.0.0/confetti.js`,

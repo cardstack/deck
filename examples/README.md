@@ -1,5 +1,19 @@
 # Examples
 
+**Start here:**
+
+```bash
+pnpm demo
+# open http://localhost:8789/
+```
+
+[`hub`](hub/) starts every example at once and serves one console: the
+Deckbook, and for each demo its explanation, its live app, and the transcript
+it actually printed while building its store. Everything below can also be run
+on its own.
+
+---
+
 Each one is a **use case from [docs/deck-use-cases.md](../docs/deck-use-cases.md)**,
 built to show what the protocol makes possible — not to prove the code runs.
 That is what `pnpm test` and `deck conform` are for.
@@ -75,6 +89,12 @@ has a specifier after `from`. Fixed, with the case pinned in
 ```bash
 pnpm install
 pnpm --filter @deck/example-codelist demo
+```
+
+Or all of them, behind one console:
+
+```bash
+pnpm demo
 ```
 
 The store each demo builds lives under `<example>/realm/.deck/` and is

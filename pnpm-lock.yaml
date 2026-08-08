@@ -90,6 +90,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/server
 
+  examples/hub:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
   packages/cli:
     dependencies:
       '@deck/conformance':

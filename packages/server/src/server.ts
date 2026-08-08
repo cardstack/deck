@@ -704,7 +704,13 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     let pathname = decodeURIComponent(url.pathname);
     let search = url.search;
 
-    if (BROWSER_PATHS.has(pathname)) {
+    // `/` is the store browser — unless the embedder mounted something there.
+    // A caller that supplies a `fallback` has an app to show at the root, and
+    // taking `/` from it made that option silently do nothing: every demo in
+    // examples/ printed a root URL that landed on the store browser instead of
+    // the app it had just built. `/_browser` is always the browser, so the
+    // browser is never lost, only moved out of the way.
+    if (BROWSER_PATHS.has(pathname) && !(pathname === '/' && fallback)) {
       respond(
         req,
         res,
