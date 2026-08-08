@@ -207,13 +207,48 @@ export async function runHttpChecks(
     }
   });
 
-  checks.skip('L9', 'a signature envelope is served', 'unbuilt');
-  checks.skip('L10', 'a fork reports the same endorsements', 'follows L9');
-  checks.skip(
-    'L11',
-    'the verify gate refuses an unverifiable pin',
-    'no verify gate on publish/lock yet',
-  );
+  // L9/L10 over the wire. The fixture is unsigned by default, so these
+  // check the SHAPE of the answer: a tree with no endorsements says so
+  // clearly, and ?meta always carries the (possibly empty) summary.
+  await checks.run('L9', '?meta reports an endorsement summary', async () => {
+    let response = await get(`${sealed}?meta`);
+    let body = (await response.json()) as {
+      data?: { attributes?: { signatures?: unknown } };
+    };
+    assert(
+      Array.isArray(body.data?.attributes?.signatures),
+      '?meta must always carry a signatures array, empty when unsigned',
+    );
+  });
+
+  await checks.run('L9', 'endorsements are addressed by tree hash', async () => {
+    let response = await get(
+      `${base}/${realm}/_trees/${FIXTURE_TREE_HASH}/signatures`,
+    );
+    assert(
+      response.status === 200 || response.status === 404,
+      `expected an envelope or a clean 404, got ${response.status}`,
+    );
+    if (response.status === 404) {
+      let body = (await response.json()) as { errors?: { code?: string }[] };
+      assertEqual(body.errors?.[0]?.code, 'no-signatures', 'error code');
+      return;
+    }
+    let envelope = (await response.json()) as {
+      spec?: string;
+      treeHash?: { hash?: string };
+    };
+    assertEqual(envelope.spec, 'deck-sig-v1', 'envelope spec');
+    assertEqual(envelope.treeHash?.hash, FIXTURE_TREE_HASH, 'envelope subject');
+  });
+
+  await checks.run('L10', 'a nonsense tree hash is refused, not invented', async () => {
+    let response = await get(
+      `${base}/${realm}/_trees/${'0'.repeat(64)}/signatures`,
+    );
+    assertEqual(response.status, 404, 'unknown tree');
+  });
+  checks.skip('L11', 'the verify gate', 'checked at rest');
   checks.skip('L3', 'pointer semantics', 'checked at rest');
   checks.skip('L6', 'hermeticity', 'checked at rest');
 

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hashBytes, treeHashFromDir, treeHashFromEntries } from '@deck/core/tree-hash';
@@ -12,7 +12,17 @@ import {
   resolveVersionSpec,
 } from '@deck/core/store';
 import { walkSourceGraph } from '@deck/core/vendor-npm';
+import {
+  appendSignature,
+  generateKeyPair,
+  readEnvelope,
+  signingPayload,
+  signTreeHash,
+  verifyEnvelope,
+  verifySignature,
+} from '@deck/core/signature';
 import { parseDependencyValue } from '@deck/core/lock';
+import { verifyLinks } from '@deck/core/verify-links';
 import {
   FIXTURE_PACKAGE,
   FIXTURE_PUBLISHER,
@@ -247,10 +257,125 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
     });
 
     // ---- L9 / L10 --------------------------------------------------------
-    checks.skip('L9', 'signatures bind a key to a treeHash', 'unbuilt');
-    checks.skip('L10', 'a fork inherits endorsements', 'follows L9');
+    await checks.run('L9', 'a signature verifies for its tree and no other', () => {
+      let key = generateKeyPair();
+      let signature = signTreeHash({ treeHash: FIXTURE_TREE_HASH, key });
+      assert(
+        verifySignature(FIXTURE_TREE_HASH, signature),
+        'a fresh signature did not verify',
+      );
+      assert(
+        !verifySignature('0'.repeat(64), signature),
+        'a signature verified for the wrong tree',
+      );
+    });
+
+    await checks.run('L9', 'the signed payload is the canonical two lines', () => {
+      assertEqual(
+        signingPayload(FIXTURE_TREE_HASH).toString('utf8'),
+        `deck-sig-v1\ntree-hash-v1:${FIXTURE_TREE_HASH}\n`,
+        'payload',
+      );
+    });
+
+    await checks.run('L10', 'endorsements follow the bytes, not the name', async () => {
+      let key = generateKeyPair();
+      await appendSignature(
+        storeDir,
+        FIXTURE_TREE_HASH,
+        signTreeHash({ treeHash: FIXTURE_TREE_HASH, key }),
+      );
+      // A second publisher, same bytes, nothing signed for it.
+      await publishToStore(storeDir, 'other/fixture', FIXTURE_VERSION, sealed);
+      let envelope = await readEnvelope(storeDir, FIXTURE_TREE_HASH);
+      assertEqual(
+        verifyEnvelope(FIXTURE_TREE_HASH, envelope!).valid.length,
+        1,
+        'the second publisher of identical bytes sees the endorsement',
+      );
+    });
 
     // ---- L11 fail closed -------------------------------------------------
+    // The law that was half-true: provenance recorded and never checked.
+    await checks.run('L11', 'a stale pin is refused, not served', async () => {
+      let deckDir = join(root, 'link-check');
+      await mkdir(deckDir, { recursive: true });
+      await writeFile(
+        join(deckDir, 'importmap.json'),
+        JSON.stringify({
+          imports: {
+            [`${name}/`]: `/r/${name}@9.9.9/`,
+            [name]: `/r/${name}@9.9.9/index.js`,
+          },
+          deck: {
+            packages: { probe: { version: '1.0.0' } },
+            dependencies: { [name]: FIXTURE_VERSION },
+          },
+        }),
+      );
+      let report = await verifyLinks({
+        realmName: 'r',
+        storeDir,
+        deck: 'x/probe',
+        deckDir,
+      });
+      assert(
+        report.findings.some((finding) => finding.code === 'link-integrity'),
+        `a pin at 9.9.9 for a dependency declared ${FIXTURE_VERSION} was accepted`,
+      );
+    });
+
+    await checks.run('L11', 'a pin with no dependency record is refused', async () => {
+      let deckDir = join(root, 'orphan-pin');
+      await mkdir(deckDir, { recursive: true });
+      await writeFile(
+        join(deckDir, 'importmap.json'),
+        JSON.stringify({
+          imports: { stray: `/r/${name}@${FIXTURE_VERSION}/index.js` },
+          deck: { packages: { probe: { version: '1.0.0' } } },
+        }),
+      );
+      let report = await verifyLinks({
+        realmName: 'r',
+        storeDir,
+        deck: 'x/probe',
+        deckDir,
+      });
+      assert(
+        report.findings.some((finding) => finding.code === 'link-missing-record'),
+        'an orphan pin was accepted',
+      );
+    });
+
+    await checks.run('L11', 'honest links pass', async () => {
+      let deckDir = join(root, 'honest');
+      await mkdir(deckDir, { recursive: true });
+      await writeFile(
+        join(deckDir, 'importmap.json'),
+        JSON.stringify({
+          imports: {
+            [`${name}/`]: `/r/${name}@${FIXTURE_VERSION}/`,
+            [name]: `/r/${name}@${FIXTURE_VERSION}/index.js`,
+          },
+          deck: {
+            packages: { probe: { version: '1.0.0' } },
+            dependencies: { [name]: FIXTURE_VERSION },
+          },
+        }),
+      );
+      let report = await verifyLinks({
+        realmName: 'r',
+        storeDir,
+        deck: 'x/probe',
+        deckDir,
+      });
+      assertEqual(
+        report.findings.map((f) => `${f.code} ${f.specifier}`).join(', '),
+        '',
+        'honest links reported problems',
+      );
+    });
+
     await checks.run('L11', 'an invalid package name is refused', async () => {
       let refused = false;
       try {

@@ -10,12 +10,14 @@ import { pack, packFromDir, peekPacklist, unpack } from '@deck/core/pack';
 import {
   pruneDevVersions,
   publishToStore,
+  readStoreMeta,
   releaseVersion,
   setDistTag,
 } from '@deck/core/store';
 import { forkDeck } from '@deck/core/fork';
 import { rebasePass, startRebaseDaemon } from '@deck/server/rebase-daemon';
 import { lockDeck, parseDependencyValue } from '@deck/core/lock';
+import { assertLinksOk, verifyLinks } from '@deck/core/verify-links';
 import { vendorFromCdn, vendorImportMap } from '@deck/core/vendor';
 import {
   deckNameForNpm,
@@ -35,6 +37,13 @@ import {
   watchRealm,
   type RealmMount,
 } from '@deck/server/realm';
+import { createKey, listKeys, resolveKey } from '@deck/core/keyring';
+import {
+  appendSignature,
+  readEnvelope,
+  signTreeHash,
+  verifyEnvelope,
+} from '@deck/core/signature';
 import { formatReport } from '@deck/conformance/laws';
 import { runConformance } from '@deck/conformance/run';
 import { applyRestore } from '@deck/history/backend';
@@ -72,7 +81,7 @@ Usage:
   deck tag --realm <dir> --publisher <p> --name <n> --tag <t> --version <v>
                                         move a dist-tag
   deck release --realm <dir> --publisher <p> --name <n> --version <v>
-               --from <tag-or-version> [--tag <t>]
+               --from <tag-or-version> [--tag <t>] [--require-signature]
                                         name an existing sealed state as a new
                                         version — a pointer, never a copy
   deck vendor <cdn-url> --name <n> --version <v> [--realm <dir> --publisher <p>]
@@ -136,6 +145,26 @@ Usage:
                                         upstream; clean ones are written back
                                         (and auto-publish), conflicted ones are
                                         reported and left untouched
+  deck verify-links --realm <dir> [--publisher <p> --name <n>]
+                    [--require-signature <n>]
+                                        L11: check that every pin still
+                                        resolves to what its dependency
+                                        record implies, that every pin has a
+                                        record and every record a pin, and
+                                        that the files named actually exist.
+                                        A stale lock is a lie about what will
+                                        be served, so this refuses rather
+                                        than warns
+  deck keygen [--label <l>] [--list]     create a local ed25519 signing key
+  deck sign --realm <dir> --publisher <p> --name <n> --version <v>
+            [--key <id>] [--role publish|dev]
+                                        endorse a version's TREE HASH. The
+                                        envelope lives with the tree, so a
+                                        fork of the same bytes inherits it
+  deck verify-sig --realm <dir> [--tree-hash <hex>
+            | --publisher <p> --name <n> --version <v>] [--require <n>]
+                                        check endorsements; --require fails
+                                        unless at least n signatures verify
   deck conform [--url <base> --realm <name>] [--at-rest] [--http] [--json]
                                         run the executable contract. With no
                                         --url it stands the canonical fixture
@@ -396,6 +425,7 @@ async function main(): Promise<void> {
           version: { type: 'string' },
           from: { type: 'string' },
           tag: { type: 'string' },
+          'require-signature': { type: 'boolean', default: false },
         },
       });
       if (
@@ -414,6 +444,29 @@ async function main(): Promise<void> {
       let from = /^[0-9]/.test(values.from)
         ? { version: values.from }
         : { tag: values.from };
+      // L9 as policy: an auto-published dev line may be unsigned, but a
+      // stable release is a deliberate human act and can be made to require
+      // a deliberate human endorsement. Off by default so a keyless install
+      // is never bricked; the release line says which it was.
+      if (values['require-signature']) {
+        let storeDir = storeDirFor(resolve(values.realm!));
+        let meta = await readStoreMeta(storeDir, scoped);
+        let sourceVersion =
+          from.version ?? (from.tag ? meta?.tags[from.tag] : undefined);
+        let treeHash = sourceVersion
+          ? meta?.versions[sourceVersion]?.treeHash
+          : undefined;
+        if (!treeHash) {
+          fail(`cannot resolve ${values.from} for ${scoped}`);
+        }
+        let envelope = await readEnvelope(storeDir, treeHash!);
+        let valid = envelope ? verifyEnvelope(treeHash!, envelope).valid : [];
+        if (!valid.some((signature) => signature.role === 'publish')) {
+          fail(
+            `L9: ${scoped}@${values.version} has no valid publish signature on ${treeHash!.slice(0, 12)} — run \`deck sign\` first, or drop --require-signature`,
+          );
+        }
+      }
       let record = await releaseVersion(
         storeDirFor(resolve(values.realm)),
         scoped,
@@ -422,7 +475,7 @@ async function main(): Promise<void> {
         { tag: values.tag },
       );
       console.log(
-        `released ${scoped}@${values.version} from ${values.from}: same sealed state (treeHash ${record.treeHash}), zero bytes copied${values.tag ? `, tag ${values.tag}` : ''}`,
+        `released ${scoped}@${values.version} from ${values.from}: same sealed state (treeHash ${record.treeHash}), zero bytes copied${values.tag ? `, tag ${values.tag}` : ''}${values['require-signature'] ? ' — endorsed' : ''}`,
       );
       return;
     }
@@ -683,6 +736,188 @@ async function main(): Promise<void> {
       );
       return;
     }
+    case 'verify-links': {
+      let { values } = parseArgs({
+        args: rest,
+        options: {
+          realm: { type: 'string' },
+          publisher: { type: 'string' },
+          name: { type: 'string' },
+          'require-signature': { type: 'string' },
+        },
+      });
+      if (!values.realm) {
+        fail('usage: deck verify-links --realm <dir> [--publisher <p> --name <n>]');
+      }
+      let realmDir = resolve(values.realm!);
+      let realmName = basename(realmDir);
+      let storeDir = storeDirFor(realmDir);
+      let decks = await discoverDecks(realmDir);
+      let selected =
+        values.publisher && values.name
+          ? decks.filter(
+              (candidate) =>
+                candidate.publisher === values.publisher &&
+                candidate.package === values.name,
+            )
+          : decks;
+      if (selected.length === 0) {
+        fail('no matching deck in this realm');
+      }
+      let broken = 0;
+      for (let candidate of selected) {
+        let report = await verifyLinks({
+          realmName,
+          storeDir,
+          deck: candidate.name,
+          deckDir: candidate.dir,
+          ...(values['require-signature']
+            ? { requireSignatures: Number(values['require-signature']) }
+            : {}),
+        });
+        if (report.findings.length === 0) {
+          console.log(`  ok  ${report.deck}  ${report.checked} link(s)`);
+          continue;
+        }
+        broken++;
+        console.log(`FAIL  ${report.deck}`);
+        for (let finding of report.findings) {
+          console.log(`        ${finding.code}  ${finding.specifier}: ${finding.detail}`);
+        }
+      }
+      if (broken > 0) {
+        fail(`L11: ${broken} deck(s) with unverifiable links`);
+      }
+      console.log(`${selected.length} deck(s) verified`);
+      return;
+    }
+    case 'keygen': {
+      let { values } = parseArgs({
+        args: rest,
+        options: { label: { type: 'string' }, list: { type: 'boolean', default: false } },
+      });
+      if (values.list) {
+        let keys = await listKeys();
+        if (keys.length === 0) {
+          console.log('no keys yet — run `deck keygen`');
+        }
+        for (let key of keys) {
+          console.log(key.keyId);
+        }
+        return;
+      }
+      let key = await createKey({ label: values.label });
+      console.log(`created ${key.keyId}`);
+      console.log(
+        '  the private key never leaves this machine; the public key travels inside each signature',
+      );
+      return;
+    }
+    case 'sign': {
+      let { values } = parseArgs({
+        args: rest,
+        options: {
+          realm: { type: 'string' },
+          publisher: { type: 'string' },
+          name: { type: 'string' },
+          version: { type: 'string' },
+          key: { type: 'string' },
+          role: { type: 'string' },
+        },
+      });
+      if (!values.realm || !values.publisher || !values.name || !values.version) {
+        fail(
+          'usage: deck sign --realm <dir> --publisher <p> --name <n> --version <v> [--key <id>] [--role publish|dev]',
+        );
+      }
+      let realmDir = resolve(values.realm!);
+      let storeDir = storeDirFor(realmDir);
+      let deck = `${values.publisher}/${values.name}`;
+      let meta = await readStoreMeta(storeDir, deck);
+      let record = meta?.versions[values.version!];
+      if (!record) {
+        fail(`${deck}@${values.version} is not a published version`);
+      }
+      let role = (values.role ?? 'publish') as 'publish' | 'dev' | 'attest';
+      if (!['publish', 'dev', 'attest'].includes(role)) {
+        fail(`--role must be publish, dev or attest`);
+      }
+      let key = await resolveKey({ keyId: values.key });
+      let envelope = await appendSignature(
+        storeDir,
+        record!.treeHash,
+        signTreeHash({
+          treeHash: record!.treeHash,
+          key,
+          role,
+          publisher: values.publisher,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      console.log(
+        `signed ${deck}@${values.version} (${record!.treeHash.slice(0, 12)}) as ${key.keyId} [${role}]`,
+      );
+      console.log(
+        `  ${envelope.signatures.length} endorsement(s) on this tree — every deck with these bytes has them`,
+      );
+      return;
+    }
+    case 'verify-sig': {
+      let { values } = parseArgs({
+        args: rest,
+        options: {
+          realm: { type: 'string' },
+          'tree-hash': { type: 'string' },
+          publisher: { type: 'string' },
+          name: { type: 'string' },
+          version: { type: 'string' },
+          require: { type: 'string' },
+        },
+      });
+      if (!values.realm) {
+        fail('usage: deck verify-sig --realm <dir> [--tree-hash <hex> | --publisher <p> --name <n> --version <v>] [--require <n>]');
+      }
+      let storeDir = storeDirFor(resolve(values.realm!));
+      let treeHash = values['tree-hash'];
+      if (!treeHash) {
+        if (!values.publisher || !values.name || !values.version) {
+          fail('give --tree-hash, or --publisher/--name/--version');
+        }
+        let meta = await readStoreMeta(
+          storeDir,
+          `${values.publisher}/${values.name}`,
+        );
+        treeHash = meta?.versions[values.version!]?.treeHash;
+        if (!treeHash) {
+          fail(
+            `${values.publisher}/${values.name}@${values.version} is not a published version`,
+          );
+        }
+      }
+      let envelope = await readEnvelope(storeDir, treeHash!);
+      let verdict = envelope
+        ? verifyEnvelope(treeHash!, envelope)
+        : { valid: [], invalid: [], mismatched: false };
+      for (let signature of verdict.valid) {
+        console.log(`  ok    ${signature.keyId} [${signature.role}]`);
+      }
+      for (let signature of verdict.invalid) {
+        console.log(`  BAD   ${signature.keyId} [${signature.role}]`);
+      }
+      console.log(
+        `${verdict.valid.length} valid, ${verdict.invalid.length} invalid on ${treeHash!.slice(0, 12)}`,
+      );
+      let required = values.require ? Number(values.require) : 0;
+      if (verdict.valid.length < required) {
+        fail(
+          `L9: ${verdict.valid.length} valid endorsement(s), ${required} required`,
+        );
+      }
+      if (verdict.invalid.length > 0) {
+        process.exitCode = 1;
+      }
+      return;
+    }
     case 'conform': {
       let { values } = parseArgs({
         args: rest,
@@ -927,12 +1162,30 @@ async function main(): Promise<void> {
           `${resolution.key}  ${resolution.alias ? `${resolution.alias}@` : ''}${resolution.spec} → ${target}${moved}`,
         );
       }
+      // L11: --check is the gate. A lock that is merely up to date is not
+      // enough — the pins must still resolve to files that exist, or CI is
+      // green while the app 404s.
+      if (values.check) {
+        let report = await verifyLinks({
+          realmName: basename(realmDir),
+          storeDir: storeDirFor(realmDir),
+          deck: `${values.publisher}/${values.name}`,
+          deckDir: join(realmDir, values.publisher!, values.name!),
+        });
+        if (changed) {
+          report.findings.push({
+            code: 'link-integrity',
+            specifier: `${values.publisher}/${values.name}`,
+            detail: 'the lock is out of date (run without --check to write it)',
+          });
+        }
+        assertLinksOk(report);
+        console.log(`verified ${report.checked} link(s)`);
+        return;
+      }
       if (!changed) {
         console.log('already locked — nothing to write');
         return;
-      }
-      if (values.check) {
-        fail('the lock is out of date (run without --check to write it)');
       }
       // Writing the pins is an ordinary edit: it auto-publishes, seals, and
       // reverts like any other save.

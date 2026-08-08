@@ -19,6 +19,7 @@ import {
 import { peekPacklist } from '@deck/core/pack';
 import type { Packlist } from '@deck/core/packlist';
 import { readTree, readTreeFile } from '@deck/core/object-store';
+import { readEnvelope, summarizeEnvelope } from '@deck/core/signature';
 import {
   listStorePackages,
   readStoredPack,
@@ -100,6 +101,12 @@ const PACKAGES_PATH = new RegExp(
   `^/_packages/(?<realm>${SEGMENT})/(?<publisher>${SEGMENT})/(?<pkg>${SEGMENT})$`,
 );
 const OFFERS_PATH = new RegExp(`^/(?<realm>${SEGMENT})/_offers/?$`);
+// L9: endorsements are addressed by TREE, not by package or version, because
+// that is what they are about — and it is what lets a fork of the same bytes
+// read the same answer (L10).
+const SIGNATURES_PATH = new RegExp(
+  `^/(?<realm>${SEGMENT})/_trees/(?<treeHash>[0-9a-f]{64})/signatures/?$`,
+);
 const LIVE_EVENTS_PATH = '/_live/events';
 const LIVE_HMR_PATH = '/_live/hmr.js';
 const BROWSER_PATHS = new Set(['/', '/_browser', '/_browser/']);
@@ -937,6 +944,38 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       }
     }
 
+    let signaturesMatch = pathname.match(SIGNATURES_PATH);
+    if (signaturesMatch?.groups) {
+      let realm = byName.get(signaturesMatch.groups.realm);
+      if (!realm) {
+        respondError(
+          req,
+          res,
+          404,
+          'realm-not-found',
+          `no realm ${signaturesMatch.groups.realm}`,
+        );
+        return;
+      }
+      let treeHash = signaturesMatch.groups.treeHash;
+      let envelope = await readEnvelope(realm.storeDir, treeHash);
+      if (!envelope) {
+        respondError(
+          req,
+          res,
+          404,
+          'no-signatures',
+          `no endorsements recorded for ${treeHash}`,
+          IMMUTABLE_CACHE,
+        );
+        return;
+      }
+      // The envelope is about an immutable tree, so it is cacheable — but
+      // only briefly: a new co-signature is an addition to the same subject.
+      respondJson(req, res, envelope as unknown as Record<string, unknown>, SHORT_CACHE);
+      return;
+    }
+
     let offersMatch = pathname.match(OFFERS_PATH);
     if (offersMatch?.groups) {
       let realm = byName.get(offersMatch.groups.realm);
@@ -1402,6 +1441,13 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               // sealed by a tier-2 watcher — the link from a published
               // version back into `/<realm>/_history/<changeId>`.
               sealChangeId: packlist.provenance?.sealChangeId ?? null,
+              // L9/L10: who endorsed these BYTES. Public keys are not
+              // included; the full envelope is one fetch away at
+              // /<realm>/_trees/<treeHash>/signatures.
+              signatures: summarizeEnvelope(
+                pack.treeHash,
+                await readEnvelope(realm.storeDir, pack.treeHash),
+              ),
               files: packlist.entries.map((entry) => entry.path),
             },
           },

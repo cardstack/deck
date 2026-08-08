@@ -366,6 +366,7 @@ export function applyLock(
   mapText: string,
   resolutions: readonly DependencyResolution[],
   scoped: readonly ScopedResolution[] = [],
+  realmName?: string,
 ): LockResult {
   let parsed = JSON.parse(mapText);
   let imports: Record<string, string> = { ...(parsed.imports ?? {}) };
@@ -385,7 +386,7 @@ export function applyLock(
   // is the author's and is never touched — a pin is recognised by pointing
   // at the very package its specifier names.
   for (let [specifier, target] of Object.entries(imports)) {
-    if (desired.has(specifier) || !isPin(specifier, target)) {
+    if (desired.has(specifier) || !isPin(specifier, target, realmName)) {
       continue;
     }
     delete imports[specifier];
@@ -413,7 +414,28 @@ export function applyLock(
   return { text: JSON.stringify(parsed, null, 2) + '\n', changed };
 }
 
-function isPin(specifier: string, target: string): boolean {
+// Which imports does the lock OWN, and may therefore delete?
+//
+// It used to be "the specifier names the package it points at", which was
+// true while every key was a deck name. Aliases broke that: `"hljs":
+// "/site/lib/highlight-js@11.9.0/es/index.js"` is a pin the lock wrote, and
+// under the old rule the lock could not recognise its own work — so dropping
+// the dependency left the pin behind, still resolving, until the day the
+// deck it names is pruned. L11 caught exactly this on a real realm.
+//
+// The rule now: a pin is anything pointing INTO this realm's deck space.
+// Given the realm name it is exact; without one it falls back to the old
+// name-matching test, which is conservative and never deletes a stranger.
+function isPin(
+  specifier: string,
+  target: string,
+  realmName?: string,
+): boolean {
+  if (realmName) {
+    return new RegExp(
+      `^/${realmName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*(@[^/]+)?/`,
+    ).test(target);
+  }
   let name = specifier.replace(/\/$/, '');
   if (name.split('/').length !== 2) {
     return false;
@@ -448,6 +470,11 @@ export async function lockDeck(options: {
     storeDir: options.storeDir,
     roots: resolutions,
   });
-  let { text, changed } = applyLock(mapText, resolutions, scoped);
+  let { text, changed } = applyLock(
+    mapText,
+    resolutions,
+    scoped,
+    options.realmName,
+  );
   return { resolutions, text, changed };
 }

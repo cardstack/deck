@@ -120,6 +120,13 @@ A fork inherits every attestation about the bytes it did not change, and
 loses exactly the ones about bytes it did. Nothing in the name-based world
 can do this.
 
+Note what this means for `deck fork`, which records its base in its own
+import map: that record is a byte, so the fork is a different tree and
+inherits **nothing**. That is the right posture — an endorsement should not
+transfer to something announcing a different lineage. Inheritance is for two
+publishers holding *genuinely identical* bytes, which is the case content
+addressing already collapses to one stored tree.
+
 ## L11 · Fail closed
 
 > An unverifiable claim is refused, not warned about.
@@ -128,6 +135,13 @@ An unknown publish date is not a safe date. An unresolvable specifier is not
 an acceptable one. A missing provenance record is not a minor omission. Every
 one of these is a refusal with a reason and a named way to override it
 deliberately — never a log line that a build will scroll past.
+
+`deck verify-links` is the gate, and `deck lock --check` runs it. It is
+deliberately **offline**: a publish that silently depends on a registry
+being reachable is a publish that fails at 3am. What it checks is what can
+be known locally — that every pin still resolves to what its dependency
+record implies, that every pin has a record and every record a pin, and
+that the files those pins name actually exist.
 
 ## L12 · Serving
 
@@ -166,12 +180,21 @@ can be made differently without breaking a law, it is not a law.
 | L5 volatility | `deck conform --http` | ✅ |
 | L6 hermeticity | vendor refuses; `deck conform --at-rest` | ✅ |
 | L7 resolution | `deck lock`; `deck conform --at-rest` | ✅ |
-| L8 provenance | recorded by `vendor`; `deck conform --at-rest` | ✅ recorded |
-| L9 endorsement | — | ❌ unbuilt |
-| L10 inheritance | — | ❌ follows L9 |
-| L11 fail closed | partial: cooldown, hermeticity, CJS, integrity | ⚠️ no verify gate on publish/lock |
+| L8 provenance | recorded by `vendor`; `deck conform --at-rest` | ✅ |
+| L9 endorsement | `deck sign` / `verify-sig`; `deck conform` | ✅ |
+| L10 inheritance | envelope lives with the tree; `deck conform` | ✅ |
+| L11 fail closed | `deck verify-links`, `lock --check`, `release --require-signature` | ✅ offline |
 | L12 serving | `deck conform --http` | ✅ |
 
-L9 and L10 are the next thing to build. L11 is the one that is half-true
-today, which is the most dangerous state for a law to be in: provenance is
-*recorded* and never *checked*.
+All twelve now have checks that run. What remains is reach rather than
+absence:
+
+- **Key material is local.** `deck keygen` writes an ed25519 key under
+  `~/.deck/keys`. The intended material is a Matrix cross-signed device key —
+  already federated, already recoverable, and bound to an identity other
+  people can check. The envelope format does not care which produced it.
+- **Trust is not modelled.** A signature verifies; whether you trust the key
+  that made it is a question nothing here answers yet.
+- **L11 is offline by design.** Re-fetching a tarball to re-check its
+  integrity, or asking GitHub whether a commit still matches, are `--online`
+  checks that do not exist yet.
