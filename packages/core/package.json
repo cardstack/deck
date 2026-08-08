@@ -11,7 +11,9 @@
     "./pack": "./src/pack.ts",
     "./store": "./src/store.ts",
     "./import-map": "./src/import-map.ts",
-    "./vendor": "./src/vendor.ts"
+    "./vendor": "./src/vendor.ts",
+    "./lock": "./src/lock.ts",
+    "./fork": "./src/fork.ts"
   },
   "scripts": {
     "test": "node tests/index.ts",

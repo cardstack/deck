@@ -1,6 +1,6 @@
 import QUnit from 'qunit';
 const { module, test } = QUnit;
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -9,22 +9,25 @@ import { unpack } from '@deck/core/pack';
 import { readStoreMeta, releaseVersion } from '@deck/core/store';
 import { createDeckServer } from '../src/server.ts';
 import {
-  watchAndPublish,
-  type WatchController,
-  type WatchPublishEvent,
-} from '../src/watcher.ts';
+  storeDirFor,
+  watchRealm,
+  type RealmMount,
+  type RealmWatchController,
+} from '../src/realm.ts';
+import type { WatchPublishEvent } from '../src/watcher.ts';
 
 let workDir: string;
+let realmDir: string;
 let storeDir: string;
-let liveDir: string;
+let deckDir: string;
 let server: Server;
 let origin: string;
-let controller: WatchController;
+let controller: RealmWatchController;
 let published: WatchPublishEvent[] = [];
 
 async function writeImportMap(version: string): Promise<void> {
   await writeFile(
-    join(liveDir, 'importmap.json'),
+    join(deckDir, 'importmap.json'),
     JSON.stringify({
       imports: {},
       deck: {
@@ -38,7 +41,7 @@ async function writeImportMap(version: string): Promise<void> {
 
 async function packFiles(name: string): Promise<string[]> {
   try {
-    return (await readdir(join(storeDir, name, 'packs'))).sort();
+    return (await readdir(join(storeDir, ...name.split('/'), 'packs'))).sort();
   } catch {
     return [];
   }
@@ -47,28 +50,29 @@ async function packFiles(name: string): Promise<string[]> {
 module('live tree + auto-publish + no-copies release', function (hooks) {
   hooks.before(async function () {
     workDir = await mkdtemp(join(tmpdir(), 'deck-live-test-'));
-    storeDir = join(workDir, 'store');
-    liveDir = join(workDir, 'mylib');
-    await rm(liveDir, { recursive: true, force: true });
-    await writeFile(join(workDir, '.keep'), '');
-    await import('node:fs/promises').then(({ mkdir }) =>
-      mkdir(liveDir, { recursive: true }),
-    );
+    realmDir = join(workDir, 'demo');
+    storeDir = storeDirFor(realmDir);
+    deckDir = join(realmDir, 'me', 'mylib');
+    await mkdir(deckDir, { recursive: true });
     await writeImportMap('0.1.0');
-    await writeFile(join(liveDir, 'lib.js'), 'export const v = 1;\n');
+    await writeFile(join(deckDir, 'lib.js'), 'export const v = 1;\n');
 
-    controller = watchAndPublish({
-      dir: liveDir,
-      name: 'mylib',
-      storeDir,
+    let realm: RealmMount = { name: 'demo', dir: realmDir, storeDir };
+    controller = watchRealm({
+      realm,
       debounceMs: 50,
       onPublish: (event) => published.push(event),
       onError: (error) => {
         throw error;
       },
     });
+    await controller.rescan();
+    // Mounting publishes what is already on disk; the tests below are about
+    // what EDITS do, so let that settle first and start counting from there.
+    await controller.settled();
+    published = [];
 
-    server = createDeckServer({ storeDir, live: { mylib: liveDir } });
+    server = createDeckServer({ realms: [realm] });
     await new Promise<void>((resolve) => server.listen(0, resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -81,28 +85,31 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
     await rm(workDir, { recursive: true, force: true });
   });
 
-  test('a store inside the watched directory is refused', function (assert) {
-    assert.throws(
-      () =>
-        watchAndPublish({
-          dir: liveDir,
-          name: 'mylib',
-          storeDir: join(liveDir, 'store'),
-        }),
-      /inside the watched directory/,
-      'otherwise each publish would change the tree and publish again, forever',
+  test('the store lives inside the realm — a hidden dir, so it never feeds itself', async function (assert) {
+    assert.strictEqual(storeDir, join(realmDir, '.deck', 'store'));
+    assert.deepEqual(
+      controller.decks().map((deck) => deck.name),
+      ['me/mylib'],
+      'a directory with an importmap.json IS a deck',
+    );
+    let meta = await readStoreMeta(storeDir, 'me/mylib');
+    assert.strictEqual(
+      meta!.tags.dev,
+      '0.1.0-dev.1',
+      'mounting published what was already on disk — the scaffold is not lost',
     );
   });
 
   test('a settled edit auto-publishes a dev prerelease', async function (assert) {
-    await writeFile(join(liveDir, 'lib.js'), 'export const v = 2;\n');
+    await writeFile(join(deckDir, 'lib.js'), 'export const v = 2;\n');
     await controller.settled();
     assert.strictEqual(published.length, 1, 'one publish for the burst');
-    assert.strictEqual(published[0].version, '0.1.0-dev.1');
-    let meta = await readStoreMeta(storeDir, 'mylib');
-    assert.deepEqual(meta!.tags, { dev: '0.1.0-dev.1' });
+    assert.strictEqual(published[0].version, '0.1.0-dev.2');
+    assert.strictEqual(published[0].name, 'me/mylib');
+    let meta = await readStoreMeta(storeDir, 'me/mylib');
+    assert.deepEqual(meta!.tags, { dev: '0.1.0-dev.2' });
     assert.strictEqual(
-      meta!.versions['0.1.0-dev.1'].treeHash,
+      meta!.versions['0.1.0-dev.2'].treeHash,
       published[0].treeHash,
     );
   });
@@ -110,17 +117,17 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
   test('identical settled state publishes nothing (treeHash dedup)', async function (assert) {
     let before = published.length;
     // touch the file with the SAME content
-    await writeFile(join(liveDir, 'lib.js'), 'export const v = 2;\n');
+    await writeFile(join(deckDir, 'lib.js'), 'export const v = 2;\n');
     await controller.settled();
     assert.strictEqual(published.length, before, 'no-op save, no publish');
   });
 
   test('a real change publishes the next dev number; ranges cannot see it', async function (assert) {
-    await writeFile(join(liveDir, 'lib.js'), 'export const v = 3;\n');
+    await writeFile(join(deckDir, 'lib.js'), 'export const v = 3;\n');
     await controller.settled();
-    assert.strictEqual(published.at(-1)!.version, '0.1.0-dev.2');
+    assert.strictEqual(published.at(-1)!.version, '0.1.0-dev.3');
 
-    let range = await fetch(`${origin}/@mylib@%5E0.1.0/lib.js`, {
+    let range = await fetch(`${origin}/demo/me/mylib@%5E0.1.0/lib.js`, {
       redirect: 'manual',
     });
     assert.strictEqual(
@@ -128,24 +135,24 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
       404,
       'no stable exists; the ^0.1.0 range never matches dev prereleases',
     );
-    let dev = await fetch(`${origin}/@mylib@dev/lib.js`, {
+    let dev = await fetch(`${origin}/demo/me/mylib@dev/lib.js`, {
       redirect: 'manual',
     });
     assert.strictEqual(dev.status, 302, 'the dev tag opts in explicitly');
     assert.strictEqual(
       dev.headers.get('location'),
-      '/@mylib@0.1.0-dev.2/lib.js',
+      '/demo/me/mylib@0.1.0-dev.3/lib.js',
     );
   });
 
-  test('the live route serves every save immediately, no-store', async function (assert) {
-    let first = await fetch(`${origin}/live/mylib/lib.js`);
+  test('the version-less path serves every save immediately, no-store', async function (assert) {
+    let first = await fetch(`${origin}/demo/me/mylib/lib.js`);
     assert.strictEqual(first.status, 200);
     assert.strictEqual(await first.text(), 'export const v = 3;\n');
     assert.strictEqual(first.headers.get('cache-control'), 'no-store');
 
-    await writeFile(join(liveDir, 'lib.js'), 'export const v = 4;\n');
-    let second = await fetch(`${origin}/live/mylib/lib.js`);
+    await writeFile(join(deckDir, 'lib.js'), 'export const v = 4;\n');
+    let second = await fetch(`${origin}/demo/me/mylib/lib.js`);
     assert.strictEqual(
       await second.text(),
       'export const v = 4;\n',
@@ -153,12 +160,12 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
     );
     await controller.settled(); // let the auto-publish of v=4 finish
 
-    let bare = await fetch(`${origin}/live/mylib`, { redirect: 'manual' });
+    let bare = await fetch(`${origin}/demo/me/mylib`, { redirect: 'manual' });
     assert.strictEqual(bare.status, 302);
-    assert.strictEqual(bare.headers.get('location'), '/live/mylib/lib.js');
+    assert.strictEqual(bare.headers.get('location'), '/demo/me/mylib/lib.js');
     assert.strictEqual(bare.headers.get('cache-control'), 'no-store');
 
-    let traversal = await fetch(`${origin}/live/mylib/../escape.js`);
+    let traversal = await fetch(`${origin}/demo/me/mylib/../escape.js`);
     assert.strictEqual(traversal.status, 404, 'tree-path rules hold');
   });
 
@@ -169,14 +176,14 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
   });
 
   test('release: a new version is a POINTER to a sealed state — zero copies', async function (assert) {
-    let filesBefore = await packFiles('mylib');
-    let meta = await readStoreMeta(storeDir, 'mylib');
+    let filesBefore = await packFiles('me/mylib');
+    let meta = await readStoreMeta(storeDir, 'me/mylib');
     let devVersion = meta!.tags.dev;
     let devRecord = meta!.versions[devVersion];
 
     let released = await releaseVersion(
       storeDir,
-      'mylib',
+      'me/mylib',
       '1.0.0',
       { tag: 'dev' },
       { tag: 'latest' },
@@ -191,35 +198,37 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
       devRecord.file,
       'same stored file — a pointer, not a copy',
     );
-    let filesAfter = await packFiles('mylib');
+    let filesAfter = await packFiles('me/mylib');
     assert.deepEqual(
       filesAfter,
       filesBefore,
       'releasing wrote NO new pack bytes',
     );
 
-    let after = await readStoreMeta(storeDir, 'mylib');
+    let after = await readStoreMeta(storeDir, 'me/mylib');
     assert.strictEqual(after!.tags.latest, '1.0.0');
 
     // and it serves like any stable version
-    let response = await fetch(`${origin}/@mylib@1.0.0/lib.js`);
+    let response = await fetch(`${origin}/demo/me/mylib@1.0.0/lib.js`);
     assert.strictEqual(response.status, 200);
     assert.strictEqual(await response.text(), 'export const v = 4;\n');
-    let range = await fetch(`${origin}/@mylib@%5E1.0.0/lib.js`, {
+    let range = await fetch(`${origin}/demo/me/mylib@%5E1.0.0/lib.js`, {
       redirect: 'manual',
     });
     assert.strictEqual(range.status, 302);
     assert.strictEqual(
       range.headers.get('location'),
-      '/@mylib@1.0.0/lib.js',
+      '/demo/me/mylib@1.0.0/lib.js',
       'ranges now see the released stable',
     );
   });
 
   test('the released pack is byte-identical to its dev source (faithful pointer)', async function (assert) {
-    let stable = await fetch(`${origin}/@mylib@1.0.0?format=pack`);
-    let meta = await readStoreMeta(storeDir, 'mylib');
-    let dev = await fetch(`${origin}/@mylib@${meta!.tags.dev}?format=pack`);
+    let stable = await fetch(`${origin}/demo/me/mylib@1.0.0?format=pack`);
+    let meta = await readStoreMeta(storeDir, 'me/mylib');
+    let dev = await fetch(
+      `${origin}/demo/me/mylib@${meta!.tags.dev}?format=pack`,
+    );
     let stableBytes = Buffer.from(await stable.arrayBuffer());
     let devBytes = Buffer.from(await dev.arrayBuffer());
     assert.true(stableBytes.equals(devBytes), 'same bytes, two names');
@@ -231,18 +240,43 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
 
   test('manifest agreement gates releases and stable publishes', async function (assert) {
     await assert.rejects(
-      releaseVersion(storeDir, 'mylib', '9.9.9', { tag: 'dev' }),
-      /declares mylib@1\.0\.0/,
+      releaseVersion(storeDir, 'me/mylib', '9.9.9', { tag: 'dev' }),
+      /declares me\/mylib@1\.0\.0/,
       'the sealed map must agree it IS this version',
     );
     await assert.rejects(
-      releaseVersion(storeDir, 'mylib', '1.0.0', { tag: 'dev' }),
+      releaseVersion(storeDir, 'me/mylib', '1.0.0', { tag: 'dev' }),
       /already published/,
       'released versions are immutable too',
     );
     await assert.rejects(
-      releaseVersion(storeDir, 'mylib', '1.0.1', { tag: 'nope' }),
+      releaseVersion(storeDir, 'me/mylib', '1.0.1', { tag: 'nope' }),
       /no dist-tag/,
     );
+  });
+
+  test('a new deck appearing on disk starts publishing itself', async function (assert) {
+    let second = join(realmDir, 'me', 'other');
+    await mkdir(second, { recursive: true });
+    await writeFile(
+      join(second, 'importmap.json'),
+      JSON.stringify({
+        deck: {
+          packages: { other: { version: '0.0.1', entry: '$REALM/other.js' } },
+        },
+      }),
+    );
+    await writeFile(join(second, 'other.js'), 'export const other = true;\n');
+    await controller.rescan();
+    await controller.settled();
+
+    assert.true(
+      controller.decks().some((deck) => deck.name === 'me/other'),
+      'creating a directory with an importmap.json is the whole ceremony',
+    );
+    let meta = await readStoreMeta(storeDir, 'me/other');
+    assert.strictEqual(meta!.tags.dev, '0.0.1-dev.1');
+    let served = await fetch(`${origin}/demo/me/other@0.0.1-dev.1/other.js`);
+    assert.strictEqual(await served.text(), 'export const other = true;\n');
   });
 });

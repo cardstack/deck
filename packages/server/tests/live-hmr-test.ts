@@ -5,14 +5,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createDeckServer, type DeckServer } from '../src/server.ts';
-import { watchAndPublish, type WatchController } from '../src/watcher.ts';
+import {
+  storeDirFor,
+  watchRealm,
+  type RealmMount,
+  type RealmWatchController,
+} from '../src/realm.ts';
 
 let workDir: string;
-let storeDir: string;
-let liveDir: string;
+let realmDir: string;
+let deckDir: string;
 let server: DeckServer;
 let origin: string;
-let controller: WatchController;
+let controller: RealmWatchController;
 
 async function readSseChange(
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -48,11 +53,11 @@ async function readSseChange(
 module('live HMR-lite (SSE)', function (hooks) {
   hooks.before(async function () {
     workDir = await mkdtemp(join(tmpdir(), 'deck-hmr-test-'));
-    storeDir = join(workDir, 'store');
-    liveDir = join(workDir, 'mylib');
-    await mkdir(liveDir, { recursive: true });
+    realmDir = join(workDir, 'demo');
+    deckDir = join(realmDir, 'me', 'mylib');
+    await mkdir(deckDir, { recursive: true });
     await writeFile(
-      join(liveDir, 'importmap.json'),
+      join(deckDir, 'importmap.json'),
       JSON.stringify({
         imports: {},
         deck: {
@@ -62,16 +67,20 @@ module('live HMR-lite (SSE)', function (hooks) {
         },
       }),
     );
-    await writeFile(join(liveDir, 'lib.js'), 'export const v = 1;\n');
+    await writeFile(join(deckDir, 'lib.js'), 'export const v = 1;\n');
 
-    server = createDeckServer({ storeDir, live: { mylib: liveDir } });
-    controller = watchAndPublish({
-      dir: liveDir,
-      name: 'mylib',
-      storeDir,
+    let realm: RealmMount = {
+      name: 'demo',
+      dir: realmDir,
+      storeDir: storeDirFor(realmDir),
+    };
+    server = createDeckServer({ realms: [realm] });
+    controller = watchRealm({
+      realm,
       debounceMs: 40,
       onLiveChange: (event) => server.liveBus.emit(event),
     });
+    await controller.rescan();
     await new Promise<void>((resolve) => server.listen(0, resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -105,11 +114,11 @@ module('live HMR-lite (SSE)', function (hooks) {
     let reader = res.body!.getReader();
     let pending = readSseChange(reader);
     server.liveBus.emit({
-      name: 'mylib',
+      name: 'me/mylib',
       treeHash: 'a'.repeat(64),
     });
     let event = await pending;
-    assert.equal(event.name, 'mylib');
+    assert.equal(event.name, 'me/mylib');
     assert.equal(event.treeHash, 'a'.repeat(64));
     await reader.cancel();
   });
@@ -122,9 +131,9 @@ module('live HMR-lite (SSE)', function (hooks) {
     assert.ok(res.body);
     let reader = res.body!.getReader();
     let pending = readSseChange(reader);
-    await writeFile(join(liveDir, 'lib.js'), 'export const v = 2;\n');
+    await writeFile(join(deckDir, 'lib.js'), 'export const v = 2;\n');
     let event = await pending;
-    assert.equal(event.name, 'mylib');
+    assert.equal(event.name, 'me/mylib');
     assert.true(/^[0-9a-f]{64}$/.test(event.treeHash));
     await controller.settled();
     await reader.cancel();

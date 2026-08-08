@@ -1,5 +1,6 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { DEFAULT_IGNORE } from '@deck/core/tree-hash';
 
 // Tier 2 of the live-tree design (docs/deck-live-autopublish.md): seal-grained
 // history UNDER the auto-publish loop. Tier 1 — the content-addressed store —
@@ -120,7 +121,7 @@ export async function applyRestore(
   let plan = await backend.restorePlan(dir, revisionId);
   let from = await backend.head(dir);
   let written: string[] = [];
-  for (let path of plan.writes) {
+  for (let path of plan.writes.filter(isRestorable)) {
     if (!isValidHistoryPath(path)) {
       throw new Error(`refusing to restore unsafe path: ${path}`);
     }
@@ -134,7 +135,7 @@ export async function applyRestore(
     written.push(path);
   }
   let deleted: string[] = [];
-  for (let path of plan.deletes) {
+  for (let path of plan.deletes.filter(isRestorable)) {
     if (!isValidHistoryPath(path)) {
       throw new Error(`refusing to delete unsafe path: ${path}`);
     }
@@ -142,6 +143,15 @@ export async function applyRestore(
     deleted.push(path);
   }
   return { changeId: revisionId, written, deleted, from };
+}
+
+// A restore replays TREE content. Anything the tree hash ignores — a
+// realm's `.deck` store above all — is machinery that happens to sit in the
+// same directory, and rewinding it would undo published versions. Backends
+// exclude it from sealing too; this is the belt to that suspenders, and it
+// also protects trees sealed before those rules existed.
+function isRestorable(path: string): boolean {
+  return !path.split('/').some((segment) => DEFAULT_IGNORE.has(segment));
 }
 
 // Per-directory serialization shared by both backends: every history

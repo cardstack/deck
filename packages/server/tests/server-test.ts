@@ -1,6 +1,6 @@
 import QUnit from 'qunit';
 const { module, test } = QUnit;
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -8,7 +8,10 @@ import type { Server } from 'node:http';
 import { pack, unpack } from '@deck/core/pack';
 import { publishToStore, readStoreMeta } from '@deck/core/store';
 import { createDeckServer } from '../src/server.ts';
+import { storeDirFor, type RealmMount } from '../src/realm.ts';
 
+let root: string;
+let realmDir: string;
 let storeDir: string;
 let server: Server;
 let origin: string;
@@ -45,16 +48,35 @@ function confettiFiles(version: string, source: string) {
   ];
 }
 
-module('deck server', function (hooks) {
+module('deck server: realms on disk', function (hooks) {
   hooks.before(async function () {
-    storeDir = await mkdtemp(join(tmpdir(), 'deck-server-test-'));
+    root = await mkdtemp(join(tmpdir(), 'deck-server-test-'));
+    realmDir = join(root, 'demo');
+    storeDir = storeDirFor(realmDir);
+    // The live tree — the same paths the URL uses.
+    await mkdir(join(realmDir, 'acme', 'confetti'), { recursive: true });
+    await writeFile(
+      join(realmDir, 'acme', 'confetti', 'importmap.json'),
+      JSON.stringify({
+        deck: {
+          packages: {
+            confetti: { version: '1.1.0', entry: '$REALM/confetti.js' },
+          },
+        },
+      }),
+    );
+    await writeFile(
+      join(realmDir, 'acme', 'confetti', 'confetti.js'),
+      CONFETTI_JS_11,
+    );
+
     let confetti10 = pack(confettiFiles('1.0.0', CONFETTI_JS_10));
-    await publishToStore(storeDir, 'confetti', '1.0.0', confetti10, {
+    await publishToStore(storeDir, 'acme/confetti', '1.0.0', confetti10, {
       tag: 'latest',
     });
     await publishToStore(
       storeDir,
-      'confetti',
+      'acme/confetti',
       '1.1.0',
       pack(confettiFiles('1.1.0', CONFETTI_JS_11)),
     );
@@ -81,9 +103,12 @@ module('deck server', function (hooks) {
       },
       { path: 'vendor/confetti.pack.zip', bytes: confetti10 },
     ]);
-    await publishToStore(storeDir, 'app', '1.0.0', appPack, { tag: 'latest' });
+    await publishToStore(storeDir, 'acme/app', '1.0.0', appPack, {
+      tag: 'latest',
+    });
 
-    server = createDeckServer({ storeDir });
+    let realm: RealmMount = { name: 'demo', dir: realmDir, storeDir };
+    server = createDeckServer({ realms: [realm] });
     await new Promise<void>((resolve) => server.listen(0, resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -92,14 +117,14 @@ module('deck server', function (hooks) {
     await new Promise<void>((resolve, reject) =>
       server.close((e) => (e ? reject(e) : resolve())),
     );
-    await rm(storeDir, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   });
 
   test('store refuses re-publishing an existing version', async function (assert) {
     await assert.rejects(
       publishToStore(
         storeDir,
-        'confetti',
+        'acme/confetti',
         '1.0.0',
         pack(confettiFiles('1.0.0', CONFETTI_JS_10)),
       ),
@@ -108,18 +133,66 @@ module('deck server', function (hooks) {
     );
   });
 
-  test('_packages lists versions with treeHash and dist-tags', async function (assert) {
-    let response = await fetch(`${origin}/_packages/confetti`);
-    assert.strictEqual(response.status, 200);
-    let body = await response.json();
+  test('the store path mirrors the URL path', async function (assert) {
+    let meta = await readStoreMeta(storeDir, 'acme/confetti');
+    assert.strictEqual(meta!.name, 'acme/confetti');
+    assert.strictEqual(
+      storeDir,
+      join(realmDir, '.deck', 'store'),
+      'a realm carries its own versions, inside itself',
+    );
+    let body = await (await fetch(`${origin}/_packages/demo/acme/confetti`)).json();
     let attrs = body.data.attributes;
+    assert.strictEqual(attrs.storePath, '.deck/store/acme/confetti/');
     assert.deepEqual(Object.keys(attrs.versions).sort(), ['1.0.0', '1.1.0']);
     assert.true(/^[0-9a-f]{64}$/.test(attrs.versions['1.0.0'].treeHash));
     assert.deepEqual(attrs.distTags, { latest: '1.0.0' });
+    assert.true(attrs.live, 'the deck is also on disk, live');
+  });
+
+  test('a version-less path is the working tree, exactly as a realm serves it', async function (assert) {
+    let response = await fetch(`${origin}/demo/acme/confetti/confetti.js`);
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(await response.text(), CONFETTI_JS_11);
+    assert.strictEqual(
+      response.headers.get('cache-control'),
+      'no-store',
+      'the live tree is never cached',
+    );
+    assert.strictEqual(response.headers.get('x-deck-realm'), 'demo');
+
+    // …and the same path with a version reads the seal instead.
+    let sealed = await fetch(`${origin}/demo/acme/confetti@1.0.0/confetti.js`);
+    assert.strictEqual(await sealed.text(), CONFETTI_JS_10);
+  });
+
+  test('a bare deck path redirects to its declared entry module', async function (assert) {
+    let response = await fetch(`${origin}/demo/acme/confetti`, {
+      redirect: 'manual',
+    });
+    assert.strictEqual(response.status, 302);
+    assert.strictEqual(
+      response.headers.get('location'),
+      '/demo/acme/confetti/confetti.js',
+    );
+    assert.strictEqual(response.headers.get('cache-control'), 'no-store');
+  });
+
+  test("a realm's own machinery is not servable", async function (assert) {
+    for (let path of [
+      '/demo/.deck/store/acme/confetti/meta.json',
+      '/demo/.jj/repo',
+      '/demo/acme/../.deck/store',
+    ]) {
+      let response = await fetch(`${origin}${path}`);
+      assert.strictEqual(response.status, 404, path);
+    }
+    let unknownRealm = await fetch(`${origin}/nope/acme/confetti/confetti.js`);
+    assert.strictEqual(unknownRealm.status, 404);
   });
 
   test('exact-version raw bytes: immutable + Content-Digest', async function (assert) {
-    let response = await fetch(`${origin}/@confetti@1.0.0/confetti.js`);
+    let response = await fetch(`${origin}/demo/acme/confetti@1.0.0/confetti.js`);
     assert.strictEqual(response.status, 200);
     assert.strictEqual(await response.text(), CONFETTI_JS_10);
     assert.strictEqual(
@@ -134,7 +207,7 @@ module('deck server', function (hooks) {
     );
     assert.strictEqual(
       response.headers.get('x-deck-package'),
-      'confetti@1.0.0',
+      'acme/confetti@1.0.0',
     );
     assert.true(
       response.headers.get('content-type')!.startsWith('text/javascript'),
@@ -142,86 +215,96 @@ module('deck server', function (hooks) {
   });
 
   test('extensionless specifiers probe .js', async function (assert) {
-    let response = await fetch(`${origin}/@confetti@1.0.0/confetti`, {
+    let sealed = await fetch(`${origin}/demo/acme/confetti@1.0.0/confetti`, {
       redirect: 'manual',
     });
-    assert.strictEqual(response.status, 200);
-    assert.strictEqual(await response.text(), CONFETTI_JS_10);
+    assert.strictEqual(sealed.status, 200);
+    assert.strictEqual(await sealed.text(), CONFETTI_JS_10);
+
+    let live = await fetch(`${origin}/demo/acme/confetti/confetti`, {
+      redirect: 'manual',
+    });
+    assert.strictEqual(live.status, 200, 'the live tree probes too');
+    assert.strictEqual(await live.text(), CONFETTI_JS_11);
   });
 
   test('tag and range resolve in ONE short-TTL hop', async function (assert) {
-    let tagged = await fetch(`${origin}/@confetti@latest/confetti.js`, {
+    let tagged = await fetch(`${origin}/demo/acme/confetti@latest/confetti.js`, {
       redirect: 'manual',
     });
     assert.strictEqual(tagged.status, 302);
     assert.strictEqual(
       tagged.headers.get('location'),
-      '/@confetti@1.0.0/confetti.js',
+      '/demo/acme/confetti@1.0.0/confetti.js',
     );
     assert.strictEqual(
       tagged.headers.get('cache-control'),
       'public, max-age=60, s-maxage=300',
     );
 
-    let bareTag = await fetch(`${origin}/@confetti@latest`, {
+    let bareTag = await fetch(`${origin}/demo/acme/confetti@latest`, {
       redirect: 'manual',
     });
     assert.strictEqual(bareTag.status, 302);
     assert.strictEqual(
       bareTag.headers.get('location'),
-      '/@confetti@1.0.0/confetti.js',
+      '/demo/acme/confetti@1.0.0/confetti.js',
       'bare tag → exact entry path, one hop',
     );
 
-    let range = await fetch(`${origin}/@confetti@%5E1.0.0/confetti.js`, {
-      redirect: 'manual',
-    });
+    let range = await fetch(
+      `${origin}/demo/acme/confetti@%5E1.0.0/confetti.js`,
+      { redirect: 'manual' },
+    );
     assert.strictEqual(range.status, 302);
     assert.strictEqual(
       range.headers.get('location'),
-      '/@confetti@1.1.0/confetti.js',
+      '/demo/acme/confetti@1.1.0/confetti.js',
       '^1.0.0 resolves to the highest satisfying version',
     );
   });
 
   test('exact-version FORM redirects are permanent', async function (assert) {
-    let bare = await fetch(`${origin}/@confetti@1.0.0`, {
+    let bare = await fetch(`${origin}/demo/acme/confetti@1.0.0`, {
       redirect: 'manual',
     });
     assert.strictEqual(bare.status, 301);
     assert.strictEqual(
       bare.headers.get('location'),
-      '/@confetti@1.0.0/confetti.js',
+      '/demo/acme/confetti@1.0.0/confetti.js',
     );
     assert.strictEqual(
       bare.headers.get('cache-control'),
       'public, max-age=31536000, immutable',
     );
 
-    let alias = await fetch(`${origin}/@confetti@1.0.0/main`, {
+    let alias = await fetch(`${origin}/demo/acme/confetti@1.0.0/main`, {
       redirect: 'manual',
     });
     assert.strictEqual(alias.status, 301);
     assert.strictEqual(
       alias.headers.get('location'),
-      '/@confetti@1.0.0/confetti.js',
+      '/demo/acme/confetti@1.0.0/confetti.js',
     );
   });
 
   test('?meta is the machine-readable listing; query survives redirects', async function (assert) {
-    let redirected = await fetch(`${origin}/@confetti@latest?meta`, {
+    let redirected = await fetch(`${origin}/demo/acme/confetti@latest?meta`, {
       redirect: 'manual',
     });
     assert.strictEqual(redirected.status, 302);
     assert.strictEqual(
       redirected.headers.get('location'),
-      '/@confetti@1.0.0?meta',
+      '/demo/acme/confetti@1.0.0?meta',
       'the query string survives the redirect',
     );
 
-    let response = await fetch(`${origin}/@confetti@1.0.0?meta`);
+    let response = await fetch(`${origin}/demo/acme/confetti@1.0.0?meta`);
     assert.strictEqual(response.status, 200);
     let attrs = (await response.json()).data.attributes;
+    assert.strictEqual(attrs.realm, 'demo');
+    assert.strictEqual(attrs.publisher, 'acme');
+    assert.strictEqual(attrs.name, 'confetti');
     assert.strictEqual(attrs.entry, 'confetti.js');
     assert.deepEqual(attrs.exports, { './main': 'confetti.js' });
     assert.strictEqual(attrs.baseApi, '^1.0.0');
@@ -231,7 +314,7 @@ module('deck server', function (hooks) {
       'importmap.json',
       'util/colors.js',
     ]);
-    let storeMeta = await readStoreMeta(storeDir, 'confetti');
+    let storeMeta = await readStoreMeta(storeDir, 'acme/confetti');
     assert.strictEqual(
       attrs.treeHash,
       storeMeta!.versions['1.0.0'].treeHash,
@@ -240,12 +323,14 @@ module('deck server', function (hooks) {
   });
 
   test('?format=pack serves the faithful sealed bytes', async function (assert) {
-    let response = await fetch(`${origin}/@confetti@1.0.0?format=pack`);
+    let response = await fetch(
+      `${origin}/demo/acme/confetti@1.0.0?format=pack`,
+    );
     assert.strictEqual(response.status, 200);
     assert.strictEqual(response.headers.get('content-type'), 'application/zip');
     let bytes = Buffer.from(await response.arrayBuffer());
     let opened = unpack(bytes);
-    let storeMeta = await readStoreMeta(storeDir, 'confetti');
+    let storeMeta = await readStoreMeta(storeDir, 'acme/confetti');
     assert.strictEqual(
       opened.treeHash,
       storeMeta!.versions['1.0.0'].treeHash,
@@ -260,7 +345,7 @@ module('deck server', function (hooks) {
 
   test('!/ mounts serve files from a pack vendored inside a deck', async function (assert) {
     let inner = await fetch(
-      `${origin}/@app@1.0.0/vendor/confetti.pack.zip!/confetti.js`,
+      `${origin}/demo/acme/app@1.0.0/vendor/confetti.pack.zip!/confetti.js`,
     );
     assert.strictEqual(inner.status, 200);
     assert.strictEqual(await inner.text(), CONFETTI_JS_10);
@@ -270,20 +355,20 @@ module('deck server', function (hooks) {
     );
 
     let nestedFromMap = await fetch(
-      `${origin}/@app@1.0.0/vendor/confetti.pack.zip!/util/colors.js`,
+      `${origin}/demo/acme/app@1.0.0/vendor/confetti.pack.zip!/util/colors.js`,
     );
     assert.strictEqual(nestedFromMap.status, 200);
     assert.true((await nestedFromMap.text()).includes('COLORS'));
 
     let missing = await fetch(
-      `${origin}/@app@1.0.0/vendor/confetti.pack.zip!/nope.js`,
+      `${origin}/demo/acme/app@1.0.0/vendor/confetti.pack.zip!/nope.js`,
     );
     assert.strictEqual(missing.status, 404);
     assert.strictEqual((await missing.json()).errors[0].code, 'file-not-found');
   });
 
   test('negative caching tiers by permanence', async function (assert) {
-    let invalid = await fetch(`${origin}/@confetti@_bogus_/x.js`);
+    let invalid = await fetch(`${origin}/demo/acme/confetti@_bogus_/x.js`);
     assert.strictEqual(invalid.status, 404);
     assert.strictEqual(
       (await invalid.json()).errors[0].code,
@@ -295,7 +380,7 @@ module('deck server', function (hooks) {
       'grammar-invalid specs are refused permanently',
     );
 
-    let unknownTag = await fetch(`${origin}/@confetti@canary/x.js`);
+    let unknownTag = await fetch(`${origin}/demo/acme/confetti@canary/x.js`);
     assert.strictEqual(unknownTag.status, 404);
     assert.strictEqual(
       (await unknownTag.json()).errors[0].code,
@@ -307,7 +392,7 @@ module('deck server', function (hooks) {
       'a legal tag shape is publishable tomorrow — transient',
     );
 
-    let unknownPackage = await fetch(`${origin}/_packages/nope`);
+    let unknownPackage = await fetch(`${origin}/_packages/demo/acme/nope`);
     assert.strictEqual(unknownPackage.status, 404);
     assert.strictEqual(
       (await unknownPackage.json()).errors[0].code,
@@ -316,21 +401,23 @@ module('deck server', function (hooks) {
   });
 
   test('HEAD rides the GET path with no body', async function (assert) {
-    let response = await fetch(`${origin}/@confetti@1.0.0/confetti.js`, {
-      method: 'HEAD',
-    });
+    let response = await fetch(
+      `${origin}/demo/acme/confetti@1.0.0/confetti.js`,
+      { method: 'HEAD' },
+    );
     assert.strictEqual(response.status, 200);
     assert.strictEqual(
       response.headers.get('x-deck-package'),
-      'confetti@1.0.0',
+      'acme/confetti@1.0.0',
     );
     assert.strictEqual(await response.text(), '');
   });
 
   test('writes are refused — the server is read-only at-rest serving', async function (assert) {
-    let response = await fetch(`${origin}/@confetti@1.0.0/confetti.js`, {
-      method: 'POST',
-    });
+    let response = await fetch(
+      `${origin}/demo/acme/confetti@1.0.0/confetti.js`,
+      { method: 'POST' },
+    );
     assert.strictEqual(response.status, 405);
   });
 });

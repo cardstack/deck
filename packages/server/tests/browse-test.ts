@@ -8,9 +8,11 @@ import type { Server } from 'node:http';
 import { pack } from '@deck/core/pack';
 import { publishToStore } from '@deck/core/store';
 import { createDeckServer } from '../src/server.ts';
+import { storeDirFor, type RealmMount } from '../src/realm.ts';
 
 let workDir: string;
 let storeDir: string;
+let realmDir: string;
 let liveDir: string;
 let server: Server;
 let origin: string;
@@ -18,8 +20,9 @@ let origin: string;
 module('deck browser API', function (hooks) {
   hooks.before(async function () {
     workDir = await mkdtemp(join(tmpdir(), 'deck-browse-test-'));
-    storeDir = join(workDir, 'store');
-    liveDir = join(workDir, 'lib');
+    realmDir = join(workDir, 'demo');
+    storeDir = storeDirFor(realmDir);
+    liveDir = join(realmDir, 'acme', 'lib');
     await mkdir(liveDir, { recursive: true });
     await writeFile(
       join(liveDir, 'importmap.json'),
@@ -51,13 +54,15 @@ module('deck browser API', function (hooks) {
       { path: 'index.js', bytes: Buffer.from('export const n = 1;\n') },
       { path: 'util/math.js', bytes: Buffer.from('export const add = 1;\n') },
     ]);
-    await publishToStore(storeDir, 'lib', '1.0.0', bytes, { tag: 'latest' });
-    await publishToStore(storeDir, 'lib', '1.0.0-dev.1', bytes, { tag: 'dev' });
-
-    server = createDeckServer({
-      storeDir,
-      live: { lib: liveDir },
+    await publishToStore(storeDir, 'acme/lib', '1.0.0', bytes, {
+      tag: 'latest',
     });
+    await publishToStore(storeDir, 'acme/lib', '1.0.0-dev.1', bytes, {
+      tag: 'dev',
+    });
+
+    let realm: RealmMount = { name: 'demo', dir: realmDir, storeDir };
+    server = createDeckServer({ realms: [realm] });
     await new Promise<void>((resolve) => server.listen(0, resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -77,23 +82,43 @@ module('deck browser API', function (hooks) {
     assert.true(html.includes('/_packages'));
   });
 
-  test('GET /_packages lists store + live packages', async function (assert) {
+  test('GET /_packages lists realms, and their packages', async function (assert) {
     let res = await fetch(`${origin}/_packages`);
     assert.equal(res.status, 200);
     let body = await res.json();
     assert.equal(body.data.length, 1);
-    assert.equal(body.data[0].name, 'lib');
-    assert.true(body.data[0].live);
-    assert.equal(body.data[0].distTags.latest, '1.0.0');
+    assert.equal(body.data[0].name, 'demo');
+    assert.equal(body.data[0].type, 'realm');
+    let pkg = body.data[0].packages[0];
+    assert.equal(pkg.publisher, 'acme');
+    assert.equal(pkg.name, 'lib');
+    assert.true(pkg.live);
+    assert.equal(pkg.distTags.latest, '1.0.0');
+    assert.equal(pkg.livePath, '/demo/acme/lib/');
+    assert.equal(pkg.storePath, '.deck/store/acme/lib/');
+    assert.true(pkg.versions['1.0.0'].file.startsWith('packs/'));
     assert.equal(body.meta.history.tier, 1);
     assert.equal(body.meta.history.jj, false);
     assert.equal(body.meta.history.historyd, false);
-    assert.true(body.data[0].versions['1.0.0'].file.startsWith('packs/'));
-    assert.true(body.data[0].livePath.includes('lib'));
+  });
+
+  test('GET /_browse/<realm> lists the decks that live there', async function (assert) {
+    let res = await fetch(`${origin}/_browse/demo`);
+    let listing = (await res.json()).data.attributes;
+    assert.deepEqual(
+      listing.entries.map((e: { name: string }) => e.name),
+      ['acme'],
+    );
+    let scoped = await fetch(`${origin}/_browse/demo/acme`);
+    let publisher = (await scoped.json()).data.attributes;
+    assert.deepEqual(
+      publisher.entries.map((e: { path: string }) => e.path),
+      ['acme/lib'],
+    );
   });
 
   test('browse sealed directory and file', async function (assert) {
-    let root = await fetch(`${origin}/_browse/lib@1.0.0`);
+    let root = await fetch(`${origin}/_browse/demo/acme/lib@1.0.0`);
     assert.equal(root.status, 200);
     let listing = (await root.json()).data.attributes;
     assert.equal(listing.kind, 'sealed');
@@ -109,31 +134,31 @@ module('deck browser API', function (hooks) {
       ],
     );
 
-    let dir = await fetch(`${origin}/_browse/lib@latest/util`);
+    let dir = await fetch(`${origin}/_browse/demo/acme/lib@latest/util`);
     assert.equal(dir.status, 200);
     let util = (await dir.json()).data.attributes;
     assert.equal(util.entries.length, 1);
     assert.equal(util.entries[0].name, 'math.js');
 
-    let file = await fetch(`${origin}/_browse/lib@dev/util/math.js`);
+    let file = await fetch(`${origin}/_browse/demo/acme/lib@dev/util/math.js`);
     assert.equal(file.status, 200);
     let body = (await file.json()).data;
     assert.equal(body.type, 'file');
     assert.true(body.attributes.text.includes('export const add'));
-    assert.true(body.attributes.rawUrl.includes('/@lib@'));
+    assert.true(body.attributes.rawUrl.startsWith('/demo/acme/lib@'));
   });
 
   test('browse live working tree', async function (assert) {
-    let res = await fetch(`${origin}/_browse/lib@live`);
+    let res = await fetch(`${origin}/_browse/demo/acme/lib`);
     assert.equal(res.status, 200);
     let listing = (await res.json()).data.attributes;
     assert.equal(listing.kind, 'live');
     assert.true(listing.entries.some((e: { name: string }) => e.name === 'util'));
 
-    let file = await fetch(`${origin}/_browse/lib@live/index.js`);
+    let file = await fetch(`${origin}/_browse/demo/acme/lib/index.js`);
     let body = (await file.json()).data.attributes;
     assert.equal(body.kind, 'live');
-    assert.equal(body.rawUrl, '/live/lib/index.js');
+    assert.equal(body.rawUrl, '/demo/acme/lib/index.js');
     assert.true(body.text.includes('export const n'));
   });
 });

@@ -93,9 +93,15 @@ export function treeHashFromEntries(
 
 // Default names never part of a deck's logical tree, whichever container
 // it sits in. Callers can extend but not shrink protocol-reserved names.
+// A realm carries its own machinery in dot-directories, the way a Boxel
+// realm carries `.jj` and `.boxel-history`: `.deck` holds the sealed-pack
+// store. They live INSIDE the realm so a realm directory is self-contained
+// and movable, and they are ignored here so a realm's own bookkeeping can
+// never change the hash of the tree it is keeping.
 export const DEFAULT_IGNORE = new Set([
   '.git',
   '.jj',
+  '.deck',
   '.DS_Store',
   'node_modules',
   '.boxel-history',

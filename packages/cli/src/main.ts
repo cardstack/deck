@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
@@ -13,9 +13,16 @@ import {
   releaseVersion,
   setDistTag,
 } from '@deck/core/store';
+import { forkDeck } from '@deck/core/fork';
+import { lockDeck } from '@deck/core/lock';
 import { vendorFromCdn, vendorImportMap } from '@deck/core/vendor';
-import { createDeckServer, type HistoryMount } from '@deck/server/server';
-import { watchAndPublish } from '@deck/server/watcher';
+import { createDeckServer } from '@deck/server/server';
+import {
+  discoverDecks,
+  storeDirFor,
+  watchRealm,
+  type RealmMount,
+} from '@deck/server/realm';
 import { applyRestore } from '@deck/history/backend';
 import { createHistory, isValidHistoryKind } from '@deck/history/create';
 
@@ -26,8 +33,19 @@ import { createHistory, isValidHistoryKind } from '@deck/history/create';
 
 const HELP = `deck — the Deck protocol CLI
 
+A realm is a directory; its layout IS its URL space:
+
+  <root>/<realm>/<publisher>/<package>/app.js   on disk
+  /<realm>/<publisher>/<package>/app.js         live, every save visible
+  /<realm>/<publisher>/<package>@1.2.0/app.js   the sealed copy
+  /<realm>/_history/<changeId>/<path>           any state, published or not
+
+Sealed versions live in <realm>/.deck/store/, seals in <realm>/.jj/ — both
+inside the realm, both invisible to the tree hash, so a realm directory is
+self-contained and movable.
+
 Usage:
-  deck hello [dir] [--port <p>]         scaffold a live app and serve it — start here
+  deck hello [dir] [--port <p>]         scaffold a live realm and serve it — start here
   deck hash <dir>                       print the canonical tree hash
   deck pack <dir> [--output <file>] [--created-by <who>] [--source <realm>]
                                         create <basename>.pack.zip
@@ -35,39 +53,82 @@ Usage:
                                         extract a verified pack
   deck list <file>                      show a pack's packlist
   deck verify <file|dir>                verify a pack / hash a directory
-  deck publish <file> --store <dir> --name <n> --version <v> [--tag <t>]
-                                        publish a pack into a store
-  deck tag --store <dir> --name <n> --tag <t> --version <v>
+  deck publish <file> --realm <dir> --publisher <p> --name <n> --version <v> [--tag <t>]
+                                        publish a pack into a realm's store
+  deck tag --realm <dir> --publisher <p> --name <n> --tag <t> --version <v>
                                         move a dist-tag
-  deck release --store <dir> --name <n> --version <v> --from <tag-or-version> [--tag <t>]
+  deck release --realm <dir> --publisher <p> --name <n> --version <v>
+               --from <tag-or-version> [--tag <t>]
                                         name an existing sealed state as a new
                                         version — a pointer, never a copy
-  deck vendor <cdn-url> --name <n> --version <v> [--store <dir>] [--tag <t>]
-              [--output <file>] [--allow-external] [--allow-host <h>]...
+  deck vendor <cdn-url> --name <n> --version <v> [--realm <dir> --publisher <p>]
+              [--tag <t>] [--output <file>] [--allow-external] [--allow-host <h>]...
                                         pull a library's whole module graph
                                         from esm.sh/unpkg/jsdelivr ONCE,
                                         rewrite every reference to stay
                                         inside the pack, and seal it — your
                                         own unpkg, hermetic by default
-  deck prune --store <dir> --name <n> [--keep <k>]
+  deck prune --realm <dir> --publisher <p> --name <n> [--keep <k>]
                                         drop old -dev.N prereleases (never
                                         stables or tag targets); bytes are
                                         deleted only when nothing points at them
-  deck serve --store <dir> [--port <p>] [--watch <dir> --as <name>]...
-             [--history auto|jj|historyd|none]
-                                        start the read-only Deck server;
-                                        --watch adds /live/<name> vibe serving
-                                        plus auto-published <base>-dev.N versions;
-                                        --history seals every save (tier 2) and
-                                        serves /history/<name>/<changeId>/<path>
-  deck history <dir> [--limit <n>] [--json]
-                                        list the seals of a live tree — every
-                                        state it has been in, published or not
-  deck restore <dir> <changeId>         put the tree back to a sealed state;
+  deck serve --root <dir> | --realm <dir> --as <name> ...
+             [--port <p>] [--history auto|jj|historyd|none]
+                                        start the read-only Deck server; every
+                                        deck under a realm is served live and
+                                        auto-published as <base>-dev.N;
+                                        --history seals every save (tier 2)
+  deck fork --realm <dir> --from <pub>/<pkg>[@<version>] --as <pub>/<pkg>
+            [--use-in <pub>/<pkg>] [--force]
+                                        copy someone's deck into YOUR publisher
+                                        scope and start changing it — separate
+                                        version line, separate dist-tags, their
+                                        versions never move; --use-in repoints
+                                        that deck's dependency at the fork, live
+  deck lock --realm <dir> --publisher <p> --name <n> [--check]
+                                        resolve this deck's declared
+                                        dependency RANGES to exact versions and
+                                        pin them in its import map — what your
+                                        users get, so they never inherit
+                                        somebody else's working tree
+  deck history <realm-dir> [--limit <n>] [--json]
+                                        list a realm's seals — every state it
+                                        has been in, published or not
+  deck restore <realm-dir> <changeId>   put the realm back to a sealed state;
                                         the state you leave is sealed first, and
                                         the restored one auto-publishes as the
                                         next dev version
 `;
+
+// 8787 is jj-historyd's default; a deck server sharing a machine with one
+// would collide silently, so the server sits next door.
+const DEFAULT_PORT = '8788';
+
+// `deck hello` is a runme: a busy port is not something to make the reader
+// solve. Explicit `--port` is honoured exactly; the default walks forward.
+async function listenNear(
+  server: { listen: (port: number, cb: () => void) => void; once: (event: string, cb: (error: NodeJS.ErrnoException) => void) => void; removeAllListeners: (event: string) => void },
+  port: number,
+  attempts = 10,
+): Promise<number> {
+  for (let candidate = port; candidate < port + attempts; candidate++) {
+    let listening = await new Promise<boolean>((resolve) => {
+      server.once('error', (error: NodeJS.ErrnoException) => {
+        if (error.code === 'EADDRINUSE') {
+          resolve(false);
+        } else {
+          throw error;
+        }
+      });
+      server.listen(candidate, () => resolve(true));
+    });
+    server.removeAllListeners('error');
+    if (listening) {
+      return candidate;
+    }
+  }
+  throw new Error(`no free port in ${port}..${port + attempts - 1}`);
+}
 
 function fail(message: string): never {
   console.error(`error: ${message}`);
@@ -190,27 +251,35 @@ async function main(): Promise<void> {
         args: rest,
         allowPositionals: true,
         options: {
-          store: { type: 'string' },
+          realm: { type: 'string' },
+          publisher: { type: 'string' },
           name: { type: 'string' },
           version: { type: 'string' },
           tag: { type: 'string' },
         },
       });
       let [file] = positionals;
-      if (!file || !values.store || !values.name || !values.version) {
+      if (
+        !file ||
+        !values.realm ||
+        !values.publisher ||
+        !values.name ||
+        !values.version
+      ) {
         fail(
-          'usage: deck publish <file> --store <dir> --name <n> --version <v> [--tag <t>]',
+          'usage: deck publish <file> --realm <dir> --publisher <p> --name <n> --version <v> [--tag <t>]',
         );
       }
+      let scoped = `${values.publisher}/${values.name}`;
       let { treeHash } = await publishToStore(
-        resolve(values.store),
-        values.name,
+        storeDirFor(resolve(values.realm)),
+        scoped,
         values.version,
         await readFile(file),
         { tag: values.tag },
       );
       console.log(
-        `published ${values.name}@${values.version} (treeHash ${treeHash})${values.tag ? ` tag ${values.tag}` : ''}`,
+        `published ${scoped}@${values.version} (treeHash ${treeHash})${values.tag ? ` tag ${values.tag}` : ''}`,
       );
       return;
     }
@@ -218,55 +287,71 @@ async function main(): Promise<void> {
       let { values } = parseArgs({
         args: rest,
         options: {
-          store: { type: 'string' },
+          realm: { type: 'string' },
+          publisher: { type: 'string' },
           name: { type: 'string' },
           tag: { type: 'string' },
           version: { type: 'string' },
         },
       });
-      if (!values.store || !values.name || !values.tag || !values.version) {
+      if (
+        !values.realm ||
+        !values.publisher ||
+        !values.name ||
+        !values.tag ||
+        !values.version
+      ) {
         fail(
-          'usage: deck tag --store <dir> --name <n> --tag <t> --version <v>',
+          'usage: deck tag --realm <dir> --publisher <p> --name <n> --tag <t> --version <v>',
         );
       }
+      let scoped = `${values.publisher}/${values.name}`;
       await setDistTag(
-        resolve(values.store),
-        values.name,
+        storeDirFor(resolve(values.realm)),
+        scoped,
         values.tag,
         values.version,
       );
-      console.log(`${values.name} ${values.tag} → ${values.version}`);
+      console.log(`${scoped} ${values.tag} → ${values.version}`);
       return;
     }
     case 'release': {
       let { values } = parseArgs({
         args: rest,
         options: {
-          store: { type: 'string' },
+          realm: { type: 'string' },
+          publisher: { type: 'string' },
           name: { type: 'string' },
           version: { type: 'string' },
           from: { type: 'string' },
           tag: { type: 'string' },
         },
       });
-      if (!values.store || !values.name || !values.version || !values.from) {
+      if (
+        !values.realm ||
+        !values.publisher ||
+        !values.name ||
+        !values.version ||
+        !values.from
+      ) {
         fail(
-          'usage: deck release --store <dir> --name <n> --version <v> --from <tag-or-version> [--tag <t>]',
+          'usage: deck release --realm <dir> --publisher <p> --name <n> --version <v> --from <tag-or-version> [--tag <t>]',
         );
       }
+      let scoped = `${values.publisher}/${values.name}`;
       // A leading digit means a source version; otherwise a dist-tag.
       let from = /^[0-9]/.test(values.from)
         ? { version: values.from }
         : { tag: values.from };
       let record = await releaseVersion(
-        resolve(values.store),
-        values.name,
+        storeDirFor(resolve(values.realm)),
+        scoped,
         values.version,
         from,
         { tag: values.tag },
       );
       console.log(
-        `released ${values.name}@${values.version} from ${values.from}: same sealed state (treeHash ${record.treeHash}), zero bytes copied${values.tag ? `, tag ${values.tag}` : ''}`,
+        `released ${scoped}@${values.version} from ${values.from}: same sealed state (treeHash ${record.treeHash}), zero bytes copied${values.tag ? `, tag ${values.tag}` : ''}`,
       );
       return;
     }
@@ -277,7 +362,8 @@ async function main(): Promise<void> {
         options: {
           name: { type: 'string' },
           version: { type: 'string' },
-          store: { type: 'string' },
+          realm: { type: 'string' },
+          publisher: { type: 'string' },
           tag: { type: 'string' },
           output: { type: 'string' },
           'allow-external': { type: 'boolean', default: false },
@@ -287,8 +373,11 @@ async function main(): Promise<void> {
       let [url] = positionals;
       if (!url || !values.name || !values.version) {
         fail(
-          'usage: deck vendor <cdn-url> --name <n> --version <v> [--store <dir>] [--output <file>]',
+          'usage: deck vendor <cdn-url> --name <n> --version <v> [--realm <dir> --publisher <p>] [--output <file>]',
         );
+      }
+      if ((values.realm === undefined) !== (values.publisher === undefined)) {
+        fail('publishing a vendored pack needs both --realm and --publisher');
       }
       let result = await vendorFromCdn({
         entryUrl: url,
@@ -319,19 +408,20 @@ async function main(): Promise<void> {
           console.log(`    ${external}`);
         }
       }
-      if (values.store) {
+      if (values.realm && values.publisher) {
+        let realmDir = resolve(values.realm);
         await publishToStore(
-          resolve(values.store),
-          values.name,
+          storeDirFor(realmDir),
+          `${values.publisher}/${values.name}`,
           values.version,
           bytes,
           { tag: values.tag },
         );
         console.log(
-          `published ${values.name}@${values.version}${values.tag ? ` tag ${values.tag}` : ''} — import it as /@${values.name}@${values.version}/`,
+          `published ${values.publisher}/${values.name}@${values.version}${values.tag ? ` tag ${values.tag}` : ''} — import it as /${basename(realmDir)}/${values.publisher}/${values.name}@${values.version}/`,
         );
       }
-      if (values.output || !values.store) {
+      if (values.output || !values.realm) {
         let output =
           values.output ?? `${values.name}-${values.version}.pack.zip`;
         await writeFile(output, bytes);
@@ -343,17 +433,20 @@ async function main(): Promise<void> {
       let { values } = parseArgs({
         args: rest,
         options: {
-          store: { type: 'string' },
+          realm: { type: 'string' },
+          publisher: { type: 'string' },
           name: { type: 'string' },
           keep: { type: 'string', default: '10' },
         },
       });
-      if (!values.store || !values.name) {
-        fail('usage: deck prune --store <dir> --name <n> [--keep <k>]');
+      if (!values.realm || !values.publisher || !values.name) {
+        fail(
+          'usage: deck prune --realm <dir> --publisher <p> --name <n> [--keep <k>]',
+        );
       }
       let { removedVersions, deletedFiles } = await pruneDevVersions(
-        resolve(values.store),
-        values.name,
+        storeDirFor(resolve(values.realm)),
+        `${values.publisher}/${values.name}`,
         { keep: Number(values.keep) },
       );
       console.log(
@@ -363,6 +456,122 @@ async function main(): Promise<void> {
             : ''
         }`,
       );
+      return;
+    }
+    case 'fork': {
+      let { values } = parseArgs({
+        args: rest,
+        options: {
+          realm: { type: 'string' },
+          from: { type: 'string' },
+          as: { type: 'string' },
+          'use-in': { type: 'string' },
+          force: { type: 'boolean', default: false },
+        },
+      });
+      if (!values.realm || !values.from || !values.as) {
+        fail(
+          'usage: deck fork --realm <dir> --from <pub>/<pkg>[@<version>] --as <pub>/<pkg> [--use-in <pub>/<pkg>]',
+        );
+      }
+      let realmDir = resolve(values.realm);
+      let [fromName, fromSpec] = values.from.split('@');
+      let [fromPublisher, fromPackage] = fromName.split('/');
+      let [toPublisher, toPackage] = values.as.split('/');
+      if (!fromPublisher || !fromPackage || !toPublisher || !toPackage) {
+        fail('--from and --as are <publisher>/<package>');
+      }
+      let result = await forkDeck({
+        realmDir,
+        storeDir: storeDirFor(realmDir),
+        from: {
+          publisher: fromPublisher,
+          package: fromPackage,
+          spec: fromSpec,
+        },
+        to: { publisher: toPublisher, package: toPackage },
+        force: values.force,
+      });
+      console.log(
+        `forked ${result.from} → ${result.to} (${result.files.length} files) at ${result.dir}`,
+      );
+      console.log(
+        `  it publishes under ${result.to}; ${fromName}'s versions never move`,
+      );
+      if (values['use-in']) {
+        let [usePublisher, usePackage] = values['use-in'].split('/');
+        if (!usePublisher || !usePackage) {
+          fail('--use-in is <publisher>/<package>');
+        }
+        let mapPath = join(realmDir, usePublisher, usePackage, 'importmap.json');
+        let map = JSON.parse(await readFile(mapPath, 'utf8'));
+        let vendor = (map.deck ??= {});
+        let dependencies = (vendor.dependencies ??= {});
+        delete dependencies[fromName];
+        // `live` on purpose: the point of a fork is to see every save.
+        dependencies[result.to] = 'live';
+        await writeFile(mapPath, JSON.stringify(map, null, 2) + '\n');
+        let locked = await lockDeck({
+          realmDir,
+          realmName: basename(realmDir),
+          storeDir: storeDirFor(realmDir),
+          deckDir: join(realmDir, usePublisher, usePackage),
+        });
+        await writeFile(mapPath, locked.text);
+        console.log(
+          `  ${values['use-in']} now imports ${result.to} live — every save, no publish`,
+        );
+      }
+      return;
+    }
+    case 'lock': {
+      let { values } = parseArgs({
+        args: rest,
+        options: {
+          realm: { type: 'string' },
+          publisher: { type: 'string' },
+          name: { type: 'string' },
+          check: { type: 'boolean', default: false },
+        },
+      });
+      if (!values.realm || !values.publisher || !values.name) {
+        fail(
+          'usage: deck lock --realm <dir> --publisher <p> --name <n> [--check]',
+        );
+      }
+      let realmDir = resolve(values.realm);
+      let { resolutions, text, changed } = await lockDeck({
+        realmDir,
+        realmName: basename(realmDir),
+        storeDir: storeDirFor(realmDir),
+        deckDir: join(realmDir, values.publisher, values.name),
+      });
+      if (resolutions.length === 0) {
+        console.log('no dependencies declared (deck.dependencies is empty)');
+        return;
+      }
+      for (let resolution of resolutions) {
+        let target = resolution.imports[resolution.key] ?? resolution.imports[`${resolution.key}/`];
+        let moved =
+          resolution.previous && resolution.previous !== target
+            ? `  (was ${resolution.previous})`
+            : '';
+        console.log(`${resolution.key}  ${resolution.spec} → ${target}${moved}`);
+      }
+      if (!changed) {
+        console.log('already locked — nothing to write');
+        return;
+      }
+      if (values.check) {
+        fail('the lock is out of date (run without --check to write it)');
+      }
+      // Writing the pins is an ordinary edit: it auto-publishes, seals, and
+      // reverts like any other save.
+      await writeFile(
+        join(realmDir, values.publisher, values.name, 'importmap.json'),
+        text,
+      );
+      console.log(`locked ${values.publisher}/${values.name}`);
       return;
     }
     case 'history': {
@@ -452,19 +661,24 @@ async function main(): Promise<void> {
       return;
     }
     case 'hello': {
-      // The runme: scaffold a working app and serve it live in one
+      // The runme: scaffold a working realm and serve it live in one
       // command. No install, no build, no config — edit a file, reload,
       // see it. Everything else in this CLI is a step you take later.
       let { values, positionals } = parseArgs({
         args: rest,
         allowPositionals: true,
-        options: { port: { type: 'string', default: '8787' } },
+        options: {
+          port: { type: 'string', default: DEFAULT_PORT },
+          publisher: { type: 'string', default: 'you' },
+        },
       });
-      let appDir = resolve(positionals[0] ?? 'hello-deck');
-      let name = basename(appDir)
-        .replace(/[^a-z0-9-]/gi, '-')
-        .toLowerCase();
-      let storeDir = `${appDir}-store`; // outside the watched tree, always
+      // The layout IS the addressing: <root>/<realm>/<publisher>/<package>
+      let root = resolve(positionals[0] ?? 'hello-deck');
+      let realmName = 'hello';
+      let publisher = values.publisher!;
+      let name = 'app';
+      let realmDir = join(root, realmName);
+      let appDir = join(realmDir, publisher, name);
       let exists = await stat(join(appDir, 'app.js')).then(
         () => true,
         () => false,
@@ -490,7 +704,7 @@ async function main(): Promise<void> {
           join(appDir, 'index.html'),
           `<!doctype html>
 <meta charset="utf-8" />
-<title>${name}</title>
+<title>${realmName}/${publisher}/${name}</title>
 <script type="module" src="/_live/hmr.js"></script>
 <body style="font-family: system-ui; display: grid; place-items: center; height: 100vh; margin: 0">
   <canvas id="c" width="360" height="360"></canvas>
@@ -522,34 +736,41 @@ setInterval(() => {
       // History is on when the machine can do it: "you cannot lose work" is
       // the promise, and seals are what make it true between publishes.
       let attachment = await createHistory({
-        dir: appDir,
+        dir: realmDir,
         onError: (error) => console.error(`  history: ${error}`),
       });
-      let server = createDeckServer({
-        storeDir,
-        live: { [name]: appDir },
-        history: attachment.backend
-          ? { [name]: { dir: appDir, backend: attachment.backend } }
-          : {},
-      });
-      watchAndPublish({
-        dir: appDir,
-        name,
-        storeDir,
+      let realm: RealmMount = {
+        name: realmName,
+        dir: realmDir,
+        storeDir: storeDirFor(realmDir),
         history: attachment.backend,
+      };
+      let server = createDeckServer({ realms: [realm] });
+      watchRealm({
+        realm,
         onLiveChange: (event) => server.liveBus.emit(event),
-        onPublish: ({ version }) => console.log(`  saved → ${name}@${version}`),
+        onPublish: ({ name: deck, version }) =>
+          console.log(`  saved → ${deck}@${version}`),
         onError: (error) => console.error(`  watch: ${error}`),
       });
-      let port = Number(values.port);
-      server.listen(port, () => {
-        let url = `http://localhost:${port}/live/${name}/index.html`;
+      let requested = Number(values.port);
+      let port = await listenNear(
+        server,
+        requested,
+        values.port === DEFAULT_PORT ? 10 : 1,
+      );
+      {
+        let url = `http://localhost:${port}/${realmName}/${publisher}/${name}/index.html`;
         console.log(`
-  ${exists ? 'Serving' : 'Created'} ${appDir}
+  ${exists ? 'Serving' : 'Created'} ${root}
 
       ${url}
 
   Open that, then edit ${join(appDir, 'app.js')} — it hot-reloads.
+
+  The URL is the directory: /${realmName}/${publisher}/${name}/app.js IS
+  ${realmName}/${publisher}/${name}/app.js on disk. Add @<version> to the
+  package segment and you get the sealed copy instead of the live one.
 
   No npm. No GitHub. No deploy. No PR. Instant feedback.
   Every save is auto-saved as an immutable version — you cannot lose work,
@@ -558,98 +779,107 @@ setInterval(() => {
   ${attachment.detail}${
     attachment.backend
       ? `
-    deck history ${appDir}              # every state this tree has been in
-    deck restore ${appDir} <changeId>   # go back to any of them`
+    deck history ${realmDir}            # every state this realm has been in
+    deck restore ${realmDir} <changeId> # go back to any of them`
       : ''
   }
 
   Next, when you want it:
     deck vendor https://esm.sh/three@0.160.0 --name three --version 0.160.0 \\
-      --store ${storeDir} --tag latest      # any ESM library, pulled in for good
-    deck release --store ${storeDir} --name ${name} --version 1.0.0 \\
-      --from dev --tag latest               # freeze this state as a real version
-    deck pack ${appDir}                     # the whole app as one shareable file
+      --realm ${realmDir} --publisher ${publisher} --tag latest
+    deck release --realm ${realmDir} --publisher ${publisher} --name ${name} \\
+      --version 1.0.0 --from dev --tag latest
+    deck pack ${appDir}                 # the whole deck as one shareable file
 `);
-      });
+      }
       return;
     }
     case 'serve': {
       let { values } = parseArgs({
         args: rest,
         options: {
-          store: { type: 'string' },
-          port: { type: 'string', default: '8787' },
-          watch: { type: 'string', multiple: true, default: [] },
+          root: { type: 'string' },
+          realm: { type: 'string', multiple: true, default: [] },
           as: { type: 'string', multiple: true, default: [] },
+          port: { type: 'string', default: DEFAULT_PORT },
           history: { type: 'string', default: 'auto' },
         },
       });
-      if (!values.store) {
+      if (!values.root && values.realm!.length === 0) {
         fail(
-          'usage: deck serve --store <dir> [--port <p>] [--watch <dir> --as <name>]...',
+          'usage: deck serve --root <dir> | --realm <dir> --as <name> [--port <p>] [--history <kind>]',
         );
       }
-      if (values.watch!.length !== values.as!.length) {
-        fail('each --watch <dir> needs a matching --as <name>');
+      if (values.realm!.length !== values.as!.length) {
+        fail('each --realm <dir> needs a matching --as <name>');
       }
       if (!isValidHistoryKind(values.history!)) {
         fail(`--history must be auto, jj, historyd, or none`);
       }
-      let live: Record<string, string> = {};
-      let historyMounts: Record<string, HistoryMount> = {};
-      let server = createDeckServer({
-        storeDir: resolve(values.store),
-        live,
-        history: historyMounts,
-      });
-      for (let [i, dir] of values.watch!.entries()) {
-        let name = values.as![i];
-        live[name] = resolve(dir);
-        let attachment = await createHistory({
-          dir: resolve(dir),
-          kind: values.history,
-          onError: (error) => console.error(`history ${name}: ${error}`),
-        });
-        console.log(`  ${name}: ${attachment.detail}`);
-        if (attachment.backend) {
-          historyMounts[name] = {
-            dir: resolve(dir),
-            backend: attachment.backend,
-          };
+      // A root is a directory OF realms — every child directory is one,
+      // named after itself, exactly as it is addressed.
+      let mounts: { name: string; dir: string }[] = [];
+      if (values.root) {
+        let rootDir = resolve(values.root);
+        for (let entry of await readdir(rootDir, { withFileTypes: true })) {
+          if (entry.isDirectory() && !entry.name.startsWith('.')) {
+            mounts.push({ name: entry.name, dir: join(rootDir, entry.name) });
+          }
         }
-        watchAndPublish({
-          dir: resolve(dir),
-          name,
-          storeDir: resolve(values.store),
+      }
+      for (let [i, dir] of values.realm!.entries()) {
+        mounts.push({ name: values.as![i], dir: resolve(dir) });
+      }
+      let realms: RealmMount[] = [];
+      for (let mount of mounts) {
+        let attachment = await createHistory({
+          dir: mount.dir,
+          kind: values.history,
+          onError: (error) => console.error(`history ${mount.name}: ${error}`),
+        });
+        console.log(`  ${mount.name}: ${attachment.detail}`);
+        realms.push({
+          name: mount.name,
+          dir: mount.dir,
+          storeDir: storeDirFor(mount.dir),
           history: attachment.backend,
+        });
+      }
+      let server = createDeckServer({ realms });
+      for (let realm of realms) {
+        let controller = watchRealm({
+          realm,
           onLiveChange: (event) => server.liveBus.emit(event),
-          onPublish: ({ version, treeHash, sealChangeId }) =>
+          onPublish: ({ name, version, treeHash, sealChangeId }) =>
             console.log(
-              `auto-published ${name}@${version} (${treeHash.slice(0, 12)})${
+              `auto-published ${realm.name}/${name}@${version} (${treeHash.slice(0, 12)})${
                 sealChangeId ? ` sealed ${sealChangeId.slice(0, 12)}` : ''
               }`,
             ),
-          onError: (error) => console.error(`watch ${name}: ${error}`),
+          onDeck: (deck) => console.log(`  watching ${realm.name}/${deck.name}`),
+          onError: (error) => console.error(`watch ${realm.name}: ${error}`),
         });
+        await controller.rescan();
       }
       let port = Number(values.port);
-      server.listen(port, () => {
+      server.listen(port, async () => {
+        console.log(`deck server on http://localhost:${port} (read-only)`);
         console.log(
-          `deck server on http://localhost:${port} (read-only, store: ${values.store})`,
-        );
-        console.log(
-          `  browse: http://localhost:${port}/  — packages, files, versions`,
+          `  browse: http://localhost:${port}/  — realms, packages, versions`,
         );
         console.log(
           `  hmr:  http://localhost:${port}/_live/hmr.js → SSE /_live/events`,
         );
-        for (let name of Object.keys(live)) {
-          console.log(
-            `  live: http://localhost:${port}/live/${name} — auto-publishes ${name}@<base>-dev.N (tag: dev)`,
-          );
-          if (historyMounts[name]) {
+        for (let realm of realms) {
+          for (let deck of await discoverDecks(realm.dir)) {
             console.log(
-              `  seals: http://localhost:${port}/history/${name} — every save, published or not`,
+              `  live: http://localhost:${port}/${realm.name}/${deck.name}/ ` +
+                `— auto-publishes @<base>-dev.N (tag: dev)`,
+            );
+          }
+          if (realm.history) {
+            console.log(
+              `  seals: http://localhost:${port}/${realm.name}/_history — every save, published or not`,
             );
           }
         }

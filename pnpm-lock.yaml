@@ -129,6 +129,10 @@ importers:
         version: 5.9.3
 
   packages/history:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

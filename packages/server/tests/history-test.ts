@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { peekPacklist } from '@deck/core/pack';
-import { readStoredPack } from '@deck/core/store';
+import { readStoreMeta, readStoredPack } from '@deck/core/store';
 import type {
   HistoryBackend,
   HistoryEntry,
@@ -14,7 +14,13 @@ import type {
 } from '@deck/history/backend';
 import { JjCliHistory, jjVersion } from '@deck/history/jj-cli';
 import { createDeckServer } from '../src/server.ts';
-import { watchAndPublish, type WatchPublishEvent } from '../src/watcher.ts';
+import {
+  storeDirFor,
+  watchRealm,
+  type RealmMount,
+  type RealmWatchController,
+} from '../src/realm.ts';
+import type { WatchPublishEvent } from '../src/watcher.ts';
 
 // A backend with no daemon and no subprocess: the routes are the subject
 // here, so history is a fixture. The jj-backed module below covers the real
@@ -85,9 +91,14 @@ module('history routes: serving states that were never published', function (
   hooks.before(async function () {
     storeDir = await mkdtemp(join(tmpdir(), 'deck-history-routes-'));
     server = createDeckServer({
-      storeDir,
-      live: { mylib: '/nonexistent' },
-      history: { mylib: { dir: '/nonexistent', backend: new StubHistory() } },
+      realms: [
+        {
+          name: 'demo',
+          dir: join(storeDir, 'realm'),
+          storeDir,
+          history: new StubHistory(),
+        },
+      ],
     });
     await new Promise<void>((resolve) => server.listen(0, resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -101,7 +112,7 @@ module('history routes: serving states that were never published', function (
   });
 
   test('the seal log lists every state, newest first, uncached', async function (assert) {
-    let response = await fetch(`${origin}/history/mylib`);
+    let response = await fetch(`${origin}/demo/_history`);
     assert.strictEqual(response.status, 200);
     assert.strictEqual(
       response.headers.get('cache-control'),
@@ -109,19 +120,19 @@ module('history routes: serving states that were never published', function (
       'the log grows with every save',
     );
     let body = await response.json();
-    assert.deepEqual(body.meta, { backend: 'jj', tier: 2 });
+    assert.deepEqual(body.meta, { backend: 'jj', tier: 2, realm: 'demo' });
     assert.deepEqual(
       body.data.map((seal: { id: string }) => seal.id),
       ['wwwwwwww', 'vvvvvvvv'],
     );
     assert.strictEqual(
       body.data[0].attributes.filesUrl,
-      '/history/mylib/wwwwwwww',
+      '/demo/_history/wwwwwwww',
     );
   });
 
   test('a sealed file is served immutable — the same promise an exact version gets', async function (assert) {
-    let response = await fetch(`${origin}/history/mylib/vvvvvvvv/app.js`);
+    let response = await fetch(`${origin}/demo/_history/vvvvvvvv/app.js`);
     assert.strictEqual(response.status, 200);
     assert.strictEqual(
       response.headers.get('cache-control'),
@@ -138,7 +149,7 @@ module('history routes: serving states that were never published', function (
     );
     assert.strictEqual(await response.text(), 'export const v = 1;\n');
 
-    let head = await fetch(`${origin}/history/mylib/vvvvvvvv/app.js`, {
+    let head = await fetch(`${origin}/demo/_history/vvvvvvvv/app.js`, {
       method: 'HEAD',
     });
     assert.strictEqual(head.status, 200, 'HEAD rides the GET path');
@@ -146,7 +157,7 @@ module('history routes: serving states that were never published', function (
   });
 
   test('a seal lists its own tree', async function (assert) {
-    let response = await fetch(`${origin}/history/mylib/wwwwwwww`);
+    let response = await fetch(`${origin}/demo/_history/wwwwwwww`);
     let body = await response.json();
     assert.deepEqual(body.data.attributes.files, ['app.js', 'extra.js']);
     assert.true(body.data.attributes.filesAvailable);
@@ -158,7 +169,7 @@ module('history routes: serving states that were never published', function (
   });
 
   test('misses are tiered by permanence, and paths are validated', async function (assert) {
-    let unknown = await fetch(`${origin}/history/mylib/zzzzzzzz`);
+    let unknown = await fetch(`${origin}/demo/_history/zzzzzzzz`);
     assert.strictEqual(unknown.status, 404);
     assert.strictEqual(
       (await unknown.json()).errors[0].code,
@@ -170,7 +181,7 @@ module('history routes: serving states that were never published', function (
       'a seal that does not exist YET is only briefly negative-cached',
     );
 
-    let malformed = await fetch(`${origin}/history/mylib/not%20an%20id`);
+    let malformed = await fetch(`${origin}/demo/_history/not%20an%20id`);
     assert.strictEqual(malformed.status, 404);
     assert.strictEqual(
       (await malformed.json()).errors[0].code,
@@ -182,16 +193,19 @@ module('history routes: serving states that were never published', function (
       'no future seal can ever carry a malformed id — cache the refusal',
     );
 
-    let traversal = await fetch(`${origin}/history/mylib/vvvvvvvv/../escape`);
+    let traversal = await fetch(`${origin}/demo/_history/vvvvvvvv/../escape`);
     assert.strictEqual(traversal.status, 404, 'tree-path rules hold here too');
 
-    let missing = await fetch(`${origin}/history/mylib/vvvvvvvv/nope.js`);
+    let missing = await fetch(`${origin}/demo/_history/vvvvvvvv/nope.js`);
     assert.strictEqual(missing.status, 404);
     assert.strictEqual((await missing.json()).errors[0].code, 'file-not-found');
 
-    let unmounted = await fetch(`${origin}/history/other`);
+    let unmounted = await fetch(`${origin}/other/_history`);
     assert.strictEqual(unmounted.status, 404);
-    assert.strictEqual((await unmounted.json()).errors[0].code, 'no-history');
+    assert.strictEqual(
+      (await unmounted.json()).errors[0].code,
+      'realm-not-found',
+    );
   });
 
   test('the capability block tells a client which tier it is talking to', async function (assert) {
@@ -201,8 +215,8 @@ module('history routes: serving states that were never published', function (
       kind: 'sealed-tree',
       jj: true,
       historyd: false,
-      packages: ['mylib'],
-      note: 'Every save is sealed. GET /history/<name> lists seals; /history/<name>/<changeId>/<path> serves any of them, published or not.',
+      realms: ['demo'],
+      note: 'Every save is sealed. GET /<realm>/_history lists seals; /<realm>/_history/<changeId>/<path> serves any of them, published or not.',
     });
   });
 });
@@ -214,7 +228,9 @@ module('history routes: a server without a backend', function (hooks) {
 
   hooks.before(async function () {
     storeDir = await mkdtemp(join(tmpdir(), 'deck-history-none-'));
-    server = createDeckServer({ storeDir });
+    server = createDeckServer({
+      realms: [{ name: 'demo', dir: join(storeDir, 'realm'), storeDir }],
+    });
     await new Promise<void>((resolve) => server.listen(0, resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -227,7 +243,7 @@ module('history routes: a server without a backend', function (hooks) {
   });
 
   test('tier 1 says so plainly rather than pretending to have seals', async function (assert) {
-    let response = await fetch(`${origin}/history/mylib`);
+    let response = await fetch(`${origin}/demo/_history`);
     assert.strictEqual(response.status, 404);
     let error = (await response.json()).errors[0];
     assert.strictEqual(error.code, 'no-history');
@@ -253,21 +269,25 @@ if (!version) {
 } else {
   module('history + auto-publish (jj)', function (hooks) {
     let workDir: string;
-    let liveDir: string;
+    let realmDir: string;
+    let deckDir: string;
     let storeDir: string;
     let server: Server;
     let origin: string;
     let history: JjCliHistory;
-    let controller: ReturnType<typeof watchAndPublish>;
+    let controller: RealmWatchController;
     let published: WatchPublishEvent[] = [];
 
     hooks.before(async function () {
       workDir = await mkdtemp(join(tmpdir(), 'deck-history-e2e-'));
-      liveDir = join(workDir, 'mylib');
-      storeDir = join(workDir, 'store');
-      await (await import('node:fs/promises')).mkdir(liveDir);
+      realmDir = join(workDir, 'demo');
+      deckDir = join(realmDir, 'me', 'mylib');
+      storeDir = storeDirFor(realmDir);
+      await (await import('node:fs/promises')).mkdir(deckDir, {
+        recursive: true,
+      });
       await writeFile(
-        join(liveDir, 'importmap.json'),
+        join(deckDir, 'importmap.json'),
         JSON.stringify({
           imports: {},
           deck: {
@@ -275,27 +295,32 @@ if (!version) {
           },
         }),
       );
-      await writeFile(join(liveDir, 'app.js'), 'export const v = 1;\n');
+      await writeFile(join(deckDir, 'app.js'), 'export const v = 1;\n');
 
+      // The realm seals as ONE tree — the same unit a realm server seals —
+      // even though each deck under it publishes its own versions.
       history = new JjCliHistory({ debounceMs: 50 });
-      controller = watchAndPublish({
-        dir: liveDir,
-        name: 'mylib',
+      let realm: RealmMount = {
+        name: 'demo',
+        dir: realmDir,
         storeDir,
+        history,
+      };
+      controller = watchRealm({
+        realm,
         // A publish window well clear of the seal window, so the state
         // between them is observable rather than a race.
         debounceMs: 600,
-        history,
         onPublish: (event) => published.push(event),
         onError: (error) => {
           throw error;
         },
       });
-      server = createDeckServer({
-        storeDir,
-        live: { mylib: liveDir },
-        history: { mylib: { dir: liveDir, backend: history } },
-      });
+      await controller.rescan();
+      // Mounting publishes the tree as it stands; count edits from there.
+      await controller.settled();
+      published = [];
+      server = createDeckServer({ realms: [realm] });
       await new Promise<void>((resolve) => server.listen(0, resolve));
       origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     });
@@ -310,11 +335,12 @@ if (!version) {
     });
 
     test('a published version names the seal it was cut from', async function (assert) {
-      await writeFile(join(liveDir, 'app.js'), 'export const v = 2;\n');
+      await writeFile(join(deckDir, 'app.js'), 'export const v = 2;\n');
       await controller.settled();
       assert.strictEqual(published.length, 1);
       let event = published[0];
-      assert.strictEqual(event.version, '0.1.0-dev.1');
+      assert.strictEqual(event.version, '0.1.0-dev.2');
+      assert.strictEqual(event.name, 'me/mylib');
       assert.true(
         typeof event.sealChangeId === 'string' && event.sealChangeId.length > 0,
         'the publish event carries the seal',
@@ -322,14 +348,18 @@ if (!version) {
 
       // The seal travels INSIDE the pack, so it survives copying, serving,
       // and unpacking — it is not server-side bookkeeping.
-      let packBytes = (await readStoredPack(storeDir, 'mylib', event.version))!;
+      let packBytes = (await readStoredPack(
+        storeDir,
+        'me/mylib',
+        event.version,
+      ))!;
       assert.strictEqual(
         peekPacklist(packBytes).provenance?.sealChangeId,
         event.sealChangeId,
       );
 
       let meta = await (
-        await fetch(`${origin}/@mylib@${event.version}?meta`)
+        await fetch(`${origin}/demo/me/mylib@${event.version}?meta`)
       ).json();
       assert.strictEqual(
         meta.data.attributes.sealChangeId,
@@ -337,16 +367,18 @@ if (!version) {
         'and a client can follow a version back to its seal',
       );
 
+      // The seal is the REALM's, so its paths are realm-relative — the same
+      // path the URL uses.
       let sealed = await fetch(
-        `${origin}/history/mylib/${event.sealChangeId}/app.js`,
+        `${origin}/demo/_history/${event.sealChangeId}/me/mylib/app.js`,
       );
       assert.strictEqual(await sealed.text(), 'export const v = 2;\n');
     });
 
     test('states BETWEEN publishes are sealed and servable', async function (assert) {
       let publishesBefore = published.length;
-      let before = await history.head(liveDir);
-      await writeFile(join(liveDir, 'app.js'), 'export const v = 3;\n');
+      let before = await history.head(realmDir);
+      await writeFile(join(deckDir, 'app.js'), 'export const v = 3;\n');
       // The seal debounce (50ms) fires long before the publish debounce
       // (600ms): this is the tier-2 guarantee — the save is already safe
       // before any version exists for it. Poll rather than sleep a fixed
@@ -354,7 +386,7 @@ if (!version) {
       let intermediate = before;
       for (let attempt = 0; attempt < 50 && intermediate === before; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 10));
-        intermediate = await history.head(liveDir);
+        intermediate = await history.head(realmDir);
       }
       assert.notStrictEqual(intermediate, before, 'the save was sealed');
       assert.strictEqual(
@@ -363,7 +395,7 @@ if (!version) {
         'and nothing has been published for it yet',
       );
       let response = await fetch(
-        `${origin}/history/mylib/${intermediate}/app.js`,
+        `${origin}/demo/_history/${intermediate}/me/mylib/app.js`,
       );
       assert.strictEqual(
         await response.text(),
@@ -376,18 +408,20 @@ if (!version) {
     test('the seal log outgrows the version list, and nothing runs away', async function (assert) {
       // Two saves inside ONE publish window: both are sealed, only the last
       // is published. The first is the state tier 1 cannot give back.
-      let head = await history.head(liveDir);
-      await writeFile(join(liveDir, 'app.js'), 'export const v = 4;\n');
+      let head = await history.head(realmDir);
+      await writeFile(join(deckDir, 'app.js'), 'export const v = 4;\n');
       let intermediate = head;
       for (let attempt = 0; attempt < 50 && intermediate === head; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 10));
-        intermediate = await history.head(liveDir);
+        intermediate = await history.head(realmDir);
       }
-      await writeFile(join(liveDir, 'app.js'), 'export const v = 5;\n');
+      await writeFile(join(deckDir, 'app.js'), 'export const v = 5;\n');
       await controller.settled();
 
-      let seals = await (await fetch(`${origin}/history/mylib`)).json();
-      let versions = await (await fetch(`${origin}/_packages/mylib`)).json();
+      let seals = await (await fetch(`${origin}/demo/_history`)).json();
+      let versions = await (
+        await fetch(`${origin}/_packages/demo/me/mylib`)
+      ).json();
       let versionCount = Object.keys(versions.data.attributes.versions).length;
       assert.true(
         seals.data.length > versionCount,
@@ -395,7 +429,7 @@ if (!version) {
       );
       assert.true(versions.data.attributes.history);
       let skipped = await fetch(
-        `${origin}/history/mylib/${intermediate}/app.js`,
+        `${origin}/demo/_history/${intermediate}/me/mylib/app.js`,
       );
       assert.strictEqual(
         await skipped.text(),
@@ -403,7 +437,7 @@ if (!version) {
         'a save that never became a version is still there — that IS tier 2',
       );
 
-      // jj writes into .jj on every operation, inside the watched tree. If
+      // jj writes into .jj on every operation, inside the watched realm. If
       // those writes were treated as edits, sealing would feed itself: this
       // asserts the loop is closed.
       let before = published.length;
@@ -417,15 +451,22 @@ if (!version) {
 
     test('restore is an ordinary edit: the tree moves, history only grows', async function (assert) {
       let { applyRestore } = await import('@deck/history/backend');
-      let seals = await history.list(liveDir);
+      let seals = await history.list(realmDir);
       let first = seals.at(-1)!.changeId;
-      let firstBytes = (await history.fileAt(liveDir, first, 'app.js'))!;
+      let firstBytes = (await history.fileAt(
+        realmDir,
+        first,
+        'me/mylib/app.js',
+      ))!;
 
       let publishesBefore = published.length;
-      let result = await applyRestore(history, liveDir, first);
-      assert.true(result.written.includes('app.js'));
+      let versionsBefore = Object.keys(
+        (await readStoreMeta(storeDir, 'me/mylib'))!.versions,
+      );
+      let result = await applyRestore(history, realmDir, first);
+      assert.true(result.written.includes('me/mylib/app.js'));
       assert.strictEqual(
-        (await readFile(join(liveDir, 'app.js'))).toString(),
+        (await readFile(join(deckDir, 'app.js'))).toString(),
         firstBytes.toString(),
         'the tree is back at the first seal',
       );
@@ -434,11 +475,30 @@ if (!version) {
       assert.strictEqual(
         published.length,
         publishesBefore + 1,
-        'the restored state publishes as the NEXT dev version — no rewriting',
+        'the restored state is reported…',
       );
-      let restoredVersion = published.at(-1)!.version;
-      let served = await fetch(`${origin}/@mylib@${restoredVersion}/app.js`);
+      let event = published.at(-1)!;
+      assert.true(
+        event.reused,
+        'no new version is minted: this exact content is already published',
+      );
+      assert.deepEqual(
+        Object.keys((await readStoreMeta(storeDir, 'me/mylib'))!.versions),
+        versionsBefore,
+        'the version list did not grow — content-addressing, taken seriously',
+      );
+      let served = await fetch(
+        `${origin}/demo/me/mylib@${event.version}/app.js`,
+      );
       assert.strictEqual(await served.text(), firstBytes.toString());
+      let dev = await fetch(`${origin}/demo/me/mylib@dev/app.js`, {
+        redirect: 'manual',
+      });
+      assert.strictEqual(
+        dev.headers.get('location'),
+        `/demo/me/mylib@${event.version}/app.js`,
+        'and the dev tag follows the live tree back',
+      );
     });
   });
 }

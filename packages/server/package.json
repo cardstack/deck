@@ -7,7 +7,9 @@
   "exports": {
     "./server": "./src/server.ts",
     "./watcher": "./src/watcher.ts",
-    "./live-events": "./src/live-events.ts"
+    "./live-events": "./src/live-events.ts",
+    "./realm": "./src/realm.ts",
+    "./inject-importmap": "./src/inject-importmap.ts"
   },
   "scripts": {
     "test": "node tests/index.ts",

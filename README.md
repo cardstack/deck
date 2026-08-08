@@ -13,25 +13,84 @@ the web, keep the whole web platform, never lose work, reuse and
 combine what you built before, and fork an experiment with no
 consequences.
 
-Deck is a protocol for versioning, publishing, and serving packages
-of ES modules and JSON documents from plain state: a file tree, an
-import map, seals, and immutable version pointers. A **deck** is a
-package — an arrangement declared over a shared tree, not a sealed
-box. A **pack** (`<name>.pack.zip`) is the same deck as one portable
-artifact. One identity — the canonical treeHash — spans both forms.
+## The layout is the address
 
-How each promise is actually kept:
+A realm is a directory. What `ls` shows and what the URL says are the
+same thing:
+
+```
+<root>/site/acme/palette/palette.js     on disk
+       /site/acme/palette/palette.js    live — every save, no-store
+       /site/acme/palette@1.1.0/palette.js
+                                        the sealed copy, immutable forever
+       /site/_history/<changeId>/acme/palette/palette.js
+                                        any state it was ever in, published or not
+```
+
+`ls` and `cat` give you the LATEST of everything, and an agent can
+change any of it. Adding `@<version>` to the package segment reads the
+same path out of a seal instead. A realm carries its own machinery
+inside itself — `.deck/store/` for sealed versions, `.jj/` for seals —
+both invisible to the tree hash, so copying the directory takes the
+live files, every published version, and the whole history with it.
+
+## Three levels of volatility, all just URLs
+
+| You want | You write | You get |
+| --- | --- | --- |
+| every save, instantly — 18 agents on one tree | `"acme/palette": "live"` | `/site/acme/palette/…` |
+| the freshest seal, for a shape still moving | `"acme/palette": "dev"` | `/site/acme/palette@1.2.0-dev.7/…` |
+| something dependable underneath you | `"acme/palette": "^1.0.0"` | `/site/acme/palette@1.1.0/…` |
+
+`latest` is a dist-tag on a stable release. **`latest` is not live** —
+live is the bytes on disk, with no version segment at all.
+
+Ranges never match prereleases, so a `^1.0.0` dependency cannot pick up
+somebody's auto-published dev line by accident. Opting into churn is
+always explicit.
+
+## The workflow
+
+```bash
+deck serve --root ./work                 # every realm under ./work, live + auto-publishing
+# …edit anything. Every settled save auto-publishes <base>-dev.N (tag: dev)
+#   and is sealed, whether or not it is published.
+
+deck release --realm ./work/site --publisher acme --name palette \
+  --version 1.1.0 --from dev --tag latest      # instantly a real semver, zero bytes copied
+
+deck lock --realm ./work/site --publisher you --name app
+#   resolves this deck's declared RANGES to exact versions and pins them in
+#   its import map — what your users get, so they never inherit your
+#   dependencies' working trees. Move them forward when you're ready.
+
+deck fork --realm ./work/site --from acme/palette --as you/palette --use-in you/app
+#   copy someone's deck into YOUR publisher scope and change it at byte speed.
+#   Separate version line, separate dist-tags. Their versions never move.
+
+deck history ./work/site                 # every state the realm has been in
+deck restore ./work/site <changeId>      # go back to any of them; the state you
+                                         # leave is sealed first, so this is undoable
+```
+
+The publisher segment IS the fork boundary: `acme/palette` and
+`you/palette` are different names with different version lines in the
+same realm. An undiverged fork costs no bytes — the store is content-
+addressed, so identical content is stored once.
+
+How each promise is kept:
 
 | Promise | Mechanism |
 | --- | --- |
-| instant feedback | `/live/<name>/…` serves your working directory, `no-store` |
-| never lose work | every settled save is auto-published as an immutable version |
-| revert anytime | `curl "…/@app@<old>?format=pack" -o old.pack.zip && deck unpack old.pack.zip --into ./app --force` |
+| instant feedback | the version-less URL serves your working directory, `no-store` |
+| never lose work | every settled save auto-publishes an immutable version, and every save is sealed |
+| revert anytime | `deck restore <realm> <changeId>` — replayed forward, never rewinding |
 | ship any version | `deck release … --from dev` — names a sealed state, copies nothing |
-| share any milestone | `deck pack ./app` → one `.pack.zip` any zip tool opens |
+| share any milestone | `deck pack <deck>` → one `.pack.zip` any zip tool opens |
 | use any library | `deck vendor https://esm.sh/three@0.160.0 …` — pulled in for good, hermetic |
-| fork freely | copy the directory (or unpack a version into a new one) and watch it under another name; published versions are untouched |
-| whole web platform | plain ES modules and import maps; no bundler, no transpile, nothing between you and the browser |
+| fork freely | `deck fork` — your own publisher scope; theirs is untouched |
+| stability where you need it | `deck lock` — ranges in the tree, exact pins in the map |
+| whole web platform | plain ES modules and import maps; no bundler, no transpile |
 
 Deck is deliberately independent:
 
@@ -50,7 +109,7 @@ Deck is deliberately independent:
 
 ```bash
 deck vendor https://esm.sh/three@0.160.0 --name three --version 0.160.0 \
-  --store ./store --tag latest
+  --realm ./work/site --publisher acme --tag latest
 ```
 
 That pulls three.js's whole module graph from esm.sh ONCE, rewrites
@@ -59,7 +118,7 @@ Your app's import map then points at your own server:
 
 ```html
 <script type="importmap">
-{ "imports": { "three": "/@three@0.160.0/esm.sh/three@0.160.0.mjs" } }
+{ "imports": { "three": "/site/acme/three@0.160.0/esm.sh/three@0.160.0.mjs" } }
 </script>
 <script type="module">
   import * as THREE from 'three';   // never touches a public CDN
@@ -75,6 +134,12 @@ than sealing a pack with a live external reference inside it.
 are the explicit opt-outs. The canonical source travels with the
 bytes as `vendoredFrom`, so a consumer can always tell what a
 vendored module IS — dedupe it, upgrade it, or check it upstream.
+
+Because a browser only honours an INLINE import map, the server
+injects each document's map when it serves HTML — including replacing
+an inert `<script type="importmap" src="…">` with the real thing. The
+sealed bytes are untouched: `?format=pack` and the tree hash are
+exactly what was sealed.
 
 ## The safe-vendor requirement (noted 2026-08-07)
 
@@ -97,6 +162,8 @@ Design set in [docs/](docs/) — start with:
 - [deck-pack-equivalence.md](docs/deck-pack-equivalence.md) — deck ⇄
   pack: four homes, treeHash identity, carriage modes, round-trip
   laws, `!/` mounts, canonical-zip-v1. All opens ruled.
+- [deck-live-autopublish.md](docs/deck-live-autopublish.md) — the
+  live tree, the auto-publish loop, and seal-grained history.
 - [deck-cardpack-requirements.md](docs/deck-cardpack-requirements.md)
   — requirements recovered from the cardpack v0.2 implementation
   (preserved verbatim in [reference/cardpack-v0.2](reference/cardpack-v0.2)).
@@ -110,62 +177,40 @@ multi-package design, and the GitHub mirror analysis.
 
 ## Status
 
-Design: ruled and complete for the at-rest half plus pack
-equivalence. Code: **the reference implementation is built and
-tested** — 54 tests green (29 core, 5 CLI, 20 server), lint and
-typecheck clean.
+**The reference implementation is built and tested** — 118 tests green
+(43 core, 19 history, 48 server, 8 CLI), lint and typecheck clean.
 
 - **`packages/core`** — `tree-hash-v1` (shasum-compatible manifest,
   UTF-8 byte-order sort), `canonical-zip-v1` (hand-rolled
   deterministic writer, zero deps; tolerant standard-zip reader with
   size caps), packlist (`deck-pack-v1`), `pack`/`unpack` verified
-  under the round-trip laws (treeHash survives; byte-identical
-  repack; stock `unzip` interop), the shared import-map module, and
-  the **content-addressed store**: packs live once per treeHash and
-  versions are pointers, so publishing identical content writes no
-  new bytes, `release` names an existing sealed state without
-  copying, and pruning deletes bytes only when nothing points at
-  them.
-- **`packages/server`** — read-only zero-framework serving:
-  exact = immutable + Content-Digest; range/tag = one 302 hop;
-  bare/alias = 301; `?meta`; `?format=pack` (faithful by
-  construction); `!/` mounts (depth-capped); coded JSON errors with
-  two negative-cache tiers; HEAD; writes refused. Plus the
-  **filesystem endpoint**: `/live/<name>/…` serves a working
-  directory `no-store` while a watcher auto-publishes every settled
-  state as `<base>-dev.N` (tag `dev`) — invisible to ranges, so
-  vibe coding cannot surprise a consumer.
-- **`packages/cli`** — `deck hash | pack | unpack | list | verify |
-  publish | tag | release | vendor | prune | serve`. `deck serve --watch
-  <dir> --as <name>` runs the live + auto-publish loop.
-- **`examples/vanilla-app`** — the safe-vendor demo:
-  `pnpm --filter @deck/example-vanilla-app demo`, then open
-  http://localhost:8787/ — a plain HTML app whose import map
-  resolves a vetted library from your own Deck server. No public
-  CDN, no framework, no build step.
-
-### The release workflow, in full
-
-```bash
-deck serve --store ./store --watch ./my-lib --as my-lib   # live + auto dev
-# …edit files; every settled save publishes my-lib@<base>-dev.N
-# happy with it? bump the version in the tree's importmap.json, save,
-# then name that sealed state:
-deck release --store ./store --name my-lib --version 1.2.0 --from dev --tag latest
-```
-
-No copies, no branch, no rebuild: the release is a pointer to bytes
-that already exist, and the sealed import map is what authorizes the
-name.
+  under the round-trip laws, the shared import-map module, the
+  **content-addressed store** (packs live once per treeHash; versions
+  are pointers, so `release` copies nothing and pruning deletes bytes
+  only when nothing points at them), the **decklist lock**, and
+  **fork**.
+- **`packages/history`** — tier-2 seals behind one contract, with two
+  backends: the jj CLI and historyd (jj-lib over localhost HTTP,
+  ~5-6x faster per call). A missing jj or a dead daemon degrades to
+  tier 1 with a printed reason. Restores replay forward as ordinary
+  writes, so history only ever grows.
+- **`packages/server`** — read-only zero-framework serving of realms:
+  version-less = the working tree (`no-store`); exact = immutable +
+  Content-Digest; range/tag = one 302 hop; bare/alias = 301; `?meta`
+  (including which seal a version was cut from); `?format=pack`;
+  `!/` mounts; `/<realm>/_history/<changeId>/<path>`; import-map
+  injection for HTML; coded JSON errors with two negative-cache
+  tiers; HEAD; writes refused. Plus `/_packages`, `/_browse`, and an
+  SSE change bus at `/_live/events` with a drop-in HMR client.
+- **`packages/cli`** — `deck hello | hash | pack | unpack | list |
+  verify | publish | tag | release | lock | fork | vendor | prune |
+  history | restore | serve`.
 
 Run everything: `pnpm install && pnpm test && pnpm lint`.
 
 ### Not built yet
 
-Tier 2 history (jj/historyd seals beneath the same auto-publish
-loop, giving per-save restore and `/history/<name>/<changeId>/…`) is
-designed in [docs/deck-live-autopublish.md](docs/deck-live-autopublish.md)
-and needs no rework of what exists. Vendoring flows
-(`vendor`/`unvendor` map rewrites) are designed in
-[docs/deck-pack-equivalence.md](docs/deck-pack-equivalence.md); the
-`!/` mount half they depend on is already serving.
+Cross-realm dependencies (a lock refuses them rather than writing a
+pin nobody can serve). The `vendor`/`unvendor` map-rewrite toggle is
+designed in [docs/deck-pack-equivalence.md](docs/deck-pack-equivalence.md);
+the `!/` mount half it depends on is already serving.

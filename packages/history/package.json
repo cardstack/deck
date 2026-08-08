@@ -25,5 +25,8 @@
     "eslint": "catalog:",
     "qunit": "catalog:",
     "typescript": "catalog:"
+  },
+  "dependencies": {
+    "@deck/core": "workspace:*"
   }
 }

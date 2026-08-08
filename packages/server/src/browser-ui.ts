@@ -121,8 +121,8 @@ export const BROWSER_HTML = `<!doctype html>
 </head>
 <body>
   <header class="app">
-    <h1><span>Deck</span> store</h1>
-    <div class="sub">&lt;store&gt;/&lt;name&gt;/{meta.json, packs/&lt;treeHash&gt;.pack.zip}</div>
+    <h1><span>Deck</span> realms</h1>
+    <div class="sub">/&lt;realm&gt;/&lt;publisher&gt;/&lt;package&gt;[@&lt;version&gt;]/&lt;path&gt;</div>
   </header>
   <div class="truth" id="truth">
     Loading store capability…
@@ -162,7 +162,9 @@ let state = { name: '', version: '', path: '' };
 function parseHash() {
   let h = location.hash.replace(/^#\\/?/, '');
   if (!h) return { name: '', version: '', path: '' };
-  let m = h.match(/^([^@\\/]+)@([^\\/]+)(?:\\/(.*))?$/);
+  // <realm>/<publisher>/<package>[@version][/path] — the name has
+  // slashes now, so anchor on the LAST @ before a path segment.
+  let m = h.match(/^((?:[^@\\/]+\\/){0,2}[^@\\/]+)@([^\\/]+)(?:\\/(.*))?$/);
   if (!m) return { name: '', version: '', path: '' };
   return { name: m[1], version: m[2], path: (m[3] || '').replace(/\\/+$/, '') };
 }
@@ -170,6 +172,14 @@ function parseHash() {
 function setHash(name, version, path = '') {
   let base = \`\${name}@\${version}\`;
   location.hash = path ? \`#/\${base}/\${path}\` : \`#/\${base}\`;
+}
+
+// Server text names paths like <realm>/<publisher>; dropped into innerHTML
+// raw, those read as tags and vanish.
+function esc(v) {
+  return String(v ?? '').replace(/[&<>]/g, (c) => (
+    c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'
+  ));
 }
 
 function shortHash(h) {
@@ -188,7 +198,15 @@ async function loadPackages() {
   if (!res.ok) throw new Error('failed to list packages');
   let body = await res.json();
   catalogMeta = body.meta || null;
-  packages = body.data || [];
+  // Realms nest their packages; the browser lists them flat, under the
+  // same <realm>/<publisher>/<package> name the URL uses.
+  packages = (body.data || []).flatMap((realm) =>
+    (realm.packages || []).map((p) => ({
+      ...p,
+      realm: realm.name,
+      name: \`\${realm.name}/\${p.publisher}/\${p.name}\`,
+    })),
+  );
   renderTruth();
   renderPkgList();
 }
@@ -200,16 +218,16 @@ function renderTruth() {
     return;
   }
   truth.innerHTML = \`<strong>History tier \${h.tier}</strong> —
-    \${h.kind}.
+    \${esc(h.kind)}.
     jj: <code>\${h.jj}</code>,
     historyd: <code>\${h.historyd}</code>.
-    \${h.note}
-    Layout: <code>\${catalogMeta.storeLayout}</code>\`;
+    \${esc(h.note)}
+    Layout: <code>\${esc(catalogMeta.layout)}</code>\`;
 }
 
 function renderPkgList() {
   if (!packages.length) {
-    pkgList.innerHTML = '<div class="empty">Store is empty — no &lt;name&gt;/meta.json yet.</div>';
+    pkgList.innerHTML = '<div class="empty">No decks yet — create &lt;realm&gt;/&lt;publisher&gt;/&lt;package&gt;/importmap.json.</div>';
     return;
   }
   pkgList.innerHTML = packages.map((p) => {
@@ -217,8 +235,8 @@ function renderPkgList() {
     let live = p.live ? '<span class="tag">+ live dir</span>' : '';
     let active = p.name === state.name ? ' active' : '';
     return \`<button class="pkg\${active}" data-name="\${p.name}" type="button">
-      <span class="name">\${p.storePath || (p.name + '/')}</span>
-      <span class="meta">\${live} \${n} version pointer\${n === 1 ? '' : 's'} in meta.json</span>
+      <span class="name">/\${esc(p.name)}/</span>
+      <span class="meta">\${live} \${n} version pointer\${n === 1 ? '' : 's'} in \${esc(p.storePath)}meta.json</span>
     </button>\`;
   }).join('');
   pkgList.querySelectorAll('.pkg').forEach((btn) => {
@@ -283,7 +301,7 @@ function renderAtRest(p) {
     return;
   }
   atrest.innerHTML = \`<strong>Viewing</strong> sealed pack tree<br/>
-    <strong>meta</strong> \${p.metaPath} · version <strong>\${resolved}</strong><br/>
+    <strong>meta</strong> \${p.storePath}meta.json · version <strong>\${resolved}</strong><br/>
     <strong>pack</strong> \${p.storePath}\${rec?.file || 'packs/?.pack.zip'}<br/>
     <strong>treeHash</strong> \${rec?.treeHash || '—'}
     \${p.livePath ? '<br/><strong>also live</strong> ' + p.livePath : ''}\`;
@@ -305,7 +323,10 @@ async function loadBrowse() {
     ? '<span class="pill">live tree</span>'
     : '<span class="pill warn">sealed pack</span>';
 
-  let url = \`/_browse/\${encodeURIComponent(state.name)}@\${encodeURIComponent(state.version)}\`;
+  // <realm>/<publisher>/<package>, plus @version unless we want the live
+  // tree — the same distinction the serving routes make.
+  let url = \`/_browse/\${state.name}\`;
+  if (state.version !== 'live') url += \`@\${encodeURIComponent(state.version)}\`;
   if (state.path) url += '/' + state.path.split('/').map(encodeURIComponent).join('/');
   let res = await fetch(url);
   let body = await res.json();

@@ -1,7 +1,9 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
+import { DEFAULT_IGNORE } from '@deck/core/tree-hash';
 import {
   DirQueue,
   SealDebouncer,
@@ -48,9 +50,12 @@ export interface JjCliOptions {
   onError?: (error: unknown) => void;
 }
 
+const EXCLUDE_MARKER = '# deck: not part of the tree';
+
 export class JjCliHistory implements HistoryBackend {
   readonly kind = 'jj' as const;
   #bin: string;
+  #ready: Set<string> = new Set();
   #queue = new DirQueue();
   #debouncer: SealDebouncer;
 
@@ -289,12 +294,43 @@ export class JjCliHistory implements HistoryBackend {
   }
 
   async #ensureRepo(dir: string): Promise<void> {
-    if (existsSync(join(dir, '.jj'))) {
+    if (this.#ready.has(dir)) {
       return;
     }
-    // Colocated git backend: jj gets its storage and the embedded git repo
-    // is there for anyone who wants to push the tree somewhere else.
-    await this.#jj(dir, ['git', 'init', '--colocate']);
+    if (!existsSync(join(dir, '.jj'))) {
+      // Colocated git backend: jj gets its storage and the embedded git repo
+      // is there for anyone who wants to push the tree somewhere else.
+      await this.#jj(dir, ['git', 'init', '--colocate']);
+    }
+    await this.#ensureExcludes(dir);
+    this.#ready.add(dir);
+  }
+
+  // What jj seals must be exactly what the tree hash covers. Without this,
+  // a realm's own `.deck` store would be sealed WITH the realm — every seal
+  // carrying a copy of every pack, and a restore rewinding the published
+  // versions themselves.
+  //
+  // The rules go in `.git/info/exclude`, not `.gitignore`: git's untracked
+  // ignore file is not part of the tree, so attaching history to a deck
+  // never changes that deck's hash.
+  async #ensureExcludes(dir: string): Promise<void> {
+    let path = join(dir, '.git', 'info', 'exclude');
+    let existing = '';
+    try {
+      existing = await readFile(path, 'utf8');
+    } catch {
+      // no exclude file yet
+    }
+    if (existing.includes(EXCLUDE_MARKER)) {
+      return;
+    }
+    let rules = [...DEFAULT_IGNORE]
+      .filter((name) => name !== '.git' && name !== '.jj')
+      .map((name) => `/${name}`);
+    let prefix = existing === '' || existing.endsWith('\n') ? existing : `${existing}\n`;
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, `${prefix}${EXCLUDE_MARKER}\n${rules.join('\n')}\n`);
   }
 
   #baseArgs(actor?: HistoryActor): string[] {

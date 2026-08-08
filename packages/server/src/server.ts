@@ -5,7 +5,7 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readZipEntry } from '@deck/core/canonical-zip';
 import {
@@ -26,14 +26,13 @@ import { isValidTreePath } from '@deck/core/tree-hash';
 import {
   isValidHistoryPath,
   isValidRevisionId,
-  type HistoryBackend,
 } from '@deck/history/backend';
 import {
   bytesToPreview,
-  findPackFile,
   listingFromLiveDir,
   listingFromPacklist,
   looksLikeText,
+  findPackFile,
   peekListing,
   readLiveFile,
 } from './browse.ts';
@@ -44,16 +43,27 @@ import {
   type LiveBus,
   type LiveChangeEvent,
 } from './live-events.ts';
+import { injectImportMap } from './inject-importmap.ts';
+import { discoverDecks, type RealmMount } from './realm.ts';
 
-// The minimal Deck server: READ-ONLY versioned serving over an at-rest
-// store directory. All state changes happen through the CLI (an agent
+// The minimal Deck server: READ-ONLY serving of realms laid out on disk.
+// All state changes happen through the CLI and the watcher (an agent
 // arranges state; distribution follows mechanically) — there is no write
 // endpoint here at all.
 //
-// Live HMR-lite: watchers emit settled tree changes onto `liveBus`; the
-// server fans them out at `GET /_live/events` (SSE) and serves a drop-in
-// client at `GET /_live/hmr.js`. That is not a write endpoint — the bus
-// is in-process, fed by the same watcher that auto-publishes.
+// The address space IS the disk layout (see realm.ts):
+//
+//   /<realm>/<publisher>/<package>/<path>            live bytes, no-store
+//   /<realm>/<publisher>/<package>@<spec>/<path>     sealed, immutable
+//   /<realm>/_history/<changeId>/<path>              any sealed state
+//
+// A version-less URL is the working tree, the way a realm server serves a
+// realm file. Adding `@<version>` reads the same path out of a seal. The
+// realm's own machinery (`.deck`, `.jj`) is never servable.
+//
+// Reserved: a leading `_` on a path segment (`/_packages`, `/_browse`,
+// `/_live/*`, `/<realm>/_history`), matching the realm server's convention,
+// so no realm, publisher, or package can shadow an endpoint.
 //
 // Serving rules carried over from the protocol (and its unpkg/esm.sh
 // hardening):
@@ -70,15 +80,21 @@ import {
 //     the filesystem with archive-derived paths
 //   - HEAD rides the GET path
 
-const SERVE_PATH =
-  /^\/@(?<name>[a-z0-9][a-z0-9-]{0,63})@(?<spec>[^/]+)(?<rest>\/.*)?$/;
+const SEGMENT = '[a-z0-9][a-z0-9-]{0,63}';
+const SEALED_PATH = new RegExp(
+  `^/(?<realm>${SEGMENT})/(?<publisher>${SEGMENT})/(?<pkg>${SEGMENT})@(?<spec>[^/]+)(?<rest>/.*)?$`,
+);
+const HISTORY_PATH = new RegExp(
+  `^/(?<realm>${SEGMENT})/_history(?:/(?<rev>[^/]+))?(?<rest>/.*)?$`,
+);
+const LIVE_PATH = new RegExp(`^/(?<realm>${SEGMENT})(?<rest>/.*)?$`);
+const BROWSE_PATH = new RegExp(
+  `^/_browse/(?<realm>${SEGMENT})(?:/(?<publisher>${SEGMENT}))?(?:/(?<pkg>${SEGMENT})(?:@(?<spec>[^/]+))?)?(?<rest>/.*)?$`,
+);
 const PACKAGES_INDEX = /^\/_packages\/?$/;
-const PACKAGES_PATH = /^\/_packages\/(?<name>[a-z0-9][a-z0-9-]{0,63})$/;
-const BROWSE_PATH =
-  /^\/_browse\/(?<name>[a-z0-9][a-z0-9-]{0,63})@(?<spec>[^/]+)(?<rest>\/.*)?$/;
-const LIVE_PATH = /^\/live\/(?<name>[a-z0-9][a-z0-9-]{0,63})(?<rest>\/.*)?$/;
-const HISTORY_PATH =
-  /^\/history\/(?<name>[a-z0-9][a-z0-9-]{0,63})(?:\/(?<rev>[^/]+))?(?<rest>\/.*)?$/;
+const PACKAGES_PATH = new RegExp(
+  `^/_packages/(?<realm>${SEGMENT})/(?<publisher>${SEGMENT})/(?<pkg>${SEGMENT})$`,
+);
 const LIVE_EVENTS_PATH = '/_live/events';
 const LIVE_HMR_PATH = '/_live/hmr.js';
 const BROWSER_PATHS = new Set(['/', '/_browser', '/_browser/']);
@@ -115,22 +131,10 @@ function contentDigest(bytes: Buffer): string {
   return `sha-256=:${createHash('sha256').update(bytes).digest('base64')}:`;
 }
 
-export interface HistoryMount {
-  dir: string;
-  backend: HistoryBackend;
-}
-
 export interface DeckServerOptions {
-  storeDir: string;
-  // Live directories: `/live/<name>/<path>` serves these straight from
-  // disk with no-store caching — the vibe-coding surface. Names use the
-  // package-name grammar; paths are tree-path validated (never joined
-  // into the filesystem unchecked).
-  live?: Record<string, string>;
-  // Tier-2 history mounts: `/history/<name>/<changeId>/<path>` serves any
-  // SEALED state of a live tree, published or not. The backend is created
-  // by the caller (CLI), so a server without one simply has no such route.
-  history?: Record<string, HistoryMount>;
+  // The realms this server mounts. Each is a directory on disk whose
+  // contents ARE its URL space.
+  realms: RealmMount[];
   // Optional fallthrough for anything that is not a Deck route (demo
   // pages, health checks). Without it, non-routes 404.
   fallback?: (req: IncomingMessage, res: ServerResponse) => void;
@@ -168,23 +172,25 @@ interface CachedPack {
 }
 
 export function createDeckServer(options: DeckServerOptions): DeckServer {
-  let { storeDir, live = {}, history = {}, fallback } = options;
+  let { realms, fallback } = options;
   let liveBus = options.liveBus ?? createLiveBus();
+  let byName = new Map(realms.map((realm) => [realm.name, realm]));
   // Stored packs are immutable (published versions never change), so this
   // cache never invalidates; the cap only bounds memory.
   let packCache = new Map<string, CachedPack>();
   const PACK_CACHE_MAX = 50;
 
   async function loadPack(
+    realm: RealmMount,
     name: string,
     version: string,
   ): Promise<CachedPack | undefined> {
-    let key = `${name}@${version}`;
+    let key = `${realm.name}/${name}@${version}`;
     let hit = packCache.get(key);
     if (hit) {
       return hit;
     }
-    let bytes = await readStoredPack(storeDir, name, version);
+    let bytes = await readStoredPack(realm.storeDir, name, version);
     if (!bytes) {
       return undefined;
     }
@@ -202,7 +208,9 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
 
   function historyCapability(): Record<string, unknown> {
     let kinds = new Set(
-      Object.values(history).map((mount) => mount.backend.kind),
+      realms
+        .map((realm) => realm.history?.kind)
+        .filter((kind): kind is 'jj' | 'historyd' => kind !== undefined),
     );
     if (kinds.size === 0) {
       return {
@@ -210,7 +218,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         kind: 'content-addressed-packs',
         jj: false,
         historyd: false,
-        note: 'Versions are pointers in meta.json → packs/<treeHash>.pack.zip. No seals between publishes: attach a history backend for /history/<changeId>.',
+        note: 'Versions are pointers in meta.json → packs/<treeHash>.pack.zip. No seals between publishes: attach a history backend for /<realm>/_history/<changeId>.',
       };
     }
     return {
@@ -218,8 +226,11 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       kind: 'sealed-tree',
       jj: kinds.has('jj'),
       historyd: kinds.has('historyd'),
-      packages: Object.keys(history).sort(),
-      note: 'Every save is sealed. GET /history/<name> lists seals; /history/<name>/<changeId>/<path> serves any of them, published or not.',
+      realms: realms
+        .filter((realm) => realm.history)
+        .map((realm) => realm.name)
+        .sort(),
+      note: 'Every save is sealed. GET /<realm>/_history lists seals; /<realm>/_history/<changeId>/<path> serves any of them, published or not.',
     };
   }
 
@@ -236,6 +247,27 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     } else {
       res.end(body);
     }
+  }
+
+  function respondJson(
+    req: IncomingMessage,
+    res: ServerResponse,
+    value: unknown,
+    cacheControl: string,
+    extra: Record<string, string> = {},
+  ): void {
+    respond(
+      req,
+      res,
+      200,
+      {
+        'content-type': 'application/json',
+        'cache-control': cacheControl,
+        'access-control-allow-origin': '*',
+        ...extra,
+      },
+      JSON.stringify(value, null, 2),
+    );
   }
 
   function respondError(
@@ -261,6 +293,69 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
 
   function writeSse(res: ServerResponse, event: string, data: unknown): void {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+
+  // A realm's own machinery is not part of the realm's content.
+  function isHiddenPath(path: string): boolean {
+    return path.split('/').some((segment) => segment.startsWith('.'));
+  }
+
+  async function entryOfLiveDeck(
+    realm: RealmMount,
+    publisher: string,
+    pkg: string,
+  ): Promise<string | undefined> {
+    try {
+      let map = parsePackages(
+        await readFile(
+          join(realm.dir, publisher, pkg, IMPORT_MAP_PATH),
+          'utf8',
+        ),
+      );
+      let value = map?.[pkg]?.entry;
+      return value ? treePathFromMapValue(value) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  // The `imports` a document should carry: whatever the deck's own map
+  // declares. `deck lock` is what puts resolved pins there.
+  async function liveImports(
+    realm: RealmMount,
+    treePath: string,
+  ): Promise<Record<string, string>> {
+    let segments = treePath.split('/');
+    if (segments.length < 3) {
+      return {};
+    }
+    try {
+      let text = await readFile(
+        join(realm.dir, segments[0], segments[1], IMPORT_MAP_PATH),
+        'utf8',
+      );
+      return (JSON.parse(text).imports ?? {}) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+
+  async function readLiveBytes(
+    realm: RealmMount,
+    treePath: string,
+  ): Promise<{ bytes: Buffer; path: string } | undefined> {
+    let candidates = /\.[^/]+$/.test(treePath)
+      ? [treePath]
+      : [treePath, `${treePath}.js`, `${treePath}.mjs`];
+    for (let candidate of candidates) {
+      try {
+        let bytes = await readFile(join(realm.dir, ...candidate.split('/')));
+        return { bytes, path: candidate };
+      } catch {
+        // keep probing
+      }
+    }
+    return undefined;
   }
 
   async function handle(
@@ -335,452 +430,221 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       return;
     }
 
-    let liveMatch = pathname.match(LIVE_PATH);
-    if (liveMatch?.groups) {
-      let dir = live[liveMatch.groups.name];
-      if (!dir) {
-        respondError(
-          req,
-          res,
-          404,
-          'package-not-found',
-          `no live directory for ${liveMatch.groups.name}`,
-        );
-        return;
-      }
-      let rest = liveMatch.groups.rest?.slice(1);
-      if (rest === undefined || rest === '') {
-        // Bare live form → temporary redirect to the entry module; the
-        // answer changes with every edit of the map, so nothing caches.
-        let entry: string | undefined;
-        try {
-          let map = parsePackages(
-            await readFile(join(dir, IMPORT_MAP_PATH), 'utf8'),
-          );
-          let value = map?.[liveMatch.groups.name]?.entry;
-          entry = value ? treePathFromMapValue(value) : undefined;
-        } catch {
-          entry = undefined;
-        }
-        if (!entry) {
-          respondError(
-            req,
-            res,
-            404,
-            'no-entry-module',
-            `live ${liveMatch.groups.name} declares no entry module in ${IMPORT_MAP_PATH}`,
-            'no-store',
-          );
-          return;
-        }
-        respond(req, res, 302, {
-          location: `/live/${liveMatch.groups.name}/${entry}${search}`,
-          'cache-control': 'no-store',
-          'access-control-allow-origin': '*',
-        });
-        return;
-      }
-      if (!isValidTreePath(rest)) {
-        respondError(
-          req,
-          res,
-          404,
-          'file-not-found',
-          `invalid path`,
-          'no-store',
-        );
-        return;
-      }
-      let bytes: Buffer | undefined;
-      let served = rest;
-      for (let candidate of /\.[^/]+$/.test(rest)
-        ? [rest]
-        : [rest, `${rest}.js`, `${rest}.mjs`]) {
-        try {
-          bytes = await readFile(join(dir, ...candidate.split('/')));
-          served = candidate;
-          break;
-        } catch {
-          // keep probing
-        }
-      }
-      if (bytes === undefined) {
-        respondError(
-          req,
-          res,
-          404,
-          'file-not-found',
-          `${rest} does not exist in the live tree`,
-          'no-store',
-        );
-        return;
-      }
-      // The whole point: every save is visible on the next request.
-      respond(
-        req,
-        res,
-        200,
-        {
-          'content-type': contentTypeFor(served),
-          'cache-control': 'no-store',
-          'content-digest': contentDigest(bytes),
-          'x-deck-live': liveMatch.groups.name,
-          'access-control-allow-origin': '*',
-        },
-        bytes,
-      );
-      return;
-    }
-
-    let historyMatch = pathname.match(HISTORY_PATH);
-    if (historyMatch?.groups) {
-      let name = historyMatch.groups.name;
-      let mount = history[name];
-      if (!mount) {
-        respondError(
-          req,
-          res,
-          404,
-          'no-history',
-          Object.keys(history).length === 0
-            ? 'this server has no history backend attached (tier 1: versions are the history)'
-            : `no history for ${name}`,
-        );
-        return;
-      }
-      let revision = historyMatch.groups.rev;
-      if (revision === undefined) {
-        // The seal log: every state this tree has been in, newest first.
-        // It grows with every save, so nothing caches it.
-        let seals = await mount.backend.list(mount.dir);
-        respond(
-          req,
-          res,
-          200,
-          {
-            'content-type': 'application/json',
-            'cache-control': 'no-store',
-            'access-control-allow-origin': '*',
-          },
-          JSON.stringify(
-            {
-              meta: { backend: mount.backend.kind, tier: 2 },
-              data: seals.map((seal) => ({
-                type: 'seal',
-                id: seal.changeId,
-                attributes: {
-                  ...seal,
-                  filesUrl: `/history/${name}/${seal.changeId}`,
-                },
-              })),
-            },
-            null,
-            2,
-          ),
-        );
-        return;
-      }
-      if (!isValidRevisionId(revision)) {
-        // Grammar-invalid: no future seal can ever carry this id.
-        respondError(
-          req,
-          res,
-          404,
-          'invalid-revision',
-          `"${revision}" is not a revision id`,
-          IMMUTABLE_CACHE,
-        );
-        return;
-      }
-      let rest = historyMatch.groups.rest?.slice(1);
-      if (rest === undefined || rest === '') {
-        // What was in the tree at this seal. `fileListAt` is optional on the
-        // backend — an absent enumeration is reported as such, never as an
-        // empty tree.
-        let files = await mount.backend.fileListAt?.(mount.dir, revision);
-        if (files === undefined && mount.backend.fileListAt) {
-          respondError(
-            req,
-            res,
-            404,
-            'revision-not-found',
-            `${revision} is not a seal of ${name}`,
-          );
-          return;
-        }
-        respond(
-          req,
-          res,
-          200,
-          {
-            'content-type': 'application/json',
-            // A seal is immutable, and so is its file list.
-            'cache-control': IMMUTABLE_CACHE,
-            'access-control-allow-origin': '*',
-          },
-          JSON.stringify(
-            {
-              data: {
-                type: 'seal',
-                id: revision,
-                attributes: {
-                  package: name,
-                  changeId: revision,
-                  files: files ?? null,
-                  filesAvailable: files !== undefined,
-                  backend: mount.backend.kind,
-                },
-              },
-            },
-            null,
-            2,
-          ),
-        );
-        return;
-      }
-      if (!isValidHistoryPath(rest)) {
-        respondError(
-          req,
-          res,
-          404,
-          'file-not-found',
-          'invalid path',
-          IMMUTABLE_CACHE,
-        );
-        return;
-      }
-      let bytes = await mount.backend.fileAt(mount.dir, revision, rest);
-      if (bytes === undefined) {
-        respondError(
-          req,
-          res,
-          404,
-          'file-not-found',
-          `${rest} is not in seal ${revision} of ${name}`,
-        );
-        return;
-      }
-      // A sealed state never changes — the same caching promise an exact
-      // version gets, for a state that was never published at all.
-      respond(
-        req,
-        res,
-        200,
-        {
-          'content-type': contentTypeFor(rest),
-          'cache-control': IMMUTABLE_CACHE,
-          'content-digest': contentDigest(bytes),
-          'x-deck-seal': revision,
-          'x-deck-package': name,
-          'access-control-allow-origin': '*',
-        },
-        bytes,
-      );
-      return;
-    }
-
     if (PACKAGES_INDEX.test(pathname)) {
-      let stored = await listStorePackages(storeDir);
-      let byName = new Map(stored.map((m) => [m.name, m]));
-      for (let name of Object.keys(live)) {
-        if (!byName.has(name)) {
-          byName.set(name, { name, versions: {}, tags: {} });
-        }
+      let data = [];
+      for (let realm of realms) {
+        let stored = new Map(
+          (await listStorePackages(realm.storeDir)).map((meta) => [
+            meta.name,
+            meta,
+          ]),
+        );
+        let decks = await discoverDecks(realm.dir);
+        let names = new Set([...stored.keys(), ...decks.map((d) => d.name)]);
+        let live = new Set(decks.map((deck) => deck.name));
+        data.push({
+          type: 'realm',
+          id: realm.name,
+          name: realm.name,
+          // Honest at-rest paths — this is the layout, not a metaphor.
+          dir: realm.dir,
+          storePath: `${realm.name}/.deck/store/`,
+          history: realm.history?.kind ?? null,
+          historyPath: realm.history ? `/${realm.name}/_history` : undefined,
+          packages: [...names].sort().map((name) => {
+            let meta = stored.get(name);
+            let [publisher, pkg] = name.split('/');
+            return {
+              type: 'package',
+              id: `${realm.name}/${name}`,
+              publisher,
+              name: pkg,
+              live: live.has(name),
+              livePath: live.has(name)
+                ? `/${realm.name}/${name}/`
+                : undefined,
+              storePath: `.deck/store/${name}/`,
+              versions: Object.fromEntries(
+                Object.entries(meta?.versions ?? {}).map(([version, r]) => [
+                  version,
+                  { treeHash: r.treeHash, file: r.file },
+                ]),
+              ),
+              distTags: meta?.tags ?? {},
+            };
+          }),
+        });
       }
-      let data = [...byName.values()]
-        .sort((a, b) => (a.name < b.name ? -1 : 1))
-        .map((meta) => ({
-          type: 'package',
-          id: meta.name,
-          name: meta.name,
-          // Honest at-rest paths — this is the store layout, not a git repo.
-          storePath: `${meta.name}/`,
-          metaPath: `${meta.name}/meta.json`,
-          packsPath: `${meta.name}/packs/`,
-          live: live[meta.name] !== undefined,
-          livePath: live[meta.name],
-          history: history[meta.name] !== undefined,
-          historyPath:
-            history[meta.name] !== undefined
-              ? `/history/${meta.name}`
-              : undefined,
-          versions: Object.fromEntries(
-            Object.entries(meta.versions).map(([v, r]) => [
-              v,
-              { treeHash: r.treeHash, file: r.file },
-            ]),
-          ),
-          distTags: meta.tags,
-        }));
-      respond(
+      respondJson(
         req,
         res,
-        200,
         {
-          'content-type': 'application/json',
-          'cache-control': 'no-store',
-          'access-control-allow-origin': '*',
-        },
-        JSON.stringify(
-          {
-            // Capability truth, computed from what is actually attached —
-            // a client can tell tier 1 from tier 2, and which backend, from
-            // this block alone.
-            meta: {
-              history: historyCapability(),
-              storeLayout: '<store>/<name>/{meta.json,packs/<treeHash>.pack.zip}',
-            },
-            data,
+          meta: {
+            history: historyCapability(),
+            layout:
+              '<realm>/<publisher>/<package>/ on disk and in the URL; sealed versions in <realm>/.deck/store/<publisher>/<package>/',
           },
-          null,
-          2,
-        ),
+          data,
+        },
+        'no-store',
       );
       return;
     }
 
     let packagesMatch = pathname.match(PACKAGES_PATH);
     if (packagesMatch?.groups) {
-      let name = packagesMatch.groups.name;
-      let meta = await readStoreMeta(storeDir, name);
-      let isLive = live[name] !== undefined;
+      let { realm: realmName, publisher, pkg } = packagesMatch.groups;
+      let realm = byName.get(realmName);
+      if (!realm) {
+        respondError(req, res, 404, 'realm-not-found', `no realm ${realmName}`);
+        return;
+      }
+      let name = `${publisher}/${pkg}`;
+      let meta = await readStoreMeta(realm.storeDir, name);
+      let isLive = await stat(join(realm.dir, publisher, pkg, IMPORT_MAP_PATH))
+        .then(() => true)
+        .catch(() => false);
       if ((!meta || Object.keys(meta.versions).length === 0) && !isLive) {
         respondError(
           req,
           res,
           404,
           'package-not-found',
-          `no published versions for package ${name}`,
+          `no published versions for ${realmName}/${name}`,
         );
         return;
       }
-      meta = meta ?? { name, versions: {}, tags: {} };
-      respond(
+      respondJson(
         req,
         res,
-        200,
         {
-          'content-type': 'application/json',
-          'cache-control': SHORT_CACHE,
-          'access-control-allow-origin': '*',
-        },
-        JSON.stringify(
-          {
-            data: {
-              type: 'package',
-              id: meta.name,
-              attributes: {
-                name: meta.name,
-                live: isLive,
-                history: history[name] !== undefined,
-                historyPath:
-                  history[name] !== undefined
-                    ? `/history/${name}`
-                    : undefined,
-                storePath: `${meta.name}/`,
-                metaPath: `${meta.name}/meta.json`,
-                packsPath: `${meta.name}/packs/`,
-                livePath: live[name],
-                versions: Object.fromEntries(
-                  Object.entries(meta.versions).map(([v, r]) => [
-                    v,
-                    { treeHash: r.treeHash, file: r.file },
-                  ]),
-                ),
-                distTags: meta.tags,
-              },
+          data: {
+            type: 'package',
+            id: `${realmName}/${name}`,
+            attributes: {
+              realm: realmName,
+              publisher,
+              name: pkg,
+              live: isLive,
+              livePath: isLive ? `/${realmName}/${name}/` : undefined,
+              history: realm.history !== undefined,
+              historyPath: realm.history
+                ? `/${realmName}/_history`
+                : undefined,
+              storePath: `.deck/store/${name}/`,
+              versions: Object.fromEntries(
+                Object.entries(meta?.versions ?? {}).map(([version, r]) => [
+                  version,
+                  { treeHash: r.treeHash, file: r.file },
+                ]),
+              ),
+              distTags: meta?.tags ?? {},
             },
           },
-          null,
-          2,
-        ),
+        },
+        SHORT_CACHE,
       );
       return;
     }
 
     let browseMatch = pathname.match(BROWSE_PATH);
     if (browseMatch?.groups) {
-      let name = browseMatch.groups.name;
-      let spec = browseMatch.groups.spec;
-      let rest = browseMatch.groups.rest?.replace(/^\/+/, '') ?? '';
+      let {
+        realm: realmName,
+        publisher,
+        pkg,
+        spec,
+        rest: browseRest,
+      } = browseMatch.groups;
+      let realm = byName.get(realmName);
+      if (!realm) {
+        respondError(req, res, 404, 'realm-not-found', `no realm ${realmName}`);
+        return;
+      }
+      let rest = browseRest?.replace(/^\/+/, '') ?? '';
       try {
-        if (spec === 'live') {
-          let dir = live[name];
-          if (!dir) {
-            respondError(
-              req,
-              res,
-              404,
-              'package-not-found',
-              `no live directory for ${name}`,
-              'no-store',
-            );
-            return;
-          }
+        if (!publisher || !pkg) {
+          // A realm or publisher listing: the decks that live there.
+          let decks = await discoverDecks(realm.dir);
+          let scoped = publisher
+            ? decks.filter((deck) => deck.publisher === publisher)
+            : decks;
+          respondJson(
+            req,
+            res,
+            {
+              data: {
+                type: 'directory',
+                attributes: {
+                  package: publisher ? `${realmName}/${publisher}` : realmName,
+                  version: 'live',
+                  path: '',
+                  kind: 'live',
+                  entries: scoped.map((deck) => ({
+                    name: publisher ? deck.package : deck.publisher,
+                    type: 'dir',
+                    path: publisher ? deck.name : deck.publisher,
+                  })),
+                },
+              },
+            },
+            'no-store',
+          );
+          return;
+        }
+        let name = `${publisher}/${pkg}`;
+        if (!spec) {
+          let dir = join(realm.dir, publisher, pkg);
           if (rest) {
             let file = await readLiveFile(dir, rest);
             if (file) {
               let binary = !looksLikeText(rest, file.bytes);
-              respond(
+              respondJson(
                 req,
                 res,
-                200,
                 {
-                  'content-type': 'application/json',
-                  'cache-control': 'no-store',
-                  'access-control-allow-origin': '*',
-                },
-                JSON.stringify(
-                  {
-                    data: {
-                      type: 'file',
-                      attributes: {
-                        package: name,
-                        version: 'live',
-                        path: rest,
-                        kind: 'live',
-                        size: file.size,
-                        contentType: contentTypeFor(rest),
-                        text: binary ? undefined : bytesToPreview(file.bytes),
-                        binary,
-                        rawUrl: `/live/${name}/${rest}`,
-                      },
+                  data: {
+                    type: 'file',
+                    attributes: {
+                      package: `${realmName}/${name}`,
+                      version: 'live',
+                      path: rest,
+                      kind: 'live',
+                      size: file.size,
+                      contentType: contentTypeFor(rest),
+                      text: binary ? undefined : bytesToPreview(file.bytes),
+                      binary,
+                      rawUrl: `/${realmName}/${name}/${rest}`,
                     },
                   },
-                  null,
-                  2,
-                ),
+                },
+                'no-store',
               );
               return;
             }
           }
-          let listing = await listingFromLiveDir(name, dir, rest);
-          respond(
+          let listing = await listingFromLiveDir(
+            `${realmName}/${name}`,
+            dir,
+            rest,
+          );
+          respondJson(
             req,
             res,
-            200,
-            {
-              'content-type': 'application/json',
-              'cache-control': 'no-store',
-              'access-control-allow-origin': '*',
-            },
-            JSON.stringify(
-              { data: { type: 'directory', attributes: listing } },
-              null,
-              2,
-            ),
+            { data: { type: 'directory', attributes: listing } },
+            'no-store',
           );
           return;
         }
 
-        let meta = await readStoreMeta(storeDir, name);
+        let meta = await readStoreMeta(realm.storeDir, name);
         if (!meta || Object.keys(meta.versions).length === 0) {
           respondError(
             req,
             res,
             404,
             'package-not-found',
-            `no published versions for package ${name}`,
+            `no published versions for ${realmName}/${name}`,
           );
           return;
         }
@@ -791,7 +655,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
             res,
             404,
             'invalid-version-spec',
-            `@${name}@${spec}: ${resolution.detail}`,
+            `${name}@${spec}: ${resolution.detail}`,
             IMMUTABLE_CACHE,
           );
           return;
@@ -802,13 +666,13 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
             res,
             404,
             'version-not-found',
-            `@${name}@${spec}: ${resolution.detail}`,
+            `${name}@${spec}: ${resolution.detail}`,
           );
           return;
         }
         // Tags/ranges resolve in-place for the browser (no redirect hop).
         let version = resolution.version;
-        let pack = await loadPack(name, version);
+        let pack = await loadPack(realm, name, version);
         if (!pack) {
           respondError(
             req,
@@ -835,56 +699,43 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               return;
             }
             let binary = !looksLikeText(rest, bytes);
-            respond(
+            respondJson(
               req,
               res,
-              200,
               {
-                'content-type': 'application/json',
-                'cache-control': SHORT_CACHE,
-                'access-control-allow-origin': '*',
-              },
-              JSON.stringify(
-                {
-                  data: {
-                    type: 'file',
-                    attributes: {
-                      package: name,
-                      version,
-                      treeHash: pack.treeHash,
-                      path: rest,
-                      kind: 'sealed',
-                      size: fileMeta.size,
-                      sha256: fileMeta.sha256,
-                      contentType: contentTypeFor(rest),
-                      text: binary ? undefined : bytesToPreview(bytes),
-                      binary,
-                      rawUrl: `/@${name}@${version}/${rest}`,
-                    },
+                data: {
+                  type: 'file',
+                  attributes: {
+                    package: `${realmName}/${name}`,
+                    version,
+                    treeHash: pack.treeHash,
+                    path: rest,
+                    kind: 'sealed',
+                    size: fileMeta.size,
+                    sha256: fileMeta.sha256,
+                    contentType: contentTypeFor(rest),
+                    text: binary ? undefined : bytesToPreview(bytes),
+                    binary,
+                    rawUrl: `/${realmName}/${name}@${version}/${rest}`,
                   },
                 },
-                null,
-                2,
-              ),
+              },
+              SHORT_CACHE,
             );
             return;
           }
         }
-        let listing = listingFromPacklist(name, version, packlist, rest);
-        respond(
+        let listing = listingFromPacklist(
+          `${realmName}/${name}`,
+          version,
+          packlist,
+          rest,
+        );
+        respondJson(
           req,
           res,
-          200,
-          {
-            'content-type': 'application/json',
-            'cache-control': SHORT_CACHE,
-            'access-control-allow-origin': '*',
-          },
-          JSON.stringify(
-            { data: { type: 'directory', attributes: listing } },
-            null,
-            2,
-          ),
+          { data: { type: 'directory', attributes: listing } },
+          SHORT_CACHE,
         );
         return;
       } catch (error) {
@@ -900,26 +751,265 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       }
     }
 
-    let match = pathname.match(SERVE_PATH);
-    if (!match?.groups) {
-      if (fallback) {
-        fallback(req, res);
+    let historyMatch = pathname.match(HISTORY_PATH);
+    if (historyMatch?.groups) {
+      let realm = byName.get(historyMatch.groups.realm);
+      if (!realm) {
+        respondError(
+          req,
+          res,
+          404,
+          'realm-not-found',
+          `no realm ${historyMatch.groups.realm}`,
+        );
         return;
       }
-      respondError(req, res, 404, 'not-found', `no route for ${pathname}`);
+      let backend = realm.history;
+      if (!backend) {
+        respondError(
+          req,
+          res,
+          404,
+          'no-history',
+          `realm ${realm.name} has no history backend attached (tier 1: versions are the history)`,
+        );
+        return;
+      }
+      let revision = historyMatch.groups.rev;
+      if (revision === undefined) {
+        // The seal log: every state this realm has been in, newest first.
+        // It grows with every save, so nothing caches it.
+        let seals = await backend.list(realm.dir);
+        respondJson(
+          req,
+          res,
+          {
+            meta: { backend: backend.kind, tier: 2, realm: realm.name },
+            data: seals.map((seal) => ({
+              type: 'seal',
+              id: seal.changeId,
+              attributes: {
+                ...seal,
+                filesUrl: `/${realm.name}/_history/${seal.changeId}`,
+              },
+            })),
+          },
+          'no-store',
+        );
+        return;
+      }
+      if (!isValidRevisionId(revision)) {
+        // Grammar-invalid: no future seal can ever carry this id.
+        respondError(
+          req,
+          res,
+          404,
+          'invalid-revision',
+          `"${revision}" is not a revision id`,
+          IMMUTABLE_CACHE,
+        );
+        return;
+      }
+      let rest = historyMatch.groups.rest?.slice(1);
+      if (rest === undefined || rest === '') {
+        // What was in the realm at this seal. `fileListAt` is optional on
+        // the backend — an absent enumeration is reported as such, never as
+        // an empty tree.
+        let files = await backend.fileListAt?.(realm.dir, revision);
+        if (files === undefined && backend.fileListAt) {
+          respondError(
+            req,
+            res,
+            404,
+            'revision-not-found',
+            `${revision} is not a seal of ${realm.name}`,
+          );
+          return;
+        }
+        respondJson(
+          req,
+          res,
+          {
+            data: {
+              type: 'seal',
+              id: revision,
+              attributes: {
+                realm: realm.name,
+                changeId: revision,
+                files: files ?? null,
+                filesAvailable: files !== undefined,
+                backend: backend.kind,
+              },
+            },
+          },
+          // A seal is immutable, and so is its file list.
+          IMMUTABLE_CACHE,
+        );
+        return;
+      }
+      if (!isValidHistoryPath(rest) || isHiddenPath(rest)) {
+        respondError(
+          req,
+          res,
+          404,
+          'file-not-found',
+          'invalid path',
+          IMMUTABLE_CACHE,
+        );
+        return;
+      }
+      let bytes = await backend.fileAt(realm.dir, revision, rest);
+      if (bytes === undefined) {
+        respondError(
+          req,
+          res,
+          404,
+          'file-not-found',
+          `${rest} is not in seal ${revision} of ${realm.name}`,
+        );
+        return;
+      }
+      // A sealed state never changes — the same caching promise an exact
+      // version gets, for a state that was never published at all.
+      respond(
+        req,
+        res,
+        200,
+        {
+          'content-type': contentTypeFor(rest),
+          'cache-control': IMMUTABLE_CACHE,
+          'content-digest': contentDigest(bytes),
+          'x-deck-seal': revision,
+          'x-deck-realm': realm.name,
+          'access-control-allow-origin': '*',
+        },
+        bytes,
+      );
       return;
     }
-    let { name, spec } = match.groups;
-    let rest = match.groups.rest?.slice(1); // strip leading '/'
 
-    let meta = await readStoreMeta(storeDir, name);
+    let sealedMatch = pathname.match(SEALED_PATH);
+    if (sealedMatch?.groups) {
+      await serveSealed(req, res, url, search, sealedMatch.groups);
+      return;
+    }
+
+    let liveMatch = pathname.match(LIVE_PATH);
+    if (liveMatch?.groups) {
+      let realm = byName.get(liveMatch.groups.realm);
+      if (realm) {
+        await serveLive(req, res, realm, liveMatch.groups.rest, search);
+        return;
+      }
+    }
+
+    if (fallback) {
+      fallback(req, res);
+      return;
+    }
+    respondError(req, res, 404, 'not-found', `no route for ${pathname}`);
+  }
+
+  // `/<realm>/<path>` — the working tree, exactly as it sits on disk.
+  async function serveLive(
+    req: IncomingMessage,
+    res: ServerResponse,
+    realm: RealmMount,
+    rawRest: string | undefined,
+    search: string,
+  ): Promise<void> {
+    let rest = rawRest?.replace(/^\/+/, '').replace(/\/+$/, '') ?? '';
+    if (rest !== '' && (!isValidTreePath(rest) || isHiddenPath(rest))) {
+      respondError(req, res, 404, 'file-not-found', 'invalid path', 'no-store');
+      return;
+    }
+    let found = rest === '' ? undefined : await readLiveBytes(realm, rest);
+    if (!found) {
+      // A directory: an index.html if there is one, otherwise the deck's
+      // declared entry module. Both are answers that change with the tree,
+      // so the redirect never caches.
+      let segments = rest === '' ? [] : rest.split('/');
+      let index = rest === '' ? 'index.html' : `${rest}/index.html`;
+      let candidate = await readLiveBytes(realm, index);
+      if (candidate) {
+        respond(req, res, 302, {
+          location: `/${realm.name}/${index}${search}`,
+          'cache-control': 'no-store',
+          'access-control-allow-origin': '*',
+        });
+        return;
+      }
+      if (segments.length === 2) {
+        let entry = await entryOfLiveDeck(realm, segments[0], segments[1]);
+        if (entry) {
+          respond(req, res, 302, {
+            location: `/${realm.name}/${rest}/${entry}${search}`,
+            'cache-control': 'no-store',
+            'access-control-allow-origin': '*',
+          });
+          return;
+        }
+      }
+      respondError(
+        req,
+        res,
+        404,
+        'file-not-found',
+        `${rest || '/'} does not exist in realm ${realm.name}`,
+        'no-store',
+      );
+      return;
+    }
+    let bytes = found.bytes;
+    let injected = false;
+    if (found.path.endsWith('.html')) {
+      ({ bytes, injected } = injectImportMap(
+        bytes,
+        await liveImports(realm, found.path),
+      ));
+    }
+    // The whole point: every save is visible on the next request.
+    respond(
+      req,
+      res,
+      200,
+      {
+        'content-type': contentTypeFor(found.path),
+        'cache-control': 'no-store',
+        'content-digest': contentDigest(bytes),
+        'x-deck-realm': realm.name,
+        ...(injected ? { 'x-deck-importmap': 'injected' } : {}),
+        'access-control-allow-origin': '*',
+      },
+      bytes,
+    );
+  }
+
+  // `/<realm>/<publisher>/<package>@<spec>/<path>` — the sealed read.
+  async function serveSealed(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    search: string,
+    groups: Record<string, string | undefined>,
+  ): Promise<void> {
+    let realm = byName.get(groups.realm!);
+    if (!realm) {
+      respondError(req, res, 404, 'realm-not-found', `no realm ${groups.realm}`);
+      return;
+    }
+    let name = `${groups.publisher}/${groups.pkg}`;
+    let spec = groups.spec!;
+    let rest = groups.rest?.slice(1);
+
+    let meta = await readStoreMeta(realm.storeDir, name);
     if (!meta || Object.keys(meta.versions).length === 0) {
       respondError(
         req,
         res,
         404,
         'package-not-found',
-        `no published versions for package ${name}`,
+        `no published versions for ${realm.name}/${name}`,
       );
       return;
     }
@@ -931,7 +1021,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         res,
         404,
         'invalid-version-spec',
-        `@${name}@${spec}: ${resolution.detail}`,
+        `${name}@${spec}: ${resolution.detail}`,
         IMMUTABLE_CACHE,
       );
       return;
@@ -942,19 +1032,19 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         res,
         404,
         'version-not-found',
-        `@${name}@${spec}: ${resolution.detail}`,
+        `${name}@${spec}: ${resolution.detail}`,
       );
       return;
     }
     let version = resolution.version;
-    let pack = await loadPack(name, version);
+    let pack = await loadPack(realm, name, version);
     if (!pack) {
       respondError(
         req,
         res,
         404,
         'version-not-found',
-        `@${name}@${version} has no stored pack`,
+        `${name}@${version} has no stored pack`,
       );
       return;
     }
@@ -973,7 +1063,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       return;
     }
 
-    let mapEntry = packagesFromPack(pack.bytes)?.[name];
+    let mapEntry = packagesFromPack(pack.bytes)?.[groups.pkg!];
     let canonicalRest: string | undefined;
     if (wantsMeta || wantsPack) {
       canonicalRest = undefined;
@@ -987,7 +1077,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           res,
           404,
           'no-entry-module',
-          `@${name}@${version} declares no entry module in importmap.json`,
+          `${name}@${version} declares no entry module in importmap.json`,
         );
         return;
       }
@@ -999,7 +1089,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       canonicalRest = aliasPath && aliasPath !== rest ? aliasPath : rest;
     }
 
-    let canonicalLocation = `/@${name}@${version}${
+    let canonicalLocation = `/${realm.name}/${name}@${version}${
       canonicalRest !== undefined ? `/${canonicalRest}` : ''
     }${search}`;
 
@@ -1022,7 +1112,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         200,
         {
           'content-type': 'application/zip',
-          'content-disposition': `attachment; filename="${name}-${version}.pack.zip"`,
+          'content-disposition': `attachment; filename="${groups.pkg}-${version}.pack.zip"`,
           'cache-control': IMMUTABLE_CACHE,
           'content-digest': contentDigest(pack.bytes),
           'x-deck-tree-hash': pack.treeHash,
@@ -1042,41 +1132,34 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           exports[alias] = treePath;
         }
       }
-      respond(
+      respondJson(
         req,
         res,
-        200,
         {
-          'content-type': 'application/json',
-          'cache-control': SHORT_CACHE,
-          'x-deck-tree-hash': pack.treeHash,
-          'access-control-allow-origin': '*',
-        },
-        JSON.stringify(
-          {
-            data: {
-              type: 'package-meta',
-              id: `${name}@${version}`,
-              attributes: {
-                name,
-                version,
-                treeHash: pack.treeHash,
-                entry: mapEntry?.entry
-                  ? (treePathFromMapValue(mapEntry.entry) ?? null)
-                  : null,
-                exports,
-                baseApi: mapEntry?.baseApi ?? null,
-                // Which seal this version was cut from, when the pack was
-                // sealed by a tier-2 watcher — the link from a published
-                // version back into `/history/<name>/<changeId>`.
-                sealChangeId: packlist.provenance?.sealChangeId ?? null,
-                files: packlist.entries.map((e) => e.path),
-              },
+          data: {
+            type: 'package-meta',
+            id: `${realm.name}/${name}@${version}`,
+            attributes: {
+              realm: realm.name,
+              publisher: groups.publisher,
+              name: groups.pkg,
+              version,
+              treeHash: pack.treeHash,
+              entry: mapEntry?.entry
+                ? (treePathFromMapValue(mapEntry.entry) ?? null)
+                : null,
+              exports,
+              baseApi: mapEntry?.baseApi ?? null,
+              // Which seal this version was cut from, when the pack was
+              // sealed by a tier-2 watcher — the link from a published
+              // version back into `/<realm>/_history/<changeId>`.
+              sealChangeId: packlist.provenance?.sealChangeId ?? null,
+              files: packlist.entries.map((entry) => entry.path),
             },
           },
-          null,
-          2,
-        ),
+        },
+        SHORT_CACHE,
+        { 'x-deck-tree-hash': pack.treeHash },
       );
       return;
     }
@@ -1109,9 +1192,26 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         res,
         404,
         'file-not-found',
-        `${match.groups.rest?.slice(1)} does not exist in ${name}@${version}`,
+        `${groups.rest?.slice(1)} does not exist in ${name}@${version}`,
       );
       return;
+    }
+    let injected = false;
+    if (rest!.endsWith('.html')) {
+      let sealedMap = readZipEntry(pack.bytes, IMPORT_MAP_PATH);
+      let imports: Record<string, string> = {};
+      try {
+        imports = sealedMap
+          ? ((JSON.parse(sealedMap.toString('utf8')).imports ?? {}) as Record<
+              string,
+              string
+            >)
+          : {};
+      } catch {
+        imports = {};
+      }
+      // From the SAME seal — a sealed document and its map move together.
+      ({ bytes, injected } = injectImportMap(bytes, imports));
     }
     respond(
       req,
@@ -1121,7 +1221,9 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         'content-type': contentTypeFor(rest!),
         'cache-control': IMMUTABLE_CACHE,
         'content-digest': contentDigest(bytes),
+        ...(injected ? { 'x-deck-importmap': 'injected' } : {}),
         'x-deck-package': `${name}@${version}`,
+        'x-deck-realm': realm.name,
         'x-deck-tree-hash': pack.treeHash,
         'access-control-allow-origin': '*',
       },

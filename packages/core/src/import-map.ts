@@ -29,6 +29,30 @@ export function parsePackages(
   }
 }
 
+// What this deck depends on, as RANGES: `"acme/confetti": "^1.0.0"`. The
+// author writes intent here; `deck lock` resolves it into `imports` pins
+// (see lock.ts) so consumers of a published deck never inherit somebody
+// else's working tree.
+export function parseDependencies(
+  jsonText: string,
+): Record<string, string> | undefined {
+  try {
+    let parsed = JSON.parse(jsonText);
+    let dependencies =
+      parsed?.deck?.dependencies ?? parsed?.boxel?.dependencies;
+    if (
+      dependencies &&
+      typeof dependencies === 'object' &&
+      !Array.isArray(dependencies)
+    ) {
+      return dependencies as Record<string, string>;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function packagesFromPack(
   packBytes: Buffer,
 ): Record<string, PackageMapEntry> | undefined {

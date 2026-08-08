@@ -16,8 +16,14 @@ import { packagesFromPack } from './import-map.ts';
 // of the realm's bookmarks. The server only READS it; all writes go through
 // the CLI/watcher (an agent arranges state; distribution follows).
 //
-//   <store>/<name>/packs/<treeHash>.pack.zip   — sealed bytes, ONCE per hash
-//   <store>/<name>/meta.json                   — versions + dist-tags
+//   <store>/<publisher>/<package>/packs/<treeHash>.pack.zip
+//                                              — sealed bytes, ONCE per hash
+//   <store>/<publisher>/<package>/meta.json    — versions + dist-tags
+//
+// The store path mirrors the URL path: a package addressed as
+// `/<realm>/<publisher>/<package>@<version>/<file>` is stored under
+// `<realm>/.deck/store/<publisher>/<package>/`. Same shape on disk and on
+// the wire, so neither has to be translated into the other.
 //
 // The store is CONTENT-ADDRESSED: pack bytes are stored by treeHash, and a
 // version is a POINTER (version → treeHash) in meta.json. Two consequences,
@@ -50,9 +56,27 @@ export interface StoreMeta {
   tags: Record<string, string>;
 }
 
-const PACKAGE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
+// One path segment: kebab, alnum-led, no dots (a dot would let a name
+// masquerade as a file path or a version segment).
+const SEGMENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+// A store name is `<publisher>/<package>` — the same two segments that
+// address it in a URL, so the store path and the URL path are the same
+// shape. A bare `<package>` stays legal for an unscoped store.
 export function isValidPackageName(name: string): boolean {
-  return PACKAGE_NAME.test(name);
+  let segments = name.split('/');
+  return segments.length <= 2 && segments.every((s) => SEGMENT.test(s));
+}
+
+export function packageDir(storeDir: string, name: string): string {
+  return join(storeDir, ...name.split('/'));
+}
+
+// The map inside a pack is keyed by the PACKAGE, not the scope: identity
+// comes from where the deck sits on disk, and the map only says which
+// version it is. Nothing has to be rewritten when a deck moves publishers.
+function mapKeyFor(name: string): string {
+  return name.split('/').at(-1)!;
 }
 
 const DIST_TAG = /^[a-z][a-z0-9-]{0,31}$/;
@@ -65,7 +89,7 @@ export function isValidDistTag(tag: string): boolean {
 }
 
 function metaPath(storeDir: string, name: string): string {
-  return join(storeDir, name, 'meta.json');
+  return join(packageDir(storeDir, name), 'meta.json');
 }
 
 export async function readStoreMeta(
@@ -87,25 +111,39 @@ export async function readStoreMeta(
   }
 }
 
-/** Every package that has a meta.json in the store, sorted by name. */
+/**
+ * Every package that has a meta.json in the store, sorted by name. Scoped
+ * (`<publisher>/<package>`) and unscoped (`<package>`) both appear, found by
+ * looking for the meta.json rather than by assuming a depth.
+ */
 export async function listStorePackages(
   storeDir: string,
 ): Promise<StoreMeta[]> {
-  let names: string[];
+  let packages: StoreMeta[] = [];
+  for (let first of await readdirSafe(storeDir)) {
+    if (!SEGMENT.test(first)) continue;
+    let meta = await readStoreMeta(storeDir, first);
+    if (meta && Object.keys(meta.versions).length > 0) {
+      packages.push(meta);
+      continue;
+    }
+    for (let second of await readdirSafe(join(storeDir, first))) {
+      if (!SEGMENT.test(second)) continue;
+      let scoped = await readStoreMeta(storeDir, `${first}/${second}`);
+      if (scoped && Object.keys(scoped.versions).length > 0) {
+        packages.push(scoped);
+      }
+    }
+  }
+  return packages.sort((a, b) => (a.name < b.name ? -1 : 1));
+}
+
+async function readdirSafe(dir: string): Promise<string[]> {
   try {
-    names = await readdir(storeDir);
+    return (await readdir(dir)).sort();
   } catch {
     return [];
   }
-  let packages: StoreMeta[] = [];
-  for (let name of names.sort()) {
-    if (!isValidPackageName(name)) continue;
-    let meta = await readStoreMeta(storeDir, name);
-    if (meta && Object.keys(meta.versions).length > 0) {
-      packages.push(meta);
-    }
-  }
-  return packages;
 }
 
 async function writeStoreMeta(
@@ -138,7 +176,7 @@ function assertManifestAgreement(
   version: string,
   packBytes: Buffer,
 ): void {
-  let declared = packagesFromPack(packBytes)?.[name]?.version;
+  let declared = packagesFromPack(packBytes)?.[mapKeyFor(name)]?.version;
   if (declared === undefined) {
     return;
   }
@@ -190,9 +228,9 @@ export async function publishToStore(
   // Content-addressed: bytes land once per treeHash; a re-publish of
   // already-stored content is a pure pointer add.
   let file = join('packs', `${treeHash}.pack.zip`);
-  let absolute = join(storeDir, name, file);
+  let absolute = join(packageDir(storeDir, name), file);
   if (!(await fileExists(absolute))) {
-    await mkdir(join(storeDir, name, 'packs'), { recursive: true });
+    await mkdir(join(packageDir(storeDir, name), 'packs'), { recursive: true });
     await writeFile(absolute, packBytes);
   }
   meta.versions[version] = { treeHash, file };
@@ -244,7 +282,7 @@ export async function releaseVersion(
   // The sealed content must AGREE it is this version: the map inside the
   // seal declares it. Bumping the map version in the live tree — one edit,
   // part of the seal — is what makes a state releasable as that version.
-  let packBytes = await readFile(join(storeDir, name, record.file));
+  let packBytes = await readFile(join(packageDir(storeDir, name), record.file));
   assertManifestAgreement(name, version, packBytes);
   meta.versions[version] = { ...record };
   if (tag) {
@@ -320,7 +358,7 @@ export async function readStoredPack(
   if (!record) {
     return undefined;
   }
-  return readFile(join(storeDir, name, record.file));
+  return readFile(join(packageDir(storeDir, name), record.file));
 }
 
 export interface PruneResult {
@@ -374,7 +412,7 @@ export async function pruneDevVersions(
     if (stillReferenced.has(file)) {
       continue;
     }
-    await rm(join(storeDir, name, file), { force: true });
+    await rm(join(packageDir(storeDir, name), file), { force: true });
     deletedFiles.push(file);
   }
   await writeStoreMeta(storeDir, meta);
