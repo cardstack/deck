@@ -2,5 +2,6 @@
 *.log
 .DS_Store
 .deck/
+examples/*/realm/app/viewer/build.json
 examples/*/realm/app/viewer/states.json
 node_modules/

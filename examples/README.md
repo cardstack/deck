@@ -11,6 +11,7 @@ real address space, not a demo router.
 | Example | Workload | Shows |
 | --- | --- | --- |
 | [codelist](codelist/) | W2 — shared reference data | Two people amend one table concurrently and both land. A fork absorbs upstream and keeps its own codes. Every state is at rest, at an immutable URL. |
+| [fork-an-app](fork-an-app/) | W3 — adapters and forks | Vendor Leaflet from npm source, change one file, run yours next to upstream. The fork costs 2 objects out of 87. Nothing reaches the network at runtime. |
 
 ## On the libraries
 

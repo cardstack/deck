@@ -1,0 +1,8 @@
+{
+  "name": "@deck/example-fork-an-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "demo": "node demo.mjs" },
+  "dependencies": { "@deck/core": "workspace:*", "@deck/server": "workspace:*" }
+}

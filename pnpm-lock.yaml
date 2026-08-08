@@ -54,6 +54,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/server
 
+  examples/fork-an-app:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
   packages/cli:
     dependencies:
       '@deck/conformance':

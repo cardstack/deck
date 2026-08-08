@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Deck — fork an app, change one file</title>
+<link rel="icon" href="data:," />
+<!--
+  Two decks, two maps. The import map is what decides which Leaflet each
+  half of the page gets, and they are different packages at different
+  addresses — so both can run in one document without colliding.
+-->
+<script type="importmap">
+  {
+    "imports": {
+      "viewer": "/site/app/viewer/viewer.js"
+    }
+  }
+</script>
+<body>
+  <main id="app" class="loading">vendoring 85 modules…</main>
+  <script type="module">
+    import 'viewer';
+  </script>
+</body>
