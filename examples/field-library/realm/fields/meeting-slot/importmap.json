@@ -1,0 +1,20 @@
+{
+  "deck": {
+    "packages": {
+      "meeting-slot": {
+        "version": "1.0.0",
+        "entry": "$REALM/index.js"
+      }
+    },
+    "dependencies": {
+      "luxon": "lib/luxon@^3.5.0",
+      "zod": "lib/zod@^3.25.0"
+    }
+  },
+  "imports": {
+    "luxon/": "/site/lib/luxon@3.5.0/",
+    "luxon": "/site/lib/luxon@3.5.0/src/luxon.js",
+    "zod/": "/site/lib/zod@3.25.76/",
+    "zod": "/site/lib/zod@3.25.76/v3/index.js"
+  }
+}

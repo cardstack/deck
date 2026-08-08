@@ -125,9 +125,20 @@ export function documentEntries(options: {
   for (let [, attributes, body] of html.matchAll(MODULE_SCRIPT)) {
     let src = SRC_ATTR.exec(attributes)?.[1];
     if (src) {
-      if (src.startsWith('/')) {
-        entries.push(src);
+      // A script src is a URL, never a bare specifier — import maps do not
+      // apply to it. So it is resolved the way the browser resolves it:
+      // against the document. Requiring an absolute path here was the same
+      // class of mistake as the empty `scopes` — the common spelling,
+      // `src="./app.js"`, dropped out of the walk and every page written
+      // that way advertised an empty closure while looking like it worked.
+      if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//')) {
+        continue; // another origin; not this realm's bytes to preload
       }
+      entries.push(
+        src.startsWith('/')
+          ? src
+          : posix.normalize(posix.join(posix.dirname(fromUrl), src)),
+      );
       continue;
     }
     for (let specifier of moduleSpecifiers(body)) {

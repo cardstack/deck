@@ -273,6 +273,39 @@ module('C: closure preload', () => {
     );
   });
 
+  // `src="./app.js"` is how almost everybody writes it, and an absolute-path
+  // requirement dropped it silently: the page still worked, and advertised a
+  // closure of nothing. Resolve it against the document, as a browser does.
+  test('a relative script src resolves against the document', (assert) => {
+    assert.deepEqual(
+      documentEntries({
+        html: '<body><script type="module" src="./main.js"></script></body>',
+        imports: {},
+        fromUrl: '/site/me/app@1.0.0/index.html',
+      }),
+      ['/site/me/app@1.0.0/main.js'],
+      'a same-directory src is the document graph root',
+    );
+    assert.deepEqual(
+      documentEntries({
+        html: '<body><script type="module" src="../shared/boot.js"></script></body>',
+        imports: {},
+        fromUrl: '/site/me/app@1.0.0/pages/index.html',
+      }),
+      ['/site/me/app@1.0.0/shared/boot.js'],
+      'and `..` walks up inside the same deck',
+    );
+    assert.deepEqual(
+      documentEntries({
+        html: '<body><script type="module" src="https://cdn.example.com/x.js"></script></body>',
+        imports: {},
+        fromUrl: '/site/me/app@1.0.0/index.html',
+      }),
+      [],
+      'a foreign origin is not this realm’s bytes to preload',
+    );
+  });
+
   test('an inline module script is an entry too', (assert) => {
     let imports = { app: '/site/me/app@1/main.js' };
     let scopes = {

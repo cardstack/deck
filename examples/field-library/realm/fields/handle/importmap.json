@@ -1,0 +1,20 @@
+{
+  "deck": {
+    "packages": {
+      "handle": {
+        "version": "1.0.0",
+        "entry": "$REALM/index.js"
+      }
+    },
+    "dependencies": {
+      "nanoid": "lib/nanoid@^5.0.0",
+      "zod": "lib/zod@^3.25.0"
+    }
+  },
+  "imports": {
+    "nanoid/": "/site/lib/nanoid@5.0.9/",
+    "nanoid": "/site/lib/nanoid@5.0.9/index.browser.js",
+    "zod/": "/site/lib/zod@3.25.76/",
+    "zod": "/site/lib/zod@3.25.76/v3/index.js"
+  }
+}

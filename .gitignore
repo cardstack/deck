@@ -4,4 +4,5 @@
 .deck/
 examples/*/realm/app/viewer/build.json
 examples/*/realm/app/viewer/states.json
+examples/*/realm/app/library/shelf.json
 node_modules/

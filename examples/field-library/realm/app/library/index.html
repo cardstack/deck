@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Deck — a field library</title>
+<link rel="icon" href="data:," />
+<!--
+  There is no import map written here on purpose.
+
+  This document is served from a sealed version, so the server injects the
+  map that this deck's own importmap.json resolved to — six top-level pins
+  and one scope per field deck. The page then reads its own map back out of
+  the DOM and shows it to you, which is the shortest possible proof that
+  nothing here is staged: what resolved the modules is what you are looking
+  at.
+-->
+<body>
+  <main id="app" class="loading">loading the shelf…</main>
+  <script type="module" src="./library.js"></script>
+</body>

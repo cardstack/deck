@@ -1,0 +1,318 @@
+#!/usr/bin/env node
+// A field library — many decks, one shelf.
+//
+// Six card fields, each in its own deck, each declaring the npm libraries it
+// wants by the bare specifier its source already writes: `date-fns`, `zod`,
+// `luxon`, `nanoid`, `chroma-js`. None of those is a deck name. The decks are
+// `lib/date-fns`, `lib/zod`, and so on, and the decklist in each field's
+// importmap.json is what connects the two:
+//
+//     "zod": "lib/zod@^3.25.0"
+//      ^ import specifier   ^ the deck that answers to it
+//
+// That is ALIASING, and it is what lets vendored npm source stay unmodified
+// while the realm names things its own way.
+//
+// The other two things this exercises are what happens when six decks want
+// overlapping libraries:
+//
+//   SCOPES  every deck's dependencies resolve inside its own URL prefix, so
+//           `fields/swatch` and `fields/brand-swatch` can both import
+//           `chroma-js` and get different versions — in one document.
+//   DEDUPE  where the ranges agree, they resolve to one URL. One URL is one
+//           object in the store, one fetch, and one module instance in the
+//           browser — which is why a schema built by one deck's zod validates
+//           under another deck's zod. Nothing computes that; it falls out of
+//           content addressing.
+//
+//   pnpm --filter @deck/example-field-library demo
+//   open http://localhost:8793/
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { IMPORT_MAP_PATH, parseDependencies } from '@deck/core/import-map';
+import { lockDeck } from '@deck/core/lock';
+import { pack } from '@deck/core/pack';
+import { inspectStore, publishToStore, readStoredPack } from '@deck/core/store';
+import { peekPacklist } from '@deck/core/pack';
+import { readTreeFromDir } from '@deck/core/tree';
+import { vendorFromNpmSource } from '@deck/core/vendor-npm';
+import { createDeckServer } from '@deck/server/server';
+import { storeDirFor } from '@deck/server/realm';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const PORT = Number(process.env.PORT ?? 8793);
+const REALM = 'site';
+const realmDir = join(here, 'realm');
+const storeDir = storeDirFor(realmDir);
+
+// The shelf. Exact versions, because a demo that resolves differently on
+// different days cannot make a claim about bytes.
+const LIBRARIES = [
+  { deck: 'lib/date-fns', npm: 'date-fns@4.1.0', version: '4.1.0', tag: 'latest' },
+  { deck: 'lib/chroma-js', npm: 'chroma-js@3.1.2', version: '3.1.2', tag: 'latest' },
+  // The same deck, an older version, still published. `fields/brand-swatch`
+  // pins it; nothing else has to care.
+  { deck: 'lib/chroma-js', npm: 'chroma-js@2.6.0', version: '2.6.0' },
+  { deck: 'lib/luxon', npm: 'luxon@3.5.0', version: '3.5.0', tag: 'latest' },
+  // zod ships v3 and v4 side by side in one tarball; the automatic entry pick
+  // lands in the v4 tree, so this one is chosen rather than guessed.
+  { deck: 'lib/zod', npm: 'zod@3.25.76', version: '3.25.76', entry: 'v3/index.js', tag: 'latest' },
+  { deck: 'lib/nanoid', npm: 'nanoid@5.0.9', version: '5.0.9', tag: 'latest' },
+];
+
+const FIELDS = [
+  'fields/due-date',
+  'fields/swatch',
+  'fields/brand-swatch',
+  'fields/meeting-slot',
+  'fields/handle',
+  'fields/audit-stamp',
+];
+const APP = 'app/library';
+const VERSION = '1.0.0';
+
+await rm(storeDir, { recursive: true, force: true });
+await mkdir(storeDir, { recursive: true });
+
+console.log('\n  FIELD LIBRARY — aliasing, scopes, and dedupe across many decks\n');
+
+// ---------------------------------------------------------------------------
+// 1. The shelf. Vendored from npm SOURCE — the module tree npm published, not
+//    a CDN bundle — and sealed into this realm.
+// ---------------------------------------------------------------------------
+console.log('1) vendoring the shelf from npm source');
+let shelfInfo = [];
+for (let library of LIBRARIES) {
+  let vendored = await vendorFromNpmSource({
+    spec: library.npm,
+    ...(library.entry ? { entry: library.entry } : {}),
+    // A demo must not fail on the day someone runs it; a realm sets a real
+    // minimumReleaseAge (L11).
+    policy: { minimumReleaseAge: 0 },
+  });
+  if (vendored.externals.length > 0) {
+    throw new Error(
+      `${library.npm} reaches outside itself (${vendored.externals.join(', ')}) — it cannot be sealed alone`,
+    );
+  }
+  let name = library.deck.split('/')[1];
+  let mapBytes = Buffer.from(
+    JSON.stringify(
+      {
+        deck: {
+          packages: {
+            [name]: {
+              version: library.version,
+              entry: `$REALM/${vendored.entryPath}`,
+              vendoredFrom: vendored.vendoredFrom,
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+    'utf8',
+  );
+  let { treeHash } = await publishToStore(
+    storeDir,
+    library.deck,
+    library.version,
+    pack([{ path: IMPORT_MAP_PATH, bytes: mapBytes }, ...vendored.files]),
+    library.tag ? { tag: library.tag } : {},
+  );
+  shelfInfo.push({
+    deck: library.deck,
+    version: library.version,
+    npm: library.npm,
+    modules: vendored.modules.length,
+    entry: vendored.entryPath,
+    treeHash,
+    consumers: [],
+  });
+  console.log(
+    `   ${`${library.deck}@${library.version}`.padEnd(28)} ${String(vendored.modules.length).padStart(4)} modules · ${treeHash.slice(0, 12)}…`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 2. Lock and seal each field deck.
+//
+//    `deck lock` turns the ranges the author wrote into exact pins and writes
+//    them INTO the tree — so the lock is a file you can read, and moving a
+//    dependency is an ordinary save. The pins are checked in here, which means
+//    a clean run must produce no change; if it does, the demo says so instead
+//    of quietly relocking.
+// ---------------------------------------------------------------------------
+console.log('\n2) locking and sealing the six field decks');
+let drifted = [];
+async function lockAndSeal(deckName) {
+  let deckDir = join(realmDir, ...deckName.split('/'));
+  let { text, changed, resolutions } = await lockDeck({
+    realmDir,
+    realmName: REALM,
+    storeDir,
+    deckDir,
+  });
+  if (changed) {
+    drifted.push(deckName);
+    await writeFile(join(deckDir, IMPORT_MAP_PATH), text);
+  }
+  let files = await readTreeFromDir(deckDir);
+  files.set(IMPORT_MAP_PATH, Buffer.from(text, 'utf8'));
+  let { treeHash } = await publishToStore(
+    storeDir,
+    deckName,
+    VERSION,
+    pack([...files.entries()].map(([path, bytes]) => ({ path, bytes }))),
+    { tag: 'latest' },
+  );
+  return { treeHash, resolutions, files: files.size, text };
+}
+
+let fieldInfo = [];
+for (let deckName of FIELDS) {
+  let { treeHash, resolutions } = await lockAndSeal(deckName);
+  let pins = resolutions
+    .map((r) => `${r.key}→${r.publisher}/${r.package}@${r.version}`)
+    .sort();
+  for (let resolution of resolutions) {
+    let library = shelfInfo.find(
+      (l) =>
+        l.deck === `${resolution.publisher}/${resolution.package}` &&
+        l.version === resolution.version,
+    );
+    library?.consumers.push(deckName);
+  }
+  fieldInfo.push({ deck: deckName, treeHash, pins });
+  console.log(`   ${deckName.padEnd(22)} ${treeHash.slice(0, 12)}…  ${pins.join('  ')}`);
+}
+
+// What the six decks asked for, and what it collapsed to.
+let edges = 0;
+let urls = new Map();
+for (let deckName of FIELDS) {
+  let deckDir = join(realmDir, ...deckName.split('/'));
+  let files = await readTreeFromDir(deckDir);
+  let declared = parseDependencies(files.get(IMPORT_MAP_PATH).toString('utf8')) ?? {};
+  edges += Object.keys(declared).length;
+}
+for (let library of shelfInfo) {
+  if (library.consumers.length > 0) {
+    urls.set(`${library.deck}@${library.version}`, library.consumers.length);
+  }
+}
+console.log(`\n   ${edges} dependency edges → ${urls.size} distinct library URLs`);
+for (let [url, count] of [...urls].sort()) {
+  console.log(`     ${url.padEnd(26)} ${count} consumer${count === 1 ? '' : 's'}`);
+}
+console.log(`   chroma-js appears twice because two decks pinned different`);
+console.log(`   versions on purpose. That is what scopes are for.`);
+
+// ---------------------------------------------------------------------------
+// 3. What the store actually holds.
+//
+//    Two measured numbers: how many file slots the sealed versions contain in
+//    total, and how many distinct objects back them. The gap is the dedupe,
+//    and nothing computed it — identical bytes have identical names.
+// ---------------------------------------------------------------------------
+let entries = 0;
+for (let library of [...shelfInfo]) {
+  let bytes = await readStoredPack(storeDir, library.deck, library.version);
+  entries += peekPacklist(bytes).entries.length;
+}
+for (let field of fieldInfo) {
+  let bytes = await readStoredPack(storeDir, field.deck, VERSION);
+  entries += peekPacklist(bytes).entries.length;
+}
+let report = await inspectStore(storeDir);
+console.log(`\n3) the store, after ${report.versions} sealed versions`);
+console.log(`   file slots across every pack: ${entries}`);
+console.log(`   distinct objects:             ${report.objects}`);
+console.log(`   bytes:                        ${report.bytes.toLocaleString()}`);
+
+// The alternative this replaces: each field carrying its own copy of every
+// library it uses, the way a bundler-per-package world produces.
+let ownCopies = 0;
+for (let field of fieldInfo) {
+  let bytes = await readStoredPack(storeDir, field.deck, VERSION);
+  ownCopies += peekPacklist(bytes).entries.length;
+  for (let library of shelfInfo) {
+    if (library.consumers.includes(field.deck)) {
+      ownCopies += library.modules + 1;
+    }
+  }
+}
+console.log(`   if each field carried its own copies: ${ownCopies} files`);
+
+// ---------------------------------------------------------------------------
+// 4. The app. Locked last, because its scopes are derived from what the field
+//    decks were sealed depending on.
+// ---------------------------------------------------------------------------
+await writeFile(
+  join(realmDir, 'app', 'library', 'shelf.json'),
+  JSON.stringify(
+    {
+      realm: REALM,
+      decks: LIBRARIES.length - 1 + FIELDS.length + 1,
+      libraries: shelfInfo.filter((l) => l.consumers.length > 0),
+      fields: fieldInfo,
+      chroma: { current: '3.1.2', pinned: '2.6.0' },
+      store: {
+        versions: report.versions,
+        entries,
+        objects: report.objects,
+        bytes: report.bytes,
+        wouldBe: ownCopies,
+      },
+    },
+    null,
+    2,
+  ) + '\n',
+);
+
+let app = await lockAndSeal(APP);
+let appMap = JSON.parse(app.text);
+let scopeCount = Object.keys(appMap.scopes ?? {}).length;
+console.log(`\n4) ${APP}@${VERSION} · ${app.treeHash.slice(0, 12)}…`);
+console.log(`   ${Object.keys(appMap.imports).length} top-level pins, ${scopeCount} scopes`);
+console.log(`   The page imports six field decks and not one library.`);
+
+if (drifted.length > 0) {
+  console.log(`\n   NOTE: the checked-in lock was out of date and has been`);
+  console.log(`   rewritten for: ${drifted.join(', ')}`);
+  console.log(`   Commit the importmap.json changes, or pin the libraries back.`);
+}
+
+// ---------------------------------------------------------------------------
+// 5. Serve. Everything is at rest: no write endpoint, no login.
+// ---------------------------------------------------------------------------
+let server = createDeckServer({
+  realms: [{ name: REALM, dir: realmDir, storeDir }],
+  fallback: (req, res) => {
+    res.writeHead(302, { location: `/${REALM}/${APP}@${VERSION}/index.html` });
+    res.end();
+  },
+});
+server.listen(PORT, async () => {
+  // What the sealed page advertises up front. A cold browser learns every URL
+  // from the document instead of discovering them one graph level at a time —
+  // and the walk has to run the same import-map algorithm, scopes included, or
+  // it stops at the first scoped edge and reports full coverage of a graph it
+  // only half-walked.
+  let head = await fetch(
+    `http://127.0.0.1:${PORT}/${REALM}/${APP}@${VERSION}/index.html`,
+    { method: 'HEAD' },
+  );
+  let closure = head.headers.get('x-deck-preload');
+
+  console.log(`\n5) serving\n`);
+  console.log(`   modulepreload closure advertised: ${closure ?? 'none'}`);
+  console.log(`   (links emitted / modules reachable — the rest is over budget)\n`);
+  console.log(`      http://localhost:${PORT}/\n`);
+  console.log(`      /${REALM}/${APP}@${VERSION}/index.html`);
+  console.log(`      /${REALM}/fields/swatch@${VERSION}/importmap.json        ← the lock, readable`);
+  console.log(`      /${REALM}/lib/chroma-js@3.1.2/index.js`);
+  console.log(`      /${REALM}/lib/chroma-js@2.6.0/index.js   ← both, at once\n`);
+});

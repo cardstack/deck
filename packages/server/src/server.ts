@@ -1694,7 +1694,13 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       if (trying.length === 0) {
         preload = await closureFor(
           bytes,
-          `/${realm.name}/${name}@${version}${rest}`,
+          // `rest` is a TREE path — the leading slash was stripped when it was
+          // parsed out of the URL. Pasting it straight on produced
+          // `…@1.0.0index.html`, which is not a deck URL: relative resolution
+          // walked out of the package and no scope prefix matched, so the
+          // closure came back empty and the response advertised nothing while
+          // looking perfectly healthy.
+          `/${realm.name}/${name}@${version}/${rest}`,
           resolved,
           resolvedScopes,
         );

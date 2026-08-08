@@ -107,6 +107,43 @@ module('deck server: realms on disk', function (hooks) {
       tag: 'latest',
     });
 
+    // A page written the way nearly every page is written: a relative script
+    // src and no hand-written import map. It exists to hold the closure walk
+    // honest end to end — see the test below.
+    await publishToStore(
+      storeDir,
+      'acme/page',
+      '1.0.0',
+      pack([
+        {
+          path: 'importmap.json',
+          bytes: Buffer.from(
+            JSON.stringify({
+              imports: { 'confetti/': '/demo/acme/confetti@1.0.0/' },
+              deck: {
+                packages: {
+                  page: { version: '1.0.0', entry: '$REALM/boot.js' },
+                },
+              },
+            }),
+          ),
+        },
+        {
+          path: 'index.html',
+          bytes: Buffer.from(
+            `<!doctype html><body><script type="module" src="./boot.js"></script></body>`,
+          ),
+        },
+        {
+          path: 'boot.js',
+          bytes: Buffer.from(
+            `import { confetti } from 'confetti/confetti.js';\nexport const boom = confetti;\n`,
+          ),
+        },
+      ]),
+      { tag: 'latest' },
+    );
+
     let realm: RealmMount = { name: 'demo', dir: realmDir, storeDir };
     server = createDeckServer({ realms: [realm] });
     await new Promise<void>((resolve) => server.listen(0, resolve));
@@ -411,6 +448,32 @@ module('deck server: realms on disk', function (hooks) {
       'acme/confetti@1.0.0',
     );
     assert.strictEqual(await response.text(), '');
+  });
+
+  // Two bugs met here and hid each other. `documentEntries` only accepted an
+  // absolute script src, and the sealed route built the document URL by
+  // pasting a slash-less tree path on — `…@1.0.0index.html`. Either one alone
+  // empties the closure, and an empty closure is invisible: the page still
+  // works, the header simply does not appear. So the assertion has to be that
+  // the walk actually CROSSED a deck boundary, not merely that it ran.
+  test('a sealed page with a relative src advertises its real closure', async function (assert) {
+    let response = await fetch(`${origin}/demo/acme/page@1.0.0/index.html`);
+    let html = await response.text();
+    assert.strictEqual(
+      response.headers.get('x-deck-preload'),
+      '3/3',
+      'boot.js, the confetti module it imports, and that module’s own import',
+    );
+    assert.ok(
+      html.includes(
+        '<link rel="modulepreload" href="/demo/acme/page@1.0.0/boot.js" crossorigin>',
+      ),
+      'the relative src is the graph root',
+    );
+    assert.ok(
+      html.includes('/demo/acme/confetti@1.0.0/util/colors.js'),
+      'and the walk reached two hops into another deck',
+    );
   });
 
   test('writes are refused — the server is read-only at-rest serving', async function (assert) {
