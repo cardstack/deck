@@ -1,3 +1,4 @@
+| [fork-a-language](fork-a-language/) | W3 — bespoke to generic | Replace a language's parser with a FEEL-shaped one. The evaluator stays byte-identical, so both dialects share it and provably run the same semantics. |
 # Examples
 
 Each one is a **use case from [docs/deck-use-cases.md](../docs/deck-use-cases.md)**,
