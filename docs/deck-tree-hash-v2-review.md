@@ -26,27 +26,52 @@ proposal asks for but does not yet have.
 
 §2 lists the capabilities. Sorted by what they actually require:
 
-| Capability | Needs the root to *be* a Merkle root? |
-| --- | --- |
-| Subtree compare (“these decks share `lib/`”) | **No** |
-| Subtree vendor / pin | **No** |
-| Directory-node dedup, GC refcounts, “N packages share this tree” | **No** |
-| Federation `have`/`want` on subtree ids | **No** |
-| Partial `?meta` / browse by directory node | **No** |
-| **Inclusion proof against the sealed `treeHash`** | **Yes** |
+| Capability | Needs the root to *be* a Merkle root? | Actually pays? |
+| --- | --- | --- |
+| Subtree compare (“these decks share `lib/`”) | **No** | Yes — see §1.1 |
+| Subtree vendor / pin | **No** | Yes, if wanted as a feature |
+| Directory-node dedup, GC refcounts, “N packages share this tree” | **No** | Yes |
+| Partial `?meta` / browse by directory node | **No** | Marginal |
+| Federation `have`/`want` on subtree ids | **No** | **No — §2.2** |
+| **Inclusion proof against the sealed `treeHash`** | **Yes** | **No — §2** |
 
-Every “no” is satisfied by *computing and persisting* directory hashes as an
-index alongside the existing flat root. Two realms can negotiate on subtree
-ids, the store can refcount and dedup directory nodes, and browse can serve
-one node — while `treeHash` remains exactly what L1 says it is today.
-
-Only the last row needs L1 to change, because a proof must terminate in the
-thing that was signed.
+Every “no” in the middle column is satisfied by *computing and persisting*
+directory hashes as an index alongside the existing flat root, while
+`treeHash` remains exactly what L1 says it is today. Only the last row needs
+L1 to change, because a proof must terminate in the thing that was signed.
 
 So the proposal bundles **one law change** with **five pieces of additive
-storage work**. Unbundled, the storage work can land immediately: no golden
-regeneration, no signature churn, no “wipe your stores” note, no dual-stack
-question at all. That alone is a reason to split the PR.
+storage work**. That alone is a reason to split the PR — but the third
+column is the more important finding, and it is why this review recommends
+building much less than the proposal asks for.
+
+### 1.1 What the index is, precisely
+
+A fourth kind of thing in the store, beside the three that exist:
+
+```
+_objects/<aa>/<sha256>          one file's bytes            (exists)
+_trees/<aa>/<treeHash>.json     the packlist, flat          (exists)
+<pub>/<pkg>/meta.json           versions → treeHash         (exists)
+_nodes/<aa>/<dirHash>           one directory's children    (the index)
+```
+
+Each node lists only immediate children — `blob <sha256> <name>` or
+`tree <dirHash> <name>` — so a directory acquires a name that can be
+compared in one operation.
+
+It needs no law because it is **derived data**. Identity stays
+`sha256(flat manifest text)`. `rm -rf _nodes` breaks nothing and rebuilds by
+walking packlists. Since nothing resolves through it, it cannot make two
+implementations disagree — the only thing L1 exists to prevent.
+
+What it genuinely buys is **local subtree identity**: “is this fork's
+`src/math/` byte-identical to upstream's?” as one hex compare rather than a
+374-way diff, plus refcounts and dedup accounting at directory granularity.
+Those are O(1) local lookups, and the fat-directory problem in §2 does not
+touch them.
+
+What it does **not** buy is bytes on the wire (§2.2).
 
 ---
 
@@ -81,6 +106,31 @@ the case Deck actually serves.
 
 The third row is the shape where it works — deep and balanced, which is what
 a source repository looks like and what a published package does not.
+
+### 2.2 The same measurement kills `have`/`want` on subtree ids
+
+An earlier draft of this review claimed federation sync was a gain the index
+delivers without a law change. Measured, it is not — and the reason is that
+it is *the same walk*. Locating a one-file change by descending from the root
+and fetching each node whose hash differs costs the full child list of every
+fat ancestor, which is the proof cost under another name:
+
+| Tree | Flat packlist, gzipped | Index walk, median | Index cheaper for |
+| --- | ---: | ---: | ---: |
+| `eslint/lib` | 18,424 | **27,377** | 81/384 (21%) |
+| `typescript/lib` | 5,617 | **11,261** | 0/125 (0%) |
+| `deck packages/` | 5,116 | **1,609** | 117/117 (100%) |
+
+Identical figures to the proofs table, because it is the identical
+computation. For published-package shape the thing that beats the index is
+what the store can already do: ship the gzipped packlist in one round trip
+and diff it locally.
+
+This matters for how much to build. Stripped of the sync claim, the index
+buys **observability and accounting, not bytes** — worth having eventually,
+not worth prioritising now, since blob-level dedup already captures the disk
+savings. It earns its place when trees are deep and balanced, or if
+subtree-level pinning becomes a feature that is actually wanted.
 
 ### 2.1 And if you do want proofs, this is the wrong structure
 
@@ -186,11 +236,16 @@ index rather than the identity.
 
 **Land now (no law touched, no seals invalidated):**
 
-- Merkle subtree hashes persisted as a store index; refcounts and GC stats
-  over directory nodes; `have`/`want` negotiation on subtree ids. Proposal
-  H3, minus H1.
 - Close the Unicode normalisation hole in L1 and its conformance check.
+  This is the only item here that is a *bug*.
 - Correct §4.1 and choose a namespace ruling.
+
+**Build when there is a reason, not before:**
+
+- The subtree index (proposal H3, minus H1). It is cheap and it is the right
+  shape, but on today's evidence it buys accounting rather than bytes, and
+  blob-level dedup already has the disk savings. Deep-balanced trees or a
+  subtree-pinning feature are what would make it earn its place.
 
 **Decide later, on evidence:**
 
