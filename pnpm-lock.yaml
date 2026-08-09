@@ -99,7 +99,31 @@ importers:
         specifier: workspace:*
         version: link:../../packages/server
 
+  examples/prosemirror:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deck/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
   examples/shared:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deck/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
+  examples/three-js:
     dependencies:
       '@deck/core':
         specifier: workspace:*

@@ -12,24 +12,33 @@
 // happened than any prose could be. So the hub captures it and shows it.
 //
 //   pnpm demo
-//   open http://localhost:8789/
+//   open http://localhost:8789/  (hub shell; demos are https + http/2)
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { localFetch } from '@deck/server/tls';
+import { demoOrigin } from '../shared/depot.mjs';
 import { DEMOS, LAWS } from './demos.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const examplesDir = resolve(here, '..');
 const repoRoot = resolve(examplesDir, '..');
 const PORT = Number(process.env.PORT ?? 8789);
+const SHARED_TLS_DIR = join(examplesDir, 'shared', '.deck', 'certs');
 
 // One record per demo, mutated as its child process talks.
 const state = new Map(
   DEMOS.map((demo) => [
     demo.name,
-    { ...demo, status: 'starting', log: '', origin: `http://localhost:${demo.port}`, exit: null },
+    {
+      ...demo,
+      status: 'starting',
+      log: '',
+      origin: demoOrigin(demo.port),
+      exit: null,
+    },
   ]),
 );
 
@@ -46,7 +55,12 @@ function log(name, chunk) {
 function start(demo) {
   let child = spawn(process.execPath, ['demo.mjs'], {
     cwd: join(examplesDir, demo.dir),
-    env: { ...process.env, PORT: String(demo.port) },
+    env: {
+      ...process.env,
+      PORT: String(demo.port),
+      // Same leaf for every child so one browser trust warning covers all.
+      DECK_TLS_DIR: SHARED_TLS_DIR,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.stdout.on('data', (chunk) => log(demo.name, chunk.toString('utf8')));
@@ -85,7 +99,7 @@ async function poll() {
         return;
       }
       try {
-        let response = await fetch(entry.origin, { redirect: 'manual' });
+        let response = await localFetch(entry.origin, { redirect: 'manual' });
         if (response.status < 500) {
           entry.status = 'ready';
           console.log(`   ready  ${entry.name.padEnd(24)} ${entry.origin}`);

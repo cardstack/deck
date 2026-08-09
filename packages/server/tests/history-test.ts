@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
+import type { DeckServer } from '../src/server.ts';
 import { peekPacklist } from '@deck/core/pack';
 import { readStoreMeta, readStoredPack } from '@deck/core/store';
 import type {
@@ -84,7 +84,7 @@ class StubHistory implements HistoryBackend {
 module('history routes: serving states that were never published', function (
   hooks,
 ) {
-  let server: Server;
+  let server: DeckServer;
   let origin: string;
   let storeDir: string;
 
@@ -222,7 +222,7 @@ module('history routes: serving states that were never published', function (
 });
 
 module('history routes: a server without a backend', function (hooks) {
-  let server: Server;
+  let server: DeckServer;
   let origin: string;
   let storeDir: string;
 
@@ -272,7 +272,7 @@ if (!version) {
     let depotDir: string;
     let deckDir: string;
     let storeDir: string;
-    let server: Server;
+    let server: DeckServer;
     let origin: string;
     let history: JjCliHistory;
     let controller: DepotWatchController;

@@ -24,8 +24,8 @@ import { fileURLToPath } from 'node:url';
 import { hashBytes } from '@deck/core/tree-hash';
 import { packFromDir } from '@deck/core/pack';
 import { publishToStore, inspectStore } from '@deck/core/store';
-import { createDeckServer } from '@deck/server/server';
 import { storeDirFor } from '@deck/server/depot';
+import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -174,7 +174,7 @@ await writeFile(
   ) + '\n',
 );
 
-let server = createDeckServer({
+let server = createDemoServer({
   depots: [{ name: DEPOT, dir: depotDir, storeDir }],
   fallback: (req, res) => {
     res.writeHead(302, { location: `/${DEPOT}/app/viewer/index.html` });
@@ -182,8 +182,8 @@ let server = createDeckServer({
   },
 });
 server.listen(PORT, () => {
-  console.log(`\n5) serving both dialects\n`);
-  console.log(`      http://localhost:${PORT}/\n`);
+  console.log(`\n5) serving both dialects (HTTPS + HTTP/2)\n`);
+  console.log(`      ${demoOrigin(PORT)}/\n`);
   console.log(`      /${DEPOT}/${UPSTREAM.deck}@${UPSTREAM.version}/parse.js`);
   console.log(`      /${DEPOT}/${FORK.deck}@${FORK.version}/parse.js   ← the only difference\n`);
 });

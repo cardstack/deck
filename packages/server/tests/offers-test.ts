@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
+import type { DeckServer } from '../src/server.ts';
 import { forkDeck } from '@deck/core/fork';
 import { packFromDir } from '@deck/core/pack';
 import { publishToStore } from '@deck/core/store';
@@ -15,7 +15,7 @@ import { rebasePass, startRebaseDaemon } from '../src/rebase-daemon.ts';
 let root: string;
 let depotDir: string;
 let depot: DepotMount;
-let server: Server;
+let server: DeckServer;
 let origin: string;
 
 const APP_HTML = `<!doctype html>

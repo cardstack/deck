@@ -171,6 +171,53 @@ export const DEMOS = [
       { label: 'what latest names now', path: '/site/ui/card@1.1.0/card.js' },
     ],
   },
+  {
+    name: 'three-js',
+    dir: 'three-js',
+    port: 8797,
+    workload: 'W3 · own the library',
+    title: '374 files, and you may edit any of them',
+    lede: `three.js publishes both: a real per-file module tree in
+      <code>src/</code>, and the same library flattened into one 1.2 MB module
+      in <code>build/</code>. Almost every CDN hands you the second. Vendored
+      from the first, changing a shader is a text edit.`,
+    look: [
+      `Two WebGL canvases, one scene definition, run twice. Everything that differs comes from ONE file — a GLSL chunk in ${pill('deck', 'me/three@0.160.0-holo')}.`,
+      'The fork is a fresnel rim plus a screen-space scanline. Neither is reachable from a material option: <code>MeshPhongMaterial</code> has ~50 settings and none of them is either.',
+      '373 of 375 files are byte-identical, so the fork cost <b>2 objects</b> out of a 376-object store. Two independent copies would be 750.',
+      '0 rewritten during vendoring — the tree served IS the tree npm published, verifiable against the recorded GitHub commit.',
+      'The page times its own module loading: 374 modules, one request each, per side. That number is the honest cost of per-file delivery and what <code>docs/deck-efficient-delivery-spec.md</code> answers.',
+    ],
+    tries: [
+      { label: 'the one changed file', path: '/site/me/three@0.160.0-holo/src/renderers/shaders/ShaderChunk/opaque_fragment.glsl.js' },
+      { label: 'upstream, same path', path: '/site/lib/three@0.160.0/src/renderers/shaders/ShaderChunk/opaque_fragment.glsl.js' },
+      { label: 'the provenance record', path: '/site/lib/three@0.160.0/importmap.json' },
+    ],
+  },
+  {
+    name: 'prosemirror',
+    dir: 'prosemirror',
+    port: 8798,
+    workload: 'W3 · the honest gap',
+    title: 'Where per-file vendoring runs out',
+    lede: `Leaflet publishes 85 addressable modules. three.js publishes 374.
+      These eleven publish none — every declared entry is one rolled-up
+      module — and between them they ship <b>zero</b> source maps, so there is
+      nothing to recover either. This demo measures the refusal instead of
+      asserting it, and then shows what is left.`,
+    look: [
+      'The survey table is the measurement: 11 packages, every entry resolving to <b>1</b> module, and a maps column that is zero all the way down.',
+      `Source mode has no tree to take; map mode has nothing to recover from. This is the case ${pill('github', 'docs/deck-rebuild-sibling-proposal.md')} was written for.`,
+      'ProseMirror ships <code>src/</code> anyway — TypeScript. Sealed as its own deck with <b>no entry declared</b>, so it is addressable, hashed and diffable, and the server structurally refuses to import it. L11 as a shape, not a warning.',
+      'The editor is real and hermetic: 11 bundles vendored from npm tarballs and wired to each other by decklist alias, with one import-map scope per deck (L7).',
+      'Two decks, same library, same version — one readable and not runnable, one runnable and not readable. What joins them is a build, and <code>rebuild-v1</code> is still a proposal. The demo stops there rather than pretending.',
+    ],
+    tries: [
+      { label: 'readable, not runnable', path: '/site/src/prosemirror-model@1.25.11/src/schema.ts' },
+      { label: 'runnable, not readable', path: '/site/lib/prosemirror-model@1.25.11/dist/index.js' },
+      { label: "the app's scopes", path: '/site/app/editor/importmap.json' },
+    ],
+  },
 ];
 
 export const LAWS = [

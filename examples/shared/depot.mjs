@@ -12,8 +12,33 @@
 // asserts against them; a watcher publishing dev versions underneath those
 // assertions would make the numbers depend on how fast the disk is.
 
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { storeDirFor, watchDepot } from '@deck/server/depot';
+import { createDeckServer } from '@deck/server/server';
 import { createHistory } from '@deck/history/create';
+
+const SHARED_TLS_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '.deck',
+  'certs',
+);
+
+/**
+ * Every demo speaks HTTPS + HTTP/2. One shared localhost leaf under
+ * `examples/shared/.deck/certs` so accepting the browser warning once
+ * covers every demo port the hub starts.
+ */
+export function createDemoServer(options) {
+  if (!process.env.DECK_TLS_DIR) {
+    process.env.DECK_TLS_DIR = SHARED_TLS_DIR;
+  }
+  return createDeckServer({ ...options, tls: true });
+}
+
+export function demoOrigin(port, host = 'localhost') {
+  return `https://${host}:${port}`;
+}
 
 /**
  * A depot mount with tier-2 history attached when the machine can do it.
@@ -55,14 +80,16 @@ export function serveLive({ depot, server, onPublish }) {
 }
 
 /** The lines a demo prints to say the live half is on. */
-export function liveNotes({ depot, port }) {
+export function liveNotes({ depot, port, origin }) {
+  let base = origin ?? demoOrigin(port);
   let lines = [
     '   live: every save under depot/ auto-publishes @<base>-dev.N, and any',
     '         open page carrying /_live/hmr.js reloads itself',
+    '   http2: HTTPS + HTTP/2 (self-signed localhost leaf — accept once)',
   ];
   if (depot.history) {
     lines.push(
-      `   seals: http://localhost:${port}/${depot.name}/_history — every save, published or not`,
+      `   seals: ${base}/${depot.name}/_history — every save, published or not`,
     );
   }
   return lines.join('\n');

@@ -26,9 +26,14 @@ const hello = defineCommand({
   name: 'hello',
   group: 'start',
   summary: 'scaffold a live depot and serve it — start here',
-  usage: ['hello [dir] [--port <p>] [--publisher <p>]'],
+  usage: [
+    'hello [dir] [--port <p>] [--publisher <p>] [--https|--http]',
+  ],
   detail: `The runme: a working depot and a running server in one command.
 No install, no build, no config. Open the printed URL, edit app.js, reload.
+
+Defaults to HTTPS + HTTP/2 (self-signed localhost leaf). Pass --http for
+plain HTTP/1.1.
 
 Everything else in this CLI is a step you take later.`,
   async run(argv) {
@@ -38,6 +43,8 @@ Everything else in this CLI is a step you take later.`,
       options: {
         port: { type: 'string', default: DEFAULT_PORT },
         publisher: { type: 'string', default: 'you' },
+        https: { type: 'boolean', default: true },
+        http: { type: 'boolean', default: false },
       },
     });
     // The layout IS the addressing: <root>/<depot>/<publisher>/<package>
@@ -113,7 +120,8 @@ setInterval(() => {
       storeDir: storeDirFor(depotDir),
       history: attachment.backend,
     };
-    let server = createDeckServer({ depots: [depot] });
+    let useTls = values.http ? false : values.https;
+    let server = createDeckServer({ depots: [depot], tls: useTls });
     watchDepot({
       depot,
       onLiveChange: (event) => server.liveBus.emit(event),
@@ -126,7 +134,7 @@ setInterval(() => {
       Number(values.port),
       values.port === DEFAULT_PORT ? 10 : 1,
     );
-    let url = `http://localhost:${port}/${depotName}/${publisher}/${name}/index.html`;
+    let url = `${server.protocol}://localhost:${port}/${depotName}/${publisher}/${name}/index.html`;
     console.log(`
   ${exists ? 'Serving' : 'Created'} ${root}
 
@@ -166,7 +174,8 @@ const serve = defineCommand({
   summary: 'serve depots live, auto-publishing and sealing every save',
   usage: [
     'serve --root <dir> | --depot <dir> --as <name> ...',
-    '      [--port <p>] [--history auto|jj|historyd|none] [--rebase] [--onto <spec>]',
+    '      [--port <p>] [--https|--http] [--history auto|jj|historyd|none]',
+    '      [--rebase] [--onto <spec>]',
   ],
   detail: `--root is a directory OF depots: every child directory is one,
 named after itself, exactly as it is addressed.
@@ -193,6 +202,8 @@ editor; the server distributes what it finds.`,
         depot: { type: 'string', multiple: true, default: [] },
         as: { type: 'string', multiple: true, default: [] },
         port: { type: 'string', default: DEFAULT_PORT },
+        https: { type: 'boolean', default: true },
+        http: { type: 'boolean', default: false },
         history: { type: 'string', default: 'auto' },
         rebase: { type: 'boolean', default: false },
         onto: { type: 'string' },
@@ -200,7 +211,7 @@ editor; the server distributes what it finds.`,
     });
     if (!values.root && values.depot!.length === 0) {
       fail(
-        'usage: deck serve --root <dir> | --depot <dir> --as <name> [--port <p>] [--history <kind>]',
+        'usage: deck serve --root <dir> | --depot <dir> --as <name> [--port <p>] [--https|--http] [--history <kind>]',
       );
     }
     if (values.depot!.length !== values.as!.length) {
@@ -238,7 +249,8 @@ editor; the server distributes what it finds.`,
         history: attachment.backend,
       });
     }
-    let server = createDeckServer({ depots });
+    let useTls = values.http ? false : values.https;
+    let server = createDeckServer({ depots, tls: useTls });
     if (values.rebase) {
       for (let depot of depots) {
         startRebaseDaemon({
@@ -271,24 +283,25 @@ editor; the server distributes what it finds.`,
       await controller.rescan();
     }
     let port = Number(values.port);
+    let origin = `${server.protocol}://localhost:${port}`;
     server.listen(port, async () => {
-      console.log(`deck server on http://localhost:${port} (read-only)`);
       console.log(
-        `  browse: http://localhost:${port}/  — depots, packages, versions`,
+        `deck server on ${origin} (read-only${
+          server.protocol === 'https' ? ', HTTP/2' : ''
+        })`,
       );
-      console.log(
-        `  hmr:  http://localhost:${port}/_live/hmr.js → SSE /_live/events`,
-      );
+      console.log(`  browse: ${origin}/  — depots, packages, versions`);
+      console.log(`  hmr:  ${origin}/_live/hmr.js → SSE /_live/events`);
       for (let depot of depots) {
         for (let deck of await discoverDecks(depot.dir)) {
           console.log(
-            `  live: http://localhost:${port}/${depot.name}/${deck.name}/ ` +
+            `  live: ${origin}/${depot.name}/${deck.name}/ ` +
               `— auto-publishes @<base>-dev.N (tag: dev)`,
           );
         }
         if (depot.history) {
           console.log(
-            `  seals: http://localhost:${port}/${depot.name}/_history — every save, published or not`,
+            `  seals: ${origin}/${depot.name}/_history — every save, published or not`,
           );
         }
       }

@@ -43,9 +43,9 @@ import { pack } from '@deck/core/pack';
 import { discoverOffers } from '@deck/core/offer';
 import { publishToStore } from '@deck/core/store';
 import { readTreeFromDir } from '@deck/core/tree';
-import { createDeckServer } from '@deck/server/server';
 import { rebasePass } from '@deck/server/rebase-daemon';
 import { storeDirFor } from '@deck/server/depot';
+import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
 import { publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -286,7 +286,7 @@ console.log(`   ${applied.rebased} rebased on the first pass, ${settled.rebased}
 // ---------------------------------------------------------------------------
 // 7. Serve. The reviewer's console is the app itself.
 // ---------------------------------------------------------------------------
-let server = createDeckServer({
+let server = createDemoServer({
   depots: [depot],
   fallback: (req, res) => {
     res.writeHead(302, { location: `/${DEPOT}/${APP}@1.0.0/index.html` });
@@ -294,8 +294,8 @@ let server = createDeckServer({
   },
 });
 server.listen(PORT, () => {
-  console.log(`\n7) serving — four views of one sealed page\n`);
-  console.log(`      http://localhost:${PORT}/`);
+  console.log(`\n7) serving — four views of one sealed page (HTTPS + HTTP/2)\n`);
+  console.log(`      ${demoOrigin(PORT)}/`);
   console.log(`      …/index.html                                  the release, 1.4.0`);
   console.log(`      …/index.html?with=std/currencies@1.5.0        the next release`);
   console.log(`      …/index.html?with=std/currencies=ana/currencies   ana's proposal, live`);

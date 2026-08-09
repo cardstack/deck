@@ -18,3 +18,5 @@ examples/two-agents/depot/agent-a/
 examples/two-agents/depot/agent-b/
 examples/variations/depot/try/
 node_modules/
+examples/three-js/depot/app/studio/build.json
+examples/prosemirror/depot/app/editor/build.json

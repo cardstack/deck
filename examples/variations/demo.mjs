@@ -38,8 +38,13 @@ import {
   releaseVersion,
 } from '@deck/core/store';
 import { readTreeFromDir } from '@deck/core/tree';
-import { createDeckServer } from '@deck/server/server';
-import { liveNotes, openDemoDepot, serveLive } from '../shared/depot.mjs';
+import {
+  createDemoServer,
+  demoOrigin,
+  liveNotes,
+  openDemoDepot,
+  serveLive,
+} from '../shared/depot.mjs';
 import { publishShared } from '../shared/publish.mjs';
 import { resetDemoDepot } from '../shared/reset.mjs';
 import { BRIEF, VARIATIONS } from './agent.mjs';
@@ -263,7 +268,7 @@ let choiceBody = Buffer.from(
   json({ brief: BRIEF, chosen: CHOSEN, command, variations: state }),
   'utf8',
 );
-let server = createDeckServer({
+let server = createDemoServer({
   depots: [depot],
   fallback: (request, response) => {
     if (request.url?.startsWith('/choice.json')) {
@@ -279,9 +284,10 @@ let server = createDeckServer({
   },
 });
 serveLive({ depot, server });
+let origin = demoOrigin(PORT);
 server.listen(PORT, () => {
-  console.log('\n5) serving\n');
-  console.log(`      http://localhost:${PORT}/`);
+  console.log('\n5) serving (HTTPS + HTTP/2)\n');
+  console.log(`      ${origin}/`);
   for (let variation of state) {
     console.log(
       `      /${DEPOT}/app/preview/preview.html?${variation.with
@@ -291,6 +297,6 @@ server.listen(PORT, () => {
     );
     console.log(`         variation ${variation.id.toUpperCase()} — ${variation.title}`);
   }
-  console.log(`\n${liveNotes({ depot, port: PORT })}\n`);
+  console.log(`\n${liveNotes({ depot, port: PORT, origin })}\n`);
   console.log(`   Re-run with CHOOSE=a or CHOOSE=c to promote a different one.\n`);
 });

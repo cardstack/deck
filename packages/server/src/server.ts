@@ -5,8 +5,15 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
+import {
+  createSecureServer as createHttp2SecureServer,
+  type Http2SecureServer,
+  type Http2ServerRequest,
+  type Http2ServerResponse,
+} from 'node:http2';
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { resolveTlsMaterials, type TlsOption } from './tls.ts';
 import { DECKBOOK_PATHS, loadDeckbookHtml } from './deckbook.ts';
 import { readZipEntry } from '@deck/core/canonical-zip';
 import {
@@ -179,15 +186,25 @@ export interface DeckServerOptions {
   depots: DepotMount[];
   // Optional fallthrough for anything that is not a Deck route (demo
   // pages, health checks). Without it, non-routes 404.
+  // Typed against the Node HTTP compat shapes — `allowHTTP1` h2 requests
+  // duck-type the same `writeHead` / `end` surface at runtime.
   fallback?: (req: IncomingMessage, res: ServerResponse) => void;
   // In-process bus for live-tree change notifications (SSE). Created
   // automatically when omitted; pass one in to share with watchers.
   liveBus?: LiveBus;
+  // When true (or when cert/key materials are passed), listen with
+  // `http2.createSecureServer({ allowHTTP1: true })` so browsers get
+  // HTTP/2 multiplexing for many-module pages. `true` mints/loads a
+  // localhost leaf via `resolveTlsMaterials` (see `./tls.ts`). Omit for
+  // plain HTTP/1.1 — what the unit tests use.
+  tls?: TlsOption;
 }
 
-export interface DeckServer extends Server {
+export type DeckServer = (Server | Http2SecureServer) & {
   liveBus: LiveBus;
-}
+  // 'https' always means HTTP/2 is offered (HTTP/1.1 still accepted).
+  protocol: 'http' | 'https';
+};
 
 // Resolve a possibly-mounted path against a pack: `a/b.js` reads directly;
 // `vendor/x.pack.zip!/inner.js` opens the nested pack (depth-capped).
@@ -1767,7 +1784,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     );
   }
 
-  let server = createServer((req, res) => {
+  let onRequest = (req: IncomingMessage, res: ServerResponse) => {
     handle(req, res).catch((error: unknown) => {
       if (res.headersSent) {
         res.destroy();
@@ -1782,7 +1799,28 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         'no-store',
       );
     });
-  }) as DeckServer;
+  };
+
+  let tls = resolveTlsMaterials(options.tls);
+  let server = (
+    tls
+      ? createHttp2SecureServer(
+          {
+            cert: tls.cert,
+            key: tls.key,
+            // Browsers that cannot negotiate h2 still load the page.
+            allowHTTP1: true,
+          },
+          // Compat listener: Http2ServerRequest/Response satisfy the
+          // IncomingMessage/ServerResponse methods we actually call.
+          onRequest as unknown as (
+            req: Http2ServerRequest,
+            res: Http2ServerResponse,
+          ) => void,
+        )
+      : createServer(onRequest)
+  ) as DeckServer;
   server.liveBus = liveBus;
+  server.protocol = tls ? 'https' : 'http';
   return server;
 }

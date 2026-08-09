@@ -1,0 +1,88 @@
+{
+  "imports": {
+    "prosemirror-model/": "/site/lib/prosemirror-model@1.25.11/",
+    "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+    "prosemirror-state/": "/site/lib/prosemirror-state@1.4.4/",
+    "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+    "prosemirror-view/": "/site/lib/prosemirror-view@1.42.2/",
+    "prosemirror-view": "/site/lib/prosemirror-view@1.42.2/dist/index.js",
+    "prosemirror-keymap/": "/site/lib/prosemirror-keymap@1.2.3/",
+    "prosemirror-keymap": "/site/lib/prosemirror-keymap@1.2.3/dist/index.js",
+    "prosemirror-commands/": "/site/lib/prosemirror-commands@1.7.2/",
+    "prosemirror-commands": "/site/lib/prosemirror-commands@1.7.2/dist/index.js",
+    "prosemirror-history/": "/site/lib/prosemirror-history@1.5.0/",
+    "prosemirror-history": "/site/lib/prosemirror-history@1.5.0/dist/index.js",
+    "prosemirror-schema-basic/": "/site/lib/prosemirror-schema-basic@1.2.4/",
+    "prosemirror-schema-basic": "/site/lib/prosemirror-schema-basic@1.2.4/dist/index.js",
+    "ui/pills/": "/site/ui/pills@1.0.0/",
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js"
+  },
+  "deck": {
+    "packages": {
+      "editor": {
+        "version": "1.0.0",
+        "entry": "$DECK/editor.js"
+      }
+    },
+    "dependencies": {
+      "prosemirror-model": "lib/prosemirror-model@^1.25.0",
+      "prosemirror-state": "lib/prosemirror-state@^1.4.0",
+      "prosemirror-view": "lib/prosemirror-view@^1.42.0",
+      "prosemirror-keymap": "lib/prosemirror-keymap@^1.2.0",
+      "prosemirror-commands": "lib/prosemirror-commands@^1.7.0",
+      "prosemirror-history": "lib/prosemirror-history@^1.5.0",
+      "prosemirror-schema-basic": "lib/prosemirror-schema-basic@^1.2.0",
+      "ui/pills": "^1.0.0"
+    }
+  },
+  "scopes": {
+    "/site/lib/prosemirror-commands@1.7.2/": {
+      "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+      "prosemirror-model/": "/site/lib/prosemirror-model@1.25.11/",
+      "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+      "prosemirror-state/": "/site/lib/prosemirror-state@1.4.4/",
+      "prosemirror-transform": "/site/lib/prosemirror-transform@1.12.0/dist/index.js",
+      "prosemirror-transform/": "/site/lib/prosemirror-transform@1.12.0/"
+    },
+    "/site/lib/prosemirror-history@1.5.0/": {
+      "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+      "prosemirror-state/": "/site/lib/prosemirror-state@1.4.4/",
+      "prosemirror-transform": "/site/lib/prosemirror-transform@1.12.0/dist/index.js",
+      "prosemirror-transform/": "/site/lib/prosemirror-transform@1.12.0/",
+      "rope-sequence": "/site/lib/rope-sequence@1.3.4/dist/index.js",
+      "rope-sequence/": "/site/lib/rope-sequence@1.3.4/"
+    },
+    "/site/lib/prosemirror-keymap@1.2.3/": {
+      "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+      "prosemirror-state/": "/site/lib/prosemirror-state@1.4.4/",
+      "w3c-keyname": "/site/lib/w3c-keyname@2.2.8/index.js",
+      "w3c-keyname/": "/site/lib/w3c-keyname@2.2.8/"
+    },
+    "/site/lib/prosemirror-model@1.25.11/": {
+      "orderedmap": "/site/lib/orderedmap@2.1.1/dist/index.js",
+      "orderedmap/": "/site/lib/orderedmap@2.1.1/"
+    },
+    "/site/lib/prosemirror-schema-basic@1.2.4/": {
+      "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+      "prosemirror-model/": "/site/lib/prosemirror-model@1.25.11/"
+    },
+    "/site/lib/prosemirror-state@1.4.4/": {
+      "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+      "prosemirror-model/": "/site/lib/prosemirror-model@1.25.11/",
+      "prosemirror-transform": "/site/lib/prosemirror-transform@1.12.0/dist/index.js",
+      "prosemirror-transform/": "/site/lib/prosemirror-transform@1.12.0/"
+    },
+    "/site/lib/prosemirror-transform@1.12.0/": {
+      "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+      "prosemirror-model/": "/site/lib/prosemirror-model@1.25.11/"
+    },
+    "/site/lib/prosemirror-view@1.42.2/": {
+      "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+      "prosemirror-model/": "/site/lib/prosemirror-model@1.25.11/",
+      "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+      "prosemirror-state/": "/site/lib/prosemirror-state@1.4.4/",
+      "prosemirror-transform": "/site/lib/prosemirror-transform@1.12.0/dist/index.js",
+      "prosemirror-transform/": "/site/lib/prosemirror-transform@1.12.0/"
+    }
+  }
+}

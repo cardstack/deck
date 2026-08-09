@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
+import type { DeckServer } from '../src/server.ts';
 import { pack, unpack } from '@deck/core/pack';
 import { publishToStore, readStoreMeta } from '@deck/core/store';
 import { createDeckServer } from '../src/server.ts';
@@ -13,7 +13,7 @@ import { storeDirFor, type DepotMount } from '../src/depot.ts';
 let root: string;
 let depotDir: string;
 let storeDir: string;
-let server: Server;
+let server: DeckServer;
 let origin: string;
 
 const CONFETTI_JS_10 = `import { COLORS } from './util/colors.js';\nexport function confetti() { return COLORS; }\n`;

@@ -13,15 +13,15 @@
 // and the after, both addressable, forever.
 //
 //   pnpm --filter @deck/example-codelist demo
-//   open http://localhost:8790/
+//   open https://localhost:8790/
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mergeTrees } from '@deck/core/merge';
 import { pack } from '@deck/core/pack';
 import { publishToStore } from '@deck/core/store';
-import { createDeckServer } from '@deck/server/server';
 import { storeDirFor } from '@deck/server/depot';
+import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -192,7 +192,7 @@ await writeFile(
   JSON.stringify({ depot: DEPOT, states }, null, 2) + '\n',
 );
 
-let server = createDeckServer({
+let server = createDemoServer({
   depots: [{ name: DEPOT, dir: depotDir, storeDir }],
   fallback: (req, res) => {
     res.writeHead(302, { location: `/${DEPOT}/app/viewer/index.html` });
@@ -200,8 +200,8 @@ let server = createDeckServer({
   },
 });
 server.listen(PORT, () => {
-  console.log(`\n6) serving — every state above is an immutable URL\n`);
-  console.log(`      http://localhost:${PORT}/\n`);
+  console.log(`\n6) serving — every state above is an immutable URL (HTTPS + HTTP/2)\n`);
+  console.log(`      ${demoOrigin(PORT)}/\n`);
   for (let s of states) {
     console.log(`      /${DEPOT}/${s.deck}@${s.version}/currencies.json`);
   }

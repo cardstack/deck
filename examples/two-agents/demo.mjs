@@ -34,8 +34,13 @@ import { readTreeFromDir } from '@deck/core/tree';
 import { treeHashFromDir } from '@deck/core/tree-hash';
 import { storeDirFor, watchDepot } from '@deck/server/depot';
 import { rebasePass } from '@deck/server/rebase-daemon';
-import { createDeckServer } from '@deck/server/server';
-import { liveNotes, openDemoDepot, serveLive } from '../shared/depot.mjs';
+import {
+  createDemoServer,
+  demoOrigin,
+  liveNotes,
+  openDemoDepot,
+  serveLive,
+} from '../shared/depot.mjs';
 import { publishShared } from '../shared/publish.mjs';
 import { resetDemoDepot } from '../shared/reset.mjs';
 import { RULES, mergeWithPolicy, resolveByPolicy } from './resolve.mjs';
@@ -409,7 +414,7 @@ await publishToStore(
 );
 
 let decisionsBody = Buffer.from(json(resolution.decisions), 'utf8');
-let server = createDeckServer({
+let server = createDemoServer({
   depots: [depot],
   fallback: (request, response) => {
     if (request.url?.startsWith('/decisions.json')) {
@@ -430,14 +435,15 @@ let server = createDeckServer({
 // third agent joining — and it publishes and seals like the other two.
 serveLive({ depot, server });
 
+let origin = demoOrigin(PORT);
 server.listen(PORT, async () => {
-  console.log(`\n7) serving\n`);
-  console.log(`      http://localhost:${PORT}/`);
+  console.log(`\n7) serving (HTTPS + HTTP/2)\n`);
+  console.log(`      ${origin}/`);
   console.log(`      /${DEPOT}/_offers                          the queue`);
   console.log(`      /${DEPOT}/agent-a/tokens/tokens.json       agent A, live`);
   console.log(`      /${DEPOT}/agent-b/tokens/tokens.json       agent B, live`);
   console.log(`      /${DEPOT}/${UPSTREAM}@1.3.0/merge-policy.json   the rules, sealed\n`);
-  console.log(liveNotes({ depot, port: PORT }));
+  console.log(liveNotes({ depot, port: PORT, origin }));
   console.log(`\n   Edit depot/agent-a/tokens/tokens.json and reload — you are`);
   console.log(`   the third agent, and your save is sealed like theirs.\n`);
 });

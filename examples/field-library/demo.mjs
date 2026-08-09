@@ -37,8 +37,9 @@ import { inspectStore, publishToStore, readStoredPack } from '@deck/core/store';
 import { peekPacklist } from '@deck/core/pack';
 import { readTreeFromDir } from '@deck/core/tree';
 import { vendorFromNpmSource } from '@deck/core/vendor-npm';
-import { createDeckServer } from '@deck/server/server';
 import { storeDirFor } from '@deck/server/depot';
+import { localFetch } from '@deck/server/tls';
+import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
 import { publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -294,29 +295,30 @@ if (drifted.length > 0) {
 // ---------------------------------------------------------------------------
 // 5. Serve. Everything is at rest: no write endpoint, no login.
 // ---------------------------------------------------------------------------
-let server = createDeckServer({
+let server = createDemoServer({
   depots: [{ name: DEPOT, dir: depotDir, storeDir }],
   fallback: (req, res) => {
     res.writeHead(302, { location: `/${DEPOT}/${APP}@${VERSION}/index.html` });
     res.end();
   },
 });
+let origin = demoOrigin(PORT);
 server.listen(PORT, async () => {
   // What the sealed page advertises up front. A cold browser learns every URL
   // from the document instead of discovering them one graph level at a time —
   // and the walk has to run the same import-map algorithm, scopes included, or
   // it stops at the first scoped edge and reports full coverage of a graph it
   // only half-walked.
-  let head = await fetch(
-    `http://127.0.0.1:${PORT}/${DEPOT}/${APP}@${VERSION}/index.html`,
+  let head = await localFetch(
+    `${demoOrigin(PORT, '127.0.0.1')}/${DEPOT}/${APP}@${VERSION}/index.html`,
     { method: 'HEAD' },
   );
   let closure = head.headers.get('x-deck-preload');
 
-  console.log(`\n5) serving\n`);
+  console.log(`\n5) serving (HTTPS + HTTP/2)\n`);
   console.log(`   modulepreload closure advertised: ${closure ?? 'none'}`);
   console.log(`   (links emitted / modules reachable — the rest is over budget)\n`);
-  console.log(`      http://localhost:${PORT}/\n`);
+  console.log(`      ${origin}/\n`);
   console.log(`      /${DEPOT}/${APP}@${VERSION}/index.html`);
   console.log(`      /${DEPOT}/fields/swatch@${VERSION}/importmap.json        ← the lock, readable`);
   console.log(`      /${DEPOT}/lib/chroma-js@3.1.2/index.js`);

@@ -220,10 +220,18 @@ Content encoding is hop packaging.
 
 ### 3.2 Behaviour
 
-**[A10] Origin is gzip-only. Brotli, HTTP/2 and HTTP/3 are Cloudflare's
-job.** Compressing to brotli at the origin would burn CPU on every cache
-miss producing bytes the edge re-encodes anyway; the edge does it once and
-caches it closer to the client. Origin does the cheap universal thing.
+**[A10] Origin is gzip-only for content coding. Brotli and HTTP/3 are
+Cloudflare's job.** Compressing to brotli at the origin would burn CPU on
+every cache miss producing bytes the edge re-encodes anyway; the edge does
+it once and caches it closer to the client. Origin does the cheap universal
+thing (gzip).
+
+**[A11] Local / reference origin MAY speak HTTP/2 over TLS.** Browsers will
+not multiplex cleartext HTTP/1.1 the way they do h2, so `createDeckServer({
+tls: true })` (and every example via `createDemoServer`) terminates a
+localhost leaf and offers h2 with `allowHTTP1`. Production still puts
+Cloudflare (or equivalent) in front for brotli + H3; the Node server does
+not implement those.
 
 | Request | Response body encoding |
 | --- | --- |
@@ -494,7 +502,8 @@ and terser is pure JS.
 | A7 | precompress once at seal time into `_objects/<sha>.br` | addition |
 | A8 | scope-aware closure; byte budget, breadth-first, reported; preload must match the real request | resolves Q3 |
 | A9 | WAN measurement gates the §4.4 claim | addition |
-| A10 | origin is gzip-only; brotli + h2/h3 are Cloudflare's, so A7 is withdrawn | ruling |
+| A10 | origin is gzip-only for content coding; brotli + h3 are Cloudflare's, so A7 is withdrawn | ruling |
+| A11 | reference origin MAY speak HTTP/2 over TLS for local many-module demos | amendment |
 
 ---
 
@@ -506,7 +515,8 @@ and terser is pure JS.
 | Import-map injection | Built & tested |
 | Modulepreload injection, scope-aware closure | **Built & tested** |
 | Wire gzip at origin | **Built & tested** |
-| Brotli, HTTP/2, HTTP/3 | **Cloudflare's** — deliberately not at origin [A10] |
+| HTTP/2 over TLS at origin (`tls: true`) | **Built & tested** [A11] |
+| Brotli, HTTP/3 | **Cloudflare's** — deliberately not at origin [A10] |
 | Minify derived release (`deck derive`, terser) | **Built & tested** |
 | `deck verify-derivation` | **Built & tested** |
 | Bundling as identity | **Ruled out** |
