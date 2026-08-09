@@ -96,12 +96,31 @@ const query = (key, url) =>
 
 const HISTORY = '_history';
 
-/** `/depot/publisher/package` → the parts, for scoping. */
+/**
+ * `/depot/publisher/package/some/dir/file.js` → the parts, for scoping.
+ *
+ * The tail used to be dropped, so deep-linking a FILE quietly widened to its
+ * whole deck: `?at=/hub/app/run/run.js` and `?at=/hub/app/run` produced
+ * identical feeds. A link that silently answers a broader question than the
+ * one asked is worse than one that fails, because nothing on screen says so
+ * — and "what happened to this file" is the most common thing anyone wants
+ * from a change feed.
+ */
 function parseAddress(at) {
   let clean = (at ?? '').replace(/^\/+/, '').replace(/\/+$/, '');
   if (!clean) return {};
-  let [depot, publisher, pkg] = clean.split('/');
-  return { depot, publisher, pkg: pkg?.split('@')[0] };
+  let [depot, publisher, pkgAndSpec, ...rest] = clean.split('/');
+  return {
+    depot,
+    publisher,
+    pkg: pkgAndSpec?.split('@')[0],
+    path: rest.length ? rest.join('/') : undefined,
+    // Depot-relative, which is the shape `filesSummary` speaks. The depot's
+    // mount name is the server's business and never appears in a seal.
+    within: [publisher, pkgAndSpec?.split('@')[0], ...rest]
+      .filter(Boolean)
+      .join('/'),
+  };
 }
 
 async function collect(scope) {
@@ -145,12 +164,28 @@ async function collect(scope) {
           // that letter is the difference between adding a file and editing
           // one. It used to be stripped, which threw away the only thing in
           // the summary that distinguishes two very different acts.
-          let changes = (attrs.filesSummary ?? []).map((line) => {
-            let match = line.match(/^([AMDR])\s+(.*)$/);
-            return match
-              ? { how: match[1], path: match[2] }
-              : { how: 'M', path: line };
-          });
+          let changes = (attrs.filesSummary ?? [])
+            .map((line) => {
+              let match = line.match(/^([AMDR])\s+(.*)$/);
+              return match
+                ? { how: match[1], path: match[2] }
+                : { how: 'M', path: line };
+            })
+            // `.deck/` IS NOT CONTENT, wherever it turns up.
+            //
+            // It holds the store and the claim register — machinery with a
+            // half-hour lifetime — and `.deck` is in DEFAULT_IGNORE precisely
+            // so it never enters a tree. But auto-track only governs files
+            // jj has not seen: a depot whose timeline was started outside
+            // that config has them tracked already, and jj keeps tracking
+            // what it tracks. Claims then churn into the feed as edits,
+            // which is the exact opposite of the guarantee.
+            //
+            // Filtering here is the honest defence: whatever jj happens to
+            // carry, a change to machinery is not a change to the work.
+            .filter((change) => !change.path.startsWith('.deck/'));
+          // A save that touched nothing else was pure machinery.
+          if (!changes.length) return;
           let touched = changes.map((change) => change.path);
           let letters = new Set(changes.map((change) => change.how));
           // The subject of a save is the DECK it landed in, not the list of
@@ -256,6 +291,22 @@ function previousVersion(deck, version) {
  */
 function inScope(row, scope) {
   if (scope.depot && row.depot !== scope.depot) return false;
+  // A path scope is answered by what the change TOUCHED, not by which deck it
+  // was filed under. A Step touching six files across three decks is in scope
+  // for any of them, and only the file list can say so.
+  if (scope.path) {
+    let files = row.files ?? (row.changes ?? []).map((change) => change.path);
+    if (!files.length) {
+      // Versions and offers carry no file list, so a path scope cannot
+      // include them without guessing. Falling back to the deck would let a
+      // publish of the whole package answer "what happened to this one
+      // file", which is exactly the widening this scope exists to stop.
+      return false;
+    }
+    return files.some(
+      (path) => path === scope.within || path.startsWith(`${scope.within}/`),
+    );
+  }
   if (scope.pkg) return row.pkg === scope.pkg;
   if (scope.publisher) return row.publisher === scope.publisher;
   return true;
@@ -288,6 +339,9 @@ const KINDS = [
 const NOISE = ['auto-saved'];
 const DEFAULT_KINDS = KINDS.filter((kind) => !NOISE.includes(kind));
 const ATTENTION = ['conflicted', 'proposed'];
+
+/** Grouping is on unless turned off; the URL carries the choice. */
+const grouped = () => new URLSearchParams(location.search).get('group') !== '0';
 
 const isDev = (version) => /-dev\.\d+$/.test(version);
 
@@ -334,9 +388,13 @@ function go(next = {}) {
   let at = 'at' in next ? next.at : currentAt();
   let kinds = 'kind' in next ? next.kind : currentKinds();
   let sort = 'sort' in next ? next.sort : currentSort();
+  // Only the non-default is written, so a plain URL stays plain and a shared
+  // link carries a choice only when one was actually made.
+  let group = 'group' in next ? next.group : grouped() ? undefined : '0';
   if (at) query$.set('at', at);
   if (kinds.join(',') !== DEFAULT_KINDS.join(',')) query$.set('kind', kinds.join(','));
   if (sort) query$.set('sort', sort);
+  if (group) query$.set('group', group);
   let text = query$.toString();
   history.pushState({}, '', text ? `?${decodeURIComponent(text)}` : location.pathname);
   render();
@@ -405,6 +463,86 @@ const MARK = {
  * past. Everything else is reachable by typing in the filter, which handles
  * "just the releases" without spending a control on it.
  */
+/**
+ * SESSIONS, NOT SAVES — the default, because a save is not a unit of work.
+ *
+ * Thirty consecutive rows reading `edited vale/sale ~index.html · 17m ago` is
+ * a correct feed and an unreadable one. Every row is true and none of them is
+ * news; the thing that actually happened — "someone spent four minutes on the
+ * sale page" — is not on screen at all, because it is the shape of the run
+ * rather than any row in it.
+ *
+ * So consecutive changes to one deck collapse into one entry carrying the
+ * span, the count and the distinct files. Consecutive in FEED order, so this
+ * follows whatever sort is applied and never reorders anything to make a
+ * group: two runs separated by work elsewhere stay two groups, which is
+ * true — the person went away and came back.
+ *
+ * And a group's `diff →` is the best link in the app: newest state against
+ * the state before the run began, which lands in the multi-file review. One
+ * click from "someone worked on this for four minutes" to every line of it.
+ *
+ * Off with `s`, because sometimes you do want the tape.
+ */
+const GROUP_GAP_MS = 5 * 60 * 1000;
+
+/**
+ * ONLY THE HIGH-FREQUENCY KINDS GROUP.
+ *
+ * Steps arrive by the dozen while somebody is editing — that is the flood
+ * this exists for. A Version is the opposite: rare, deliberate, and the
+ * result of a decision somebody made on purpose. Folding two publishes into
+ * "2 versions" would hide the only rows in the feed that were meant to be
+ * individually noticed.
+ *
+ * `proposed` / `conflicted` never reach here — the attention band lifts them
+ * out first — but they are listed anyway, because a set that says what it
+ * excludes survives someone changing the band later.
+ */
+const GROUPABLE = new Set(['added', 'edited', 'removed', 'renamed', 'saved', 'auto-saved']);
+
+function groupRuns(rows) {
+  let out = [];
+  for (let row of rows) {
+    let last = out.at(-1);
+    let sameDeck =
+      last &&
+      GROUPABLE.has(row.kind) &&
+      GROUPABLE.has(last.kind) &&
+      last.depot === row.depot &&
+      last.publisher === row.publisher &&
+      last.pkg === row.pkg;
+    let when = Date.parse(row.when ?? '');
+    let lastWhen = last ? Date.parse(last.oldestWhen ?? last.when ?? '') : NaN;
+    let close =
+      Number.isFinite(when) &&
+      Number.isFinite(lastWhen) &&
+      Math.abs(lastWhen - when) < GROUP_GAP_MS;
+
+    if (sameDeck && close) {
+      last.count += 1;
+      last.kinds.add(row.kind);
+      for (let file of row.files ?? []) last.paths.add(file);
+      // Feed order is newest-first, so each further row is OLDER: the group's
+      // `vs` walks back with it, which is what makes the group diff span the
+      // whole run rather than only its last save.
+      last.oldestWhen = row.when;
+      last.vs = row.vs;
+      last.members.push(row);
+      continue;
+    }
+    out.push({
+      ...row,
+      count: 1,
+      kinds: new Set([row.kind]),
+      paths: new Set(row.files ?? []),
+      oldestWhen: row.when,
+      members: [row],
+    });
+  }
+  return out;
+}
+
 function controls(all, kinds) {
   let noise = all.filter((row) => NOISE.includes(row.kind)).length;
   let showing = kinds.includes('auto-saved');
@@ -414,6 +552,8 @@ function controls(all, kinds) {
       ? `<button class="switch" data-role="noise"${showing ? ' aria-pressed="true"' : ''}>` +
         `<i></i>auto-saves <b>${noise}</b></button>`
       : '') +
+    `<button class="switch" data-role="grouped"${grouped() ? ' aria-pressed="true"' : ''}>` +
+    `<i></i>group runs</button>` +
     sortBar(currentSort()) +
     `</div>`
   );
@@ -449,7 +589,18 @@ function scopeBar(scope, at) {
   if (scope.depot) trail.push([scope.depot, `/${scope.depot}`, 's-depot']);
   if (scope.publisher)
     trail.push([scope.publisher, `/${scope.depot}/${scope.publisher}`, 's-publisher']);
-  if (scope.pkg) trail.push([scope.pkg, at, 's-package']);
+  let deckAt = `/${scope.depot}/${scope.publisher}/${scope.pkg}`;
+  if (scope.pkg) trail.push([scope.pkg, deckAt, 's-package']);
+  // Path segments, so the bar says exactly what the feed is filtered to. It
+  // stopped at the deck while the filter now goes to the file, and a subject
+  // line that under-reports the scope is a subject line that lies.
+  if (scope.path) {
+    let sofar = [];
+    for (let segment of scope.path.split('/')) {
+      sofar.push(segment);
+      trail.push([segment, `${deckAt}/${sofar.join('/')}`, '']);
+    }
+  }
   subject.trail = trail
     .map(([label, value, cls], index) =>
       index === trail.length - 1
@@ -474,6 +625,7 @@ function scopeBar(scope, at) {
  * only descends to the second when the first is interesting.
  */
 function entry(row) {
+  if (row.count > 1) return groupEntry(row);
   let fresh = freshness(row.when);
   let browse = row.vs ? `/browse?at=${row.at}&vs=${row.vs}` : `/browse?at=${row.at}`;
   let detail =
@@ -514,6 +666,57 @@ function entry(row) {
     `<a class="entry-go" href="${esc(browse)}">${row.vs ? 'diff' : 'open'} →</a>` +
     `</li>`
   );
+}
+
+/**
+ * A run of work, as one row.
+ *
+ * The span is the headline — "four minutes" is the thing a person recognises
+ * as an episode, and no single save carries it. Then the count, then the
+ * distinct files, which is the answer to "what was being worked on" and is
+ * usually three or four names rather than thirty repetitions of one.
+ *
+ * `diff →` spans the whole run: the newest state against the state before it
+ * began. That lands in the multi-file review, so one click goes from "someone
+ * spent four minutes here" to every line they changed.
+ */
+function groupEntry(row) {
+  let fresh = freshness(row.when);
+  let browse = row.vs ? `/browse?at=${row.at}&vs=${row.vs}` : `/browse?at=${row.at}`;
+  let files = [...row.paths].map((path) => path.split('/').slice(2).join('/') || path);
+  let verbs = [...row.kinds];
+  return (
+    `<li class="entry" data-kind="${esc(verbs[0])}" data-group="1" ` +
+    `style="--fresh:${fresh.toFixed(3)}" ` +
+    `data-name="${esc(`${verbs.join(' ')} ${row.depot} ${row.publisher} ${row.pkg}`.toLowerCase())}">` +
+    `<div class="entry-when">${esc(ago(row.when)) || '<span class="dim">—</span>'}</div>` +
+    `<div class="entry-main">` +
+    `<div class="entry-head">` +
+    `<span class="verb"><i>${MARK[verbs[0]] ?? '·'}</i>` +
+    `${esc(verbs.length === 1 ? verbs[0] : 'changed')}</span> ` +
+    `<span class="s-package">${esc(row.publisher)}/${esc(row.pkg)}</span> ` +
+    `<span class="dim">${row.count} changes over ${esc(span(row.oldestWhen, row.when))}</span>` +
+    `</div>` +
+    `<div class="entry-sub">` +
+    `<span class="s-depot">${esc(row.depot)}</span>` +
+    ` <span class="dim">${files
+      .slice(0, 5)
+      .map((path) => esc(path))
+      .join(' · ')}${files.length > 5 ? ` +${files.length - 5}` : ''}</span>` +
+    `</div></div>` +
+    `<a class="entry-go" href="${esc(browse)}">diff all →</a>` +
+    `</li>`
+  );
+}
+
+/** `4m` · `1h 20m` — how long the run lasted, not how long ago it was. */
+function span(from, to) {
+  let a = Date.parse(from ?? '');
+  let b = Date.parse(to ?? '');
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return '';
+  let minutes = Math.max(1, Math.round(Math.abs(b - a) / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 const SORTS = [
@@ -557,7 +760,9 @@ async function render() {
           `<span class="dim" data-role="filter-count"></span></div>`
         : '') +
       (rows.length
-        ? `<ul class="feed">${rows.map(entry).join('')}</ul>`
+        ? `<ul class="feed">${(grouped() ? groupRuns(rows) : rows)
+            .map(entry)
+            .join('')}</ul>`
         : `<p class="dim">nothing here</p>`) +
       `</main>`;
   } catch (error) {
@@ -662,6 +867,9 @@ addEventListener('keydown', (event) => {
 
 app.addEventListener('click', (event) => {
   if (event.target.closest('[data-role="noise"]')) return toggleNoise();
+  if (event.target.closest('[data-role="grouped"]')) {
+    return go({ group: grouped() ? '0' : undefined });
+  }
   let link = event.target.closest('a[data-at]');
   if (!link || event.metaKey || event.ctrlKey || event.shiftKey) return;
   event.preventDefault();

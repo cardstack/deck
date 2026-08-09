@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Thursday Potluck</title>
+  <link rel="stylesheet" href="./form.css" />
+  <script type="importmap">{
+  "imports": {
+    "fields/due-date": "/site/fields/due-date@1.0.0/index.js",
+    "fields/due-date/": "/site/fields/due-date@1.0.0/",
+    "fields/handle": "/site/fields/handle@1.0.0/index.js",
+    "fields/handle/": "/site/fields/handle@1.0.0/",
+    "fields/meeting-slot": "/site/fields/meeting-slot@1.0.0/index.js",
+    "fields/meeting-slot/": "/site/fields/meeting-slot@1.0.0/",
+    "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+    "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+    "prosemirror-view": "/site/lib/prosemirror-view@1.42.2/dist/index.js",
+    "prosemirror-keymap": "/site/lib/prosemirror-keymap@1.2.3/dist/index.js",
+    "prosemirror-commands": "/site/lib/prosemirror-commands@1.7.2/dist/index.js",
+    "prosemirror-history": "/site/lib/prosemirror-history@1.5.0/dist/index.js",
+    "prosemirror-schema-basic": "/site/lib/prosemirror-schema-basic@1.2.4/dist/index.js",
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js",
+    "ui/pills/": "/site/ui/pills@1.0.0/"
+  },
+  "deck": {
+    "packages": {
+      "form": { "version": "0.1.0", "entry": "$DECK/form.js" }
+    },
+    "dependencies": {
+      "fields/due-date": "^1.0.0",
+      "fields/handle": "^1.0.0",
+      "fields/meeting-slot": "^1.0.0",
+      "prosemirror-model": "lib/prosemirror-model@^1.25.0",
+      "prosemirror-state": "lib/prosemirror-state@^1.4.0",
+      "prosemirror-view": "lib/prosemirror-view@^1.42.0",
+      "prosemirror-keymap": "lib/prosemirror-keymap@^1.2.0",
+      "prosemirror-commands": "lib/prosemirror-commands@^1.7.0",
+      "prosemirror-history": "lib/prosemirror-history@^1.5.0",
+      "prosemirror-schema-basic": "lib/prosemirror-schema-basic@^1.2.0",
+      "ui/pills": "^1.0.0"
+    }
+  },
+  "scopes": {
+    "/site/fields/due-date@1.0.0/": {
+      "date-fns": "/site/lib/date-fns@4.1.0/index.js",
+      "date-fns/": "/site/lib/date-fns@4.1.0/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    },
+    "/site/fields/handle@1.0.0/": {
+      "nanoid": "/site/lib/nanoid@5.0.9/index.browser.js",
+      "nanoid/": "/site/lib/nanoid@5.0.9/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    },
+    "/site/fields/meeting-slot@1.0.0/": {
+      "luxon": "/site/lib/luxon@3.5.0/src/luxon.js",
+      "luxon/": "/site/lib/luxon@3.5.0/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    },
+    "/site/lib/prosemirror-commands@1.7.2/": {
+      "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+      "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+      "prosemirror-transform": "/site/lib/prosemirror-transform@1.12.0/dist/index.js"
+    },
+    "/site/lib/prosemirror-history@1.5.0/": {
+      "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+      "prosemirror-transform": "/site/lib/prosemirror-transform@1.12.0/dist/index.js",
+      "rope-sequence": "/site/lib/rope-sequence@1.3.4/dist/index.js"
+    },
+    "/site/lib/prosemirror-keymap@1.2.3/": {
+      "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+      "w3c-keyname": "/site/lib/w3c-keyname@2.2.8/index.js"
+    },
+    "/site/lib/prosemirror-model@1.25.11/": {
+      "orderedmap": "/site/lib/orderedmap@2.1.1/dist/index.js"
+    },
+    "/site/lib/prosemirror-schema-basic@1.2.4/": {
+      "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js"
+    },
+    "/site/lib/prosemirror-state@1.4.4/": {
+      "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+      "prosemirror-transform": "/site/lib/prosemirror-transform@1.12.0/dist/index.js"
+    },
+    "/site/lib/prosemirror-transform@1.12.0/": {
+      "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js"
+    },
+    "/site/lib/prosemirror-view@1.42.2/": {
+      "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+      "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+      "prosemirror-transform": "/site/lib/prosemirror-transform@1.12.0/dist/index.js"
+    }
+  }
+}
+</script>
+  <script type="module" src="/_live/hmr.js"></script>
+</head>
+<body class="s10">
+<main class="layout">
+  <section class="card" id="form-panel">
+    <p class="brand">Thursday Potluck</p>
+    <h1>What are you bringing?</h1>
+    <p class="lede">Preview the card, then confirm. Scrubbing Steps won’t replay motion.</p>
+    <form id="form" novalidate>
+      <label>Handle <span class="req">needed</span>
+        <input name="prefix" placeholder="mai" />
+        <span class="error" id="err-prefix" hidden></span></label>
+      <label>Lunch day <span class="req">needed</span>
+        <input name="due" type="date" />
+        <span class="error" id="err-due" hidden></span></label>
+      <p class="hint" id="date-hint">Pick the lunch date.</p>
+      <fieldset class="slot">
+        <legend>Arrival window</legend>
+        <label>Start <input name="start" type="time" value="12:15" /></label>
+        <label>Minutes <input name="minutes" type="number" min="15" max="180" value="60" /></label>
+        <label>Zone
+          <select name="zone">
+            <option value="America/New_York">America/New_York</option>
+            <option value="America/Los_Angeles">America/Los_Angeles</option>
+            <option value="Europe/London">Europe/London</option>
+          </select>
+        </label>
+        <p class="hint" id="slot-hint"></p>
+        <span class="error" id="err-slot" hidden></span>
+      </fieldset>
+      <label>Dish <span class="req">needed</span>
+        <input name="dish" placeholder="Kimchi fried rice" />
+        <span class="error" id="err-dish" hidden></span></label>
+      <div class="field">
+        <span class="flabel">Notes for the table</span>
+        <div id="editor" class="editor"></div>
+      </div>
+      <div class="actions">
+        <button type="button" data-role="preview">Preview</button>
+        <button type="submit" class="primary">Confirm signup</button>
+      </div>
+    </form>
+  </section>
+  <aside class="preview" id="preview">
+    <p class="brand">Kitchen board</p>
+    <h2 id="preview-title">Waiting for a preview</h2>
+    <article id="preview-card" class="empty">Fill the form, then hit Preview.</article>
+    <p id="status" class="status" hidden></p>
+  </aside>
+</main>
+<script type="module" src="./form.js"></script>
+</body>
+</html>
