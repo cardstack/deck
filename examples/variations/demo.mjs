@@ -108,6 +108,9 @@ console.log('\n  A, B OR C — three variations, one choice\n');
 const depot = await openDemoDepot({ name: DEPOT, dir: depotDir });
 
 let choiceBody;
+// Filled by the build below, or read back out of choice.json when the store
+// is already seeded. Declared here because the server prints it either way.
+let state = [];
 if (buildMode !== 'serve') {
 // ---------------------------------------------------------------------------
 // 1. The starting point: three decks, one per layer, all at 1.0.0.
@@ -232,7 +235,7 @@ console.log(
 // 4. The two you did not pick.
 // ---------------------------------------------------------------------------
 console.log('\n4) the rejected two');
-let state = [];
+state = [];
 for (let variation of produced) {
   let meta = await readStoreMeta(storeDir, variation.deck);
   let tags = Object.entries(meta.tags)
@@ -306,6 +309,7 @@ choiceBody =
   (await readFile(join(here, 'choice.json')).catch(() =>
     Buffer.from('{}', 'utf8'),
   ));
+state = state.length > 0 ? state : (JSON.parse(choiceBody.toString('utf8')).variations ?? []);
 
 let server = createDemoServer({
   depots: [depot],

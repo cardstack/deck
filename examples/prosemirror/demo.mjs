@@ -33,7 +33,7 @@
 //
 //   pnpm --filter @deck/example-prosemirror demo
 //   open http://localhost:8798/
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pack, unpack } from '@deck/core/pack';
@@ -384,6 +384,13 @@ await lockAndWrite({
 
 } // end buildMode
 
+// Read back from the build record on disk rather than from the build block
+// above: those bindings are block-scoped, and in serve mode the block never
+// runs. Reading them back also proves the file the page will fetch says what
+// this transcript says.
+let built = JSON.parse(
+  await readFile(join(depotDir, 'app', 'editor', 'build.json'), 'utf8'),
+);
 let server = createDemoServer({
   depots: [depot],
   fallback: (request, response) => {
@@ -396,8 +403,8 @@ let origin = demoOrigin(PORT);
 server.listen(PORT, () => {
   console.log(`\n6) serving two editors, hermetically\n`);
   console.log(`      ${origin}/`);
-  console.log(`      /${DEPOT}/src/prosemirror-model@${survey[0].version}/src/schema.ts   readable, not runnable`);
-  console.log(`      /${DEPOT}/lib/prosemirror-model@${survey[0].version}/dist/index.js   runnable, not readable`);
+  console.log(`      /${DEPOT}/src/prosemirror-model@${built.survey[0].version}/src/schema.ts   readable, not runnable`);
+  console.log(`      /${DEPOT}/lib/prosemirror-model@${built.survey[0].version}/dist/index.js   runnable, not readable`);
   console.log(`\n${liveNotes({ depot, port: PORT, origin })}`);
   console.log(`\n   Both of those are the same library at the same version, and`);
   console.log(`   neither is the thing you want. The thing you want is a build.\n`);

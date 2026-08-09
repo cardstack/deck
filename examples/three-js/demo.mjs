@@ -22,7 +22,7 @@
 //
 //   pnpm --filter @deck/example-three-js demo
 //   open https://localhost:8797/
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pack, unpack } from '@deck/core/pack';
@@ -273,6 +273,13 @@ await lockAndWrite({
 
 } // end buildMode
 
+// Read back from the build record on disk rather than from the build block
+// above: those bindings are block-scoped, and in serve mode the block never
+// runs. Reading them back also proves the file the page will fetch says what
+// this transcript says.
+let built = JSON.parse(
+  await readFile(join(depotDir, 'app', 'studio', 'build.json'), 'utf8'),
+);
 let server = createDemoServer({
   depots: [depot],
   fallback: (request, response) => {
@@ -285,10 +292,10 @@ let origin = demoOrigin(PORT);
 server.listen(PORT, () => {
   console.log(`\n5) serving both renderers side by side (HTTPS + HTTP/2)\n`);
   console.log(`      ${origin}/`);
-  console.log(`      /${DEPOT}/lib/three@${VERSION}/${TARGET}`);
-  console.log(`      /${DEPOT}/me/three@${FORK_VERSION}/${TARGET}`);
+  console.log(`      /${DEPOT}/${built.upstream.deck}@${built.upstream.version}/${built.changed}`);
+  console.log(`      /${DEPOT}/${built.fork.deck}@${built.fork.version}/${built.changed}`);
   console.log(`\n${liveNotes({ depot, port: PORT, origin })}`);
-  console.log(`\n   The page loads ${vendored.modules.length} modules twice, one request each,`);
+  console.log(`\n   The page loads ${built.modules} modules twice, one request each,`);
   console.log(`   and times it. That number is the honest cost of per-file`);
   console.log(`   delivery — and what docs/deck-efficient-delivery-spec.md is about.\n`);
 });

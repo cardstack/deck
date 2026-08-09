@@ -56,6 +56,10 @@ const depotDir = join(here, 'depot');
 const storeDir = storeDirFor(depotDir);
 const UPSTREAM = 'std/currencies';
 const APP = 'app/picker';
+// Declared out here, not inside the build branch: the server needs it in
+// serve mode too, and a binding that only exists on one path is a crash
+// waiting for the second run.
+const depot = { name: DEPOT, dir: depotDir, storeDir };
 
 // A real ISO-4217 slice, small enough to read on one screen.
 const BASE_CODES = {
@@ -223,7 +227,6 @@ console.log(`   discovered as offers: ${offers.map((o) => o.name).join(', ')}`);
 // ---------------------------------------------------------------------------
 // 4. The queue, before upstream moves.
 // ---------------------------------------------------------------------------
-const depot = { name: DEPOT, dir: depotDir, storeDir };
 async function queue(label, { dryRun = true } = {}) {
   let result = await rebasePass({ depot, dryRun });
   console.log(`\n   ${label}`);
