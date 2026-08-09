@@ -66,14 +66,23 @@ const APPS = [
 // all, a 105 KB data file, two versions of one library side by side — so the
 // Hub mounts their depots directly off disk and browses the real thing.
 //
-// One honest caveat, and it is why this is a browse-only arrangement for
-// now: every demo built its depot under the name `site`, so the sealed
-// import maps inside those packs say `/site/...`. Mounted here under their
-// example names, those decks are readable, hashable and diffable, and their
-// dependencies do NOT resolve. That is exactly the "cross-depot dependency
-// refused" state from the UI spec's §12, so /browse should be showing it
-// rather than hiding it. /run will need these mounted coherently, or
-// proxied to the demo processes that already serve them correctly.
+// Every demo built its depot under the name `site`, so the pins inside those
+// packs say `/site/...`. Mounted here under their example names the decks
+// read perfectly — bytes, hashes, diffs, history — and nothing RESOLVES,
+// because `/site/ui/pills@1.0.0/pills.js` is not an address this server
+// answers.
+//
+// That is not a bug to paper over. A pin names a depot, and moving a depot
+// to a different name genuinely invalidates its pins; rewriting them at
+// serve time would make the server lie about the bytes it is handing out.
+//
+// So each demo depot gets a SECOND mount, on its own port, under the name it
+// was sealed for. Same directory, same store, no copies, no child processes,
+// no rebuild — one extra listener each, and the pins are correct because
+// they were always correct for that name. /browse reads them from the Hub's
+// own mount, where the name is unambiguous across nine depots; /run frames
+// them from their own origin, where they run.
+const DEMO_PORT_BASE = Number(process.env.DEMO_PORT_BASE ?? 8801);
 async function demoDepots() {
   let names;
   try {
@@ -127,6 +136,20 @@ let hub = {
 let demos = await demoDepots();
 let depots = [hub, ...demos];
 
+// The second mount: each demo depot served as `site`, on its own port, so its
+// own pins resolve. `createDeckServer` is cheap and these share the store on
+// disk with the Hub's read-only mount — two names for one directory, which is
+// exactly what the pins needed.
+const origins = new Map();
+for (let [index, depot] of demos.entries()) {
+  let port = DEMO_PORT_BASE + index;
+  let server = createDeckServer({
+    depots: [{ name: 'site', dir: depot.dir, storeDir: depot.storeDir }],
+  });
+  await new Promise((resolve) => server.listen(port, resolve));
+  origins.set(depot.name, `http://localhost:${port}`);
+}
+
 const built = new Set();
 for (let app of APPS) {
   try {
@@ -160,6 +183,16 @@ const server = createDeckServer({
   depots,
   fallback(req, res) {
     let path = new URL(req.url ?? '/', 'http://localhost').pathname;
+    // Where each demo depot answers to its own name. /run needs this to frame
+    // a demo at an origin whose pins resolve.
+    if (path === '/_hub/origins') {
+      let body = JSON.stringify(Object.fromEntries(origins));
+      res.writeHead(200, {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+      });
+      return res.end(body);
+    }
     if (path === '/') {
       // Until /start exists, the front door is whatever is built.
       let first = APPS.find((app) => built.has(app.route));

@@ -645,10 +645,21 @@ function blob(text, path) {
 // Diff, at both levels
 // ---------------------------------------------------------------------------
 
+/**
+ * A sealed version's manifest, or undefined.
+ *
+ * `?meta` only answers for an EXACT version — a live tree has no manifest,
+ * because a manifest is something a seal produces. Returning undefined rather
+ * than throwing lets the caller say which side is missing one and why, which
+ * is a real answer; the alternative was reading `.attributes` off undefined
+ * and showing the reader a TypeError.
+ */
 const metaOf = (target) =>
-  getJson(`${addressOf({ ...target, path: undefined })}?meta`).then(
-    (body) => body.data.attributes,
-  );
+  target?.spec
+    ? getJson(`${addressOf({ ...target, path: undefined })}?meta`)
+        .then((body) => body.data?.attributes)
+        .catch(() => undefined)
+    : Promise.resolve(undefined);
 
 const labelOf = (target) =>
   target.seal
@@ -1035,6 +1046,18 @@ async function viewAddress(input, vs) {
     let target = otherSide(parsed, vs);
     let here = { ...parsed, spec: parsed.spec ?? meta?.distTags?.latest };
     let [left, right] = await Promise.all([metaOf(target), metaOf(here)]);
+    if (!left || !right) {
+      // A tree comparison is two manifests, and only a seal has one. Naming
+      // the side that lacks one — and what to do instead — beats both a
+      // crash and a silently empty diff.
+      let missing = [!right && labelOf(here), !left && labelOf(target)].filter(Boolean);
+      return (
+        head +
+        `<p class="note">no manifest for ${missing.map(esc).join(' or ')} — a live ` +
+        `tree has none until it is sealed. Pick a published version above, or ` +
+        `open a file to compare it line by line.</p></main>`
+      );
+    }
     return (
       head +
       treeDiffView(parsed, vs, left, right, labelOf(target), labelOf(here)) +
@@ -1058,7 +1081,7 @@ function errorView(parsed, error) {
   return (
     crumbs(parsed) +
     `<main><div class="err" data-permanence="${permanence}">` +
-    `<b>${esc(error.code)}</b> — ${esc(error.message)}` +
+    `<b>${esc(error.code ?? 'error')}</b> — ${esc(error.message)}` +
     `<p class="dim">${
       permanence === 'permanent'
         ? 'permanent — this address can never resolve'

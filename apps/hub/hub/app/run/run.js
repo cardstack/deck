@@ -54,10 +54,30 @@ async function getJson(url) {
   return body;
 }
 
-/** The URL the iframe loads: the page, plus any trials. */
+/**
+ * Where a deck actually RUNS.
+ *
+ * The Hub mounts every demo depot under its example name so nine of them can
+ * coexist, but each was sealed under the name `site`, and a pin names a
+ * depot. Read from `/codelist/...` the bytes are right and the pins point at
+ * an address this origin does not answer. So the Hub serves each demo depot a
+ * second time, as `site`, on its own port — and this is where /run points the
+ * frame. Same directory, same store, correct pins.
+ */
+let ORIGINS = {};
+
+async function loadOrigins() {
+  ORIGINS = await fetch('/_hub/origins')
+    .then((response) => (response.ok ? response.json() : {}))
+    .catch(() => ({}));
+}
+
 function runUrl(at, withs = currentWith()) {
+  let [, depot, ...rest] = at.split('/');
+  let origin = ORIGINS[depot];
+  let path = origin ? `${origin}/site/${rest.join('/')}` : at;
   let query = withs.map((value) => `with=${value}`).join('&');
-  return query ? `${at}?${query}` : at;
+  return query ? `${path}?${query}` : path;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +229,10 @@ async function viewOne(at) {
 
   let map = await resolvedMap(url);
   let scopes = Object.entries(map.scopes ?? {});
+  let specifiers = Object.keys(map.imports ?? {}).filter((key) => !key.endsWith('/'));
+  let answered = specifiers.map((key) =>
+    String(map.imports[key]).split('/').slice(0, 4).join('/'),
+  );
   return (
     head +
     // The way out of the frame sits ABOVE it, right-aligned. Overlapping the
@@ -218,11 +242,18 @@ async function viewOne(at) {
     `<div class="stagebar"><a class="popout" href="${esc(url)}" ` +
     `target="_blank" rel="noopener">Pop Out ↗</a></div>` +
     `<iframe class="stage" src="${esc(url)}" title="${esc(at)}"></iframe>` +
-    `<div class="facts">` +
-    `<div><b>imports</b> ${Object.keys(map.imports ?? {}).filter((k) => !k.endsWith('/')).length}</div>` +
-    `<div><b>scopes</b> ${scopes.length}</div>` +
-    (map.trial ? `<div><b>x-deck-with</b> ${esc(map.trial)}</div>` : '') +
-    `</div>` +
+    // "imports 1 · scopes 0" is two numbers and no meaning. What a reader
+    // wants is the sentence those numbers are evidence for.
+    `<p class="dim">${
+      specifiers.length === 0
+        ? 'resolves nothing — this page imports no decks'
+        : `${specifiers.length} specifier${specifiers.length === 1 ? '' : 's'} ` +
+          `answered by ${new Set(answered).size} deck${new Set(answered).size === 1 ? '' : 's'}` +
+          (scopes.length
+            ? `, and ${scopes.length} of them bring their own dependencies`
+            : ', none of which bring dependencies of their own')
+    }</p>` +
+    (map.trial ? `<p class="trialnote">standing in: <code>${esc(map.trial)}</code></p>` : '') +
     (map.missing
       ? `<p class="dim">no import map injected — this page resolves nothing</p>`
       : `<table><thead><tr><th>specifier</th><th>answered by</th><th>path</th></tr></thead>` +
@@ -342,4 +373,5 @@ app.addEventListener('input', (event) => {
   if (readout) readout.textContent = needle ? `${shown} shown` : '';
 });
 
+await loadOrigins();
 render();

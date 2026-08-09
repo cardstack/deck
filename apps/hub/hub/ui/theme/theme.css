@@ -340,32 +340,6 @@ td.indent { padding-left: 2ch; }
 
 /* ── /track ─────────────────────────────────────────────────────────────── */
 
-/* Facets are toggles, and a pressed toggle must not be mistakable for an
-   unpressed one — so pressed is filled, not merely tinted. */
-.facets { display: inline-flex; flex-wrap: wrap; margin-bottom: calc(var(--row) * .6em); }
-.facet {
-  font: inherit; cursor: pointer; display: inline-flex; align-items: baseline; gap: .8ch;
-  padding: 0 1.5ch; height: calc(var(--row) * 1.3em);
-  background: var(--panel); color: var(--dim);
-  border: 1px solid var(--line); border-radius: 0;
-}
-.facet i { font-style: normal; }
-.facet b { font-weight: 400; opacity: .7; }
-.facet + .facet { border-left: 0; }
-.facet:hover { color: var(--fg); }
-.facet[aria-pressed] { background: var(--sel); color: var(--fg); border-color: var(--dim); }
-.facet[data-kind='seal'][aria-pressed] i { color: var(--a-seal); }
-.facet[data-kind='version'][aria-pressed] i { color: var(--a-sealed); }
-.facet[data-kind='proposal'][aria-pressed] i { color: var(--a-publisher); }
-
-/* `what` absorbs the slack so `compare` is never pushed off the edge — the
-   handoff into /browse is the row's reason to exist and must always be
-   reachable. */
-/* `what` absorbs the slack. Setting width:100% ON that cell is the trap —
-   in table layout it inflates the whole table past its container and pushes
-   the last column off the edge. The columns that should stay tight get
-   width:1% (shrink-to-fit) and the flexible one is left auto. */
-.facet[data-kind='dev'][aria-pressed] i { color: var(--dim); }
 
 /* ── the feed ───────────────────────────────────────────────────────────── */
 
@@ -409,3 +383,39 @@ td.indent { padding-left: 2ch; }
 .entry[data-kind='proposed'] .verb { color: var(--a-publisher); }
 .entry[data-kind='rebased'] .verb { color: var(--a-depot); }
 .entry[data-kind='conflicted'] .verb { color: var(--red); }
+
+/* One switch, not five facets. Pressed is filled: a toggle whose two states
+   differ only by a tint is a toggle you have to test to read. */
+.switch {
+  font: inherit; cursor: pointer; display: inline-flex; align-items: baseline; gap: .8ch;
+  padding: 0 1.5ch; height: calc(var(--row) * 1.3em);
+  background: var(--panel); color: var(--dim);
+  border: 1px solid var(--line); border-radius: 0;
+}
+.switch i { font-style: normal; width: 1ch; }
+.switch i::before { content: '○'; }
+.switch[aria-pressed] { background: var(--sel); color: var(--fg); border-color: var(--dim); }
+.switch[aria-pressed] i::before { content: '●'; color: var(--a-package); }
+.switch b { font-weight: 400; opacity: .7; }
+.switch:hover { color: var(--fg); }
+
+/* The attention band. Above the feed and outside it, because these are the
+   only entries waiting on a person rather than reporting to one. */
+.feed.attention {
+  border-left: 3px solid var(--amber);
+  padding-left: var(--gut);
+  margin-bottom: calc(var(--row) * .8em);
+}
+.feed.attention .entry { opacity: 1; border-bottom-color: transparent; }
+
+/* Added, edited, removed — the letter jj gave us, kept. */
+.how { display: inline-block; width: 1.6ch; font-weight: 600; }
+.how[data-how='A'] { color: var(--green); }
+.how[data-how='M'] { color: var(--amber); }
+.how[data-how='D'] { color: var(--red); }
+.how[data-how='R'] { color: var(--a-depot); }
+
+.entry[data-kind='added'] .verb { color: var(--green); }
+.entry[data-kind='edited'] .verb { color: var(--amber); }
+.entry[data-kind='removed'] .verb { color: var(--red); }
+.entry[data-kind='renamed'] .verb { color: var(--a-depot); }

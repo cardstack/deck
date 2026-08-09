@@ -140,9 +140,18 @@ async function collect(scope) {
           .catch(() => []);
         seals.forEach((seal, index) => {
           let attrs = seal.attributes;
-          let touched = (attrs.filesSummary ?? []).map((line) =>
-            line.replace(/^[A-Z]\s+/, ''),
-          );
+          // jj reports `A path` / `M path` / `D path` / `R old => new`, and
+          // that letter is the difference between adding a file and editing
+          // one. It used to be stripped, which threw away the only thing in
+          // the summary that distinguishes two very different acts.
+          let changes = (attrs.filesSummary ?? []).map((line) => {
+            let match = line.match(/^([AMDR])\s+(.*)$/);
+            return match
+              ? { how: match[1], path: match[2] }
+              : { how: 'M', path: line };
+          });
+          let touched = changes.map((change) => change.path);
+          let letters = new Set(changes.map((change) => change.how));
           // The subject of a save is the DECK it landed in, not the list of
           // files — that list is the second line's job, and printing it
           // twice made the first line unreadable and the second redundant.
@@ -150,7 +159,17 @@ async function collect(scope) {
             ...new Set(touched.map((path) => path.split('/').slice(0, 2).join('/'))),
           ];
           rows.push({
-            kind: 'saved',
+            // One kind of change gets its own verb; a mix is a `saved`.
+            kind:
+              letters.size !== 1
+                ? 'saved'
+                : letters.has('A')
+                  ? 'added'
+                  : letters.has('D')
+                    ? 'removed'
+                    : letters.has('R')
+                      ? 'renamed'
+                      : 'edited',
             depot: depot.name,
             publisher: touched[0]?.split('/')[0] ?? '',
             pkg: touched[0]?.split('/')[1] ?? '',
@@ -161,6 +180,7 @@ async function collect(scope) {
                 : `${touched.length} files across ${decks.length} decks`,
             when: attrs.timestamp ?? '',
             files: touched,
+            changes,
             at: `/${depot.name}/${HISTORY}/${attrs.changeId}`,
             // The seal before this one: what this save changed.
             vs: seals[index + 1]
@@ -231,8 +251,25 @@ function inScope(row, scope) {
 // hundreds in an afternoon — and they bury every deliberate act under a wall
 // of `0.1.0-dev.147`. Nothing is hidden: it is one keypress, and the count is
 // always on the facet.
-const KINDS = ['saved', 'auto-saved', 'published', 'released', 'proposed'];
-const DEFAULT_KINDS = ['saved', 'published', 'released', 'proposed'];
+// Every verb this feed can emit. `auto-saved` is the only one anybody wants
+// to switch OFF, which is the whole argument for the control that replaced
+// the five facets — see `controls()`.
+const KINDS = [
+  'added',
+  'edited',
+  'removed',
+  'renamed',
+  'saved',
+  'auto-saved',
+  'published',
+  'released',
+  'proposed',
+  'rebased',
+  'conflicted',
+];
+const NOISE = ['auto-saved'];
+const DEFAULT_KINDS = KINDS.filter((kind) => !NOISE.includes(kind));
+const ATTENTION = ['conflicted', 'proposed'];
 
 const isDev = (version) => /-dev\.\d+$/.test(version);
 
@@ -316,7 +353,13 @@ function sortRows(rows) {
 // Render
 // ---------------------------------------------------------------------------
 
+const HOW = { A: 'added', M: 'edited', D: 'removed', R: 'renamed' };
+
 const MARK = {
+  added: '+',
+  edited: '~',
+  removed: '−',
+  renamed: '→',
   saved: '·',
   'auto-saved': '·',
   published: '▲',
@@ -326,19 +369,51 @@ const MARK = {
   conflicted: '✕',
 };
 
-function facets(rows, kinds) {
-  let counts = Object.fromEntries(
-    KINDS.map((kind) => [kind, rows.filter((row) => row.kind === kind).length]),
-  );
+/**
+ * THE FACETS WERE THE WRONG QUESTION.
+ *
+ * Five toggles — saved / auto-saved / published / released / proposed — asked
+ * "which kind of record", and nobody wants that. In practice four of them
+ * were always on and one was always off, so five controls carried one bit,
+ * and the counts beside them (`proposed 0`, `published 1`) were furniture.
+ *
+ * What a reader of a change feed actually asks is two things:
+ *
+ *   is this noise?          the watcher's auto-saves, hundreds an afternoon
+ *   does this need me?      a conflicted merge, an open proposal
+ *
+ * So: ONE switch for the noise, and the attention cases lifted OUT of the
+ * feed into a band above it, where they can be acted on rather than scrolled
+ * past. Everything else is reachable by typing in the filter, which handles
+ * "just the releases" without spending a control on it.
+ */
+function controls(all, kinds) {
+  let noise = all.filter((row) => NOISE.includes(row.kind)).length;
+  let showing = kinds.includes('auto-saved');
   return (
-    `<div class="facets">` +
-    KINDS.map(
-      (kind) =>
-        `<button class="facet" data-role="facet" value="${kind}"` +
-        `${kinds.includes(kind) ? ' aria-pressed="true"' : ''} data-kind="${kind}">` +
-        `<i>${MARK[kind]}</i>${kind}<b>${counts[kind]}</b></button>`,
-    ).join('') +
+    `<div class="controls">` +
+    (noise
+      ? `<button class="switch" data-role="noise"${showing ? ' aria-pressed="true"' : ''}>` +
+        `<i></i>auto-saves <b>${noise}</b></button>`
+      : '') +
+    sortBar(currentSort()) +
     `</div>`
+  );
+}
+
+/**
+ * The band above the feed: everything that is waiting on a person.
+ *
+ * A conflicted merge wrote nothing and will stay that way until somebody
+ * decides; an open proposal is somebody asking. Both are indistinguishable
+ * from history once they are rows in a list sorted by time, which is exactly
+ * where they get lost.
+ */
+function attention(rows) {
+  let needs = rows.filter((row) => ATTENTION.includes(row.kind));
+  if (!needs.length) return '';
+  return (
+    `<ul class="feed attention">` + needs.map(entry).join('') + `</ul>`
   );
 }
 
@@ -378,13 +453,19 @@ function entry(row) {
   let fresh = freshness(row.when);
   let browse = row.vs ? `/browse?at=${row.at}&vs=${row.vs}` : `/browse?at=${row.at}`;
   let detail =
-    row.files?.length
-      ? row.files
+    row.changes?.length
+      ? row.changes
           .slice(0, 3)
-          .map((path) => path.split('/').slice(2).join('/') || path)
-          .join(' · ') +
-        (row.files.length > 3 ? ` <span class="dim">+${row.files.length - 3}</span>` : '')
-      : row.detail ?? '';
+          .map(
+            (change) =>
+              `<span class="how" data-how="${change.how}">${MARK[HOW[change.how]] ?? change.how}</span>` +
+              esc(change.path.split('/').slice(2).join('/') || change.path),
+          )
+          .join(' ') +
+        (row.changes.length > 3
+          ? ` <span class="dim">+${row.changes.length - 3}</span>`
+          : '')
+      : esc(row.detail ?? '');
   return (
     `<li class="entry" data-kind="${esc(row.kind)}" style="--fresh:${fresh.toFixed(3)}" ` +
     `data-name="${esc(
@@ -437,12 +518,15 @@ async function render() {
   app.innerHTML = `<main><p class="dim">collecting…</p></main>`;
   try {
     let all = await collect(scope);
-    let filtered = all.filter((row) => kinds.includes(row.kind));
+    let filtered = all.filter(
+      (row) => kinds.includes(row.kind) && !ATTENTION.includes(row.kind),
+    );
     let { rows, sorting } = sortRows(filtered);
     app.innerHTML =
       scopeBar(scope, at) +
       `<main>` +
-      `<div class="controls">` + facets(all, kinds) + sortBar(currentSort()) + `</div>` +
+      controls(all, kinds) +
+      attention(all) +
       (rows.length >= 25
         ? `<div class="filter"><b>filter</b> <input type="search" data-role="filter" ` +
           `size="24" placeholder="${rows.length} changes" autocomplete="off" /> ` +
@@ -486,21 +570,19 @@ function bindings() {
   let list = [[['j', 'k'], 'move'], ['↵', 'diff']];
   if (app.querySelector('[data-role="filter"]')) list.push(['/', 'filter']);
   list.push(
-    [['s', 'v', 'p'], 'facets'],
+    ['a', 'auto-saves'],
     [['g', 'G'], 'ends'],
     ['u', 'widen'],
   );
   return list;
 }
 
-const FACET_KEY = { s: 'seal', v: 'version', p: 'proposal' };
-
-function toggleFacet(kind) {
+function toggleNoise() {
   let kinds = currentKinds();
   go({
-    kind: kinds.includes(kind)
-      ? kinds.filter((value) => value !== kind)
-      : [...kinds, kind],
+    kind: kinds.includes('auto-saved')
+      ? kinds.filter((kind) => !NOISE.includes(kind))
+      : [...kinds, ...NOISE],
   });
 }
 
@@ -513,7 +595,7 @@ addEventListener('keydown', (event) => {
     if (event.key === 'Escape') document.activeElement.blur();
     return;
   }
-  if (FACET_KEY[event.key]) return toggleFacet(FACET_KEY[event.key]);
+  if (event.key === 'a') return toggleNoise();
   switch (event.key) {
     case 'j':
     case 'ArrowDown':
@@ -555,8 +637,7 @@ addEventListener('keydown', (event) => {
 });
 
 app.addEventListener('click', (event) => {
-  let facet = event.target.closest('[data-role="facet"]');
-  if (facet) return toggleFacet(facet.value);
+  if (event.target.closest('[data-role="noise"]')) return toggleNoise();
   let link = event.target.closest('a[data-at]');
   if (!link || event.metaKey || event.ctrlKey || event.shiftKey) return;
   event.preventDefault();
