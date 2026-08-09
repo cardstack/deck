@@ -60,12 +60,64 @@ export function focus() {
 let liveSource;
 const liveListeners = new Set();
 
+/**
+ * A FRAMED PAGE IS A SUBJECT, NOT AN OBSERVER.
+ *
+ * /run frames Hub pages — the Hub runs itself, which is the point. But the
+ * framed copy loaded the whole chrome too: its own SSE stream, its own
+ * activity poll on every event, its own heat. Two documents on one origin,
+ * each holding connections open, against HTTP/1.1's six — and the inner one
+ * sits on `loading…` for ever while its requests queue behind streams that
+ * never close. Starvation does not throw, so there is nothing in the console
+ * to find.
+ *
+ * Nothing inside a frame needs to watch anything: it is being watched. The
+ * parent's chrome already reports what changed, and a stage that reloads
+ * itself would fight the person scrubbing it.
+ */
+const FRAMED = (() => {
+  try {
+    return window.top !== window.self;
+  } catch {
+    // Cross-origin parent — still framed, and the throw is the proof.
+    return true;
+  }
+})();
+
+/**
+ * COALESCED, because the depot changes faster than a person can read.
+ *
+ * The watcher publishes one event per settled save, and an agent editing this
+ * repo produces them several times a second in bursts. Every listener here
+ * re-renders something, so an unthrottled feed means the page is rebuilt
+ * under the reader continuously: scroll position gone, selection gone, an
+ * expanded diff hunk gone, several times a second, for as long as the agent
+ * is working.
+ *
+ * That is not a hang, but it is indistinguishable from one — the page does
+ * not respond to you because it keeps becoming a different page. It was also
+ * the hardest failure here to diagnose, because it only happens while
+ * somebody is editing, which is never when you are testing.
+ *
+ * One update per second, on the trailing edge. Fast enough that "live" is
+ * still true, slow enough that the page belongs to whoever is reading it.
+ */
+const LIVE_QUIET_MS = 1000;
+let liveTimer;
+let liveLatest;
+
 export function onLiveChange(listener) {
+  if (FRAMED) return () => {};
   liveListeners.add(listener);
   if (!liveSource) {
     liveSource = new EventSource('/_live/events');
     liveSource.addEventListener('change', (event) => {
-      for (let each of liveListeners) each(event);
+      liveLatest = event;
+      if (liveTimer) return;
+      liveTimer = setTimeout(() => {
+        liveTimer = undefined;
+        for (let each of liveListeners) each(liveLatest);
+      }, LIVE_QUIET_MS);
     });
   }
   return () => liveListeners.delete(listener);
@@ -259,6 +311,7 @@ export class DeckNav extends HTMLElement {
   async #watchClaims() {
     let button = this.querySelector('[data-role="claims"]');
     let list = this.querySelector('[data-role="claim-list"]');
+    if (FRAMED) return;
     let paint = async () => {
       let claims = await fetch('/_activity?top=200&grain=file')
         .then((response) => (response.ok ? response.json() : { foci: [] }))
@@ -323,6 +376,10 @@ export class DeckNav extends HTMLElement {
       badge.dataset.live = state;
       badge.textContent = text;
     };
+    if (FRAMED) {
+      set('on', 'framed');
+      return;
+    }
     onLiveChange((event) => {
       let name = '';
       try {
@@ -334,8 +391,8 @@ export class DeckNav extends HTMLElement {
       clearTimeout(this.#settle);
       this.#settle = setTimeout(() => set('on', 'live'), 4000);
     });
-    liveSource.addEventListener('open', () => set('on', 'live'));
-    liveSource.addEventListener('error', () => set('off', 'live: disconnected'));
+    liveSource?.addEventListener('open', () => set('on', 'live'));
+    liveSource?.addEventListener('error', () => set('off', 'live: disconnected'));
   }
 
   #settle;

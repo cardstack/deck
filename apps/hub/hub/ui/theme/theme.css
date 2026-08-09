@@ -530,3 +530,11 @@ td.indent { padding-left: 2ch; }
 .entry[data-kind='edited'] .verb { color: var(--amber); }
 .entry[data-kind='removed'] .verb { color: var(--red); }
 .entry[data-kind='renamed'] .verb { color: var(--a-depot); }
+
+/* A refusal that is a routing decision rather than a failure: the publisher
+   accent, not the error red. Nothing went wrong — it opens elsewhere. */
+.notice {
+  border-left: 2px solid var(--a-publisher);
+  padding: calc(var(--row) * .3em) 1.5ch;
+  margin: calc(var(--row) * .5em) 0;
+}

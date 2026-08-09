@@ -1,0 +1,11 @@
+{
+  "imports": {},
+  "deck": {
+    "packages": {
+      "type": {
+        "version": "0.1.0",
+        "entry": "$DECK/fonts.css"
+      }
+    }
+  }
+}

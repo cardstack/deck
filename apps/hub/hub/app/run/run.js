@@ -16,6 +16,15 @@
 import 'ui/nav';
 import { installNavStyles, onLiveChange } from 'ui/nav';
 import {
+  attachScrub,
+  foldBursts,
+  installTimelineStyles,
+  measureFrame,
+  stepBy,
+  stepsFor,
+  timelineHtml,
+} from 'ui/timeline';
+import {
   ago,
   heatCell,
   heatScale,
@@ -27,6 +36,7 @@ import {
 
 installNavStyles();
 installHeatStyles();
+installTimelineStyles();
 
 const app = document.getElementById('app');
 const keys = document.querySelector('deck-keys');
@@ -41,6 +51,63 @@ const esc = (value) =>
 const params = () => new URLSearchParams(location.search);
 const currentAt = () => params().get('at') ?? '';
 const currentWith = () => params().getAll('with');
+/** Which Step the stage is showing. '' is live — a position, not a mode. */
+const currentStep = () => params().get('step') ?? '';
+
+const HISTORY = '_history';
+
+/**
+ * The Hub's four apps, which are the instrument rather than a specimen.
+ * `/hub/ui/*` and `/hub/theme/*` are ordinary decks and frame like anything
+ * else — the rule is exactly as narrow as the problem it solves.
+ */
+function isHubApp(at) {
+  let [, depot, publisher] = at.split('/');
+  return depot === 'hub' && publisher === 'app';
+}
+
+/**
+ * The Timeline for a running page: every Step that touched ANYTHING it loads.
+ *
+ * Not just the page's own file. You are watching the assembled thing, and a
+ * palette three decks away changes what you see — so "undo" has to mean "the
+ * state before the last change that affected this", or stepping back will
+ * appear to do nothing while the screen changes under you.
+ *
+ * The closure is free: /run already parses the resolved import map to draw
+ * the table under the stage, and that map IS the set of pins the page loads.
+ * No graph walk, no second request.
+ */
+function closureOf(at, map) {
+  let prefixes = new Set();
+  let own = at.replace(/^\//, '').split('/');
+  if (own.length >= 3) prefixes.add(`${own[1]}/${own[2].split('@')[0]}`);
+  let add = (target) => {
+    let parts = String(target).replace(/^\//, '').split('/');
+    // /<depot>/<publisher>/<package>[@v]/… — depot-relative for filesSummary.
+    if (parts.length >= 3) prefixes.add(`${parts[1]}/${parts[2].split('@')[0]}`);
+  };
+  for (let target of Object.values(map?.imports ?? {})) add(target);
+  for (let table of Object.values(map?.scopes ?? {})) {
+    for (let target of Object.values(table)) add(target);
+  }
+  return [...prefixes];
+}
+
+/** The depot's every-save tape. Memoised: it is one request per depot. */
+const stepCache = new Map();
+function stepsOf(depot) {
+  if (!stepCache.has(depot)) {
+    stepCache.set(
+      depot,
+      getJson(`/${depot}/${HISTORY}`)
+        .then((body) => body.data.map((step) => step.attributes))
+        // Versions only, no Timeline. Not an error — fewer addresses.
+        .catch(() => []),
+    );
+  }
+  return stepCache.get(depot);
+}
 
 /**
  * The focused address as coloured, clickable segments.
@@ -69,7 +136,9 @@ function go(next = {}) {
   let query = new URLSearchParams();
   let at = 'at' in next ? next.at : currentAt();
   let withs = 'with' in next ? next.with : currentWith();
+  let step = 'step' in next ? next.step : currentStep();
   if (at) query.set('at', at);
+  if (step) query.set('step', step);
   for (let value of withs) query.append('with', value);
   let text = query.toString();
   history.pushState({}, '', text ? `?${decodeURIComponent(text)}` : location.pathname);
@@ -125,10 +194,27 @@ async function loadOrigins() {
  * empty white box with nothing in the console the reader can see. Silence is
  * the one answer this must never give, so a missing origin returns a reason.
  */
-function runTarget(at, withs = currentWith()) {
+function runTarget(at, withs = currentWith(), step = currentStep()) {
   let [, depot, ...rest] = at.split('/');
   let query = withs.map((value) => `with=${value}`).join('&');
   let suffix = query ? `?${query}` : '';
+  // A Step is an address, so running one needs no separate machinery: the
+  // same page, at the state it was in. The server injects that step's own
+  // import map with its live pins rewritten to resolve inside the step, so
+  // what loads is the page AND its dependencies as they actually were.
+  if (step) {
+    let inner = rest.join('/');
+    return {
+      url:
+        depot === 'hub'
+          ? `/hub/${HISTORY}/${step}/${inner}${suffix}`
+          : ORIGINS[depot]
+            ? `${ORIGINS[depot]}/site/${HISTORY}/${step}/${inner}${suffix}`
+            : undefined,
+      why: ORIGINS[depot] || depot === 'hub' ? undefined :
+        `No depot named ${depot} is mounted, so there is no origin to run it at.`,
+    };
+  }
   if (depot === 'hub') return { url: at + suffix };
   let origin = ORIGINS[depot];
   if (origin) return { url: `${origin}/site/${rest.join('/')}${suffix}` };
@@ -368,6 +454,35 @@ async function viewOne(input) {
     );
   }
 
+  // A HUB APP DOES NOT GO IN THE STAGE. IT GETS ITS OWN WINDOW.
+  //
+  // The Hub runs itself — that is the self-hosting claim and it is true — but
+  // running itself INSIDE itself is a recursion that costs and returns
+  // nothing. Two copies of the chrome on one origin, each holding an SSE
+  // stream open against a six-connection budget, each polling activity; the
+  // inner one sits on `loading…` for ever because its requests are queued
+  // behind streams that never close. Starvation does not throw, so there is
+  // nothing in the console to find, and the whole tab reads as frozen.
+  //
+  // There is also nothing to see. These four are the instrument, not a
+  // specimen: a browser inside a browser shows you a smaller browser. Any
+  // depot's decks still frame — including this depot's non-app decks — so
+  // the rule is as narrow as the problem.
+  if (isHubApp(at)) {
+    return (
+      head +
+      `<div class="notice"><b>${esc(at.split('/')[3])}</b> is one of the Hub's ` +
+      `own apps, so it opens in its own window rather than in the stage.</div>` +
+      `<p><a class="popout" href="${esc(url)}" target="_blank" rel="noopener">` +
+      `Open ${esc(at.split('/')[3])} ↗</a></p>` +
+      `<p class="dim">Its imports are below, resolved exactly as they would be ` +
+      `in that window.</p>` +
+      `<table><thead><tr><th>Import</th><th>Pin</th><th>Entry</th></tr></thead>` +
+      `<tbody>${mapRows((await resolvedMap(url)).imports ?? {})}</tbody></table>` +
+      `</main>`
+    );
+  }
+
   if (withs.length) {
     // C5: a trial is not the sealed representation and must never be mistaken
     // for one. It says so, and one control leaves.
@@ -378,6 +493,11 @@ async function viewOne(input) {
   }
 
   let map = await resolvedMap(url);
+  let depotName = at.replace(/^\//, '').split('/')[0];
+  let timeline = foldBursts(
+    stepsFor(await stepsOf(depotName), closureOf(at, map)),
+  );
+  lastTimeline = timeline;
   let scopes = Object.entries(map.scopes ?? {});
   let specifiers = Object.keys(map.imports ?? {}).filter((key) => !key.endsWith('/'));
   let answered = specifiers.map((key) =>
@@ -394,6 +514,21 @@ async function viewOne(input) {
     //
     // Every control sits ABOVE the frame, never over it: an iframe is already
     // a compromise without the chrome eating a corner of the thing on show.
+    // UNDO / REDO, which is what stepping a running page is. Stepping back
+    // shows the app as it was one change ago — a PREVIEW of the undo at an
+    // immutable address, never a mutation, which is what makes it safe to
+    // walk back twenty saves hunting for where it broke. Taking it for real
+    // is `deck restore`, forward-only.
+    //
+    // OUTSIDE the split, not inside it: `.runsplit` declares exactly four
+    // grid rows, so a fifth child lands in an implicit row and the whole
+    // pane grows a band of dead space. A grid with a fixed track list is a
+    // contract about how many children it has.
+    timelineHtml({
+      steps: timeline,
+      current: currentStep(),
+      label: 'undo',
+    }) +
     `<div class="runsplit" data-role="split">` +
     `<div class="stagebar">` +
     // Width presets, because "does this demo hold up narrow" is a question
@@ -467,6 +602,9 @@ const stageWidth = () => localStorage.getItem(WIDTH_KEY) ?? '100%';
 const isFull = () => localStorage.getItem(FULL_KEY) === '1';
 const splitAt = () => Number(localStorage.getItem(SPLIT_KEY) ?? 62);
 
+/** The timeline the last render drew, so the keys and buttons agree with it. */
+let lastTimeline = [];
+
 function applyStage() {
   let split = app.querySelector('[data-role="split"]');
   if (!split) return;
@@ -529,6 +667,16 @@ async function render() {
   try {
     app.innerHTML = at ? await viewOne(at) : await viewIndex();
     applyStage();
+    attachScrub(app);
+    // HOW FAST WAS THAT, measured rather than claimed. Every Step address is
+    // immutable, so after the first visit the whole closure is served from
+    // cache — scrubbing is near-instant and nothing on screen would say so
+    // unless it were printed. On a revisited step the wire cost reads 0 KB,
+    // which is the argument for content addressing in one line of chrome.
+    measureFrame(
+      app.querySelector('[data-role="stage"]'),
+      app.querySelector('[data-role="timing"]'),
+    );
   } catch (error) {
     app.innerHTML =
       `<main><div class="err"><b>${esc(error.code ?? 'error')}</b> — ` +
@@ -560,7 +708,7 @@ function bindings() {
   if (currentAt()) list.push(['u', 'up']);
   if (app.querySelector('[data-role="filter"]')) list.push(['/', 'filter']);
   if (app.querySelector('[data-role="split"]')) {
-    list.push(['f', 'full'], ['r', 'reload']);
+    list.push(['f', 'full'], ['r', 'reload'], [['[', ']'], 'undo / redo']);
   }
   list.push([['g', 'G'], 'ends'], ['y', 'copy address']);
   return list;
@@ -607,6 +755,10 @@ addEventListener('keydown', (event) => {
       return navigator.clipboard?.writeText(currentAt());
     case 'f':
       return app.querySelector('[data-role="full"]')?.click();
+    case '[':
+      return go({ step: stepBy(lastTimeline, currentStep(), 1) });
+    case ']':
+      return go({ step: stepBy(lastTimeline, currentStep(), -1) });
     case 'r':
       return app.querySelector('[data-role="reload"]')?.click();
     default:
@@ -619,6 +771,16 @@ app.addEventListener('pointerdown', (event) => {
 
 app.addEventListener('click', (event) => {
   if (event.target.closest('[data-role="clear-with"]')) return go({ with: [] });
+
+  let notch = event.target.closest('[data-role="step"]');
+  if (notch) return go({ step: notch.dataset.step });
+
+  let by = event.target.closest('[data-role="step-by"]');
+  if (by) {
+    // Negative is back in time. The list is newest-first, so the sign has to
+    // be flipped exactly once, and here is the only place that knows it.
+    return go({ step: stepBy(lastTimeline, currentStep(), -Number(by.dataset.by)) });
+  }
 
   let width = event.target.closest('[data-role="width"]');
   if (width) {

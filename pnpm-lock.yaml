@@ -159,6 +159,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/server
 
+  examples/vale-sale:
+    dependencies:
+      '@deck/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
   examples/variations:
     dependencies:
       '@deck/core':
