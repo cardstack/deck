@@ -166,6 +166,58 @@ module('C: closure preload', () => {
     assert.strictEqual(resolved, '/site/lib/three@1/src/Three.js');
   });
 
+  // The reference server asks about paths, so a path scope key prefixed a
+  // path importer and everything worked. A host with its own loader asks
+  // about absolute URLs, and `/site/…` never prefixes `https://depot/site/…`
+  // — so the scope was skipped in silence and the GLOBAL entry answered.
+  // Not an error: the wrong version, resolved confidently. Scope keys are
+  // URLs, and the import maps spec resolves them against a base before
+  // comparing; the importer is that base.
+  test('a path scope still applies when the importer is an absolute URL', (assert) => {
+    let map = {
+      imports: { three: '/site/other/three@9/src/Three.js' },
+      scopes: {
+        '/site/lib/three-bvh-csg@1/': { three: '/site/lib/three@1/src/Three.js' },
+      },
+    };
+    assert.strictEqual(
+      resolveSpecifier({
+        specifier: 'three',
+        fromUrl: 'https://depot.test/site/lib/three-bvh-csg@1/src/index.js',
+        ...map,
+      }),
+      '/site/lib/three@1/src/Three.js',
+      'the scope is found through the origin',
+    );
+    assert.strictEqual(
+      resolveSpecifier({
+        specifier: 'three',
+        fromUrl: 'https://depot.test/site/me/app@1/app.js',
+        ...map,
+      }),
+      '/site/other/three@9/src/Three.js',
+      'and a module outside it still gets the global entry',
+    );
+  });
+
+  // Ranking is by how much of the importer a scope actually matched, not by
+  // how long the key was typed. A relative key grows when it resolves, and
+  // ordering on the raw string would let a broader absolute scope win.
+  test('the more specific scope wins after resolution, not before', (assert) => {
+    assert.strictEqual(
+      resolveSpecifier({
+        specifier: 'three',
+        fromUrl: 'https://depot.test/site/lib/csg@1/src/index.js',
+        imports: {},
+        scopes: {
+          'https://depot.test/site/': { three: '/broad.js' },
+          '/site/lib/csg@1/': { three: '/narrow.js' },
+        },
+      }),
+      '/narrow.js',
+    );
+  });
+
   function reader(files: Record<string, string>) {
     return async (url: { depot: string; publisher: string; pkg: string; version?: string; path: string }) => {
       let key = formatDeckUrl(url);

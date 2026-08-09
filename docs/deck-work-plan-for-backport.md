@@ -244,6 +244,55 @@ monorepo PR arrives demonstrated rather than argued. The second decides the
 512 MB / 10,000-entry ceiling, and therefore whether `bare` mode can replace
 the download button outright or must coexist with it.
 
+**Done, and the first proof found a bug.** The scopes case is now a test:
+one specifier, two versions, chosen by the importer's URL, with no query
+string and no second document — the `~/boxel-workspaces` shape exactly.
+Writing it surfaced a real defect in `resolveSpecifier`.
+
+Scope keys were matched by plain string prefix. The reference server emits
+`/site/…` keys and asks about `/site/…` module paths, so everything worked
+here. A host with its own loader asks about absolute URLs, and `/site/…`
+never prefixes `https://depot/site/…` — the scope was skipped in silence and
+the GLOBAL entry answered. Not an error: **the wrong version, resolved
+confidently.** Scope keys are URLs, and the import maps spec resolves them
+against a base before comparing; the importer is that base, and
+`resolveSpecifier` now does it. Ranking is by the length of the match after
+resolution rather than of the key as written, so a relative key that grows
+when resolved still outranks a broader absolute one. Three tests cover it,
+all three verified to fail against the old behaviour.
+
+This is precisely the failure P1 would have shipped: Boxel's loader deals in
+absolute URLs, so the very corpus that motivates scopes would have silently
+resolved to one version.
+
+**The streaming spike answers its question: one pass, no sort.**
+`packages/tools/spikes/streaming-hash.mjs`, at the cap — 9,999 files,
+509 MB logical:
+
+```
+  unpack()          1555 ms   peak   967 MB   held   693 MB
+  streamed          1774 ms   peak   168 MB   held    25 MB
+  held over baseline: unpack +676 MB · streamed +8 MB
+```
+
+`tree-hash-v1` is a manifest over `(path, sha256)` in UTF-8 byte order and
+`canonical-zip-v1` stores entries in exactly that order, so a canonical pack
+arrives pre-sorted: hash each entry as it passes, append its line, done.
+Nothing is held but the manifest. The spike asserts the ordering rather than
+assuming it.
+
+**So the ceiling is the writer, not the identity** — an implementation limit,
+not a protocol one, and raising it touches no law. Two caveats recorded in
+[`deck-realm-download-as-pack.md`](deck-realm-download-as-pack.md) §8a:
+streaming reads sizes from the LOCAL header, which only a canonical pack
+guarantees, so foreign zips still need the buffered path; and `pack()` itself
+still materialises everything to deflate it (44 s, >1 GB peak at the cap).
+
+Two smaller facts the spike turned up, both about the caps being slightly
+smaller than advertised: the packlist counts as an entry, so
+`MAX_ENTRIES = 10_000` means 9,999 tree files; and it counts against
+`MAX_TOTAL_SIZE`, spending ~1 MB of the 512 MB budget at that entry count.
+
 ---
 
 ## 1a. Embroider lessons applied
@@ -310,5 +359,5 @@ packaging — real, but it does not block Boxel from starting.
 | W7 | lean trim | **done** — `@cardstack/deck-tools`; Core 26 modules, `semver` only |
 | W8 | naming → `@cardstack/deck` | **done** |
 | W9 | L12 amendment | **done** — law reworded, conformance now re-reads the bytes after the refusals; the serve path also cannot reach `applyRebase` (W7) |
-| W10 | two proofs | scopes proof partly covered by `examples/remix` |
+| W10 | two proofs | **done** — scopes proof as a test (found and fixed a silent wrong-version bug in `resolveSpecifier`); streaming spike settled, one pass, ~8 MB held at the cap |
 | — | Embroider §3 and §4 | **applied** (see §1a) |

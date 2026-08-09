@@ -70,15 +70,47 @@ export function resolveSpecifier(options: {
 }): string | undefined {
   let { specifier, fromUrl, imports, scopes } = options;
   let applicable = Object.keys(scopes)
-    .filter((prefix) => fromUrl.startsWith(prefix))
-    .sort((a, b) => b.length - a.length);
-  for (let prefix of applicable) {
+    .map((prefix) => ({ prefix, matched: scopeMatch(prefix, fromUrl) }))
+    .filter((candidate) => candidate.matched !== undefined)
+    .sort((a, b) => b.matched!.length - a.matched!.length);
+  for (let { prefix } of applicable) {
     let hit = lookup(specifier, scopes[prefix]);
     if (hit) {
       return hit;
     }
   }
   return lookup(specifier, imports);
+}
+
+/**
+ * Does this scope apply to this importer, and how specifically?
+ *
+ * Returns the matched prefix, so the caller can rank by how long the match
+ * actually was rather than by how long the key was written.
+ *
+ * A scope key is a URL. The import maps spec resolves it against the map's
+ * base URL and compares full URLs, and this does the same with the importer
+ * as the base — because a page's map and the modules it governs are
+ * same-origin by construction.
+ *
+ * Doing it by string prefix alone was enough for the reference server, which
+ * emits `/site/…` scope keys and asks about `/site/…` module paths. It is not
+ * enough for a host whose loader deals in absolute URLs: `/site/x/` would
+ * never prefix `https://depot/site/x/y.js`, and the scope would be skipped in
+ * silence — the resolution would still return an answer, just the wrong
+ * version. That is the failure this had to not have.
+ */
+function scopeMatch(prefix: string, fromUrl: string): string | undefined {
+  if (fromUrl.startsWith(prefix)) {
+    return prefix;
+  }
+  let absolute;
+  try {
+    absolute = new URL(prefix, fromUrl).href;
+  } catch {
+    return undefined; // fromUrl is not a usable base, so there is nothing to resolve against
+  }
+  return fromUrl.startsWith(absolute) ? absolute : undefined;
 }
 
 function lookup(

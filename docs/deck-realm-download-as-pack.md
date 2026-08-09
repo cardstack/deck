@@ -272,14 +272,52 @@ pack writer takes over, it goes.
 
 ## 8. Three engineering consequences
 
-**(a) Streaming versus hashing — a real ceiling.** Archiver streams to the
-response. Deck's writer is `writeCanonicalZip(entries): Buffer`, in memory,
-because the finished bytes are what gets hashed. `canonical-zip` caps at
-`MAX_TOTAL_SIZE = 512 MB` and `MAX_ENTRIES = 10_000`. A realm that downloads
-happily today may not be packable. Streaming a hashed artifact needs an
-incremental hash over the canonical byte order, or a two-pass write. Settle
-this first: it decides whether `bare` replaces the current button outright or
-coexists with it for large realms.
+**(a) Streaming versus hashing — measured, and it is not the ceiling.**
+Archiver streams to the response. Deck's writer is
+`writeCanonicalZip(entries): Buffer`, in memory, because the finished bytes
+are what gets hashed. `canonical-zip` caps at `MAX_TOTAL_SIZE = 512 MB` and
+`MAX_ENTRIES = 10_000`, so a realm that downloads happily today may not be
+packable.
+
+The open question was whether identity is what forces the buffering. It is
+not. `packages/tools/spikes/streaming-hash.mjs` builds a pack at the cap and
+verifies it two ways — 9,999 files, 509 MB logical, 169 MB on disk:
+
+```
+  unpack()          1555 ms   peak   967 MB   held   693 MB
+  streamed          1774 ms   peak   168 MB   held    25 MB
+  (baseline                   peak    85 MB   held    17 MB)
+
+  tree hash agrees:  YES
+  arrived sorted:    YES — no buffering needed to reach manifest order
+  held over baseline: unpack +676 MB · streamed +8 MB
+```
+
+**One pass, no sort, ~8 MB retained for a half-gigabyte tree.** The reason is
+structural rather than lucky: `tree-hash-v1` is a manifest over
+`(path, sha256)` sorted in UTF-8 byte order, and `canonical-zip-v1` stores
+entries in exactly that order after the packlist. A canonical pack therefore
+arrives pre-sorted, so each entry can be hashed as it goes past and its
+manifest line appended. Nothing is held but the manifest — 9,999 lines, under
+a megabyte. The spike asserts the ordering rather than assuming it; if it
+were false, every path would have to be resident before anything could be
+hashed and the whole idea would collapse.
+
+Two limits on the result, both worth carrying forward:
+
+- **Canonical packs only.** This reads sizes from the LOCAL header, which
+  `canonical-zip-v1` always writes. A general zip may defer them to a data
+  descriptor, or disagree with the central directory — which is why the
+  ordinary reader treats the central directory as the truth. Foreign zips
+  still need the buffered path. Fair: a pack we emit is canonical by
+  construction.
+- **Writing is the expensive half, and it was not solved.** `pack()` took
+  44 s and peaked over 1 GB at the cap, almost all of it deflate at level 9
+  over a fully materialised tree. Verification streams; production does not.
+
+So the ceiling is the writer, not the identity — which means it is an
+implementation limit rather than a protocol one, and raising it does not
+touch the laws.
 
 **(b) The canonical writer cannot be archiver.** It wraps `node:zlib` rather
 than replacing it, writes non-deterministic bytes by default, and cannot
@@ -314,8 +352,14 @@ pack" underestimates it by most of the effort.
 
 ## 10. Open
 
-1. **Streaming a hashed artifact.** Incremental hash over canonical order, or
-   two-pass? Decides the size ceiling (§8a).
+1. ~~**Streaming a hashed artifact.**~~ **Settled (W10).** One pass,
+   incremental, no second read and no sort — canonical order IS manifest
+   order. Measured at the cap: ~8 MB retained against `unpack`'s 676 MB
+   (§8a). What remains open is the *writer*, which still materialises the
+   whole tree to deflate it, and the entry cap: the packlist counts as an
+   entry and against `MAX_TOTAL_SIZE`, so `MAX_ENTRIES = 10_000` is really
+   9,999 tree files, and at that entry count the packlist itself spends
+   ~1 MB of the 512 MB budget.
 2. **Does `bare` carry a packlist?** It must, to have a `treeHash` — but a
    packlist over realm files alone describes a tree that cannot be fully
    resolved. Honest, and worth confirming that is acceptable rather than
