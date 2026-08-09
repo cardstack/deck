@@ -67,11 +67,11 @@ export function packagesFromPack(
 
 // The token for "the root of this deck's own tree".
 //
-// It used to be `$DECK/`, which was wrong twice over: the value points at
+// It used to be `$REALM/`, which was wrong twice over: the value points at
 // the DECK's root, not at the enclosing mount, and "realm" is Boxel's word
 // for something richer than a depot (docs/deck-depot-and-realm-backport.md).
 //
-// `$DECK/` is still accepted, and always will be. It is not a deprecation
+// `$REALM/` is still accepted, and always will be. It is not a deprecation
 // to be swept up later: it appears inside SEALED trees, and L4 says a
 // published version never changes. A pack written last year must keep
 // resolving, byte for byte, forever. New trees write `$DECK/`.

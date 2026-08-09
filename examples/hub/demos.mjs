@@ -123,6 +123,54 @@ export const DEMOS = [
       { label: 'chroma-js 2.6.0, at the same time', path: '/site/lib/chroma-js@2.6.0/index.js' },
     ],
   },
+  {
+    name: 'two-agents',
+    dir: 'two-agents',
+    port: 8795,
+    workload: 'W1 · concurrent agents',
+    title: 'Two agents at once, and the merge that needs a rule',
+    lede: `Two agents editing the same depot in the same minute. On their own
+      decks there is nothing to merge, because they never wrote to the same
+      name. On the one thing they share, they eventually do — and the generic
+      merge refuses, correctly, because it does not know what the key means.`,
+    look: [
+      'Both component saves auto-publish and are <b>sealed</b> — this is the demo that runs tier-2 history, so every save has a changeId, not just every publish.',
+      'Round one: three different keys under one object. Both forks absorb upstream and keep their own addition. Nobody reviewed anything.',
+      'Round two: the same two keys, two answers. Reported <code>conflicted</code>, and the fork’s tree hash is byte-identical before and after — a conflicted pass writes nothing at all.',
+      'The rules live in <code>merge-policy.json</code>, published by upstream. <code>scale</code> is a set, so <code>union</code> keeps both intentions: 48 was the fork’s, 40 was upstream’s, and both survive.',
+      'A key with no rule is not guessed. The resolver abandons the whole resolution and names the key — one person decides one thing instead of three.',
+    ],
+    tries: [
+      { label: 'the queue', path: '/site/_offers' },
+      { label: 'the merge rules, sealed', path: '/site/std/tokens@1.3.0/merge-policy.json' },
+      { label: 'agent A, live', path: '/site/agent-a/tokens/tokens.json' },
+      { label: 'the seal log', path: '/site/_history' },
+    ],
+  },
+  {
+    name: 'variations',
+    dir: 'variations',
+    port: 8796,
+    workload: 'W4 · choosing between agent output',
+    title: 'A, B or C — and the two you didn’t pick',
+    lede: `Asked to make a gallery denser, an agent offers three answers at
+      three different layers: the tokens, the card, the gallery. They have
+      different blast radii, so a person chooses — and the two rejected
+      answers have to stay readable, because in a month one of them will turn
+      out to have been right.`,
+    look: [
+      'Four iframes, one sealed page. Each is <code>/site/app/preview/preview.html</code> with a different <code>?with=</code> — no checkout, no build, no branch.',
+      `Each variation is an immutable prerelease: ${pill('deck', 'std/tokens@1.1.0-try.a')}, ${pill('deck', 'ui/card@1.1.0-try.b')}, ${pill('deck', 'app/gallery@1.1.0-try.c')}. Publishing all three moved nothing downstream, because ranges never match prereleases.`,
+      'Choosing is <code>deck release --from try-b</code>: a tag moves, the same stored object is named, <b>zero bytes are copied</b>.',
+      'The two you rejected are not deleted, stashed, or branched. They are published versions with no <code>latest</code> pointing at them — which is all “not latest” has ever needed to mean.',
+      'Re-run with <code>CHOOSE=a</code> or <code>CHOOSE=c</code>. Changing your mind in a month is the same pointer move.',
+    ],
+    tries: [
+      { label: 'variation A, still there', path: '/site/std/tokens@1.1.0-try.a/tokens.json' },
+      { label: 'variation C, still there', path: '/site/app/gallery@1.1.0-try.c/gallery.js' },
+      { label: 'what latest names now', path: '/site/ui/card@1.1.0/card.js' },
+    ],
+  },
 ];
 
 export const LAWS = [

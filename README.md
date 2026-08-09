@@ -1,11 +1,15 @@
 # Deck
 
 ```bash
-npx deck hello        # (from this repo: node packages/cli/bin/deck.js hello)
+node packages/cli/bin/deck.js hello
 ```
 
 That scaffolds a working app, serves it live, and prints the URL. Edit
 a file, reload, see it. That is the whole loop.
+
+Nothing here is published to npm yet, and **`npx deck` is somebody else's
+package** — install from this repo. [INSTALL.md](INSTALL.md) covers the
+three ways; [CLI.md](CLI.md) is the CLI's own readme.
 
 **No npm. No GitHub. No deploy. No PR.** Instant feedback. Ship any
 version, share any milestone, revert anytime, use any ESM library from
@@ -203,18 +207,36 @@ pnpm demo
 # open http://localhost:8789/
 ```
 
-[`examples/hub`](examples/hub/) starts every example at once — each in its own
-process, its own depot, its own store — and serves one console: the Deckbook,
-and for each demo its explanation, its live app, and the transcript it actually
-printed while building its store. See [examples/](examples/) to run one on its
-own.
+[`examples/hub`](examples/hub/) starts all seven examples at once — each in its
+own process, its own depot, its own store — and serves one console: the
+Deckbook, and for each demo its explanation, its live app, and the transcript
+it actually printed while building its store. See [examples/](examples/) to run
+one on its own.
+
+Two of them are about the act of writing software with agents rather than about
+a kind of software: [two-agents](examples/two-agents/) — concurrent editing, a
+clean merge, and a conflict resolved deterministically from a published policy —
+and [variations](examples/variations/) — three agent answers at three layers,
+one promoted, two kept.
+
+## The CLI
+
+[INSTALL.md](INSTALL.md) — prerequisites, three ways to install it, and how
+to verify the install actually works.
+
+[CLI.md](CLI.md) — the CLI's readme: the eight command groups, the loop you
+will actually run, and what each refusal is protecting.
+
+`deck help` prints the command map; `deck help <command>` explains any one
+of them in full.
 
 ## Deckbook
 
 Open [deckbook.html](deckbook.html) (or `http://localhost:<port>/deckbook.html`
 on a running server) for a teaching tour of the protocol against what this
 reference implementation actually runs — vocabulary, address space, live loop,
-store/packs, history tiers, vendor, fork/lock/offers, HTTP + CLI maps, and use cases.
+store/packs, history tiers, vendor, fork/lock/offers, HTTP + CLI maps, four
+use cases worked end to end at the command line, and honest status.
 
 ## Documents
 
@@ -283,8 +305,10 @@ multi-package design, and the GitHub mirror analysis.
 
 ## Status
 
-**The reference implementation is built and tested** — 151 tests green
-(69 core, 19 history, 55 server, 8 CLI), lint and typecheck clean.
+**The reference implementation is built and tested** — 297 tests green
+(185 core, 19 history, 76 server, 4 conformance, 13 CLI), lint and
+typecheck clean, and `deck conform` reports 49 passed / 0 failed / 3 not
+applicable.
 
 - **`packages/core`** — `tree-hash-v1` (shasum-compatible manifest,
   UTF-8 byte-order sort), `canonical-zip-v1` (hand-rolled
@@ -311,9 +335,17 @@ multi-package design, and the GitHub mirror analysis.
   tiers; HEAD; writes refused. Plus `/_packages`, `/_browse`,
   `/<depot>/_offers`, the `?with=` trial override, the **rebase daemon**,
   and an SSE change bus at `/_live/events` with a drop-in HMR client.
-- **`packages/cli`** — `deck hello | hash | pack | unpack | list |
-  verify | publish | tag | release | lock | fork | vendor | prune |
-  history | restore | offers | rebase | serve`.
+- **`packages/cli`** — 27 commands in eight groups, one module per group
+  (see [CLI.md](CLI.md)): **start** `hello serve` · **seal** `hash pack
+  unpack list verify` · **publish** `publish tag release prune store derive
+  verify-derivation` · **depend** `vendor vendor-tree lock verify-links` ·
+  **propose** `fork offers rebase` · **endorse** `keygen sign verify-sig` ·
+  **recall** `history restore` · **prove** `conform`. Each command carries
+  its own usage and explanation, and every help screen is rendered from the
+  same records the dispatcher looks up.
+- **`packages/conformance`** — the executable contract: the twelve laws as
+  checks that run, against the reference server or against any
+  implementation black-box over HTTP.
 
 Run everything: `pnpm install && pnpm test && pnpm lint`.
 

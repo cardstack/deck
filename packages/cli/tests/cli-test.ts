@@ -10,6 +10,8 @@ import { treeHashFromDir } from '@deck/core/tree-hash';
 import { readStoreMeta, readStoredPack } from '@deck/core/store';
 import { storeDirFor } from '@deck/server/depot';
 import { jjVersion } from '@deck/history/jj-cli';
+import { GROUPS } from '../src/command.ts';
+import { COMMANDS, commandsIn } from '../src/registry.ts';
 
 const execFileAsync = promisify(execFile);
 const BIN = fileURLToPath(new URL('../bin/deck.js', import.meta.url));
@@ -24,6 +26,65 @@ async function deck(
     env: { ...process.env, ...env },
   });
 }
+
+// The help screens are generated from the command records, so these tests
+// are about the registry staying whole — not about wording. What they catch
+// is a command added to a module and never wired in, or wired in under a
+// group that does not exist: both would otherwise show up only as a section
+// quietly missing from `deck help`.
+module('deck CLI: the command map', function () {
+  test('every group has commands and every command has a group', function (assert) {
+    let ids = new Set(GROUPS.map((group) => group.id));
+    for (let command of COMMANDS) {
+      assert.true(
+        ids.has(command.group),
+        `${command.name} is in a declared group`,
+      );
+      assert.true(command.usage.length > 0, `${command.name} states a usage`);
+      assert.true(
+        command.usage[0].startsWith(command.name),
+        `${command.name}'s usage starts with its own name`,
+      );
+    }
+    for (let group of GROUPS) {
+      assert.true(
+        commandsIn(group.id).length > 0,
+        `group ${group.id} is not empty`,
+      );
+    }
+  });
+
+  test('the overview names every command', async function (assert) {
+    let { stdout } = await deck([], process.cwd());
+    for (let command of COMMANDS) {
+      assert.true(
+        stdout.includes(`  ${command.name} `),
+        `${command.name} appears in the map`,
+      );
+    }
+  });
+
+  test('every command explains itself', async function (assert) {
+    for (let command of COMMANDS) {
+      let { stdout } = await deck(['help', command.name], process.cwd());
+      assert.true(
+        stdout.startsWith(`deck ${command.name} — `),
+        `deck help ${command.name}`,
+      );
+      assert.true(
+        stdout.includes(`  deck ${command.usage[0]}`),
+        `deck help ${command.name} shows its usage line`,
+      );
+    }
+  });
+
+  test('an unknown command fails with a pointer, not a wall of help', async function (assert) {
+    await assert.rejects(
+      deck(['vendorr'], process.cwd()),
+      /no command "vendorr" — did you mean vendor\?/,
+    );
+  });
+});
 
 module('deck CLI end-to-end', function (hooks) {
   let work: string;
@@ -422,6 +483,34 @@ module('deck CLI end-to-end', function (hooks) {
       }),
       /no daemon at http:\/\/127\.0\.0\.1:1/,
       'the message names what was missing',
+    );
+  });
+
+  // `--realm` is not a deprecation waiting for a sunset: it is in scripts
+  // people already wrote, and silently changing what those do is worse than
+  // one line of stderr forever.
+  test('--realm still works, and says so once', async function (assert) {
+    await deck(['pack', DECK], work);
+    let { stdout, stderr } = await deck(
+      [
+        'publish',
+        'my-lib.pack.zip',
+        '--realm',
+        'demo',
+        '--publisher',
+        'acme',
+        '--name',
+        'my-lib',
+        '--version',
+        '1.0.0',
+      ],
+      work,
+    );
+    assert.true(stdout.includes('published acme/my-lib@1.0.0'), stdout);
+    assert.true(stderr.includes('--realm is now --depot'), stderr);
+    assert.true(
+      '1.0.0' in (await readStoreMeta(store, 'acme/my-lib'))!.versions,
+      'it published into the same store --depot would have',
     );
   });
 

@@ -29,6 +29,8 @@ real address space, not a demo router.
 | [fork-an-app](fork-an-app/) | W3 — adapters and forks | Vendor Leaflet from npm source, change one file, run yours next to upstream. The fork costs 2 objects out of 87. Nothing reaches the network at runtime. |
 | [fork-a-language](fork-a-language/) | W3 — bespoke to generic | Replace a language's parser with a FEEL-shaped one. The evaluator stays byte-identical, so both dialects share it and provably run the same semantics. |
 | [field-library](field-library/) | W4 — patterns and fields | Six field decks over five vendored libraries. Aliasing, scopes (two chroma-js versions in one document), and dedupe: 13 dependency edges collapse to 6 URLs, and one URL is one module instance. |
+| [two-agents](two-agents/) | W1 — concurrent agents | Two agents editing at once. On their own decks there is nothing to merge; on the one they share there eventually is. A merge policy published as data resolves it deterministically, and refuses — writing nothing — for any key it does not cover. Runs tier-2 history, so every save has a changeId. |
+| [variations](variations/) | W4 — choosing agent output | An agent offers three answers at three layers. Review is four iframes of one sealed page. Choosing is `deck release --from try-b` — a tag moves, zero bytes copied — and the two you rejected stay published and addressable, just not `latest`. |
 
 ## Three kinds of name
 

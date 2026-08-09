@@ -10,6 +10,7 @@ import {
   lockDeck,
   parseDependencyValue,
   resolveDependencies,
+  resolveScopes,
 } from '../src/lock.ts';
 
 let depotDir: string;
@@ -374,6 +375,94 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       'acme/kept': '/demo/acme/kept@1.0.0/k.js',
       'some-other/': '/elsewhere/',
     });
+  });
+
+  // A page importing `app/gallery` gets a top-level pin for it — but the
+  // gallery's OWN bare specifiers only resolve if a scope carries them. That
+  // scope was emitted for aliased dependencies and silently skipped for
+  // un-aliased ones, which is the ordinary spelling, so pages that composed
+  // decks by name broke in the browser while every test passed.
+  test('a scope is emitted for a dependency declared by its own name', async function (assert) {
+    await publishToStore(
+      storeDir,
+      'me/widget',
+      '1.0.0',
+      pack([
+        {
+          path: 'importmap.json',
+          bytes: Buffer.from(
+            JSON.stringify({
+              deck: {
+                packages: { widget: { version: '1.0.0', entry: '$DECK/w.js' } },
+                // No alias: the key IS the deck name.
+                dependencies: { 'acme/confetti': '^1.0.0' },
+              },
+            }),
+          ),
+        },
+        { path: 'w.js', bytes: Buffer.from("import 'acme/confetti';\n") },
+      ]),
+      { tag: 'latest' },
+    );
+    await writeAppMap({ 'me/widget': '^1.0.0' });
+    let resolutions = await resolveDependencies({
+      depotDir,
+      depotName: 'demo',
+      storeDir,
+      dependencies: { 'me/widget': '^1.0.0' },
+    });
+    let scopes = await resolveScopes({
+      depotName: 'demo',
+      storeDir,
+      roots: resolutions,
+    });
+    assert.deepEqual(
+      scopes,
+      [
+        {
+          scope: '/demo/me/widget@1.0.0/',
+          imports: {
+            'acme/confetti/': '/demo/acme/confetti@1.2.0/',
+            'acme/confetti': '/demo/acme/confetti@1.2.0/confetti.js',
+          },
+        },
+      ],
+      "the widget's own specifier resolves inside the widget's URL prefix",
+    );
+  });
+
+  test('a live dependency gets no scope — there is no sealed state to name', async function (assert) {
+    await publishToStore(
+      storeDir,
+      'me/widget',
+      '1.0.0',
+      pack([
+        {
+          path: 'importmap.json',
+          bytes: Buffer.from(
+            JSON.stringify({
+              deck: {
+                packages: { widget: { version: '1.0.0', entry: '$DECK/w.js' } },
+                dependencies: { 'acme/confetti': 'live' },
+              },
+            }),
+          ),
+        },
+        { path: 'w.js', bytes: Buffer.from("import 'acme/confetti';\n") },
+      ]),
+      { tag: 'latest' },
+    );
+    let scopes = await resolveScopes({
+      depotName: 'demo',
+      storeDir,
+      roots: await resolveDependencies({
+        depotDir,
+        depotName: 'demo',
+        storeDir,
+        dependencies: { 'me/widget': '^1.0.0' },
+      }),
+    });
+    assert.deepEqual(scopes, []);
   });
 
   test('applyLock only touches the specifiers it owns', function (assert) {

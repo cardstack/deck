@@ -5,8 +5,15 @@
 // way, in the same font, in the same paragraph:
 //
 //   leaflet@1.9.4                     what npm publishes
+//   @babel/runtime@7.24.0             …and what a SCOPED one looks like
 //   Leaflet/Leaflet                   where the source lives
 //   /site/lib/leaflet@1.9.4/…         where THIS depot serves it from
+//
+// Every pill shows its namespace, and the npm pill shows an empty one when
+// that is the truth. A github pill always has an `org`; a deck pill always
+// has a `<publisher>`; an unscoped npm name has nobody at all in it. That
+// asymmetry is not a rendering gap to paper over — it IS the difference,
+// and the `<publisher>` segment of a deck address is what closes it.
 //
 // They are not the same thing, and which one you mean changes what a claim
 // means. "Leaflet is 85 modules" is a fact about the npm tarball. "The fork
@@ -34,7 +41,8 @@ export const KINDS = {
   },
   npm: {
     label: 'npm',
-    title: 'a published npm package — the artifact that was vendored',
+    title:
+      'a published npm package — the registry it came from, and the artifact that was vendored',
   },
   github: {
     label: 'github',
@@ -55,6 +63,30 @@ const esc = (value) =>
 const DECK_ADDRESS =
   /^(\/?(?:[a-z0-9][a-z0-9-]*\/)*[a-z0-9][a-z0-9-]*)@([^/\s]+)(\/.*)?$/;
 
+// An npm pill shows whatever namespace the name actually carries, and
+// nothing when it carries none — the scope of a scoped package
+// (`@babel/runtime`), or a registry host when one is written out
+// (`npm.acme.internal/thing@1.0.0`, a different supply chain from the
+// public registry and never to be silently relabelled as it).
+//
+// It does NOT invent one. An unscoped npm name has no owner segment: that
+// is a true and load-bearing fact about the registry — anyone could be the
+// next publisher of `leaflet` — and printing a synthetic namespace over it
+// would hide exactly the gap the `<publisher>` segment of a deck address
+// closes. Empty is the honest rendering.
+//
+// A `<placeholder>` head is the legend's grammar. `npm:` is accepted
+// because that is how `deck vendor` spells the same spec.
+function npmParts(value) {
+  let spec = value.startsWith('npm:') ? value.slice('npm:'.length) : value;
+  let slash = spec.indexOf('/');
+  let head = slash > 0 ? spec.slice(0, slash) : '';
+  if (head && (head.startsWith('@') || head.includes('.') || head.startsWith('<'))) {
+    return { namespace: head, spec: spec.slice(slash + 1) };
+  }
+  return { namespace: '', spec };
+}
+
 function decorate(kind, value) {
   if (kind === 'deck') {
     let match = DECK_ADDRESS.exec(value);
@@ -64,11 +96,15 @@ function decorate(kind, value) {
     }
   }
   if (kind === 'npm') {
-    // `name@version`, where the name may be scoped (`@babel/runtime`).
-    let at = value.lastIndexOf('@');
-    if (at > 0) {
-      return `${esc(value.slice(0, at))}<b>@${esc(value.slice(at + 1))}</b>`;
-    }
+    let { namespace, spec } = npmParts(value);
+    let at = spec.lastIndexOf('@');
+    let named =
+      at > 0
+        ? `${esc(spec.slice(0, at))}<b>@${esc(spec.slice(at + 1))}</b>`
+        : esc(spec);
+    return namespace
+      ? `<span class="dpill-ns">${esc(namespace)}/</span>${named}`
+      : named;
   }
   if (kind === 'github') {
     // `org/repo` or `org/repo@<commit>`.
@@ -119,7 +155,7 @@ export function legend(kinds = Object.keys(KINDS)) {
 // Real addresses on these pages carry the real depot name, `site`.
 const EXAMPLE = {
   deck: '/<depot>/<publisher>/<package>@<version>/<path>',
-  npm: '<name>@<version>',
+  npm: '<scope>/<name>@<version>',
   github: '<org>/<repo>',
 };
 const MEANS = {
@@ -146,6 +182,9 @@ export const PILL_CSS = `
 }
 .dpill-v { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .dpill-v b { font-weight: 600; }
+/* The namespace is context, not the answer: present, readable, and not
+   competing with the package name for the eye. */
+.dpill-ns { opacity: .58; }
 /* Our own space: the interactive teal, because it is the only one of the
    three this server is authoritative about. */
 .dpill.deck   { color: #0a6d56; border-color: #cfeee2; background: #f0fbf7; }

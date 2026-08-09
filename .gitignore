@@ -2,10 +2,19 @@
 *.log
 .DS_Store
 .deck/
+# A depot carries its own machinery inside itself, and none of it is source:
+# `.deck/` is the store, `.jj/` is the seal log, and jj colocates a backing
+# `.git` beside it — which git otherwise mistakes for an embedded repository
+# and refuses to descend into.
+.jj/
+examples/*/depot/.git/
 examples/*/depot/app/viewer/build.json
 examples/*/depot/app/viewer/states.json
 examples/*/depot/app/library/shelf.json
 # `deck fork` WRITES these into the depot: they are demo output, not source.
 examples/contribute-to-codelist/depot/ana/
 examples/contribute-to-codelist/depot/kim/
+examples/two-agents/depot/agent-a/
+examples/two-agents/depot/agent-b/
+examples/variations/depot/try/
 node_modules/

@@ -65,7 +65,7 @@ function overview() {
   return `
   <div class="sheet">
     <div class="kicker">The Deck protocol</div>
-    <h1>Five demos, one store model</h1>
+    <h1>Seven demos, one store model</h1>
     <p class="lede">
       Deck gives a package one identity — the hash of its file tree — and
       serves it at rest. Everything else in these demos falls out of that:
@@ -96,7 +96,7 @@ function overview() {
       </tbody>
     </table>
     <p class="body small">
-      The same module draws these in all five demos and in this page. The
+      The same module draws these in every demo and in this page. The
       depots publish it as a deck, <code>ui/pills@1.0.0</code>; the hub is not
       a depot, so it serves the identical file at <code>/pills.js</code>. Same
       bytes, different carriage.

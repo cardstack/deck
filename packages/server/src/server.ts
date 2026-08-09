@@ -35,7 +35,7 @@ import {
   readStoreMeta,
   resolveVersionSpec,
 } from '@deck/core/store';
-import { resolveDependencies } from '@deck/core/lock';
+import { resolveDependencies, resolveScopes } from '@deck/core/lock';
 import { isValidTreePath } from '@deck/core/tree-hash';
 import {
   isValidHistoryPath,
@@ -632,14 +632,26 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     return rebound;
   }
 
+  interface OverrideResolution {
+    imports: Record<string, string>;
+    // The substitute's OWN scopes. Rebinding cannot produce these: it
+    // rewrites values under the original deck's URL prefix, and a document
+    // that swaps `app/gallery@1.0.0` for `app/gallery@1.1.0-try.c` has no
+    // scope covering the new prefix at all — so the substitute's own bare
+    // specifiers go unresolved and the trial renders nothing. Resolving them
+    // from what the substitute declares also covers the case where it
+    // depends on something the original never did.
+    scopes: Record<string, Record<string, string>>;
+  }
+
   async function overrideImports(
     url: URL,
     depot: DepotMount,
     current: Record<string, string> = {},
-  ): Promise<Record<string, string>> {
+  ): Promise<OverrideResolution> {
     let overrides = parseOverrides(url, depot);
     if (overrides.length === 0) {
-      return {};
+      return { imports: {}, scopes: {} };
     }
     let resolutions = await resolveDependencies({
       depotDir: depot.dir,
@@ -671,7 +683,16 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         }
       }
     }
-    return imports;
+    let scopes = Object.fromEntries(
+      (
+        await resolveScopes({
+          depotName: depot.name,
+          storeDir: depot.storeDir,
+          roots: resolutions,
+        })
+      ).map(({ scope, imports: table }) => [scope, table]),
+    );
+    return { imports, scopes };
   }
 
   async function readLiveBytes(
@@ -1407,12 +1428,12 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     let trying: string[] = [];
     if (found.path.endsWith('.html')) {
       let live = await liveImports(depot, found.path);
-      let overrides = await overrideImports(url, depot, live.imports);
-      trying = Object.keys(overrides).sort();
+      let override = await overrideImports(url, depot, live.imports);
+      trying = Object.keys(override.imports).sort();
       ({ bytes, injected } = injectImportMap(
         bytes,
-        { ...live.imports, ...overrides },
-        rebindScopes(live.scopes, overrides),
+        { ...live.imports, ...override.imports },
+        { ...rebindScopes(live.scopes, override.imports), ...override.scopes },
       ));
     }
     // The whole point: every save is visible on the next request.
@@ -1686,12 +1707,15 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       } catch {
         imports = {};
       }
-      let overrides = await overrideImports(url, depot, imports);
-      trying = Object.keys(overrides).sort();
+      let override = await overrideImports(url, depot, imports);
+      trying = Object.keys(override.imports).sort();
       // From the SAME seal — a sealed document and its map move together —
       // unless the caller is deliberately trying something else.
-      let resolved = { ...imports, ...overrides };
-      let resolvedScopes = rebindScopes(scopes, overrides);
+      let resolved = { ...imports, ...override.imports };
+      let resolvedScopes = {
+        ...rebindScopes(scopes, override.imports),
+        ...override.scopes,
+      };
       ({ bytes, injected } = injectImportMap(bytes, resolved, resolvedScopes));
       // The closure is advertised only for a SEALED document. A trial has
       // substituted dependencies, so its graph is not the one the seal
