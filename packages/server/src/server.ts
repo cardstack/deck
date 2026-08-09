@@ -44,6 +44,11 @@ import {
   resolveVersionSpec,
 } from '@deck/core/store';
 import { resolveDependencies, resolveScopes } from '@deck/core/lock';
+import {
+  parseLink,
+  resolveInheritance,
+  type DecklistLink,
+} from '@deck/core/inherit';
 import { isValidTreePath, treeHashFromDir } from '@deck/core/tree-hash';
 import {
   isValidHistoryPath,
@@ -539,8 +544,31 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     }
   }
 
+  // Loading a parent named by `deck.extends`.
+  //
+  // A parent is always an exact version (L4), so it is always a sealed pack
+  // in this depot's store — never a live tree, which could move underneath
+  // the children inheriting from it.
+  function parentLoader(depot: DepotMount) {
+    return async (parent: string): Promise<DecklistLink | undefined> => {
+      let at = parent.lastIndexOf('@');
+      if (at <= 0) {
+        return undefined;
+      }
+      let pack = await loadPack(
+        depot,
+        parent.slice(0, at),
+        parent.slice(at + 1),
+      );
+      let bytes = await pack?.read(IMPORT_MAP_PATH);
+      return bytes ? parseLink(bytes.toString('utf8')) : undefined;
+    };
+  }
+
   // The `imports` a document should carry: whatever the deck's own map
-  // declares. `deck lock` is what puts resolved pins there.
+  // declares, plus whatever it inherits. `deck lock` is what puts resolved
+  // pins there; `deck.extends` is what lets a deck state only its
+  // differences from a published parent.
   async function liveImports(
     depot: DepotMount,
     treePath: string,
@@ -552,22 +580,42 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     if (segments.length < 3) {
       return { imports: {}, scopes: {} };
     }
+    let text: string;
     try {
-      let text = await readFile(
+      text = await readFile(
         join(depot.dir, segments[0], segments[1], IMPORT_MAP_PATH),
         'utf8',
       );
-      let parsed = JSON.parse(text);
+    } catch {
+      return { imports: {}, scopes: {} };
+    }
+    // An unreadable map still means "no map", as it always did. A map that
+    // names a parent it cannot reach does NOT — that is a broken deck, and
+    // serving it with two hundred entries missing would surface as unrelated
+    // import errors on the page (L11).
+    return flattenLink(text, depot);
+  }
+
+  async function flattenLink(
+    text: string,
+    depot: DepotMount,
+  ): Promise<{
+    imports: Record<string, string>;
+    scopes: Record<string, Record<string, string>>;
+  }> {
+    let link = parseLink(text);
+    if (!link.extends) {
+      // The overwhelmingly common case, and it must cost nothing: no store
+      // reads, no promises, the same object shape as before.
       return {
-        imports: (parsed.imports ?? {}) as Record<string, string>,
-        scopes: (parsed.scopes ?? {}) as Record<
+        imports: (link.imports ?? {}) as Record<string, string>,
+        scopes: (link.scopes ?? {}) as Record<
           string,
           Record<string, string>
         >,
       };
-    } catch {
-      return { imports: {}, scopes: {} };
     }
+    return resolveInheritance({ start: link, load: parentLoader(depot) });
   }
 
   // TRY-BY-URL.
@@ -1946,14 +1994,12 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       // that need them most — the sealed ones.
       let scopes: Record<string, Record<string, string>> = {};
       try {
-        let parsed = sealedMap
-          ? (JSON.parse(sealedMap.toString('utf8')) as {
-              imports?: Record<string, string>;
-              scopes?: Record<string, Record<string, string>>;
-            })
-          : {};
-        imports = parsed.imports ?? {};
-        scopes = parsed.scopes ?? {};
+        // A sealed deck may inherit too, and its parent is sealed by
+        // definition, so the flattened result is as immutable as the deck
+        // itself.
+        ({ imports, scopes } = sealedMap
+          ? await flattenLink(sealedMap.toString('utf8'), depot)
+          : { imports: {}, scopes: {} });
       } catch {
         imports = {};
       }

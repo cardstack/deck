@@ -23,6 +23,8 @@ import {
   verifySignature,
 } from '@deck/core/signature';
 import { parseDependencyValue } from '@deck/core/lock';
+import { flattenInheritance, isExactParent } from '@deck/core/inherit';
+import { resolveSpecifier } from '@deck/core/resolve';
 import { verifyLinks } from '@deck/core/verify-links';
 import {
   deriveMinified,
@@ -275,6 +277,96 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
         'live',
         'a bare deck name means live',
       );
+    });
+
+    // ---- L7 inheritance (`extends`) ---------------------------------------
+    //
+    // Two implementations must agree on these four answers or a remix
+    // published against one server resolves differently on another — and an
+    // inherited decklist that is not portable is not a decklist.
+    await checks.run('L7', 'a child inherits what it does not mention', () => {
+      let flat = flattenInheritance([
+        { imports: { a: '/p/a.js', b: '/p/b.js' } },
+        { imports: { b: '/c/b.js' } },
+      ]);
+      assertEqual(flat.imports.a, '/p/a.js', 'inherited');
+      assertEqual(flat.imports.b, '/c/b.js', 'overridden');
+    });
+
+    await checks.run('L7', 'null removes an inherited entry', () => {
+      let flat = flattenInheritance([
+        { imports: { a: '/p/a.js', drop: '/p/drop.js' } },
+        { imports: { drop: null } },
+      ]);
+      assert(!('drop' in flat.imports), 'a removed entry is absent, not blank');
+      assertEqual(
+        resolveSpecifier({
+          specifier: 'drop',
+          fromUrl: '/c/app.js',
+          imports: flat.imports,
+          scopes: flat.scopes,
+        }),
+        undefined,
+        'and therefore unresolvable',
+      );
+    });
+
+    // The dedupe corollary. An override that stopped at the top level would
+    // leave a vendored package importing the parent's copy — two copies of
+    // one library in one document.
+    await checks.run(
+      'L7',
+      'an override reaches inside an inherited scope',
+      () => {
+        let flat = flattenInheritance([
+          {
+            imports: { lib: '/p/lib@1.js' },
+            scopes: { '/p/widget@2/': { lib: '/p/lib@1.js' } },
+          },
+          { imports: { lib: '/c/lib@2.js' } },
+        ]);
+        assertEqual(
+          resolveSpecifier({
+            specifier: 'lib',
+            fromUrl: '/p/widget@2/w.js',
+            imports: flat.imports,
+            scopes: flat.scopes,
+          }),
+          '/c/lib@2.js',
+          'the scoped entry follows the override',
+        );
+      },
+    );
+
+    await checks.run(
+      'L7',
+      'a scope the child declares outranks that rebind',
+      () => {
+        let flat = flattenInheritance([
+          { imports: { lib: '/p/lib@1.js' } },
+          {
+            imports: { lib: '/c/lib@2.js' },
+            scopes: { '/p/pinned@1/': { lib: '/p/lib@1.js' } },
+          },
+        ]);
+        assertEqual(
+          resolveSpecifier({
+            specifier: 'lib',
+            fromUrl: '/p/pinned@1/x.js',
+            imports: flat.imports,
+            scopes: flat.scopes,
+          }),
+          '/p/lib@1.js',
+          'a dependency may keep a version the child does not use',
+        );
+      },
+    );
+
+    // L4 is the only reason inheriting from a parent is safe at all.
+    await checks.run('L4', 'a parent is named as an exact version', () => {
+      assert(isExactParent('acme/blog@1.2.3'), 'exact');
+      assert(!isExactParent('acme/blog@latest'), 'a tag is refused');
+      assert(!isExactParent('acme/blog@^1.2.3'), 'a range is refused');
     });
 
     // ---- L8 provenance ---------------------------------------------------

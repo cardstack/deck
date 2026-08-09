@@ -5,6 +5,9 @@ import {
   flattenInheritance,
   isExactParent,
   parseExtends,
+  parseLink,
+  resolveInheritance,
+  type DecklistLink,
 } from '../src/inherit.ts';
 import { resolveSpecifier } from '../src/resolve.ts';
 
@@ -113,6 +116,89 @@ module('extends: flattening a chain', function () {
       imports: {},
     }));
     assert.throws(() => flattenInheritance(chain), /limit is 8/);
+  });
+});
+
+module('extends: walking the chain', function () {
+  const shelf: Record<string, string> = {
+    'acme/base@1.0.0': JSON.stringify({
+      imports: { a: '/acme/base@1.0.0/a.js', b: '/acme/base@1.0.0/b.js' },
+    }),
+    'acme/blog@3.2.0': JSON.stringify({
+      deck: { extends: 'acme/base@1.0.0' },
+      imports: { b: '/acme/blog@3.2.0/b.js', c: '/acme/blog@3.2.0/c.js' },
+    }),
+  };
+  const load = async (parent: string) => {
+    let text = shelf[parent];
+    return text ? parseLink(text) : undefined;
+  };
+
+  test('a grandchild collects the whole ancestry', async function (assert) {
+    let flat = await resolveInheritance({
+      start: parseLink(
+        JSON.stringify({
+          deck: { extends: 'acme/blog@3.2.0' },
+          imports: { c: '/me/mine@1.0.0/c.js' },
+        }),
+      ),
+      load,
+    });
+    assert.deepEqual(flat.imports, {
+      a: '/acme/base@1.0.0/a.js',
+      b: '/acme/blog@3.2.0/b.js',
+      c: '/me/mine@1.0.0/c.js',
+    });
+  });
+
+  test('a decklist with no parent needs no loading', async function (assert) {
+    let flat = await resolveInheritance({
+      start: parseLink(JSON.stringify({ imports: { a: '/a.js' } })),
+      load: async () => {
+        assert.true(false, 'load must not be called');
+        return undefined;
+      },
+    });
+    assert.deepEqual(flat.imports, { a: '/a.js' });
+  });
+
+  // L11. An app quietly missing the entries it inherited is worse than a
+  // startup error, and far harder to read.
+  test('a parent that cannot be loaded fails closed, naming it', async function (assert) {
+    await assert.rejects(
+      resolveInheritance({
+        start: { extends: 'acme/gone@9.9.9' },
+        load: async () => undefined,
+      }),
+      /not available: acme\/gone@9\.9\.9/,
+    );
+  });
+
+  test('a cycle is reported rather than followed', async function (assert) {
+    const loop: Record<string, DecklistLink> = {
+      'a/one@1.0.0': { extends: 'a/two@1.0.0' },
+      'a/two@1.0.0': { extends: 'a/one@1.0.0' },
+    };
+    await assert.rejects(
+      resolveInheritance({
+        start: { extends: 'a/one@1.0.0' },
+        load: async (p) => loop[p],
+      }),
+      /inheritance cycle/,
+    );
+  });
+
+  test('parseLink reads imports, scopes and the parent together', function (assert) {
+    let link = parseLink(
+      JSON.stringify({
+        imports: { a: '/a.js' },
+        scopes: { '/x/': { a: '/x/a.js' } },
+        deck: { extends: 'acme/base@1.0.0', packages: {} },
+      }),
+    );
+    assert.deepEqual(link.imports, { a: '/a.js' });
+    assert.deepEqual(link.scopes, { '/x/': { a: '/x/a.js' } });
+    assert.strictEqual(link.extends, 'acme/base@1.0.0');
   });
 });
 

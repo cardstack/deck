@@ -135,6 +135,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/server
 
+  examples/remix:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
   examples/shared:
     dependencies:
       '@deck/core':

@@ -1,0 +1,11 @@
+{
+  "deck": {
+    "extends": "catalog/notes-app@1.0.0",
+    "packages": {
+      "my-notes": { "version": "0.1.0", "entry": "$DECK/index.html" }
+    }
+  },
+  "imports": {
+    "notes/theme": "/site/you/my-notes/theme.js"
+  }
+}

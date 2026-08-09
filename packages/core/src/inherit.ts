@@ -106,6 +106,84 @@ export function parseExtends(jsonText: string): string | undefined {
  *      the escape hatch from rule 2 — which is how a child keeps a
  *      dependency on a version that differs from its own top-level pin.
  */
+/**
+ * Read the three inheritance-relevant parts of a decklist.
+ *
+ * Tolerant of a missing or malformed file in the same way the serve path
+ * already is — an unreadable map yields an empty one — but NOT of a
+ * malformed `extends`, which throws (see `parseExtends`).
+ */
+export function parseLink(jsonText: string): DecklistLink {
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = JSON.parse(jsonText) ?? {};
+  } catch {
+    return {};
+  }
+  let link: DecklistLink = {
+    imports: (parsed.imports ?? {}) as Record<string, MapValue>,
+    scopes: (parsed.scopes ?? {}) as Record<
+      string,
+      Record<string, MapValue> | null
+    >,
+  };
+  let parent = parseExtends(jsonText);
+  if (parent) {
+    link.extends = parent;
+  }
+  return link;
+}
+
+export interface DecklistLink extends InheritableMap {
+  extends?: string;
+}
+
+/**
+ * Walk a decklist's ancestry and flatten it.
+ *
+ * `load` is supplied by the caller because fetching a parent is I/O, and
+ * this module has to stay loadable in a browser. A server reads the parent's
+ * sealed pack; a host might fetch it over HTTP; a test hands over a literal.
+ * The walk itself — ordering, cycles, depth, the merge — is the same
+ * everywhere, which is the point of keeping it here.
+ *
+ * Fails closed (L11). A parent that cannot be loaded throws, naming the
+ * spec: an app silently missing the two hundred entries it inherited is a
+ * worse outcome than a startup error, and much harder to read.
+ */
+export async function resolveInheritance(options: {
+  start: DecklistLink;
+  load: (parent: string) => Promise<DecklistLink | undefined>;
+}): Promise<FlatMap> {
+  let { start, load } = options;
+  let chain: DecklistLink[] = [start];
+  let seen = new Set<string>();
+  let parent = start.extends;
+
+  while (parent) {
+    if (seen.has(parent)) {
+      throw new Error(
+        `inheritance cycle: ${[...seen, parent].join(' → ')}`,
+      );
+    }
+    seen.add(parent);
+    if (chain.length >= EXTENDS_MAX_DEPTH) {
+      throw new Error(
+        `inheritance chain is deeper than ${EXTENDS_MAX_DEPTH}; last parent was ${parent}`,
+      );
+    }
+    let link = await load(parent);
+    if (!link) {
+      throw new Error(`extends names a parent that is not available: ${parent}`);
+    }
+    chain.push(link);
+    parent = link.extends;
+  }
+
+  // Collected child-first; flattening applies ancestor-first.
+  return flattenInheritance(chain.reverse());
+}
+
 export function flattenInheritance(chain: readonly InheritableMap[]): FlatMap {
   if (chain.length > EXTENDS_MAX_DEPTH) {
     throw new Error(
