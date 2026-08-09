@@ -22,6 +22,8 @@ export {
 export type { PackageMapEntry } from './import-map.ts';
 
 export { classifyReference, summarise } from './classify.ts';
+export { planPack, unmetDependencies } from './pack-mode.ts';
+export type { PackPlan, PlanPackOptions } from './pack-mode.ts';
 export type {
   Classification,
   ClassificationReport,

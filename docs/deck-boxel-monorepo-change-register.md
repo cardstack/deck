@@ -37,11 +37,17 @@ easier to plan as four prerequisites plus per-benefit remainders.
 | **P1** | Resolver takes the importer; longest-prefix; scopes | `runtime-common/virtual-network.ts`, `runtime-common/loader.ts` | K3, K5, K8, K10, K11 |
 | **P2** | Versions behind the realm write path | `runtime-common/realm.ts`, `realm-server/lib/realm-history.ts` | K1, K4, K13, publish-as-tag |
 | **P3** | Deck serve grammar + three cache classes | `realm-server/handlers/*`, `runtime-common/realm.ts` | K2, K9, K10 |
-| **P4** | Absolute-reference classifier (rebind / rewrite / leave alone) | new, `runtime-common/` | K14, publish Stage 1, pack intake |
+| **P4** | Absolute-reference classifier (rebind / rewrite / leave alone) | **`@deck/core/classify`** — imported, not written | K14, publish Stage 1, pack intake |
 
 P4 is the sleeper. It is needed by pack intake *and* by the publish
 optimisation, and the publish optimisation can ship before any of Deck — so
 P4 is the earliest thing with two customers.
+
+**Correction (2026-08-09):** P4 was originally listed as new code in
+`runtime-common/`. That was wrong — what counts as a declared dependency is
+a decklist question, so it is protocol. It now ships as
+`@deck/core/classify`, and the monorepo imports it. Boxel writes no
+classification logic of its own.
 
 ---
 
@@ -123,14 +129,31 @@ explicit checkpoint. Decides storage growth and Timeline readability.
 
 ### P4 — the absolute-reference classifier
 
-**New**, in `runtime-common/`. Given a string and a decklist, answer: is this
-a within-realm relative (leave), a declared dependency (rebind), genuine
-external data (leave — this is the one that corrupts content if you get it
-wrong), or a cross-realm card link (rewrite)?
+**Built, in Deck Core.** `classifyReference` from `@deck/core/classify`. The
+monorepo calls it; it writes no classification logic of its own.
 
-Grounded in `boxel-catalog`: `./catalog-app/catalog` leaves,
-`https://cardstack.com/base/realm-config` rebinds,
-`https://boxel-images.boxel.ai/icons/Letter-c.png` must be untouched.
+```ts
+classifyReference({ value, role, imports, sourceBase })
+//   role: 'reference' | 'opaque'   ← required, on purpose
+// → { action: 'leave',   reason: 'opaque' | 'relative' | 'bare' | 'foreign' }
+// → { action: 'rebind',  reason: 'declared-dependency', specifier, rest }
+// → { action: 'rewrite', reason: 'source-base', rest }
+```
+
+The one thing a caller must get right is `role`. It has no default, so code
+that has not decided whether a string is a reference does not compile — and
+data is never touched whatever it matches. That is what stops the failure
+mode `boxel-catalog` would otherwise walk into: `backgroundURL` and
+`iconURL` are absolute URLs that must survive relocation untouched, and
+today they survive only because they happen not to match a rewrite rule.
+
+Verified against the real catalog: `./catalog-app/catalog` leaves,
+`https://cardstack.com/base/realm-config` rebinds, and
+`https://boxel-images.boxel.ai/icons/Letter-c.png` is untouched even when
+wrongly labelled a reference.
+
+`summarise()` returns the `foreign` list — absolute references carried but
+not resolvable — so intake can report what it did not carry.
 
 ---
 
@@ -215,6 +238,14 @@ not implemented in Deck yet. That is the next protocol question, and it
 belongs in the deck repo.
 
 ### K6 — Catalog authoritative, GitHub a read-only mirror
+
+Normative design: [`deck-github-mirror-analysis.md`](deck-github-mirror-analysis.md)
+— **one GitHub monorepo per depot**, Versions remain in `.deck/store`,
+Timeline optional on `history`, catalog mirrors **read-only**, GitHub PRs
+only via **intake** (`Base-Version` + `mergeTrees` + publish; no AI).
+Human anytime path keeps legacy **`share` / `gather`** verbs (§5b) but
+not copy-overwrite. Implement export → share → gather before bot intake.
+Not built yet.
 
 | File | Change |
 | --- | --- |
