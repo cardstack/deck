@@ -1,7 +1,7 @@
 # Codelist — the merge that is not a conflict
 
 ```bash
-pnpm --filter @deck/example-codelist demo
+pnpm --filter @cardstack/deck-example-codelist demo
 # open http://localhost:8790/
 ```
 
@@ -27,7 +27,7 @@ Four states, sealed in order, each ending up at its own immutable URL:
 | `acme/currencies@1.4.0-acme.1` | 13 | a fork: base plus three internal codes |
 | `acme/currencies@1.5.0-acme.1` | 16 | the fork rebased onto 1.5.0 |
 
-The merges are real — the demo calls `mergeTrees` from `@deck/core`, it does
+The merges are real — the demo calls `mergeTrees` from `@cardstack/deck`, it does
 not stage the result.
 
 ## The part worth watching

@@ -13,7 +13,7 @@ import {
 } from './fixture.ts';
 import { assert, assertEqual, Checks, type CheckResult } from './laws.ts';
 
-// Over-the-wire conformance: BLACK BOX. Nothing here imports @deck/core, so
+// Over-the-wire conformance: BLACK BOX. Nothing here imports @cardstack/deck, so
 // the same run measures the reference server and the Boxel realm server with
 // no changes and no shared code to be wrong in the same way.
 //

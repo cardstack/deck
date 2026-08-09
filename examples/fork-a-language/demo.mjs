@@ -16,15 +16,15 @@
 // the two decks — which this demo proves rather than claims, by checking
 // that the store holds exactly one object for it.
 //
-//   pnpm --filter @deck/example-fork-a-language demo
+//   pnpm --filter @cardstack/deck-example-fork-a-language demo
 //   open http://localhost:8792/
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hashBytes } from '@deck/core/tree-hash';
-import { packFromDir } from '@deck/core/pack';
-import { publishToStore, inspectStore } from '@deck/core/store';
-import { storeDirFor } from '@deck/server/depot';
+import { hashBytes } from '@cardstack/deck/tree-hash';
+import { packFromDir } from '@cardstack/deck/pack';
+import { publishToStore, inspectStore } from '@cardstack/deck/store';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
 import { demoBuildMode } from '../shared/reset.mjs';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';

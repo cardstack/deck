@@ -1,8 +1,8 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { hashBytes, treeHashFromDir, treeHashFromEntries } from '@deck/core/tree-hash';
-import { pack, packFromDir, unpack } from '@deck/core/pack';
+import { hashBytes, treeHashFromDir, treeHashFromEntries } from '@cardstack/deck/tree-hash';
+import { pack, packFromDir, unpack } from '@cardstack/deck/pack';
 import {
   publishToStore,
   readStoredFile,
@@ -10,8 +10,8 @@ import {
   readStoreMeta,
   releaseVersion,
   resolveVersionSpec,
-} from '@deck/core/store';
-import { walkSourceGraph } from '@deck/core/vendor-npm';
+} from '@cardstack/deck/store';
+import { walkSourceGraph } from '@cardstack/deck/vendor-npm';
 import {
   appendSignature,
   generateKeyPair,
@@ -21,27 +21,27 @@ import {
   signTreeHash,
   verifyEnvelope,
   verifySignature,
-} from '@deck/core/signature';
-import { parseDependencyValue } from '@deck/core/lock';
-import { flattenInheritance, isExactParent } from '@deck/core/inherit';
-import { classifyReference } from '@deck/core/classify';
+} from '@cardstack/deck/signature';
+import { parseDependencyValue } from '@cardstack/deck/lock';
+import { flattenInheritance, isExactParent } from '@cardstack/deck/inherit';
+import { classifyReference } from '@cardstack/deck/classify';
 import {
   moduleSpecifiers,
   unanalyzableDynamicImports,
-} from '@deck/core/es-lexer';
+} from '@cardstack/deck/es-lexer';
 import {
   createPacklist,
   parsePacklist,
   serializePacklist,
-} from '@deck/core/packlist';
-import { resolveSpecifier } from '@deck/core/resolve';
-import { verifyLinks } from '@deck/core/verify-links';
+} from '@cardstack/deck/packlist';
+import { resolveSpecifier } from '@cardstack/deck/resolve';
+import { verifyLinks } from '@cardstack/deck/verify-links';
 import {
   deriveMinified,
   derivedPack,
   terserVersion,
   verifyDerivation,
-} from '@deck/core/derive';
+} from '@cardstack/deck/derive';
 import {
   FIXTURE_PACKAGE,
   FIXTURE_PUBLISHER,
@@ -53,7 +53,7 @@ import {
 import { assert, assertEqual, Checks, type CheckResult } from './laws.ts';
 
 // At-rest conformance: the laws that are about bytes and state, checkable
-// without a server. These call @deck/core directly today; an implementation
+// without a server. These call @cardstack/deck directly today; an implementation
 // in another language runs the equivalent through its own entry points and
 // must reach the same answers — the FIXTURE_TREE_HASH is what makes that
 // comparison meaningful rather than self-referential.

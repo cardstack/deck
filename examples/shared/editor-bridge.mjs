@@ -19,7 +19,7 @@ import { createServer } from 'node:http';
 import { createSecureServer } from 'node:http2';
 import { cp, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
-import { resolveTlsMaterials } from '@deck/server/tls';
+import { resolveTlsMaterials } from '@cardstack/deck-server/tls';
 import { DEMO_TLS } from './depot.mjs';
 
 const MAX_BYTES = 64 * 1024;

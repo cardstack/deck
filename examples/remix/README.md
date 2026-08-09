@@ -1,7 +1,7 @@
 # remix — a fork that copies nothing
 
 ```
-pnpm --filter @deck/example-remix demo
+pnpm --filter @cardstack/deck-example-remix demo
 ```
 
 Two pages. The same application code renders both.
@@ -48,7 +48,7 @@ it would drift at once — so `extends` refuses tags and ranges.
 
 ## Where the mechanism lives
 
-- `@deck/core/inherit` — `parseExtends`, `flattenInheritance`,
+- `@cardstack/deck/inherit` — `parseExtends`, `flattenInheritance`,
   `resolveInheritance`. Pure and browser-safe; the merge is a function of
   the chain and nothing else.
 - The server flattens the chain before injecting, so the browser receives

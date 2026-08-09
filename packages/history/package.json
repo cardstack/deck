@@ -1,5 +1,5 @@
 {
-  "name": "@deck/history",
+  "name": "@cardstack/deck-history",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -27,6 +27,6 @@
     "typescript": "catalog:"
   },
   "dependencies": {
-    "@deck/core": "workspace:*"
+    "@cardstack/deck": "workspace:*"
   }
 }

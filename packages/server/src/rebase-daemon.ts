@@ -5,7 +5,7 @@ import {
   type Offer,
   type RebasePlan,
   type RebaseState,
-} from '@deck/core/offer';
+} from '@cardstack/deck/offer';
 import type { DepotMount } from './depot.ts';
 
 // The rebase daemon.

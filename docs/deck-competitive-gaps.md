@@ -134,7 +134,9 @@ Numbered for the classification in Part 3.
 
 **Adoption**
 
-- **G23 — No import from git or npm, no export to either.**
+- **G23 — No import from git / no export to GitHub.** (npm/CDN
+  **vendor into the store is built**; GitHub mirror + intake are
+  designed in `deck-github-mirror-analysis.md`, not implemented.)
 - **G24 — No Node or bundler consumption.** Runtime is browser ESM only.
 - **G25 — CJS and non-ESM languages** get the distribution half only.
 
@@ -573,7 +575,7 @@ say the word if you meant different buckets and I will re-cut it.
 | G20 | module-graph waterfall | **C** | `modulepreload` injection, mechanism already present |
 | G21 | bisect / blame / seal diff | **C** | cheap; better than git's because seals are denser |
 | G22 | large files | **C** + D | policy plus a carriage mode |
-| G23 | import/export git and npm | **C** | the adoption ramp |
+| G23 | GitHub mirror + share/gather intake (npm vendor built) | **C** | see `deck-github-mirror-analysis.md` §5b |
 | G24 | Node loader, bundler plugins | **C** | plus the `node_modules` bridge |
 | G25 | CJS and non-ESM | **D** | out of scope; say so |
 | G26 | credential strength | **A** + C + D | Matrix devices; C gates release; D sets policy |

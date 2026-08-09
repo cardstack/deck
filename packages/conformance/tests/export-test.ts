@@ -3,7 +3,7 @@ const { module, test } = QUnit;
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { treeHashFromDir } from '@deck/core/tree-hash';
+import { treeHashFromDir } from '@cardstack/deck/tree-hash';
 import { exportFixture, goldenFixture, GOLDEN_PATH } from '../src/export.ts';
 import { FIXTURE_TREE_HASH } from '../src/fixture.ts';
 

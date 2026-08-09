@@ -47,11 +47,11 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pack } from '@deck/core/pack';
-import { hashBytes } from '@deck/core/tree-hash';
-import { publishToStore, inspectStore, readStoreMeta } from '@deck/core/store';
-import { vendorFromNpmSource } from '@deck/core/vendor-npm';
-import { storeDirFor } from '@deck/server/depot';
+import { pack } from '@cardstack/deck/pack';
+import { hashBytes } from '@cardstack/deck/tree-hash';
+import { publishToStore, inspectStore, readStoreMeta } from '@cardstack/deck/store';
+import { vendorFromNpmSource } from '@cardstack/deck/vendor-npm';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const depotDir = join(here, 'hub');
@@ -492,7 +492,7 @@ const FACES = [
     // Some packages have no importable entry at all, which is the whole
     // point of this one. Fall back to the tarball itself.
     if (!/entry|module/i.test(String(error?.message ?? error))) throw error;
-    let { fetchNpmPackage } = await import('@deck/core/npm');
+    let { fetchNpmPackage } = await import('@cardstack/deck/npm');
     let pkg = await fetchNpmPackage({ spec: `@fontsource/commit-mono@${FONT}`, policy: POLICY });
     return { pkg, vendoredFrom: { registry: 'npm', name: pkg.name, version: pkg.version } };
   });

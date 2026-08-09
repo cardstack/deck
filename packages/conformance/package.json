@@ -1,5 +1,5 @@
 {
-  "name": "@deck/conformance",
+  "name": "@cardstack/deck-conformance",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -20,8 +20,8 @@
     "lint:types": "tsc --noEmit"
   },
   "dependencies": {
-    "@deck/core": "workspace:*",
-    "@deck/server": "workspace:*"
+    "@cardstack/deck": "workspace:*",
+    "@cardstack/deck-server": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

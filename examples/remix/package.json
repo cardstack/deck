@@ -1,8 +1,8 @@
 {
-  "name": "@deck/example-remix",
+  "name": "@cardstack/deck-example-remix",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": { "demo": "node demo.mjs" },
-  "dependencies": { "@deck/core": "workspace:*", "@deck/server": "workspace:*" }
+  "dependencies": { "@cardstack/deck": "workspace:*", "@cardstack/deck-server": "workspace:*" }
 }

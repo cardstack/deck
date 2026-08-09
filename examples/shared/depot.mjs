@@ -14,9 +14,9 @@
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { storeDirFor, watchDepot } from '@deck/server/depot';
-import { createDeckServer } from '@deck/server/server';
-import { createHistory } from '@deck/history/create';
+import { storeDirFor, watchDepot } from '@cardstack/deck-server/depot';
+import { createDeckServer } from '@cardstack/deck-server/server';
+import { createHistory } from '@cardstack/deck-history/create';
 
 const SHARED_TLS_DIR = join(
   dirname(fileURLToPath(import.meta.url)),

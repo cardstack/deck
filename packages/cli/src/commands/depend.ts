@@ -9,20 +9,20 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { pack, peekPacklist } from '@deck/core/pack';
-import { publishToStore } from '@deck/core/store';
-import { lockDeck } from '@deck/core/lock';
-import { assertLinksOk, verifyLinks } from '@deck/core/verify-links';
-import { vendorFromCdn, vendorImportMap } from '@deck/core/vendor';
+import { pack, peekPacklist } from '@cardstack/deck/pack';
+import { publishToStore } from '@cardstack/deck/store';
+import { lockDeck } from '@cardstack/deck/lock';
+import { assertLinksOk, verifyLinks } from '@cardstack/deck/verify-links';
+import { vendorFromCdn, vendorImportMap } from '@cardstack/deck/vendor';
 import {
   deckNameForNpm,
   probeEntries,
   vendorFromNpmSource,
-} from '@deck/core/vendor-npm';
-import { fetchNpmPackage, verifyAgainstGithubTree } from '@deck/core/npm';
-import { mapVendorImportMap, vendorFromSourceMap } from '@deck/core/vendor-map';
-import { planVendorTree, vendorUnitImportMap } from '@deck/core/vendor-tree';
-import { discoverDecks, readDepotPolicy } from '@deck/server/depot';
+} from '@cardstack/deck/vendor-npm';
+import { fetchNpmPackage, verifyAgainstGithubTree } from '@cardstack/deck/npm';
+import { mapVendorImportMap, vendorFromSourceMap } from '@cardstack/deck/vendor-map';
+import { planVendorTree, vendorUnitImportMap } from '@cardstack/deck/vendor-tree';
+import { discoverDecks, readDepotPolicy } from '@cardstack/deck-server/depot';
 import { defineCommand, type Command } from '../command.ts';
 import { cooldownOverride, depotAt, fail } from '../support.ts';
 

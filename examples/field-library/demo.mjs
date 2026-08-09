@@ -25,20 +25,20 @@
 //           under another deck's zod. Nothing computes that; it falls out of
 //           content addressing.
 //
-//   pnpm --filter @deck/example-field-library demo
+//   pnpm --filter @cardstack/deck-example-field-library demo
 //   open http://localhost:8793/
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { IMPORT_MAP_PATH, parseDependencies } from '@deck/core/import-map';
-import { lockDeck } from '@deck/core/lock';
-import { pack } from '@deck/core/pack';
-import { inspectStore, publishToStore, readStoredPack } from '@deck/core/store';
-import { peekPacklist } from '@deck/core/pack';
-import { readTreeFromDir } from '@deck/core/tree';
-import { vendorFromNpmSource } from '@deck/core/vendor-npm';
-import { storeDirFor } from '@deck/server/depot';
-import { localFetch } from '@deck/server/tls';
+import { IMPORT_MAP_PATH, parseDependencies } from '@cardstack/deck/import-map';
+import { lockDeck } from '@cardstack/deck/lock';
+import { pack } from '@cardstack/deck/pack';
+import { inspectStore, publishToStore, readStoredPack } from '@cardstack/deck/store';
+import { peekPacklist } from '@cardstack/deck/pack';
+import { readTreeFromDir } from '@cardstack/deck/tree';
+import { vendorFromNpmSource } from '@cardstack/deck/vendor-npm';
+import { storeDirFor } from '@cardstack/deck-server/depot';
+import { localFetch } from '@cardstack/deck-server/tls';
 import {
   createDemoServer,
   demoOrigin,

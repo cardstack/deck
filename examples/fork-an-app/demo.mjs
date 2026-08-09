@@ -28,17 +28,17 @@
 //                    versions can be served side by side and neither can
 //                    be mistaken for the other.
 //
-//   pnpm --filter @deck/example-fork-an-app demo
+//   pnpm --filter @cardstack/deck-example-fork-an-app demo
 //   open http://localhost:8791/
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pack, unpack } from '@deck/core/pack';
-import { hashBytes } from '@deck/core/tree-hash';
-import { publishToStore, inspectStore } from '@deck/core/store';
-import { vendorFromNpmSource } from '@deck/core/vendor-npm';
-import { fetchNpmPackage } from '@deck/core/npm';
-import { storeDirFor } from '@deck/server/depot';
+import { pack, unpack } from '@cardstack/deck/pack';
+import { hashBytes } from '@cardstack/deck/tree-hash';
+import { publishToStore, inspectStore } from '@cardstack/deck/store';
+import { vendorFromNpmSource } from '@cardstack/deck/vendor-npm';
+import { fetchNpmPackage } from '@cardstack/deck/npm';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
 import { demoBuildMode } from '../shared/reset.mjs';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';

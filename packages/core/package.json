@@ -1,5 +1,5 @@
 {
-  "name": "@deck/core",
+  "name": "@cardstack/deck",
   "version": "0.1.0",
   "private": true,
   "type": "module",

@@ -524,7 +524,7 @@ So Core is not one lean package. It is **split by runtime**:
 Done, and on `deck/core-boundary`:
 
 ```ts
-// @deck/core/resolve — zero `node:` imports, enforced by lint
+// @cardstack/deck/resolve — zero `node:` imports, enforced by lint
 export function resolveSpecifier(options: {
   specifier: string;
   fromUrl: string;                                  // ← the importer: what makes scopes possible
@@ -578,7 +578,7 @@ Two open decisions, flagged rather than assumed:
    publishes to.
 2. Name it now what it will be called *after* the move into the monorepo —
    `@cardstack/deck` — so relocating is a directory move with no import
-   churn in consumers. The package is still `@deck/core` today; renaming is
+   churn in consumers. The package is still `@cardstack/deck` today; renaming is
    deliberate churn best done in one pass, not mixed into the split.
 
 ### 7.5 Exit criteria
@@ -590,7 +590,7 @@ The backport is "just wiring" when:
 - [ ] every function Boxel needs is reachable from a documented entry — no
       reaching into internals
 - [ ] one publishable tarball rather than 25 subpath exports
-      (`@deck/core` currently exports 25 subpaths; the split doc calls this
+      (`@cardstack/deck` currently exports 25 subpaths; the split doc calls this
       "package archaeology")
 - [ ] conformance runnable against a *foreign* implementation over HTTP, so
       it can gate the realm server in CI

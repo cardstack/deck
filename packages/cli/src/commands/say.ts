@@ -35,7 +35,7 @@ import {
   CLAIM_DEFAULT_TTL_MS,
   CLAIM_MAX_TTL_MS,
   claimsDirFor,
-} from '@deck/server/activity';
+} from '@cardstack/deck-server/activity';
 import { defineCommand, type Command } from '../command.ts';
 import { depotAt, fail } from '../support.ts';
 

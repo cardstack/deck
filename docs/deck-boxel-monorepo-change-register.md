@@ -37,7 +37,7 @@ easier to plan as four prerequisites plus per-benefit remainders.
 | **P1** | Resolver takes the importer; longest-prefix; scopes | `runtime-common/virtual-network.ts`, `runtime-common/loader.ts` | K3, K5, K8, K10, K11 |
 | **P2** | Versions behind the realm write path | `runtime-common/realm.ts`, `realm-server/lib/realm-history.ts` | K1, K4, K13, publish-as-tag |
 | **P3** | Deck serve grammar + three cache classes | `realm-server/handlers/*`, `runtime-common/realm.ts` | K2, K9, K10 |
-| **P4** | Absolute-reference classifier (rebind / rewrite / leave alone) | **`@deck/core/classify`** — imported, not written | K14, publish Stage 1, pack intake |
+| **P4** | Absolute-reference classifier (rebind / rewrite / leave alone) | **`@cardstack/deck/classify`** — imported, not written | K14, publish Stage 1, pack intake |
 
 P4 is the sleeper. It is needed by pack intake *and* by the publish
 optimisation, and the publish optimisation can ship before any of Deck — so
@@ -46,7 +46,7 @@ P4 is the earliest thing with two customers.
 **Correction (2026-08-09):** P4 was originally listed as new code in
 `runtime-common/`. That was wrong — what counts as a declared dependency is
 a decklist question, so it is protocol. It now ships as
-`@deck/core/classify`, and the monorepo imports it. Boxel writes no
+`@cardstack/deck/classify`, and the monorepo imports it. Boxel writes no
 classification logic of its own.
 
 ---
@@ -86,7 +86,7 @@ classification logic of its own.
 | `host/app/lib/boxel-source-classifier.ts:562` | already declares the two-arg form — the adapter at `boxel-execution.ts:785` collapses |
 
 **Deck Core supplies:** `resolveSpecifier({specifier, fromUrl, imports, scopes})`
-from `@deck/core/resolve` — pure, browser-safe, lint-enforced, already built.
+from `@cardstack/deck/resolve` — pure, browser-safe, lint-enforced, already built.
 
 **Test gate:** one card importing `three@0.169.0` whose dependency resolves
 `three@0.160.0`, both live, no `@ts-expect-error`, no `?deps=` query string.
@@ -129,7 +129,7 @@ explicit checkpoint. Decides storage growth and Timeline readability.
 
 ### P4 — the absolute-reference classifier
 
-**Built, in Deck Core.** `classifyReference` from `@deck/core/classify`. The
+**Built, in Deck Core.** `classifyReference` from `@cardstack/deck/classify`. The
 monorepo calls it; it writes no classification logic of its own.
 
 ```ts
@@ -263,13 +263,24 @@ models the workflow — it has `prCard`, `ciStatus` and `reviewStatus` fields.
 Making submission inter-realm means replacing `prCard` with a realm-native
 proposal that reads Deck data, not deleting the workflow.
 
+Normative cross-realm carriage (offers / rebase between deck-enabled
+realms): [`deck-depot-and-realm-backport.md`](deck-depot-and-realm-backport.md)
+§3.3 and [`deck-in-motion.md`](deck-in-motion.md) §3.7 — (1) public realm
+readable by both sides, (2) out-of-band **Matrix** identity + room +
+message of intent, (3) Deck Pack attachment when the tip cannot be public.
+Realm ACL gates who may issue an offer and who may rebase/accept. GitHub
+PR is interim only (K6 intake / share-gather).
+
 | File | Change |
 | --- | --- |
-| *content* | `submission-workflow-card.gts`: `prCard` → a proposal card over Versions |
-| `realm-server/handlers/handle-github-pr.ts` | delete |
+| *content* | `submission-workflow-card.gts`: `prCard` → a proposal card over Versions / offers |
+| *content* / host | Matrix room + message as intent signal; optional pack attach |
+| `realm-server/` | ACL checks on offer issue and rebase/accept pointer moves |
+| `realm-server/handlers/handle-github-pr.ts` | delete once Matrix + Deck path is live |
 
-**Depends on K6** to be meaningful, and on the activity read path for review
-state.
+**Depends on K6** to be meaningful for catalog authority, and on the
+activity read path for review state; depends on Deck Core offer/rebase
+behind the realm FS (K1/P seam).
 
 ### K8 — Remix without copying
 

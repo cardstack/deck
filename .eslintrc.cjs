@@ -76,7 +76,7 @@ module.exports = {
       // behaviour that genuinely needs best effort is a vendor flag with an
       // explicit lossy report, never a quiet branch in serve.
       //
-      // `@deck/core/npm` is deliberately absent from this list: `depot.ts`
+      // `@cardstack/deck/npm` is deliberately absent from this list: `depot.ts`
       // reads the cooldown POLICY from it, which is depot configuration
       // rather than package normalisation. It lives in npm.ts for
       // historical reasons and would read better extracted — tidying, not a
@@ -89,9 +89,9 @@ module.exports = {
             patterns: [
               {
                 group: [
-                  '@deck/core/vendor',
-                  '@deck/core/vendor-*',
-                  '@deck/core/derive',
+                  '@cardstack/deck/vendor',
+                  '@cardstack/deck/vendor-*',
+                  '@cardstack/deck/derive',
                 ],
                 message:
                   'Compat and derivation are intake work, not serve work — put it in vendor/CLI/Tools (docs/deck-embroider-lessons.md §3).',

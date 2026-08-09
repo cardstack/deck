@@ -123,6 +123,55 @@ merges key by key, so two people who add different keys do not conflict.
 **The limit: this happens inside one depot.** Both the offer and its upstream
 are mounts on the same server.
 
+### 3.3a Merge-back under parallel forks — note (not a mechanism)
+
+Offers are cheap, so many of them run at once. Velocity plus parallel tracks
+is the normal case, not an exception. The rebase daemon keeps each offer
+honest against *its* upstream tip; it does not decide *which* tip the world
+should treat as trunk. That decision is social. Two patterns show up.
+
+**Ideal — synthesize, then reduce.** Do not treat merge-back as “land PR A,
+then PR B, in review order.” Prefer a **synthesis tip**: merge parallel
+proposals into one working tree that tries to hold the useful ideas
+together, then **shrink the remaining differences one at a time**. Each
+small reduction either:
+
+- folds a contributor’s idea into the synthesis (piece by piece), or
+- leaves that parallel track where it is — still runnable, still an offer,
+  just no longer on the path everyone is narrowing toward.
+
+This is continuous and biological: many forks alive, a synthesis that
+absorbs, tracks that wither by neglect rather than by force-delete. The
+protocol’s job is to keep every tip addressable and mergeable (`treeHash`,
+`forkedFrom`, conflict paths). Who *chooses* the next synthesis step is
+policy, not identity — any of:
+
+- a **human arbitrator**,
+- a human **assisted by AI** (drafts merges / ranks diffs; person decides),
+- a **consensus** process of humans and AIs (several signatures or votes
+  before a pointer moves — same family as §3.5),
+- **AI-arbitrated with human override** (machine proposes or even lands a
+  clean merge; a person can refuse, revert, or take the locus elsewhere).
+
+The protocol only requires that the judgment act on **runnable Versions**
+and leave an auditable pointer move — the same reason offers beat
+patch-only PRs. It does not pick which of the four is “correct.”
+
+**Other case — the trunk resists, so the locus moves.** Sometimes the
+named main (dist-tag `latest`, catalog pointer, “official” publisher) is
+slow or closed to merges. Attention and adoption then **lock onto another
+fork**: that fork gathers the ideas, accepts the merges, and becomes what
+people actually run. In Deck terms that is not a special object — it is a
+pointer move. Dist-tags and catalog names are cheap; Versions are not
+rewritten. The old trunk can stay published and ignored. The new locus is
+“main” because consumers point at it, not because git said so.
+
+Neither pattern is built as a workflow product. Both are why in-motion
+keeps forks as first-class runnable Versions and refuses to make GitHub’s
+linear PR queue the only merge story. Share/gather and between-servers
+admission (§3.7) should assume synthesis-or-locus, not only
+trunk-or-nothing.
+
 ### 3.4 Notes — designed, not built
 
 An agent that finishes a piece of work should be able to say what it did, and
@@ -206,13 +255,53 @@ never have. Until then, Deck in motion is a set of local conventions with a
 good data model, and Deck at rest is the part another implementation can
 join.
 
+**Offer and rebase across depots** need a shared way to see the trees.
+Until an inter-depot protocol exists, one of these three must hold:
+
+1. **Public depot readable by both sides.** Contributor and receiver can
+   `GET` the same addresses (offer tip, upstream Version, `?meta` /
+   treeHash). Rebase and review are ordinary reads; no private courier.
+2. **Out-of-band message of intent** (not part of the protocol yet) —
+   email, Matrix, chat, ticket, etc. — that names what is offered, against
+   which base (`publisher/package@version` + `treeHash`), and why. The
+   bytes themselves still have to be reachable somehow (usually via (1) or
+   (3)).
+3. **If a public depot is not possible:** send a **Deck Pack as an
+   attachment** with that same message of intent. The pack carries the
+   tree (and provenance the pack format already knows how to hold); the
+   message carries the human/agent intent. Receiver unpacks into their
+   depot, then offer/rebase proceeds locally as today.
+
+**Boxel backport (planned):** Realms are **depot-shaped** — same live tree,
+store, and address grammar once Deck Core lands behind them (see
+`deck-depot-and-realm-backport.md`). The out-of-band signal in (2) is
+intended to be **Matrix**: Matrix identity (who), Matrix room (where the
+negotiation lives), and Matrix message (the message of intent — base
+Version / treeHash / why). Private or gated realms use realm **access
+control** to decide who may **issue** an offer and who may **run rebase /
+accept** a pointer move; public catalog realms are case (1). A Deck Pack
+on the Matrix message covers case (3) when the offer tip is not world-
+readable. Until that lands, GitHub share/gather remains a usable stand-in
+for teams that already live there.
+
+GitHub share/gather (see `deck-github-mirror-analysis.md` §5b) is a
+special case of (1)+(2): the repo is the readable projection, the PR body
+is the message of intent. It moves a tip across the gap with the same base
+identity an offer already records (`Base-Version` / `treeHash`), then lands
+as live or a new Version on the receiving depot — where ordinary offers
+and rebase apply again. That is not a second collaboration model; it is a
+truck for the missing between-servers hop. Catalog **install** / **use** /
+**import** (`deck-catalog-consumption-modes.md`) are consumption verbs and
+are not this path.
+
 ---
 
 ## 4. What this means for the words
 
 - **At rest**: Version, Step, Timeline, tree hash, Deck Pack, depot, deck,
   publisher, Import, Pin, Entry, Leaf, Closure.
-- **In motion**: offer, conflict, rebase, claim, note, reply, activity, touch.
+- **In motion**: offer, conflict, rebase, claim, note, reply, activity, touch;
+  and (social, not protocol objects) synthesis tip, locus shift.
 
 A word that appears in both lists is a mistake to be fixed, not a
 coincidence. `seal` was such a word — it named a Version, a Step, and the act

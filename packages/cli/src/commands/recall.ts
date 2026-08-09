@@ -8,8 +8,8 @@
 
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { applyRestore } from '@deck/history/backend';
-import { createHistory, isValidHistoryKind } from '@deck/history/create';
+import { applyRestore } from '@cardstack/deck-history/backend';
+import { createHistory, isValidHistoryKind } from '@cardstack/deck-history/create';
 import { defineCommand, type Command } from '../command.ts';
 import { fail } from '../support.ts';
 

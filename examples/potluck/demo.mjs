@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Potluck RSVP form — fields from the field-library shelf + ProseMirror notes.
 //
-//   pnpm --filter @deck/example-potluck demo
-//   pnpm --filter @deck/example-potluck steps
+//   pnpm --filter @cardstack/deck-example-potluck demo
+//   pnpm --filter @cardstack/deck-example-potluck steps
 //
 // DEFAULT IS ADDITIVE. Re-running this must not delete Notes, Claims, Timeline
 // seals, or published versions. `RESET=1` is the only path that wipes the
@@ -10,8 +10,8 @@
 import { access, mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { publishToStore, readStoredPack, readStoreMeta } from '@deck/core/store';
-import { storeDirFor } from '@deck/server/depot';
+import { publishToStore, readStoredPack, readStoreMeta } from '@cardstack/deck/store';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 import {
   createDemoServer,
   demoOrigin,
@@ -132,7 +132,7 @@ serveLive({ depot, server });
 server.listen(PORT, () => {
   let origin = demoOrigin(PORT);
   console.log(`\n  ${origin}/site/app/form/index.html`);
-  console.log('  evolve: pnpm --filter @deck/example-potluck steps');
-  console.log('  wipe store only (keeps notes): RESET=1 pnpm --filter @deck/example-potluck demo\n');
+  console.log('  evolve: pnpm --filter @cardstack/deck-example-potluck steps');
+  console.log('  wipe store only (keeps notes): RESET=1 pnpm --filter @cardstack/deck-example-potluck demo\n');
   for (let line of liveNotes({ depot, port: PORT, origin })) console.log(line);
 });

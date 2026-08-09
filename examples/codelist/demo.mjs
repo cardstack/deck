@@ -12,15 +12,15 @@
 // merge already happened when it was sealed. You are looking at the before
 // and the after, both addressable, forever.
 //
-//   pnpm --filter @deck/example-codelist demo
+//   pnpm --filter @cardstack/deck-example-codelist demo
 //   open https://localhost:8790/
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mergeTrees } from '@deck/core/merge';
-import { pack } from '@deck/core/pack';
-import { publishToStore } from '@deck/core/store';
-import { storeDirFor } from '@deck/server/depot';
+import { mergeTrees } from '@cardstack/deck/merge';
+import { pack } from '@cardstack/deck/pack';
+import { publishToStore } from '@cardstack/deck/store';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
 import { demoBuildMode } from '../shared/reset.mjs';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';

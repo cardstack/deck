@@ -21,14 +21,14 @@
 // keep in step with upstream, and no merge to do when 1.1.0 arrives — the
 // remix moves by editing one line of `extends`.
 //
-//   pnpm --filter @deck/example-remix demo
+//   pnpm --filter @cardstack/deck-example-remix demo
 //   open http://localhost:8800/
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readdir, stat } from 'node:fs/promises';
-import { packFromDir } from '@deck/core/pack';
-import { publishToStore, readStoreMeta } from '@deck/core/store';
-import { storeDirFor } from '@deck/server/depot';
+import { packFromDir } from '@cardstack/deck/pack';
+import { publishToStore, readStoreMeta } from '@cardstack/deck/store';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));

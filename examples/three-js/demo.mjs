@@ -20,16 +20,16 @@
 // the kind of thing there is no option for. `MeshPhongMaterial` has fifty
 // settings and none of them is "glow at grazing angles and scan the screen".
 //
-//   pnpm --filter @deck/example-three-js demo
+//   pnpm --filter @cardstack/deck-example-three-js demo
 //   open https://localhost:8797/
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pack, unpack } from '@deck/core/pack';
-import { hashBytes } from '@deck/core/tree-hash';
-import { inspectStore, publishToStore } from '@deck/core/store';
-import { probeEntries, vendorFromNpmSource } from '@deck/core/vendor-npm';
-import { fetchNpmPackage } from '@deck/core/npm';
+import { pack, unpack } from '@cardstack/deck/pack';
+import { hashBytes } from '@cardstack/deck/tree-hash';
+import { inspectStore, publishToStore } from '@cardstack/deck/store';
+import { probeEntries, vendorFromNpmSource } from '@cardstack/deck/vendor-npm';
+import { fetchNpmPackage } from '@cardstack/deck/npm';
 import {
   createDemoServer,
   demoOrigin,
@@ -37,7 +37,7 @@ import {
   openDemoDepot,
   serveLive,
 } from '../shared/depot.mjs';
-import { storeDirFor } from '@deck/server/depot';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 import { demoBuildMode, resetDemoDepot } from '../shared/reset.mjs';
 

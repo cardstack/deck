@@ -1,7 +1,7 @@
 # Fork an app — take all of it, change the one thing you disagree with
 
 ```bash
-pnpm --filter @deck/example-fork-an-app demo
+pnpm --filter @cardstack/deck-example-fork-an-app demo
 # open http://localhost:8791/   ← look at the zoom controls
 ```
 

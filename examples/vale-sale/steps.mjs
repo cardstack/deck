@@ -4,7 +4,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHistory } from '@deck/history/create';
+import { createHistory } from '@cardstack/deck-history/create';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const depot = join(here, 'depot');

@@ -18,7 +18,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { localFetch } from '@deck/server/tls';
+import { localFetch } from '@cardstack/deck-server/tls';
 import { demoOrigin } from '../shared/depot.mjs';
 import { DEMOS, LAWS } from './demos.mjs';
 

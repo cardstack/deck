@@ -1,17 +1,17 @@
 import { watch, type FSWatcher } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
-import { DEFAULT_IGNORE } from '@deck/core/tree-hash';
-import { parsePackages, IMPORT_MAP_PATH } from '@deck/core/import-map';
-import { packFromDir } from '@deck/core/pack';
+import { DEFAULT_IGNORE } from '@cardstack/deck/tree-hash';
+import { parsePackages, IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
+import { packFromDir } from '@cardstack/deck/pack';
 import {
   nextDevVersion,
   publishToStore,
   readStoreMeta,
   setDistTag,
-} from '@deck/core/store';
-import { treeHashFromDir } from '@deck/core/tree-hash';
-import type { HistoryBackend } from '@deck/history/backend';
+} from '@cardstack/deck/store';
+import { treeHashFromDir } from '@cardstack/deck/tree-hash';
+import type { HistoryBackend } from '@cardstack/deck-history/backend';
 
 // The auto-publish loop:
 //

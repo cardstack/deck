@@ -16,18 +16,18 @@ import { join } from 'node:path';
 import { resolveTlsMaterials, type TlsOption } from './tls.ts';
 import { ActivityIndex } from './activity.ts';
 import { DECKBOOK_PATHS, loadDeckbookHtml } from './deckbook.ts';
-import { readZipEntry } from '@deck/core/canonical-zip';
+import { readZipEntry } from '@cardstack/deck/canonical-zip';
 import {
   parsePackages,
   type PackageMapEntry,
   treePathFromMapValue,
   IMPORT_MAP_PATH,
   MOUNT_SEPARATOR,
-} from '@deck/core/import-map';
-import { peekPacklist } from '@deck/core/pack';
-import type { Packlist } from '@deck/core/packlist';
-import { readTree, readTreeFile } from '@deck/core/object-store';
-import { readEnvelope, summarizeEnvelope } from '@deck/core/signature';
+} from '@cardstack/deck/import-map';
+import { peekPacklist } from '@cardstack/deck/pack';
+import type { Packlist } from '@cardstack/deck/packlist';
+import { readTree, readTreeFile } from '@cardstack/deck/object-store';
+import { readEnvelope, summarizeEnvelope } from '@cardstack/deck/signature';
 import { negotiateBody } from './compression.ts';
 import {
   documentEntries,
@@ -42,18 +42,18 @@ import {
   readStoredFile,
   readStoreMeta,
   resolveVersionSpec,
-} from '@deck/core/store';
-import { resolveDependencies, resolveScopes } from '@deck/core/lock';
+} from '@cardstack/deck/store';
+import { resolveDependencies, resolveScopes } from '@cardstack/deck/lock';
 import {
   parseLink,
   resolveInheritance,
   type DecklistLink,
-} from '@deck/core/inherit';
-import { isValidTreePath, treeHashFromDir } from '@deck/core/tree-hash';
+} from '@cardstack/deck/inherit';
+import { isValidTreePath, treeHashFromDir } from '@cardstack/deck/tree-hash';
 import {
   isValidHistoryPath,
   isValidRevisionId,
-} from '@deck/history/backend';
+} from '@cardstack/deck-history/backend';
 import {
   bytesToPreview,
   listingFromLiveDir,

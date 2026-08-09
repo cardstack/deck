@@ -1,5 +1,5 @@
 {
-  "name": "@deck/cli",
+  "name": "@cardstack/deck-cli",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,10 +15,10 @@
     "lint:types": "tsc --noEmit"
   },
   "dependencies": {
-    "@deck/core": "workspace:*",
-    "@deck/server": "workspace:*",
-    "@deck/history": "workspace:*",
-    "@deck/conformance": "workspace:*"
+    "@cardstack/deck": "workspace:*",
+    "@cardstack/deck-server": "workspace:*",
+    "@cardstack/deck-history": "workspace:*",
+    "@cardstack/deck-conformance": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

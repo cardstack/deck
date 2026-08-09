@@ -19,21 +19,21 @@
 // published rule. Same inputs, same output, on any machine — which is what
 // makes it something a daemon may run unattended.
 //
-//   pnpm --filter @deck/example-two-agents demo
+//   pnpm --filter @cardstack/deck-example-two-agents demo
 //   open http://localhost:8795/
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { forkDeck } from '@deck/core/fork';
-import { IMPORT_MAP_PATH } from '@deck/core/import-map';
-import { lockDeck } from '@deck/core/lock';
-import { discoverOffers, planRebase } from '@deck/core/offer';
-import { pack } from '@deck/core/pack';
-import { publishToStore } from '@deck/core/store';
-import { readTreeFromDir } from '@deck/core/tree';
-import { treeHashFromDir } from '@deck/core/tree-hash';
-import { storeDirFor, watchDepot } from '@deck/server/depot';
-import { rebasePass } from '@deck/server/rebase-daemon';
+import { forkDeck } from '@cardstack/deck/fork';
+import { IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
+import { lockDeck } from '@cardstack/deck/lock';
+import { discoverOffers, planRebase } from '@cardstack/deck/offer';
+import { pack } from '@cardstack/deck/pack';
+import { publishToStore } from '@cardstack/deck/store';
+import { readTreeFromDir } from '@cardstack/deck/tree';
+import { treeHashFromDir } from '@cardstack/deck/tree-hash';
+import { storeDirFor, watchDepot } from '@cardstack/deck-server/depot';
+import { rebasePass } from '@cardstack/deck-server/rebase-daemon';
 import {
   createDemoServer,
   demoOrigin,

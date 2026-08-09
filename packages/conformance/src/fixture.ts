@@ -86,7 +86,7 @@ export function fixtureFiles(): FixtureFile[] {
 //
 // Regenerate ONLY when the fixture content itself changes, never to make a
 // failing implementation pass:
-//   node -e "import('@deck/core/tree-hash').then(async m => …)"
+//   node -e "import('@cardstack/deck/tree-hash').then(async m => …)"
 //
 // Moved once, on purpose: the fixture's importmap.json used to write the tree
 // root as `$REALM/` and now writes `$DECK/`. Different bytes, different tree,

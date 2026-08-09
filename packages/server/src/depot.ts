@@ -1,9 +1,9 @@
-import { parsePolicy, POLICY_FILE, type CooldownPolicy } from '@deck/core/npm';
+import { parsePolicy, POLICY_FILE, type CooldownPolicy } from '@cardstack/deck/npm';
 import { watch, type FSWatcher } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { discoverDecks, type DeckRef } from '@deck/core/deck-scan';
-import type { HistoryBackend } from '@deck/history/backend';
+import { discoverDecks, type DeckRef } from '@cardstack/deck/deck-scan';
+import type { HistoryBackend } from '@cardstack/deck-history/backend';
 import {
   watchAndPublish,
   type WatchController,

@@ -1,6 +1,6 @@
 import { posix } from 'node:path';
-import { moduleSpecifiers } from '@deck/core/es-lexer';
-import { resolveSpecifier } from '@deck/core/resolve';
+import { moduleSpecifiers } from '@cardstack/deck/es-lexer';
+import { resolveSpecifier } from '@cardstack/deck/resolve';
 
 // Re-exported because it used to live here. The resolution algorithm is not
 // a preload detail — it is the contract any host with its own module loader

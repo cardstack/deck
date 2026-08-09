@@ -1,7 +1,7 @@
 # Contribute to a codelist — fork, amend, offer, review
 
 ```bash
-pnpm --filter @deck/example-contribute-to-codelist demo
+pnpm --filter @cardstack/deck-example-contribute-to-codelist demo
 # open http://localhost:8794/
 ```
 

@@ -11,8 +11,8 @@ import {
   formatTreeHash,
   hashBytes,
   treeHashFromDir,
-} from '@deck/core/tree-hash';
-import { packFromDir, peekPacklist, unpack } from '@deck/core/pack';
+} from '@cardstack/deck/tree-hash';
+import { packFromDir, peekPacklist, unpack } from '@cardstack/deck/pack';
 import { defineCommand, type Command } from '../command.ts';
 import { fail } from '../support.ts';
 

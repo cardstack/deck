@@ -1,6 +1,6 @@
 // A deterministic conflict resolver.
 //
-// The generic three-way merge in @deck/core is deliberately conservative:
+// The generic three-way merge in @cardstack/deck is deliberately conservative:
 // when both sides changed the same key differently, it refuses. It has to,
 // because it does not know what the key MEANS. `scale` is a set — two people
 // extending it are agreeing. `radius` is a scalar — two people setting it are
@@ -25,12 +25,12 @@
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { IMPORT_MAP_PATH } from '@deck/core/import-map';
-import { mergeTrees } from '@deck/core/merge';
-import { unpack } from '@deck/core/pack';
-import { writeForkedFrom } from '@deck/core/offer';
-import { readStoredPack, readStoreMeta } from '@deck/core/store';
-import { readTreeFromDir, writeTreeToDir } from '@deck/core/tree';
+import { IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
+import { mergeTrees } from '@cardstack/deck/merge';
+import { unpack } from '@cardstack/deck/pack';
+import { writeForkedFrom } from '@cardstack/deck/offer';
+import { readStoredPack, readStoreMeta } from '@cardstack/deck/store';
+import { readTreeFromDir, writeTreeToDir } from '@cardstack/deck/tree';
 
 export const POLICY_PATH = 'merge-policy.json';
 

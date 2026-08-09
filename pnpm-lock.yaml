@@ -47,172 +47,172 @@ importers:
 
   apps/hub:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/history':
+      '@cardstack/deck-history':
         specifier: workspace:*
         version: link:../../packages/history
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/codelist:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/contribute-to-codelist:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/field-library:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/fork-a-language:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/fork-an-app:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/hub:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/potluck:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/history':
+      '@cardstack/deck-history':
         specifier: workspace:*
         version: link:../../packages/history
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/prosemirror:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/history':
+      '@cardstack/deck-history':
         specifier: workspace:*
         version: link:../../packages/history
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/remix:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/shared:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/history':
+      '@cardstack/deck-history':
         specifier: workspace:*
         version: link:../../packages/history
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/three-js:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/history':
+      '@cardstack/deck-history':
         specifier: workspace:*
         version: link:../../packages/history
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/two-agents:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/history':
+      '@cardstack/deck-history':
         specifier: workspace:*
         version: link:../../packages/history
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/vale-sale:
     dependencies:
-      '@deck/history':
+      '@cardstack/deck-history':
         specifier: workspace:*
         version: link:../../packages/history
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   examples/variations:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../../packages/core
-      '@deck/history':
+      '@cardstack/deck-history':
         specifier: workspace:*
         version: link:../../packages/history
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../../packages/server
 
   packages/cli:
     dependencies:
-      '@deck/conformance':
-        specifier: workspace:*
-        version: link:../conformance
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../core
-      '@deck/history':
+      '@cardstack/deck-conformance':
+        specifier: workspace:*
+        version: link:../conformance
+      '@cardstack/deck-history':
         specifier: workspace:*
         version: link:../history
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../server
     devDependencies:
@@ -240,10 +240,10 @@ importers:
 
   packages/conformance:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../core
-      '@deck/server':
+      '@cardstack/deck-server':
         specifier: workspace:*
         version: link:../server
     devDependencies:
@@ -305,7 +305,7 @@ importers:
 
   packages/history:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -333,10 +333,10 @@ importers:
 
   packages/server:
     dependencies:
-      '@deck/core':
+      '@cardstack/deck':
         specifier: workspace:*
         version: link:../core
-      '@deck/history':
+      '@cardstack/deck-history':
         specifier: workspace:*
         version: link:../history
     devDependencies:

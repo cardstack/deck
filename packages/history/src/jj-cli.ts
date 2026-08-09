@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { DEFAULT_IGNORE } from '@deck/core/tree-hash';
+import { DEFAULT_IGNORE } from '@cardstack/deck/tree-hash';
 import {
   DirQueue,
   SealDebouncer,

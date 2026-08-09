@@ -4,14 +4,14 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { packFromDir } from '@deck/core/pack';
-import { publishToStore } from '@deck/core/store';
+import { packFromDir } from '@cardstack/deck/pack';
+import { publishToStore } from '@cardstack/deck/store';
 import { createDeckServer, type DeckServer } from '../src/server.ts';
 import { storeDirFor, type DepotMount } from '../src/depot.ts';
 
 // Serving a deck that inherits.
 //
-// The unit tests in `@deck/core` cover the merge. What is checked here is
+// The unit tests in `@cardstack/deck` cover the merge. What is checked here is
 // the part a consumer actually sees: a page whose deck states only its
 // differences still gets a COMPLETE import map injected into its HTML, with
 // the parent's entries in it.

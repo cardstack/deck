@@ -89,7 +89,7 @@ negotiation.
 **Why.** They cover backup and archival — what the realm download is actually
 used for — and they prove the model while `negotiated` stays undesigned.
 
-**Done so far:** `planPack` in `@deck/core/pack-mode` decides what each mode
+**Done so far:** `planPack` in `@cardstack/deck/pack-mode` decides what each mode
 carries and prunes, and emits the provenance block's `pruned` record.
 **Not done:** wiring `hermetic`'s byte carriage to the existing vendoring in
 `vendor.ts` / `vendor-tree.ts`. The decision is the part the backport needed
@@ -162,7 +162,7 @@ From `deck-embroider-lessons.md`, read against the real repo at
 | | Lesson | State |
 | --- | --- | --- |
 | §4 | Dynamic import policy — only string-literal `import()` | **done.** The lexer now counts unanalyzable calls instead of skipping them, and conformance binds it under L6. Found and fixed a worse bug on the way: `import('./p/' + x)` was being recorded as a real edge to `./p/`. |
-| §3 | Compat out of `@deck/server` | **done.** Lint rule over `packages/server/src/**`, verified to fire. |
+| §3 | Compat out of `@cardstack/deck-server` | **done.** Lint rule over `packages/server/src/**`, verified to fire. |
 | §7 | Catalog verbs pull by default | already the model — `extends` (W1) is pull; remix is the copy-on-write escape hatch. |
 | §1 | Scenario suite over ugly real packages | not started. The highest-leverage remaining item. |
 | §5 | Graph performance budget in CI | not started. |
@@ -210,7 +210,7 @@ packaging — real, but it does not block Boxel from starting.
 | — | Browser-safe Core surface, lint-enforced | **done** |
 | — | Resolver takes the importer | **done** |
 | W1 | `extends` | **done** — core, server, conformance, `examples/remix` |
-| W2 | absolute-reference classifier | **done** — `@deck/core/classify`, conformance L11 |
+| W2 | absolute-reference classifier | **done** — `@cardstack/deck/classify`, conformance L11 |
 | W3 | provenance block | **done** — `PackProvenance`, `intakeReadiness`, conformance L11 |
 | W4 | pack modes `bare` / `hermetic` | **decision layer done** — `planPack`; byte carriage reuses `vendor.ts`, not yet wired |
 | W5 | foreign conformance | **done** — `--export` + at-rest excluded from foreign runs |

@@ -6,13 +6,13 @@
 
 import { parseArgs } from 'node:util';
 import { join } from 'node:path';
-import { formatReport } from '@deck/conformance/laws';
-import { runConformance } from '@deck/conformance/run';
+import { formatReport } from '@cardstack/deck-conformance/laws';
+import { runConformance } from '@cardstack/deck-conformance/run';
 import {
   GOLDEN_PATH,
   exportFixture,
   goldenFixture,
-} from '@deck/conformance/export';
+} from '@cardstack/deck-conformance/export';
 import { defineCommand, type Command } from '../command.ts';
 
 const conform = defineCommand({
@@ -60,7 +60,7 @@ library, so against a foreign target they measure the wrong thing.`,
 
     // Neither flag means both halves; either means only that half.
     //
-    // Except against a foreign target. The at-rest checks call @deck/core
+    // Except against a foreign target. The at-rest checks call @cardstack/deck
     // directly, so they measure THIS library however the target behaves —
     // and a run that reports them alongside the HTTP results reads as
     // "38 checks passed" when only the HTTP half touched the thing under

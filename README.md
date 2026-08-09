@@ -347,7 +347,9 @@ Design set in [docs/](docs/) — start with:
 
 The remaining docs cover the semver/migration spec, the publishing
 skill, lifecycle, use-case ladder, catalog consumption modes,
-multi-package design, and the GitHub mirror analysis.
+multi-package design, and
+[deck-github-mirror-analysis.md](docs/deck-github-mirror-analysis.md)
+(monorepo-per-depot mirror, provenance, deterministic intake — not built).
 
 ## Status
 

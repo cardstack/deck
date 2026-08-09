@@ -9,9 +9,9 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { forkDeck } from '@deck/core/fork';
-import { lockDeck, parseDependencyValue } from '@deck/core/lock';
-import { rebasePass } from '@deck/server/rebase-daemon';
+import { forkDeck } from '@cardstack/deck/fork';
+import { lockDeck, parseDependencyValue } from '@cardstack/deck/lock';
+import { rebasePass } from '@cardstack/deck-server/rebase-daemon';
 import { defineCommand, type Command } from '../command.ts';
 import { depotAt, fail } from '../support.ts';
 

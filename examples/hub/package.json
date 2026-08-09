@@ -1,8 +1,8 @@
 {
-  "name": "@deck/example-hub",
+  "name": "@cardstack/deck-example-hub",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": { "demo": "node hub.mjs" },
-  "dependencies": { "@deck/core": "workspace:*", "@deck/server": "workspace:*" }
+  "dependencies": { "@cardstack/deck": "workspace:*", "@cardstack/deck-server": "workspace:*" }
 }

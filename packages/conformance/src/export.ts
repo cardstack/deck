@@ -1,6 +1,6 @@
 // Handing the fixture to an implementation that is not this one.
 //
-// `withFixtureServer` builds the fixture by calling into `@deck/core`, which
+// `withFixtureServer` builds the fixture by calling into `@cardstack/deck`, which
 // is fine for measuring the reference server and useless for measuring
 // anything else. An implementation written in another language cannot call a
 // TypeScript function — it needs the bytes and the answers.
@@ -17,7 +17,7 @@
 
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { hashBytes } from '@deck/core/tree-hash';
+import { hashBytes } from '@cardstack/deck/tree-hash';
 import {
   FIXTURE_DEPOT,
   FIXTURE_PACKAGE,

@@ -26,10 +26,10 @@
 import { readFile, readdir, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDeckServer } from '@deck/server/server';
-import { storeDirFor, watchDepot } from '@deck/server/depot';
-import { claimsDirFor } from '@deck/server/activity';
-import { createHistory } from '@deck/history/create';
+import { createDeckServer } from '@cardstack/deck-server/server';
+import { storeDirFor, watchDepot } from '@cardstack/deck-server/depot';
+import { claimsDirFor } from '@cardstack/deck-server/activity';
+import { createHistory } from '@cardstack/deck-history/create';
 import {
   readEditable,
   seedEditable,
