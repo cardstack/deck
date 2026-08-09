@@ -20,7 +20,7 @@ import {
   serveLive,
 } from '../shared/depot.mjs';
 import { publishShared } from '../shared/publish.mjs';
-import { demoBuildMode, wantDemoReset } from '../shared/reset.mjs';
+import { demoBuildMode } from '../shared/reset.mjs';
 import { STAGE } from './stages.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -106,10 +106,15 @@ for (let name of [
   await copyPackage(pmStore, name);
 }
 
-// Seed Stage 1 only when the live form is missing — never clobber a tree that
-// already has Steps / Notes on top of it.
+// Seed Stage 1 only when the live form is MISSING.
+//
+// Not on RESET either, which it used to do. The form's stages are checked in,
+// so rewinding them to stage 1 rewrote tracked source and left the repository
+// dirty — and RESET's job is the store, not the working tree. Replaying the
+// evolution is `pnpm steps`, deliberately, the same way going back in
+// production is `deck restore` rather than a wipe.
 let formReady = await exists(join(formDir, 'index.html'));
-if (!formReady || wantDemoReset()) {
+if (!formReady) {
   let stage1 = STAGE[0];
   await writeFile(join(formDir, 'index.html'), stage1.html);
   await writeFile(join(formDir, 'form.css'), stage1.css);

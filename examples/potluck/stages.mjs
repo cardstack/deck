@@ -297,7 +297,7 @@ form.addEventListener('submit', (e) => {
   <h1>What are you bringing?</h1>
   <p class="lede">One dish per person. We’ll print name tags from your handle.</p>
   <form id="form">
-    <label>Handle <span class="req">needed</span>
+    <label title="drawn by fields/handle">Handle <span class="req">needed</span>
       <input name="prefix" placeholder="lowercase, like mai" /></label>
     <label>Which Thursday?
       <input name="due" type="date" /></label>
@@ -363,7 +363,7 @@ form.addEventListener('submit', (e) => {
     <label>Which Thursday? <input name="due" type="date" /></label>
     <p class="hint" id="date-hint">Pick the lunch date.</p>
     <label>Dish <input name="dish" placeholder="Shareable — savory or sweet" /></label>
-    <div class="field">
+    <div class="field" title="drawn by prosemirror, vendored into this depot">
       <span class="flabel">Notes</span>
       <div id="editor" class="editor"></div>
       <p class="hint">Bold ⌘B · Italic ⌘I — powered by ProseMirror in this depot.</p>
@@ -453,7 +453,7 @@ form.addEventListener('submit', (e) => {
   <h1>What are you bringing?</h1>
   <p class="lede">One dish per person. Fields marked needed can’t be empty.</p>
   <form id="form" novalidate>
-    <label>Handle <span class="req">needed</span>
+    <label title="drawn by fields/handle">Handle <span class="req">needed</span>
       <input name="prefix" placeholder="mai" aria-describedby="err-prefix" />
       <span class="error" id="err-prefix" hidden></span></label>
     <label>Which Thursday? <span class="req">needed</span>
@@ -463,7 +463,7 @@ form.addEventListener('submit', (e) => {
     <label>Dish <span class="req">needed</span>
       <input name="dish" placeholder="Shareable — savory or sweet" aria-describedby="err-dish" />
       <span class="error" id="err-dish" hidden></span></label>
-    <div class="field">
+    <div class="field" title="drawn by prosemirror, vendored into this depot">
       <span class="flabel">Notes <span class="opt">optional</span></span>
       <div id="editor" class="editor"></div>
     </div>
@@ -580,14 +580,14 @@ form.addEventListener('submit', (e) => {
   <h1>What are you bringing?</h1>
   <p class="lede">Reserve your slot. Times are in the zone you pick.</p>
   <form id="form" novalidate>
-    <label>Handle <span class="req">needed</span>
+    <label title="drawn by fields/handle">Handle <span class="req">needed</span>
       <input name="prefix" placeholder="mai" />
       <span class="error" id="err-prefix" hidden></span></label>
-    <label>Lunch day <span class="req">needed</span>
+    <label title="drawn by fields/due-date">Lunch day <span class="req">needed</span>
       <input name="due" type="date" />
       <span class="error" id="err-due" hidden></span></label>
     <p class="hint" id="date-hint">Pick the lunch date.</p>
-    <fieldset class="slot">
+    <fieldset class="slot" title="drawn by fields/meeting-slot">
       <legend>Arrival window <span class="req">needed</span></legend>
       <label>Start <input name="start" type="time" value="12:00" /></label>
       <label>Minutes <input name="minutes" type="number" min="15" max="180" value="45" /></label>
@@ -604,7 +604,7 @@ form.addEventListener('submit', (e) => {
     <label>Dish <span class="req">needed</span>
       <input name="dish" />
       <span class="error" id="err-dish" hidden></span></label>
-    <div class="field">
+    <div class="field" title="drawn by prosemirror, vendored into this depot">
       <span class="flabel">Notes <span class="opt">optional</span></span>
       <div id="editor" class="editor"></div>
     </div>
@@ -752,14 +752,14 @@ form.addEventListener('submit', (e) => {
     <h1>What are you bringing?</h1>
     <p class="lede">Preview the card we’ll post to the kitchen board.</p>
     <form id="form" novalidate>
-      <label>Handle <span class="req">needed</span>
+      <label title="drawn by fields/handle">Handle <span class="req">needed</span>
         <input name="prefix" placeholder="mai" />
         <span class="error" id="err-prefix" hidden></span></label>
-      <label>Lunch day <span class="req">needed</span>
+      <label title="drawn by fields/due-date">Lunch day <span class="req">needed</span>
         <input name="due" type="date" />
         <span class="error" id="err-due" hidden></span></label>
       <p class="hint" id="date-hint">Pick the lunch date.</p>
-      <fieldset class="slot">
+      <fieldset class="slot" title="drawn by fields/meeting-slot">
         <legend>Arrival window</legend>
         <label>Start <input name="start" type="time" value="12:00" /></label>
         <label>Minutes <input name="minutes" type="number" min="15" max="180" value="45" /></label>
@@ -776,7 +776,7 @@ form.addEventListener('submit', (e) => {
       <label>Dish <span class="req">needed</span>
         <input name="dish" />
         <span class="error" id="err-dish" hidden></span></label>
-      <div class="field">
+      <div class="field" title="drawn by prosemirror, vendored into this depot">
         <span class="flabel">Notes</span>
         <div id="editor" class="editor"></div>
       </div>
@@ -946,16 +946,16 @@ form.addEventListener('submit', (e) => {
   <section class="card" id="form-panel">
     <p class="brand">Thursday Potluck</p>
     <h1>What are you bringing?</h1>
-    <p class="lede">Preview the card, then confirm. Scrubbing Steps won’t replay motion.</p>
+    <p class="lede">Preview the card, then confirm.</p>
     <form id="form" novalidate>
-      <label>Handle <span class="req">needed</span>
+      <label title="drawn by fields/handle">Handle <span class="req">needed</span>
         <input name="prefix" placeholder="mai" />
         <span class="error" id="err-prefix" hidden></span></label>
-      <label>Lunch day <span class="req">needed</span>
+      <label title="drawn by fields/due-date">Lunch day <span class="req">needed</span>
         <input name="due" type="date" />
         <span class="error" id="err-due" hidden></span></label>
       <p class="hint" id="date-hint">Pick the lunch date.</p>
-      <fieldset class="slot">
+      <fieldset class="slot" title="drawn by fields/meeting-slot">
         <legend>Arrival window</legend>
         <label>Start <input name="start" type="time" value="12:15" /></label>
         <label>Minutes <input name="minutes" type="number" min="15" max="180" value="60" /></label>
@@ -972,7 +972,7 @@ form.addEventListener('submit', (e) => {
       <label>Dish <span class="req">needed</span>
         <input name="dish" placeholder="Kimchi fried rice" />
         <span class="error" id="err-dish" hidden></span></label>
-      <div class="field">
+      <div class="field" title="drawn by prosemirror, vendored into this depot">
         <span class="flabel">Notes for the table</span>
         <div id="editor" class="editor"></div>
       </div>
