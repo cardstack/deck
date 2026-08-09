@@ -65,19 +65,52 @@ async function getJson(url) {
  * frame. Same directory, same store, correct pins.
  */
 let ORIGINS = {};
+let ORIGIN_ERRORS = {};
+let ORIGINS_REACHABLE = false;
 
 async function loadOrigins() {
-  ORIGINS = await fetch('/_hub/origins')
-    .then((response) => (response.ok ? response.json() : {}))
-    .catch(() => ({}));
+  try {
+    let response = await fetch('/_hub/origins');
+    if (!response.ok) throw new Error(`/_hub/origins answered ${response.status}`);
+    let body = await response.json();
+    ORIGINS = body.origins ?? {};
+    ORIGIN_ERRORS = body.errors ?? {};
+    ORIGINS_REACHABLE = true;
+  } catch {
+    ORIGINS_REACHABLE = false;
+  }
 }
 
-function runUrl(at, withs = currentWith()) {
+/**
+ * Where a deck runs, or WHY IT CANNOT — never a quiet substitute.
+ *
+ * The Hub's own decks run at the Hub's origin, because that is the depot they
+ * were sealed for. A demo runs at its second mount and nowhere else. When the
+ * origin for a demo is unknown there is no fallback worth having: framing it
+ * here would load an HTML page whose every import 404s, which renders as an
+ * empty white box with nothing in the console the reader can see. Silence is
+ * the one answer this must never give, so a missing origin returns a reason.
+ */
+function runTarget(at, withs = currentWith()) {
   let [, depot, ...rest] = at.split('/');
-  let origin = ORIGINS[depot];
-  let path = origin ? `${origin}/site/${rest.join('/')}` : at;
   let query = withs.map((value) => `with=${value}`).join('&');
-  return query ? `${path}?${query}` : path;
+  let suffix = query ? `?${query}` : '';
+  if (depot === 'hub') return { url: at + suffix };
+  let origin = ORIGINS[depot];
+  if (origin) return { url: `${origin}/site/${rest.join('/')}${suffix}` };
+  if (!ORIGINS_REACHABLE) {
+    return {
+      why:
+        'This Hub is not reporting where its demos run. That is what a stale ' +
+        'server looks like: an older process still holding this port. Stop it ' +
+        'and start again — `lsof -ti:8788 | xargs kill`.',
+    };
+  }
+  return {
+    why:
+      ORIGIN_ERRORS[depot] ??
+      `No depot named ${depot} is mounted, so there is no origin to run it at.`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -211,12 +244,22 @@ function mapRows(table, indent = false) {
 
 async function viewOne(at) {
   let withs = currentWith();
-  let url = runUrl(at, withs);
+  let { url, why } = runTarget(at, withs);
   let head =
     `<div class="prompt"><span class="prompt-mark">deck run</span> ` +
     `<a href="?" data-at="">~</a><span class="sep">/</span>` +
     `<b>${esc(at.replace(/^\//, ''))}</b></div>` +
     `<main>`;
+
+  if (!url) {
+    return (
+      head +
+      `<div class="err"><b>cannot run</b> — ${esc(why)}</div>` +
+      `<p class="dim">The bytes are fine. ` +
+      `<a href="/browse?at=${esc(at)}">Read it in /browse</a> while this is out.</p>` +
+      `</main>`
+    );
+  }
 
   if (withs.length) {
     // C5: a trial is not the sealed representation and must never be mistaken

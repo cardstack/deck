@@ -23,7 +23,7 @@
 // change to the server, and if anyone ever creates a depot actually named
 // `browse` the depot wins. Real data beating a convenience alias is the
 // correct precedence, and it costs nothing to get right.
-import { readdir } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDeckServer } from '@deck/server/server';
@@ -82,7 +82,21 @@ const APPS = [
 // they were always correct for that name. /browse reads them from the Hub's
 // own mount, where the name is unambiguous across nine depots; /run frames
 // them from their own origin, where they run.
-const DEMO_PORT_BASE = Number(process.env.DEMO_PORT_BASE ?? 8801);
+//
+// THE PORTS ARE EPHEMERAL, AND THAT IS THE WHOLE POINT.
+//
+// This used to claim 8801–8809 by arithmetic. Nine fixed ports is nine
+// standing appointments with EADDRINUSE: leave a Hub running and start
+// another, or share the machine with anything that likes 8801, and the boot
+// died on an unhandled listen error. The failure was invisible in the worst
+// possible way — the OLD Hub still held 8788, so the browser found a Hub,
+// asked it for /_hub/origins, got nothing usable, and framed every demo at
+// the Hub's own origin, where /site/ pins resolve to nothing. Nine blank
+// frames and no error on screen anywhere.
+//
+// Port 0 asks the kernel for a port that is free, which is the only way to
+// ask that has no race in it. Nothing was ever entitled to a number here:
+// /_hub/origins is the contract, and it reports whatever we got.
 async function demoDepots() {
   let names;
   try {
@@ -103,9 +117,45 @@ async function demoDepots() {
     // alias — otherwise the depot would shadow the app, which is the correct
     // precedence but a confusing thing to arrange for yourself on purpose.
     if (APPS.some((app) => app.route === entry.name)) continue;
-    found.push({ name: entry.name, dir, storeDir: storeDirFor(dir) });
+    found.push({
+      name: entry.name,
+      dir,
+      storeDir: storeDirFor(dir),
+      sidecarDir: join(examplesDir, entry.name),
+    });
   }
   return found;
+}
+
+// ---------------------------------------------------------------------------
+// Sidecars: the demo's own server, minus the demo's own server.
+//
+// A demo page may legitimately need something that is NOT depot content —
+// `variations` fetches /choice.json, which records what the agent proposed
+// and what got promoted. That is a fact about the run, not about the
+// packages, so it must not be inside a tree that gets hashed and sealed.
+//
+// Its demo runner answered that from memory, which meant the page could only
+// ever run inside that one process. Any demo that leaves such a file beside
+// its depot gets it served here, at the origin root, read-only, JSON-ish
+// only. The Hub is not re-implementing nine demo servers; it is honouring one
+// convention, and a demo that does not use it loses nothing.
+const SIDECAR = /^\/[a-z0-9-]+\.json$/;
+
+async function serveSidecar(depot, path, res) {
+  if (!SIDECAR.test(path)) return false;
+  let body;
+  try {
+    body = await readFile(join(depot.sidecarDir, path.slice(1)));
+  } catch {
+    return false;
+  }
+  res.writeHead(200, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+  });
+  res.end(body);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,13 +191,33 @@ let depots = [hub, ...demos];
 // disk with the Hub's read-only mount — two names for one directory, which is
 // exactly what the pins needed.
 const origins = new Map();
-for (let [index, depot] of demos.entries()) {
-  let port = DEMO_PORT_BASE + index;
+const originErrors = new Map();
+for (let depot of demos) {
   let server = createDeckServer({
     depots: [{ name: 'site', dir: depot.dir, storeDir: depot.storeDir }],
+    fallback(req, res) {
+      let path = new URL(req.url ?? '/', 'http://localhost').pathname;
+      serveSidecar(depot, path, res).then((served) => {
+        if (served) return;
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end(`no route for ${path}\n`);
+      });
+    },
   });
-  await new Promise((resolve) => server.listen(port, resolve));
-  origins.set(depot.name, `http://localhost:${port}`);
+  try {
+    let port = await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, () => resolve(server.address().port));
+    });
+    origins.set(depot.name, `http://localhost:${port}`);
+  } catch (error) {
+    // One depot that cannot get a listener is one demo that cannot run. It is
+    // not a reason to take the other eight down with it, and it is absolutely
+    // not a reason to say nothing: /run reads this and prints it where the
+    // frame would have been.
+    originErrors.set(depot.name, String(error.message ?? error));
+    console.error(`   demo origin: ${depot.name} — ${error.message ?? error}`);
+  }
 }
 
 const built = new Set();
@@ -186,7 +256,10 @@ const server = createDeckServer({
     // Where each demo depot answers to its own name. /run needs this to frame
     // a demo at an origin whose pins resolve.
     if (path === '/_hub/origins') {
-      let body = JSON.stringify(Object.fromEntries(origins));
+      let body = JSON.stringify({
+        origins: Object.fromEntries(origins),
+        errors: Object.fromEntries(originErrors),
+      });
       res.writeHead(200, {
         'content-type': 'application/json; charset=utf-8',
         'cache-control': 'no-store',
@@ -227,6 +300,20 @@ let watcher = watchDepot({
 });
 watcher.rescan();
 
+// The Hub's own port is NOT ephemeral — you have to be able to type it — so
+// this is the one listener that can still collide, and it says so in words
+// instead of a stack trace. An already-running Hub is the likeliest cause and
+// the likeliest thing to be mistaken for a broken one.
+server.once('error', (error) => {
+  if (error.code !== 'EADDRINUSE') throw error;
+  console.error(`\n   Port ${PORT} is taken — something is already listening.`);
+  console.error(`   If it is an older Hub, stop it first; a stale one serves`);
+  console.error(`   stale demo origins and every demo frame comes up blank.\n`);
+  console.error(`      lsof -ti:${PORT} | xargs kill`);
+  console.error(`      PORT=8789 node apps/hub/hub.mjs   # or just use another\n`);
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
   console.log('\n  THE DECK HUB\n');
   console.log(`      http://localhost:${PORT}/\n`);
@@ -238,17 +325,17 @@ server.listen(PORT, () => {
     );
   }
   console.log(`\n   depots mounted: ${depots.length}`);
-  console.log(`      hub      ${hub.dir}`);
+  console.log(`      hub${' '.repeat(20)} ${hub.dir}`);
   for (let depot of demos) {
-    console.log(`      ${depot.name.padEnd(8)} ${depot.dir}`);
+    let where = origins.get(depot.name) ?? `unavailable — ${originErrors.get(depot.name)}`;
+    console.log(`      ${depot.name.padEnd(22)} runs at ${where}`);
   }
   console.log(
-    '\n   The demo depots are mounted read-only for real browsing density.',
+    '\n   Each demo is READ at /<name>/… here and RUN at its own origin above,',
   );
   console.log(
-    '   Their sealed import maps say /site/, so they read correctly and do',
+    '   because every one of them was sealed as `site` and a pin names a depot.\n',
   );
-  console.log('   not resolve — which is a state /browse should be showing.\n');
 });
 
 for (let signal of ['SIGINT', 'SIGTERM']) {

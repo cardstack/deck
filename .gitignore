@@ -17,6 +17,10 @@ examples/contribute-to-codelist/depot/kim/
 examples/two-agents/depot/agent-a/
 examples/two-agents/depot/agent-b/
 examples/variations/depot/try/
+# Demo-run facts, served BESIDE a depot and never inside one, so they cannot
+# fold into a tree hash. Written by the demo that owns them, so a tracked copy
+# could only go stale.
+examples/*/choice.json
 node_modules/
 examples/three-js/depot/app/studio/build.json
 examples/prosemirror/depot/app/editor/build.json

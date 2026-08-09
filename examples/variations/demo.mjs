@@ -268,6 +268,20 @@ let choiceBody = Buffer.from(
   json({ brief: BRIEF, chosen: CHOSEN, command, variations: state }),
   'utf8',
 );
+
+// Also leave it on disk, BESIDE the depot rather than inside it.
+//
+// The chooser asks the server for this, not the depot, and rightly: it is a
+// fact about the demo run — what the agent proposed, what got promoted — not
+// a fact about the packages. Putting it in the depot would fold it into a
+// tree hash and make the packages claim something they do not contain.
+//
+// But a fact that lives only in one process's memory can only be served by
+// that one process, and that is exactly why this was the single demo the Hub
+// could not run: it framed a real page whose data endpoint did not exist
+// there. A sidecar costs nothing and makes the demo self-describing to any
+// server that mounts this depot. The Hub picks it up generically.
+await writeFile(join(here, 'choice.json'), choiceBody);
 let server = createDemoServer({
   depots: [depot],
   fallback: (request, response) => {
