@@ -1661,6 +1661,23 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
                 await readEnvelope(depot.storeDir, pack.treeHash),
               ),
               files: packlist.entries.map((entry) => entry.path),
+              // The same entries with their digests, which is what a
+              // COMPARISON needs and a path list cannot give. Two versions'
+              // path lists answer "added" and "removed"; only the digests
+              // answer "changed", and answering it any other way means
+              // walking the tree one directory per request or fetching two
+              // whole packs to look at their manifests.
+              //
+              // It is the packlist verbatim, so it costs nothing to produce
+              // and inherits the pack's own guarantee: identical sha256
+              // means identical bytes, which is how a fork that touched one
+              // file out of 375 can be shown to have touched one file out
+              // of 375 rather than asserted to have.
+              tree: packlist.entries.map((entry) => ({
+                path: entry.path,
+                size: entry.size,
+                sha256: entry.sha256,
+              })),
             },
           },
         },

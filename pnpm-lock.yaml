@@ -45,6 +45,18 @@ importers:
         specifier: 'catalog:'
         version: 3.9.6
 
+  apps/hub:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deck/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
   examples/codelist:
     dependencies:
       '@deck/core':

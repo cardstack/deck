@@ -20,3 +20,6 @@ examples/variations/depot/try/
 node_modules/
 examples/three-js/depot/app/studio/build.json
 examples/prosemirror/depot/app/editor/build.json
+# jj colocates a backing .git inside the depot; git otherwise treats the
+# depot as an embedded repository and commits a gitlink instead of the source.
+apps/*/*/.git/
