@@ -1,14 +1,16 @@
 {
   "imports": {
-    "three": "@catalog/lib/three@0.169.0/build/three.module.js",
-    "three/addons/": "@catalog/lib/three@0.169.0/examples/jsm/",
-    "@cardstack/base/": "@cardstack/base@1.12.0/"
+    "three": "https://app.boxel.ai/catalog/lib/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://app.boxel.ai/catalog/lib/three@0.169.0/examples/jsm/",
+    "@cardstack/base/": "https://app.boxel.ai/base@1.12.0/"
   },
   "scopes": {
-    "@workspace/acme/gallery/legacy-viewer/": {
-      "three": "@catalog/lib/three@0.160.0/build/three.module.js",
-      "three/addons/": "@catalog/lib/three@0.160.0/examples/jsm/"
+    "https://app.boxel.ai/workspace/acme/gallery/legacy-viewer/": {
+      "three": "https://app.boxel.ai/catalog/lib/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://app.boxel.ai/catalog/lib/three@0.160.0/examples/jsm/"
     }
   },
-  "extends": "@catalog/chris/gallery-board@2.1.0/"
+  "deck": {
+    "extends": "https://app.boxel.ai/catalog/chris/gallery-board@2.1.0/"
+  }
 }

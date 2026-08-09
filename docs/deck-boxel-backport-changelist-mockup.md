@@ -18,40 +18,91 @@ they tell you *where the mass is*, not what to put in a spreadsheet.
 
 **Campaign order beats numeric order.** Do not blindly merge 0→14. Prefer:
 
-- **Product spine:** PR 1 → **PR 1b** (thin verbs) → PR 4c (host restore)
+- **Product spine:** PR 1 → **PR 3** (versioned addresses) → **PR 1b** (thin
+  verbs) → PR 4c (host restore)
 - **Infra spine:** PR 1 → PR 4a (Steps on write) → PR 5 (CLI 3-way)
+
+PR 3 sits on the product spine because we ship on fully-qualified URLs (see
+**Naming**): the version lives in the path, so nothing can pin one until the
+realm server answers `@version` addresses.
 
 Timeline is **sliced** (4a–4d + PR 5), not one epic. Vendoring, minify,
 Matrix, and review tools are **off the critical path**.
 
 Sample artifacts you can open beside this doc:
 
-- [`artifacts/backport-remix-decklist.json`](artifacts/backport-remix-decklist.json) — RRI pins, scopes, `extends`
+- [`artifacts/backport-remix-decklist.json`](artifacts/backport-remix-decklist.json) — **what to ship**: URL pins, scopes, `extends`
+- [`artifacts/backport-remix-decklist-rri.json`](artifacts/backport-remix-decklist-rri.json) — the same decklist after the RRI migration
 - [`artifacts/backport-gallery-scene.gts`](artifacts/backport-gallery-scene.gts) — a gallery card on the newer `three`
 
 ---
 
-## RRI — how we name things in the examples
+## Naming — build on URLs now, move to RRI when it lands
 
-Boxel already has **RRI** (`RealmResourceIdentifier`): a hosting-independent
-name that `VirtualNetwork` maps to a serve URL. The backport should **author
-and pin in RRI**, not paste `https://app.boxel.ai/…` into every decklist and
-card. Serve URLs still exist — they are what HTTP fetches after the mapping.
+**Read this before the samples.** Every example below is written in RRI
+notation because that is where we are going. It is *not* what the first PRs
+should ship, and the difference is deliberate.
 
-| Form | Example | Role |
-| --- | --- | --- |
-| **Versioned package RRI** | `@catalog/lib/three@0.169.0/build/three.module.js` | `@place/publisher/name@version/path` — the cross-realm pin |
-| **Platform RRI** | `@cardstack/base/card-api` | What `Loader.identify` emits today; the map pins `@cardstack/base@1.12.0/` |
-| **Workspace RRI** | `@workspace/acme/gallery/scene` | Importer identity for scopes (`place` = `workspace`) |
-| **Serve URL** | `https://app.boxel.ai/catalog/lib/three@0.169.0/…` | Bytes on the wire |
-| **Bare** | `three` | Local alias only — the decklist says what it means |
+### What exists today
+
+Boxel has **RRI** (`RealmResourceIdentifier`): a branded string that is
+either a **scoped identifier** (`@cardstack/base/card-api`) or a **full
+URL**. `VirtualNetwork` maps the scoped form to a serve URL. Three prefixes
+are registered — `@cardstack/base/`, `@cardstack/catalog/`,
+`@cardstack/skills/` — and the
+[RRI migration](https://linear.app/cardstack/project/cardstackbase-defea0d67319)
+that built it is at Phase 3 of 5 (Phase 3 itself 94%).
+
+**There is no version segment in that grammar, and no `@catalog/` or
+`@workspace/` prefix.** `resolveRRI`'s spec covers scoped identifiers, URLs,
+relative resolution, and `$thisRealm/` — nothing else. Unmapped user realms
+deliberately stay in URL form.
+
+### The ruling
+
+**Ship the backport on fully-qualified URLs. Let the RRI migration move us to
+aliases afterwards.** The goal now is buildability and runnability, not final
+notation.
+
+This costs nothing in capability, because the version does not need an
+identifier grammar to live in — it lives in the **path**:
 
 ```text
-author writes                    decklist pin (RRI)                         VN → serve URL
-─────────────────────────────    ───────────────────────────────────────    ────────────────────────────
-import from 'three'              @catalog/lib/three@0.169.0/…               https://app…/three@0.169.0/…
-from '@cardstack/base/card-api'  prefix @cardstack/base@1.12.0/             https://app…/base/@1.12.0/…
+https://app.boxel.ai/catalog/lib/three@0.169.0/build/three.module.js
 ```
+
+That is Deck's own serve grammar, specified in `deck-at-rest.md` and covered
+by `deck conform`. So the dependency moves off the `@cardstack/base` migration
+and onto **PR 3**, the package-serve handler — a new read-only route rather
+than a change to a 94%-complete persistence migration. Verified end to end in
+the Deck repo: scopes, sibling-realm isolation, `extends` flattening and
+specifier resolution all work with fully-qualified URLs on both sides.
+
+`extends` accepts all three forms **today** (Deck W1, amended 2026-08-09), so
+the later swap needs no Deck change:
+
+```text
+acme/blog@1.2.3                              depot-local
+https://app.example/catalog/acme/blog@1.2.3/ fully qualified   ← ship this
+@catalog/acme/blog@1.2.3/                    scoped alias      ← later, free
+```
+
+### Reading the samples
+
+| Sample notation | Ship as | Becomes |
+| --- | --- | --- |
+| `@catalog/lib/three@0.169.0/build/three.module.js` | `https://app.boxel.ai/catalog/lib/three@0.169.0/build/three.module.js` | itself, once the prefix exists |
+| `@workspace/acme/gallery/scene` | `https://app.boxel.ai/workspace/acme/gallery/scene` | itself |
+| `@cardstack/base/card-api` | **unchanged — this one is real today** | unchanged |
+| `https://app.boxel.ai/…` | unchanged | may alias later |
+
+`@cardstack/base/card-api` is the exception: that prefix is registered,
+`identify()` already emits it, and the base realm's startup identity already
+flipped to it (CS-12048). Authors keep writing it.
+
+The swap, when it comes, rewrites **decklist values** — one `importmap.json`
+per deck, not card JSON scattered across the index — and Deck's classifier
+(`leave` / `rebind` / `rewrite`, PR 2) is exactly the tool for it.
 
 Old published content that still says `https://cardstack.com/base/…` keeps a
 **permanent** VN read-mapping — published Versions never change, so that
@@ -79,7 +130,7 @@ a **Touch** list with dry-run diffs (blast radius), then **Do** / **Don’t** /
  1  Resolver knows the importer          →  app = decklist; remix without copy (K8)
 1b  Thin install / remix / use (fixture) →  early K5          ← product spine
  2  Classify URLs on publish             →  Track C; parallel OK
- 3  Serve vendored packages              →  K3; optional early (must not block)
+ 3  Serve versioned addresses            →  K3; PREREQUISITE for any version pin
 4a  Steps on one write path              →  K1 start          ← hinge slices
 4b  Timeline HTTP + restore through write
 4c  Host: list / restore Steps
@@ -98,7 +149,7 @@ a **Touch** list with dry-run diffs (blast radius), then **Do** / **Don’t** /
 
 **K10** is the destination of the whole stack, not a separate ticket.
 
-**Cut hard?** Product: **1 → 1b → 4c**. Infra: **1 → 4a → 5**.
+**Cut hard?** Product: **1 → 3 → 1b → 4c**. Infra: **1 → 4a → 5**.
 
 ---
 
@@ -177,8 +228,26 @@ shipped the model.
 **Unlocks.** **K8** coexistence (author gate). Door to **PR 1b** (early K5),
 K3 / K11, and the “app = decklist” product story.
 
-**Authors see.** A decklist spoken in RRI, and card code that still looks
-like normal GTS:
+**Authors see.** A decklist, and card code that still looks like normal GTS.
+**Ship the first form** — see **Naming**; the second is the same decklist
+after the RRI migration, and nothing in Deck has to change between them.
+
+```json
+{
+  "imports": {
+    "three": "https://app.boxel.ai/catalog/lib/three@0.169.0/build/three.module.js",
+    "@cardstack/base/": "https://app.boxel.ai/base@1.12.0/"
+  },
+  "scopes": {
+    "https://app.boxel.ai/workspace/acme/gallery/legacy-viewer/": {
+      "three": "https://app.boxel.ai/catalog/lib/three@0.160.0/build/three.module.js"
+    }
+  },
+  "deck": {
+    "extends": "https://app.boxel.ai/catalog/chris/gallery-board@2.1.0/"
+  }
+}
+```
 
 ```json
 {
@@ -191,9 +260,26 @@ like normal GTS:
       "three": "@catalog/lib/three@0.160.0/build/three.module.js"
     }
   },
-  "extends": "@catalog/chris/gallery-board@2.1.0/"
+  "deck": {
+    "extends": "@catalog/chris/gallery-board@2.1.0/"
+  }
 }
 ```
+
+Two details worth knowing before you write the resolver against these:
+
+- **`extends` lives under `deck`, not at the root.** A root-level `extends`
+  is not read — `parseExtends` returns "inherits nothing" and the app comes
+  up missing most of its dependencies, surfacing later as unrelated import
+  errors. Both samples above were wrong about this until 2026-08-09; check
+  yours against `docs/artifacts/`.
+- **A scope key is a prefix only when it ends in `/`.** Otherwise it must
+  match the importer exactly. Skip that rule and a scope written
+  `…/gallery` silently governs `…/gallery-legacy/…`, which resolves a
+  neighbouring deck to the wrong version with no error. Deck's resolver
+  enforces it; a Boxel adapter that re-implements matching must too.
+- **`@cardstack/base/` is real today** and stays as written in both forms.
+  Only the *value* it maps to gains a version.
 
 ```gts
 // This module’s RRI: @workspace/acme/gallery/scene  →  three@0.169
@@ -296,7 +382,8 @@ Catalog → @catalog/chris/gallery-board@2.1.0 → [Remix]
   after:   write a decklist; listing shows only what you changed
 ```
 
-**Depends on.** PR 1. Does **not** depend on Timeline (PR 4*) or Matrix.
+**Depends on.** PR 1 and **PR 3** (a pin needs a servable versioned address).
+Does **not** depend on Timeline (PR 4*) or Matrix.
 
 ### Commit — Map helpers
 
@@ -429,9 +516,13 @@ packages/postgres/migrations/….ts (additive only)        +40 / -0
 
 ---
 
-## PR 3 — Serve vendored packages
+## PR 3 — Serve versioned addresses
 
-**Track C — optional early. Must not block PR 1b or Timeline slices.**
+**On the product spine.** Was "optional early"; the URL-first ruling (see
+**Naming**) moved it. The version lives in the path, so until the realm
+server answers `…/three@0.169.0/…` there is nothing for a decklist to pin
+and PR 1b has no fixture to install from. Still small — a read-only handler
+— but it is now a prerequisite, not a nice-to-have.
 
 
 **Why.** Third-party libraries should be first-class, policy-gated addresses
@@ -440,8 +531,9 @@ can live on a hosted Deck outside the monorepo. Boxel still needs a **serve
 door** and a thin registry gate so republishing the same name at a different
 treeHash is a conscious act.
 
-**Unlocks.** **K3** on the serve side; those packages become cacheable pins
-authors can put in a decklist as RRIs.
+**Unlocks.** **K3** on the serve side, and the address space everything else
+pins into: those packages become cacheable pins authors can put in a decklist
+as fully-qualified URLs today, aliases later.
 
 **Authors see.** A Spec in the catalog and a fetchable Version:
 
@@ -474,7 +566,8 @@ import { WebGLRenderer } from 'three';
 // bare name → decklist → versioned RRI → serve URL
 ```
 
-**Depends on.** PR 0; PR 1 makes consuming two versions pleasant.
+**Depends on.** PR 0; PR 1 makes consuming two versions pleasant. **PR 1b
+depends on this** — it is what a pin points at.
 
 ### Commit — Package serve handler + registry gate
 
@@ -1435,7 +1528,7 @@ packages/realm-server (only if a GET is missing)      +50 / -0
 | 1 | M | Virtual network + loader + coexistence fixture |
 | **1b** | **M** | **Thin verbs + host remix-as-map** (product spine) |
 | 2 | M | Publish handler (parallel) |
-| 3 | S–M | Serve handlers; corpus outside (optional early) |
+| **3** | **S–M** | **Serve handlers; corpus outside** (spine — the address space) |
 | **4a–4d** | **L sliced** | **Write path → HTTP → host → claims** |
 | 5 | L | CLI rewrite (standalone repo) |
 | 6 | S | Headers + tests |

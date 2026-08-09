@@ -49,7 +49,7 @@ The K1–K14 table is the destination. The **campaign** is shorter and stricter:
 
 **Spines if you cut hard:**
 
-- **Product:** resolver → thin decklist verbs → Timeline restore  
+- **Product:** resolver → versioned serve door → thin decklist verbs → Timeline restore  
 - **Infra:** resolver → Timeline write path → CLI 3-way  
 
 ---
@@ -111,6 +111,20 @@ copy-the-package, we have not backported the model — only some plumbing.
 Authors still write normal imports (`three`, `@cardstack/base/card-api`).
 The decklist is where versions and coexistence live. See the sample in
 `docs/artifacts/backport-remix-decklist.json` and PR 1 in the changelist.
+
+**Naming: fully-qualified URLs now, RRI aliases later.** Boxel's RRI grammar
+today is a scoped identifier (`@cardstack/base/card-api`) or a full URL —
+there is no version segment, and no `@catalog/` or `@workspace/` prefix. We
+are not waiting for one. The version lives in the **path**
+(`https://app.boxel.ai/catalog/lib/three@0.169.0/…`), which is Deck's own
+serve grammar, so the backport builds and runs on what exists. When the
+[RRI migration](https://linear.app/cardstack/project/cardstackbase-defea0d67319)
+adds the aliases, the swap is a rewrite of decklist values — one
+`importmap.json` per deck, using the classifier we already need for publish.
+Deck's `extends` accepts both forms today, so nothing there has to change.
+
+The cost of the ruling is one sequencing change: **Phase 3 moves onto the
+spine**, because a pin needs a servable `@version` address to point at.
 
 ---
 
@@ -230,11 +244,17 @@ polish and package-page affordances can trail (old “Phase 8 verbs”).
 
 ---
 
-### Phase 3 — Vendoring / catalog CDN (**Track C**, *optional early*)
+### Phase 3 — Versioned serve addresses (**on the spine**)
 
-Ops + catalog content for third-party libs and fast catalog modules (**K3**,
-catalog **K2**/**K9**). Useful, but **must not block** Track A or B. Staff
-when someone owns the corpus; do not serialize Map/Tape behind it.
+**Was "optional early"; the URL-first naming ruling moved it.** The realm
+server has to answer `…/three@0.169.0/…` before anything can pin a version,
+so Phase 1b has nothing to install from until this lands. The serve door is
+small — a read-only handler plus a thin registry gate.
+
+What stays optional is the **corpus**: the npm crawl and bulk vendoring for
+third-party libs (**K3**, catalog **K2**/**K9**) can live on a hosted Deck
+outside the monorepo and must **not** block Track A or B. Staff the door now;
+staff the corpus when someone owns it.
 
 ---
 
@@ -305,7 +325,8 @@ don’t block.
  1  resolver                 →  K8
 1b  thin decklist verbs      →  early K5 (product spine)     ← prove the model
  2  classifier on publish    →  parallel (Track C)
- 3  vendor / CDN             →  optional; must not block A/B
+ 3  versioned serve door     →  spine: a pin needs an address  ← prereq for 1b
+ 3′ vendor corpus / CDN      →  optional; must not block A/B
  5a–5e  Timeline slices      →  K1, then K4                  ← hinge, sliced
  6  base via Deck            →  K11 (after restore)
  7  cache (+ activity)       →  K2, K12; K9 later
@@ -337,12 +358,13 @@ Tracks A+B ship, GitHub share/gather is the truck — not the authority.
 1. Confirm Deck work-plan gates (Phase −1) — do not open Boxel design debates.
 2. Clean Boxel `main`; add **lean** `packages/deck` (Phase 0).
 3. Phase 1 resolver; author gate: **remix without copying**.
-4. Phase **1b** thin install/remix/use on a fixture — **before** Timeline.
-5. Parallel (optional owners): classifier publish (2), vendor corpus (3).
-6. Staff Timeline as **5a → 5e** slices with restore before base realm.
-7. Base realm (6) only after Step restore works.
-8. Mirror / share-gather (8); Matrix retirement of GH submission last.
-9. Packs + review tools (9) without blocking Map/Tape wins.
+4. Phase **3** serve door — versioned addresses, so a pin has a target.
+5. Phase **1b** thin install/remix/use on a fixture — **before** Timeline.
+6. Parallel (optional owners): classifier publish (2), vendor corpus (3′).
+7. Staff Timeline as **5a → 5e** slices with restore before base realm.
+8. Base realm (6) only after Step restore works.
+9. Mirror / share-gather (8); Matrix retirement of GH submission last.
+10. Packs + review tools (9) without blocking Map/Tape wins.
 
 ---
 
@@ -355,7 +377,8 @@ Tracks A+B ship, GitHub share/gather is the truck — not the authority.
 | 1 Resolver | `runtime-common` | K8 | small — first behavior |
 | **1b Thin verbs** | host + helpers + fixture | **early K5** | **product spine** |
 | 2 Classifier | `realm-server` | publish / K14 prep | parallel OK |
-| 3 Vendor/CDN | outside + content | K3, catalog K2 | optional early |
+| **3 Serve door** | `realm-server` | **address space** | **spine — prereq for 1b** |
+| 3′ Vendor corpus | outside + content | K3, catalog K2 | optional early |
 | **5a–5e Tape** | realm write, HTTP, host, claims, CLI | **K1, K4** | **hinge — sliced** |
 | 6 Base realm | `runtime-common`, `host` | K11 | highest blast radius |
 | 7 Cache + activity | `realm-server`, `host` | K2, K12 (K9 later) | medium |
@@ -369,7 +392,8 @@ Commit-level Touch / Do / Don’t: `deck-boxel-backport-changelist-mockup.md`.
 ## One-sentence summary for stakeholders
 
 We finish protocol decisions in Deck, drop a lean Core into Boxel, treat an
-**app as a decklist**, prove remix/install without copying **before** we
+**app as a decklist** addressed by fully-qualified URLs until the RRI
+migration hands us aliases, prove remix/install without copying **before** we
 attach a Timeline of Steps (Versions on publish), then serve/cache correctly
 and move registry authority into the catalog — with GitHub share/gather as
 interim collaboration and Matrix later, never as the source of truth.
