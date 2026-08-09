@@ -30,7 +30,7 @@
 //
 //   pnpm --filter @deck/example-fork-an-app demo
 //   open http://localhost:8791/
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pack, unpack } from '@deck/core/pack';
@@ -457,6 +457,7 @@ await writeFile(
       topojson: {
         deck: 'lib/topojson-client',
         version: topo.pkg.version,
+        entry: topo.entryPath,
         modules: topo.modules.length,
         hash: topoHash,
       },
@@ -483,6 +484,14 @@ await writeFile(
 
 } // end buildMode
 
+// The URLs printed below come from the build record on disk, not from
+// variables in the build block above: those are block-scoped, and in serve
+// mode the block never runs. Reading them back also proves the file the page
+// will fetch says what the transcript said.
+let built = JSON.parse(
+  await readFile(join(depotDir, 'app', 'viewer', 'build.json'), 'utf8'),
+);
+
 let server = createDemoServer({
   depots: [{ name: DEPOT, dir: depotDir, storeDir }],
   fallback: (req, res) => {
@@ -493,10 +502,10 @@ let server = createDemoServer({
 server.listen(PORT, () => {
   console.log(`\n5) serving both versions side by side (HTTPS + HTTP/2)\n`);
   console.log(`      ${demoOrigin(PORT)}/\n`);
-  console.log(`      /${DEPOT}/lib/leaflet@${VERSION}/${vendored.entryPath}`);
-  console.log(`      /${DEPOT}/me/leaflet@${FORK_VERSION}/${vendored.entryPath}`);
-  console.log(`      /${DEPOT}/lib/topojson-client@${topo.pkg.version}/${topo.entryPath}`);
-  console.log(`      /${DEPOT}/data/world-atlas@${atlas.version}/${ATLAS_FILE}`);
+  console.log(`      /${DEPOT}/${built.upstream.deck}@${built.upstream.version}/${built.entry}`);
+  console.log(`      /${DEPOT}/${built.fork.deck}@${built.fork.version}/${built.entry}`);
+  console.log(`      /${DEPOT}/lib/topojson-client@${built.topojson.version}/${built.topojson.entry}`);
+  console.log(`      /${DEPOT}/data/world-atlas@${built.atlas.version}/${built.atlas.file}`);
   console.log(`\n   Every country on both maps is an SVG path drawn from sealed`);
   console.log(`   bytes. There is no tile server and no CDN: nothing on the page`);
   console.log(`   reaches the network at runtime.\n`);

@@ -5,7 +5,7 @@
 // treats them as two unrelated modules — because they are. Two decks, two
 // treeHashes, no collision.
 
-import { installPillStyles, legend, pill } from 'ui/pills';
+import { installPillStyles, pill } from 'ui/pills';
 
 const build = await (await fetch('./build.json')).json();
 
@@ -73,29 +73,9 @@ let app = document.querySelector('#app');
 app.classList.remove('loading');
 app.innerHTML = `
   <header>
+    <div class="crumb">deck · example · W3</div>
     <h1>Take all of it. Change the one thing you disagree with.</h1>
-    <p class="lede">
-      Leaflet publishes real per-file ESM, so vendoring it keeps the module
-      boundary intact — and “change one file” means changing one file, not
-      patching a bundle or maintaining a downstream build. Below is
-      <strong>upstream</strong> and <strong>a fork that differs by two
-      files</strong> — same world, same data, same converter, different
-      <em>projection</em>, running side by side in one document.
-      <br />
-      Look at Greenland, then at Africa.
-    </p>
-    <div class="namekey">
-      ${legend()}
-      <p class="namenote">
-        This page names the same library three ways, and they mean different
-        things. ${pill('npm', `${provenance.name}@${provenance.version}`)} is the
-        artifact that was fetched and hashed;
-        ${repoId(provenance.repo) ? `${pill('github', repoId(provenance.repo))} is where the code is written;` : ''}
-        ${pill('deck', `lib/leaflet@${upstream.version}`)} is where this depot
-        serves it from. “85 modules” is a fact about the first; “3 objects” is
-        a fact about the third.
-      </p>
-    </div>
+    <p class="lede">Look at Greenland, then at Africa.</p>
   </header>
 
   <section class="maps">
@@ -123,6 +103,11 @@ app.innerHTML = `
         <h2>${title}</h2>
         <p class="sub"><code>${sub}</code></p>
         <div class="map" id="map-${kind}"></div>
+        <p class="cost">${
+          kind === 'fork'
+            ? `<b>${store.forkCost} objects</b> out of ${modules} modules — the ${changed.length} files it edited, plus the manifest that records where it came from`
+            : `<b>${modules} modules</b> vendored from npm source, unmodified`
+        }</p>
         <p class="hash" title="tree-hash-v1">${side.hash.slice(0, 32)}…</p>
       </article>`,
       )
@@ -131,21 +116,17 @@ app.innerHTML = `
 
   <section class="facts">
     <div class="fact">
-      <b>${store.forkCost}</b>
-      <span>objects is what the fork cost. Two ${modules}-module copies of
-      Leaflet, and <strong>${store.shared}</strong> of those files are
-      byte-identical, so they are stored once — the fork added only the
-      ${changed.length} files it edited plus the manifest recording its
-      lineage. The whole store is ${store.objects} objects for four decks.</span>
+      <b>${store.shared}</b>
+      <span>of ${modules} files are byte-identical between the two, so they are
+      stored once. The whole store is ${store.objects} objects for four decks.</span>
     </div>
     <div class="fact">
       <b>0</b>
       <span>requests to the live web. Every country is an SVG path drawn from
       ${(atlas.bytes / 1024).toFixed(0)} KB of TopoJSON in
       ${pill('deck', `${atlas.deck}@${atlas.version}`)}, converted by
-      ${pill('deck', `${topojson.deck}@${topojson.version}`)} — no tile server,
-      and even the stylesheet is served from the deck. A deck that would need
-      a CDN at runtime is not sealed, and Deck refuses to seal it (L6).
+      ${pill('deck', `${topojson.deck}@${topojson.version}`)}. Even the
+      stylesheet is served from the deck (L6).
       <br /><small>${dropped.length} feature${dropped.length === 1 ? '' : 's'} that
       cross the antimeridian are filtered out (${dropped.join(', ')}) — a
       Mercator seam, not a Deck one.</small></span>
@@ -153,9 +134,11 @@ app.innerHTML = `
     <div class="fact prov">
       <b>✓</b>
       <span>
-        provenance survives the fork — it is still Leaflet and still says so:<br />
-        ${pill('npm', `${provenance.name}@${provenance.version}`)}
-        ${repoId(provenance.repo) ? pill('github', provenance.commit ? `${repoId(provenance.repo)}@${provenance.commit}` : repoId(provenance.repo)) : ''}
+        provenance survives the fork. Three names for one library, and they
+        mean different things:<br />
+        ${pill('npm', `${provenance.name}@${provenance.version}`)} the artifact that was hashed
+        ${repoId(provenance.repo) ? `<br />${pill('github', provenance.commit ? `${repoId(provenance.repo)}@${provenance.commit}` : repoId(provenance.repo))} where the code is written` : ''}
+        <br />${pill('deck', `lib/leaflet@${upstream.version}`)} where this depot serves it from
         <br /><code class="integrity">${provenance.integrity ?? 'no integrity published'}</code>
       </span>
     </div>
@@ -164,9 +147,6 @@ app.innerHTML = `
   <section class="reading">
     <h3>What just happened</h3>
     <ol>
-      <li><strong>Vendored from source, not from a CDN.</strong> ${modules}
-      modules, nothing pointing outside the package. The tree npm published
-      is the tree being served.</li>
       <li><strong>The fork is ${changed.length} files different, and one of
       them is maths.</strong> The right-hand map is drawn in
       <strong>Gall–Peters</strong> — cylindrical equal-area — because
@@ -182,10 +162,7 @@ app.innerHTML = `
       passed as an argument. Both are one-file edits here, which is the
       point — the useful question is never “is it configurable” but “is the
       module boundary still there”.</li>
-      <li><strong>It copied almost nothing.</strong> Content addressing is
-      per file and store-wide, so an undiverged file is one object however
-      many decks point at it — ${store.shared} of ${modules} here.</li>
-      <li><strong>Both are addressable forever.</strong> Different trees,
+      <li><strong>Both are addressable for ever.</strong> Different trees,
       different hashes, neither able to be mistaken for the other — and
       upstream did not have to agree to any of it.</li>
     </ol>
@@ -248,6 +225,9 @@ style.textContent = `
   .map { height:22rem; border-radius:7px; overflow:hidden; background:#eef1f5; border:1px solid var(--line); }
   .leaflet-container { background:#eef1f5; }
   .hash { color:#b7b7bd; font:.7rem ui-monospace, monospace; margin:.5rem 0 0; }
+  .crumb{font:600 11px/1 var(--sans,ui-sans-serif);letter-spacing:.11em;text-transform:uppercase;color:#8b8b93}
+  .cost{margin:.5rem 0 .2rem;font-size:.8rem;color:#54525f}
+  .cost b{color:#272330;font-variant-numeric:tabular-nums}
 
   /* Make the forked glyphs unmissable. */
   .leaflet-control-zoom a { font-size:1.05rem; }
