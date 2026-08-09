@@ -30,12 +30,8 @@ app.innerHTML = `
     <h1>Where per-file vendoring runs out.</h1>
     <p class="lede">
       Leaflet publishes 85 addressable modules. three.js publishes 374. These
-      eleven packages publish <strong>none</strong> — every declared entry is
-      one rolled-up module — and between them they ship
-      <strong>${totalMaps} source maps</strong>, so there is nothing to
-      recover either. This is the case
-      <code>deck-rebuild-sibling-proposal.md</code> was written for, and this
-      page is the measurement rather than the assertion.
+      eleven publish <strong>none</strong>, and ship
+      <strong>${totalMaps} source maps</strong> between them.
     </p>
     <div class="namekey">
       ${legend(['deck', 'npm', 'github'], {

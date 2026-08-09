@@ -33,52 +33,11 @@ let app = document.querySelector('#app');
 app.classList.remove('loading');
 app.innerHTML = `
   <header>
+    <div class="crumb">deck · example · W3</div>
     <h1>374 files, and you may edit any of them.</h1>
-    <p class="lede">
-      three.js publishes <strong>both</strong>: a real per-file module tree in
-      <code>src/</code>, and the same library flattened into one 1.2 MB module
-      in <code>build/</code>. Almost every CDN hands you the second. Vendored
-      from the first, changing a shader is a text edit — and the two canvases
-      below differ by <strong>exactly one file</strong>.
-      <br />
-      One is <code>MeshPhongMaterial</code> shading a torus knot. So is the
-      other.
-    </p>
-    <div class="namekey">
-      ${legend()}
-      <p class="namenote">
-        ${pill('npm', `${provenance.name}@${provenance.version}`)} is the artifact
-        that was fetched and hashed;
-        ${repoId(provenance.repo) ? `${pill('github', repoId(provenance.repo))} is where the code is written;` : ''}
-        ${pill('deck', `lib/three@${upstream.version}`)} is where this depot
-        serves it from.
-      </p>
-    </div>
+    <p class="lede">Two canvases. One <code>MeshPhongMaterial</code> torus knot
+      each, and <strong>exactly one file</strong> different between them.</p>
   </header>
-
-  <section class="what">
-    <h3>What npm published</h3>
-    <table>
-      <tr><th>entry</th><th>modules</th><th>size</th><th></th></tr>
-      ${probes
-        .map(
-          (probe) => `<tr class="${probe.modules === 1 ? 'bundle' : 'tree'}">
-            <td><code>${probe.entry}</code></td>
-            <td>${probe.modules}</td>
-            <td>${probe.kb} KB</td>
-            <td>${probe.modules === 1 ? 'a bundle — the boundary was lost at publish time' : 'a tree — every file is its own address'}</td>
-          </tr>`,
-        )
-        .join('')}
-    </table>
-    <p class="note">
-      ${publishedFiles} files in the tarball. The bundle is ${
-        probes.length > 1
-          ? Math.round((1 - probes.find((p) => p.modules === 1).kb / probes.find((p) => p.modules > 1).kb) * 100)
-          : 0
-      }% smaller and cannot be edited; the tree is ${modules} modules and can.
-    </p>
-  </section>
 
   <section class="canvases">
     ${[
@@ -105,6 +64,30 @@ app.innerHTML = `
   </section>
 
   <p class="note" id="page-cost">measuring…</p>
+
+  <section class="what">
+    <h3>What npm published</h3>
+    <table>
+      <tr><th>entry</th><th>modules</th><th>size</th><th></th></tr>
+      ${probes
+        .map(
+          (probe) => `<tr class="${probe.modules === 1 ? 'bundle' : 'tree'}">
+            <td><code>${probe.entry}</code></td>
+            <td>${probe.modules}</td>
+            <td>${probe.kb} KB</td>
+            <td>${probe.modules === 1 ? 'a bundle — the boundary was lost at publish time' : 'a tree — every file is its own address'}</td>
+          </tr>`,
+        )
+        .join('')}
+    </table>
+    <p class="note">
+      ${publishedFiles} files in the tarball. The bundle is ${
+        probes.length > 1
+          ? Math.round((1 - probes.find((p) => p.modules === 1).kb / probes.find((p) => p.modules > 1).kb) * 100)
+          : 0
+      }% smaller and cannot be edited; the tree is ${modules} modules and can.
+    </p>
+  </section>
 
   <section class="diff">
     <h3>The whole change</h3>
@@ -136,6 +119,17 @@ gl_FragColor = vec4( holo, diffuseColor.a );</code></pre>
       material. <code>MeshPhongMaterial</code> has around fifty options and
       none of them is either of these. There is no plugin interface for it.
       You edit the file, or you do not get it.
+    </p>
+  </section>
+
+  <section class="namekey">
+    ${legend()}
+    <p class="namenote">
+      ${pill('npm', `${provenance.name}@${provenance.version}`)} is the artifact
+      that was fetched and hashed;
+      ${repoId(provenance.repo) ? `${pill('github', repoId(provenance.repo))} is where the code is written;` : ''}
+      ${pill('deck', `lib/three@${upstream.version}`)} is where this depot
+      serves it from.
     </p>
   </section>
 
@@ -178,7 +172,8 @@ style.textContent = `
   #app.loading { color:var(--dim); }
   h1 { font-size:1.6rem; margin:0 0 .5rem; letter-spacing:-.01em; }
   h3 { font-size:1rem; margin:0 0 .6rem; }
-  .lede { color:var(--dim); max-width:50rem; margin:0 0 2rem; }
+  .crumb { font:600 11px/1 inherit; letter-spacing:.11em; text-transform:uppercase; color:#8b8b93; }
+  .lede { color:var(--dim); max-width:50rem; margin:.35rem 0 1.25rem; }
   .lede strong { color:var(--ink); }
   code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85em; }
   .note { color:var(--dim); font-size:.85rem; }
