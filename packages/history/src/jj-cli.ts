@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { DEFAULT_IGNORE } from '@deck/core/tree-hash';
 import {
@@ -50,7 +49,21 @@ export interface JjCliOptions {
   onError?: (error: unknown) => void;
 }
 
-const EXCLUDE_MARKER = '# deck: not part of the tree';
+/**
+ * Everything except the machinery, as a jj fileset.
+ *
+ * The value is a TOML literal string (single quotes) so the `glob:"…"` parts
+ * keep their double quotes: `all() ~ glob:".deck/**"`. Derived from
+ * DEFAULT_IGNORE so the set jj refuses to snapshot and the set the tree hash
+ * refuses to hash cannot drift apart — they are the same list.
+ */
+export function autoTrackFileset(): string {
+  let excluded = [...DEFAULT_IGNORE]
+    .filter((name) => name !== '.jj')
+    .map((name) => ` ~ glob:"${name}/**" ~ glob:"${name}"`)
+    .join('');
+  return `'all()${excluded}'`;
+}
 
 export class JjCliHistory implements HistoryBackend {
   readonly kind = 'jj' as const;
@@ -298,39 +311,27 @@ export class JjCliHistory implements HistoryBackend {
       return;
     }
     if (!existsSync(join(dir, '.jj'))) {
-      // Colocated git backend: jj gets its storage and the embedded git repo
-      // is there for anyone who wants to push the tree somewhere else.
-      await this.#jj(dir, ['git', 'init', '--colocate']);
+      // NOT colocated, and this is as load-bearing as anything in the repo.
+      //
+      // jj colocates by DEFAULT (0.43: "This is the default"), which puts a
+      // real `.git` at the top level of the depot. Harmless for a depot
+      // sitting on its own; quietly catastrophic for one inside another git
+      // repository — which every depot in this repo is, and so is every
+      // depot in anybody's project.
+      //
+      // Git treats a directory containing `.git` as a submodule boundary.
+      // `git add` on it records a 160000 gitlink pointing at a commit nobody
+      // else will ever have, and EVERY FILE UNDERNEATH IS SILENTLY DROPPED.
+      // It stages without error, commits without error, and `git status` is
+      // clean afterwards. The only signal is an advisory hint that scrolls
+      // past, and the loss is not visible until someone clones.
+      //
+      // Attaching history to a depot must never change what committing that
+      // depot means. So: no colocation, no `.git`, and a depot stays a plain
+      // directory to whatever repository contains it.
+      await this.#jj(dir, ['git', 'init', '--config', 'git.colocate=false']);
     }
-    await this.#ensureExcludes(dir);
     this.#ready.add(dir);
-  }
-
-  // What jj seals must be exactly what the tree hash covers. Without this,
-  // a depot's own `.deck` store would be sealed WITH the depot — every seal
-  // carrying a copy of every pack, and a restore rewinding the published
-  // versions themselves.
-  //
-  // The rules go in `.git/info/exclude`, not `.gitignore`: git's untracked
-  // ignore file is not part of the tree, so attaching history to a deck
-  // never changes that deck's hash.
-  async #ensureExcludes(dir: string): Promise<void> {
-    let path = join(dir, '.git', 'info', 'exclude');
-    let existing = '';
-    try {
-      existing = await readFile(path, 'utf8');
-    } catch {
-      // no exclude file yet
-    }
-    if (existing.includes(EXCLUDE_MARKER)) {
-      return;
-    }
-    let rules = [...DEFAULT_IGNORE]
-      .filter((name) => name !== '.git' && name !== '.jj')
-      .map((name) => `/${name}`);
-    let prefix = existing === '' || existing.endsWith('\n') ? existing : `${existing}\n`;
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, `${prefix}${EXCLUDE_MARKER}\n${rules.join('\n')}\n`);
   }
 
   #baseArgs(actor?: HistoryActor): string[] {
@@ -348,6 +349,24 @@ export class JjCliHistory implements HistoryBackend {
       `user.name="${name}"`,
       '--config',
       `user.email="${email}"`,
+      // What jj seals must be exactly what the tree hash covers. Without
+      // this, a depot's own `.deck` store would be sealed WITH the depot —
+      // every seal carrying a copy of every pack, and a restore rewinding the
+      // published versions themselves.
+      //
+      // This used to be written into `.git/info/exclude`, which only exists
+      // when the repo is colocated, and colocation is exactly what we no
+      // longer do (see #ensureRepo). A non-colocated jj does not read that
+      // file, and it does not read `.jj/repo/store/git/info/exclude` either
+      // — both were measured, both are ignored.
+      //
+      // `snapshot.auto-track` is the mechanism that works, and it is better
+      // than the old one on its own terms: it is passed per invocation, so
+      // nothing is written into the depot, nothing lands in `~/.config`
+      // behind the user's back, and a depot directory stays self-contained
+      // and movable. jj already excludes its own `.jj`.
+      '--config',
+      `snapshot.auto-track=${autoTrackFileset()}`,
     ];
   }
 

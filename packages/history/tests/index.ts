@@ -16,6 +16,7 @@ QUnit.on('runEnd', (runEnd) => {
   }
 });
 
+await import('./no-gitlink-test.ts');
 await import('./jj-cli-test.ts');
 await import('./historyd-test.ts');
 await import('./historyd-live-test.ts');

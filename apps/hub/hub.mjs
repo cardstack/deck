@@ -101,13 +101,28 @@ async function demoDepots() {
 
 // ---------------------------------------------------------------------------
 
+// Tier-2 history is on, and `DECK_HUB_HISTORY=0` turns it off.
+//
+// It was briefly opt-in, because jj colocates by default and a colocated
+// `.git` inside a depot that lives in another git repository makes `git add`
+// record a gitlink and silently drop every file underneath. That is fixed at
+// the root now — the history backend initialises non-colocated, and
+// packages/history/tests/no-gitlink-test.ts fails loudly if it ever stops —
+// so there is no longer a reason to run the Hub with its own live loop
+// switched off.
+const WANT_HISTORY = process.env.DECK_HUB_HISTORY !== '0';
+
 let hub = {
   ...HUB,
   storeDir: storeDirFor(HUB.dir),
-  history: (await createHistory({
-    dir: HUB.dir,
-    onError: (error) => console.error(`   history: ${error}`),
-  })).backend,
+  history: WANT_HISTORY
+    ? (
+        await createHistory({
+          dir: HUB.dir,
+          onError: (error) => console.error(`   history: ${error}`),
+        })
+      ).backend
+    : undefined,
 };
 let demos = await demoDepots();
 let depots = [hub, ...demos];
