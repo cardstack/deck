@@ -62,10 +62,27 @@ components at ordinary deck addresses.
 
 | route | canonical address | centre of gravity | workloads |
 | --- | --- | --- | --- |
-| `/start` | `/hub/app/start/` | this machine, right now | W1, W4 |
+| `/start` | `/hub/app/start/` | this machine now, and the docs | all |
 | `/browse` | `/hub/app/browse/` | the tree at rest | W2, W3 |
 | `/run` | `/hub/app/run/` | the assembled, executing thing | W1, W4 |
-| `/read` | `/hub/app/read/` | the protocol, taught | all |
+| `/track` | `/hub/app/track/` | what changed, and where | W3, W4 |
+
+**`/read` is gone; `/track` replaces it.** Two moves, one reason each.
+
+The docs fold into `/start`, because a docs site is not a fourth thing you
+*do* — it is what you read while orienting, and orienting is what `/start`
+is for. Splitting them made `/start` thin and `/read` inert.
+
+`/track` is the surface that was missing: **what has changed**, scoped. Seals,
+published versions, and open proposals are three renderings of one question,
+and the Hub had them scattered — the seal log buried in `/browse`, the offers
+queue nowhere. Scoping is the point: not "everything that happened" but
+everything that happened *within this subtree, or in the forks related to
+it*. A change river with no scope is a feed nobody reads.
+
+An entry in `/track` deep-links into `/browse`'s diff view, which is why
+`/browse` takes `?at=` and `?vs=` as plain addresses rather than internal
+state — the two apps compose through the URL and share no code path.
 
 Mapped onto the spec's §7 directions: `/run` is Direction B, `/browse` is
 Direction A with Direction D's locator demoted from an IA to a *component*,

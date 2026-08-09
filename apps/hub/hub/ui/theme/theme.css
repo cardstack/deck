@@ -1,0 +1,346 @@
+/* The Hub's one stylesheet, as a deck.
+ *
+ * Four apps, one lattice and one palette. It is not copied into each of them
+ * and not built into a bundle — it is an ordinary deck at an ordinary
+ * address, linked by every app, which is the same claim `ui/nav` makes and
+ * the reason both exist as decks rather than as files.
+ *
+ * A deck with NO ENTRY: nothing imports a stylesheet.
+ */
+
+:root {
+  color-scheme: dark light;
+  /* The lattice. Change these two and the page re-rules itself. */
+  --row: 1.5;
+  --gut: 2ch;
+
+  /* A near-neutral GROUND so code stays readable, and saturated
+     accents on top of it. The ground is grey; nothing else has to be. */
+  --bg: #151517;
+  --panel: #1e1e23;
+  --fg: #e4e4e8;
+  --dim: #85858f;
+  --line: #2f2f37;
+  --sel: #34343f;
+
+  --red: #ff6b81;
+  --green: #5fdd95;
+  --amber: #ffb454;
+  --blue: #6cb6ff;
+  --violet: #c792ea;
+  --cyan: #4fd6de;
+  --pink: #ff7bd5;
+  --orange: #ff9152;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f4f2;
+    --panel: #e7e7e3;
+    --fg: #18181b;
+    --dim: #6b6b73;
+    --line: #d6d6d1;
+    --sel: #dcdcd6;
+
+    --red: #c8283c;
+    --green: #147a48;
+    --amber: #9a6100;
+    --blue: #1a5fc4;
+    --violet: #7635bd;
+    --cyan: #0a7580;
+    --pink: #b3268f;
+    --orange: #bc5108;
+  }
+}
+
+/* ── COLOUR MEANS THE GRAMMAR ───────────────────────────────────────
+   A Deck address has five parts and the whole product rests on knowing
+   which is which:
+
+     /<depot>/<publisher>/<package>@<version>/<path>
+
+   So each part gets a hue and keeps it — in the path line, in listings,
+   in diff headers, in the raw link. Colour here is not decoration; it
+   is the URL grammar, taught by repetition, everywhere it appears. The
+   publisher gets the loudest one because it is the FORK BOUNDARY, which
+   is the segment people most often fail to notice is doing work.
+
+   Version is the exception: it is coloured by VOLATILITY rather than by
+   position, because "is this moving or frozen" outranks "this is the
+   version slot". Amber moves, green never will. */
+:root {
+  --a-depot: var(--cyan);
+  --a-publisher: var(--violet);
+  --a-package: var(--blue);
+  --a-live: var(--amber);
+  --a-sealed: var(--green);
+  --a-hash: var(--pink);
+  --a-seal: var(--orange);
+}
+.s-depot { color: var(--a-depot); }
+.s-publisher { color: var(--a-publisher); }
+.s-package { color: var(--a-package); font-weight: 600; }
+.s-version { color: var(--a-sealed); }
+.s-version[data-live] { color: var(--a-live); }
+.s-seal { color: var(--a-seal); }
+.s-path { color: var(--fg); }
+.s-hash { color: var(--a-hash); opacity: .85; }
+.s-base { color: var(--a-publisher); }
+.s-head { color: var(--a-package); }
+/* Directories read as containers and files as leaves, before you have
+   read either name. The trailing slash does some of this; weight and
+   hue do the rest, which is why `ls --color` has survived forty years. */
+a.s-dir { color: var(--a-package); font-weight: 600; }
+a.s-file { color: var(--fg); }
+.sep { color: var(--dim); opacity: .55; padding: 0 .15ch; }
+
+* { box-sizing: border-box; }
+::selection { background: var(--sel); }
+
+body {
+  margin: 0;
+  padding: 0 var(--gut) 6em;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Commit Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+  line-height: var(--row);
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--fg); text-decoration: underline; text-underline-offset: 2px; }
+a:hover { background: var(--sel); }
+:focus-visible { outline: 1px solid var(--fg); outline-offset: 1px; }
+/* The UA stylesheet sets `font-family: monospace` on pre/code/kbd and
+   `font-family: <system>` on form controls, and both beat inheritance.
+   Without this the one typeface the page is built around stops applying
+   to the code — which is the only place it really had to. */
+pre, code, kbd, samp, input, select, button, textarea { font-family: inherit; }
+h1 {
+  font-size: 1em; font-weight: 400; color: var(--dim);
+  margin: 0 0 calc(var(--row) * 1em) 0;
+}
+.dim { color: var(--dim); }
+.ok { color: var(--green); }
+
+/* ── the path line ──────────────────────────────────────────────────
+   A breadcrumb set like a prompt. Every segment is a link that goes
+   where it says. No cursor: a blinking block would say "type here" to
+   a line that accepts no typing, and an ornament that lies about being
+   interactive is the exact failure this surface exists to avoid. */
+.prompt {
+  padding: calc(var(--row) * .4em) 0; white-space: nowrap;
+  overflow-x: auto; scrollbar-width: none;
+}
+.prompt-mark { color: var(--dim); }
+.prompt-mark::after { content: ' ❯'; }
+.prompt .sep { color: var(--dim); padding: 0 .2ch; }
+.prompt b { font-weight: 600; }
+
+/* ── the fact strip ─────────────────────────────────────────────── */
+.facts {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: .2em 2.5ch; padding: calc(var(--row) * .4em) 0;
+  margin-bottom: calc(var(--row) * .8em);
+}
+.facts > div { white-space: nowrap; }
+.facts b, .facts label, .filter b, th {
+  color: var(--dim); font-weight: 400; margin-right: .6ch;
+}
+/* ── CONTROLS LOOK LIKE CONTROLS ────────────────────────────────────
+   A terminal aesthetic is not a licence to remove affordances. An
+   underline is not a dropdown: nothing about it says "this opens", so
+   the most important control on the page ends up looking like a label.
+   These get a full border, a raised surface, a chevron, and hover and
+   focus states — the ordinary web signals for "you can operate this" —
+   and stay on the character grid while they do it. */
+select {
+  font: inherit; color: var(--fg); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 2px;
+  padding: 0 3ch 0 1ch; height: calc(var(--row) * 1.25em);
+  appearance: none; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 1.3ch top 55%, right 0.85ch top 55%;
+  background-size: .45ch .45ch, .45ch .45ch;
+  background-repeat: no-repeat;
+}
+select:hover { border-color: var(--dim); background-color: var(--sel); }
+select:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+input[type='search'], input:not([type]) {
+  font: inherit; color: var(--fg); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 2px;
+  padding: 0 1ch; height: calc(var(--row) * 1.25em);
+}
+input:hover { border-color: var(--dim); }
+input::placeholder { color: var(--dim); }
+input[type='search']::-webkit-search-cancel-button { filter: grayscale(1) opacity(.6); }
+
+/* Volatility is the control that makes this not a file browser, so it
+   is the loudest thing on the strip: amber for something that moves,
+   green for something frozen, cyan for a moment in history. */
+.vol select, .cmp select { font-weight: 600; }
+.vol[data-kind='live'] select { color: var(--a-live); border-color: var(--a-live); }
+.vol[data-kind='sealed'] select { color: var(--a-sealed); border-color: var(--a-sealed); }
+.vol[data-kind='seal'] select { color: var(--a-seal); border-color: var(--a-seal); }
+.cmp[data-on] select { color: var(--a-publisher); border-color: var(--a-publisher); }
+
+/* ── tables on the lattice ──────────────────────────────────────── */
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 0 var(--gut) 0 0; white-space: nowrap; }
+th {
+  position: sticky; top: 0; background: var(--bg); z-index: 1;
+  text-transform: uppercase; letter-spacing: .12em; font-size: .82em;
+  border-bottom: 1px solid var(--line); padding-bottom: .2em;
+}
+td.num, th.num { text-align: right; }
+/* A sortable header has to look operable — cursor, hover, and a mark
+   that distinguishes "you can sort this" from "this is sorted". */
+th[data-role='sort'] { cursor: pointer; user-select: none; }
+th[data-role='sort']:hover { color: var(--fg); }
+th .sortmark { font-style: normal; padding-left: .6ch; opacity: .45; }
+th[data-role='sort']:hover .sortmark { opacity: 1; }
+th .sortmark:not(:empty) { display: inline-block; }
+tr[hidden] { display: none; }
+/* Keyboard selection is a filled bar with a bright left edge — visible
+   at a glance from anywhere on the page, which is the whole job when
+   the cursor is being driven by `j` and `k` rather than by a pointer. */
+tbody tr[data-here] { background: var(--sel); box-shadow: inset 3px 0 0 var(--a-package); }
+tbody tr[data-here] a { text-decoration: underline; }
+tbody tr:hover:not([data-here]) { background: var(--panel); }
+tbody td:first-child { padding-left: 3px; }
+.filter { margin-bottom: calc(var(--row) * .4em); }
+/* Related decks sit above the fold, not in a panel you have to look
+   for: on this server the fork of the thing you are reading is usually
+   the reason you came. */
+.siblings {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .2em 1.5ch;
+  padding: calc(var(--row) * .3em) 0;
+  border-bottom: 1px solid var(--line);
+}
+.siblings > b { color: var(--dim); font-weight: 400; }
+.siblings a { text-decoration: none; border-bottom: 1px solid var(--line); }
+.siblings a:hover { background: var(--sel); border-bottom-color: var(--a-publisher); }
+.siblings em { font-style: normal; font-size: .9em; margin-left: auto; }
+
+/* ── a blob ─────────────────────────────────────────────────────────
+   One <pre>, one span per line, numbers from a CSS counter. Measured at
+   53 ms for 10,000 lines, so no virtualization — the chunk boundary
+   sits well above the common case. */
+pre.blob { margin: 0; counter-reset: line; overflow-x: auto; }
+pre.blob .ln { display: block; white-space: pre; }
+pre.blob:not(.diff) .ln::before {
+  counter-increment: line; content: counter(line);
+  display: inline-block; width: 6ch; padding-right: var(--gut);
+  text-align: right; color: var(--dim);
+  position: sticky; left: 0; background: var(--bg);
+}
+pre.blob .ln:target { background: var(--sel); }
+
+/* ── syntax ─────────────────────────────────────────────────────────
+   Our own mapping of highlight.js classes onto the palette, rather than
+   one of the 250 themes it ships. The point of a neutral ground is that
+   code is mostly ungrammatical grey with a few things picked out; a
+   theme that colours nine token classes defeats it. */
+.hljs-comment, .hljs-quote { color: var(--dim); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal { color: var(--violet); }
+.hljs-type, .hljs-class .hljs-title, .hljs-title.class_ { color: var(--cyan); }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-char.escape_ { color: var(--green); }
+.hljs-number, .hljs-symbol { color: var(--orange); }
+.hljs-meta, .hljs-meta .hljs-keyword, .hljs-doctag { color: var(--pink); }
+.hljs-title, .hljs-title.function_, .hljs-section { color: var(--blue); }
+.hljs-name, .hljs-selector-id, .hljs-selector-class { color: var(--amber); }
+.hljs-attr, .hljs-attribute, .hljs-property { color: var(--cyan); }
+.hljs-params, .hljs-variable, .hljs-template-variable { color: var(--fg); }
+.hljs-built_in { color: var(--blue); }
+.hljs-operator, .hljs-punctuation { color: var(--dim); }
+.hljs-subst { color: var(--fg); }
+.hljs-bullet, .hljs-link { color: var(--amber); }
+.hljs-deletion { color: var(--red); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
+
+/* ── diff ───────────────────────────────────────────────────────────
+   Two gutters, because a diff has two line numberings and pretending
+   otherwise is how you lose track of which side you are reading. */
+.diffhead { padding: calc(var(--row) * .4em) 0; }
+pre.blob.diff .gut {
+  display: inline-block; width: 5ch; text-align: right;
+  padding-right: 1ch; color: var(--dim); font-style: normal;
+}
+pre.blob.diff .mk { display: inline-block; width: 2ch; font-weight: 600; }
+pre.blob.diff .ln[data-mark='+'] { background: color-mix(in srgb, var(--green) 16%, transparent); }
+pre.blob.diff .ln[data-mark='+'] .mk { color: var(--green); }
+pre.blob.diff .ln[data-mark='-'] { background: color-mix(in srgb, var(--red) 16%, transparent); }
+pre.blob.diff .ln[data-mark='-'] .mk { color: var(--red); }
+
+table.treediff td.mark { width: 3ch; font-weight: 600; }
+table.treediff tr[data-status='added'] td.mark { color: var(--green); }
+table.treediff tr[data-status='removed'] td.mark { color: var(--red); }
+table.treediff tr[data-status='changed'] td.mark { color: var(--amber); }
+table.treediff td:nth-child(2) { width: 100%; white-space: normal; word-break: break-all; }
+
+/* ── notices ────────────────────────────────────────────────────────
+   No boxes. A left rule and the dim colour carry it, and the two
+   flavours of miss (UI spec §12) are told apart by the ONLY thing that
+   should differ — what they say and what colour says it. */
+.note {
+  border-left: 1px solid var(--line); padding-left: var(--gut);
+  color: var(--dim); margin: calc(var(--row) * .6em) 0; white-space: normal;
+}
+/* The other end of the one-prefix relationship: strip `?at=` and you
+   have the bytes. A link, not a sentence about a link. */
+.raw { margin: 0 0 calc(var(--row) * .4em) 0; }
+.raw a { color: var(--a-hash); }
+p { margin: calc(var(--row) * .3em) 0; }
+.err { border-left: 2px solid var(--red); padding-left: var(--gut); white-space: normal; }
+.err b { color: var(--red); font-weight: 600; }
+.err[data-permanence='transient'] { border-left-color: var(--amber); }
+.err[data-permanence='transient'] b { color: var(--amber); }
+
+::-webkit-scrollbar { width: 1ch; height: 1ch; }
+::-webkit-scrollbar-thumb { background: var(--line); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ── /run ───────────────────────────────────────────────────────────────── */
+
+/* The toggle. Two positions, one control, same place on every page — a
+   segmented pair rather than a switch, because both states are destinations
+   and neither is "off". */
+.lens { display: inline-flex; margin-bottom: calc(var(--row) * .6em); }
+.lens button {
+  font: inherit; cursor: pointer; padding: 0 2ch;
+  height: calc(var(--row) * 1.3em);
+  background: var(--panel); color: var(--dim);
+  border: 1px solid var(--line); border-radius: 0;
+}
+.lens button + button { border-left: 0; }
+.lens button:hover { color: var(--fg); }
+.lens button[aria-current] {
+  background: var(--a-package); color: var(--bg); border-color: var(--a-package);
+  font-weight: 600;
+}
+
+/* C5: a trial is `no-store` and is NOT the sealed representation. It must be
+   unmistakable and one control must leave it. */
+.trial {
+  display: flex; flex-wrap: wrap; gap: .2em 1.5ch; align-items: baseline;
+  padding: calc(var(--row) * .3em) var(--gut);
+  margin-bottom: calc(var(--row) * .5em);
+  border-left: 3px solid var(--amber); background: var(--panel);
+}
+.trial > b { color: var(--amber); text-transform: uppercase; letter-spacing: .1em; }
+.trial code { color: var(--fg); }
+.trial button {
+  font: inherit; cursor: pointer; background: none; color: var(--fg);
+  border: 1px solid var(--dim); border-radius: 0; padding: 0 1ch;
+}
+
+.stage {
+  width: 100%; height: min(70vh, 720px);
+  border: 1px solid var(--line); background: var(--panel);
+}
+h2.scope {
+  font-size: 1em; font-weight: 400; color: var(--dim);
+  margin: calc(var(--row) * 1em) 0 calc(var(--row) * .2em) 0;
+}
+td.indent { padding-left: 2ch; }

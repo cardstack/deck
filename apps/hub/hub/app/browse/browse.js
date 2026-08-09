@@ -448,8 +448,7 @@ async function siblings(parsed) {
         );
       })
       .join('') +
-    `<em class="dim">same package, other publishers — the publisher segment ` +
-    `is the fork boundary</em></div>`
+    `</div>`
   );
 }
 
@@ -712,10 +711,8 @@ function treeDiffView(parsed, vs, left, right, leftLabel, rightLabel) {
     (rows.length
       ? filterBox(rows.length, 'changed files') +
         `<table class="treediff"><tbody>${body}</tbody></table>` +
-        `<p class="dim">Computed from two manifests. No file content was read: ` +
-        `identical sha256 means identical bytes.</p>`
-      : `<p class="dim">Every path in both trees has the same digest.` +
-        `${left.treeHash === right.treeHash ? ' The treeHashes agree too.' : ''}</p>`)
+        ''
+      : `<p class="dim">no differences</p>`)
   );
 }
 
@@ -782,16 +779,12 @@ async function viewDepots() {
             depot.history
               ? `<a class="s-seal" href="?at=/${esc(depot.name)}/${HISTORY}" ` +
                 `data-at="/${esc(depot.name)}/${HISTORY}">${esc(depot.history)} · seals</a>`
-              : '<span class="dim">tier 1 — versions are the history</span>'
+              : '<span class="dim">tier 1</span>'
           }</td>` +
           `<td class="dim">${esc(depot.dir)}</td></tr>`,
       )
       .join('') +
-    `</tbody></table>` +
-    `<p class="note">The demo depots are mounted read-only for density. Their ` +
-    `sealed import maps say <code>/site/</code>, so their decks read correctly ` +
-    `and their dependencies do not resolve — a real degraded state, shown ` +
-    `rather than hidden.</p>`
+    `</tbody></table>`
   );
 }
 
@@ -865,9 +858,7 @@ async function viewSealLog(parsed) {
   if (!seals.length) {
     return (
       crumbs(parsed) +
-      `<main><p class="note">This depot has no history backend attached — ` +
-      `tier 1, where the published versions are the history. Nothing is ` +
-      `missing; there is simply less to offer.</p></main>`
+      `<main><p class="dim">tier 1 — no seals</p></main>`
     );
   }
   let rows = seals
@@ -891,9 +882,7 @@ async function viewSealLog(parsed) {
     filterBox(seals.length, 'seals') +
     `<table><thead><tr><th>changeId</th><th>when</th><th class="num">files</th>` +
     `<th>what changed</th></tr></thead><tbody>${rows}</tbody></table>` +
-    `<p class="note">Every save, whether or not it was ever published. ` +
-    `Going back is <code>deck restore</code>, which writes new history ` +
-    `forward — it does not erase any of this.</p></main>`
+    `</main>`
   );
 }
 
@@ -904,9 +893,7 @@ async function viewSeal(parsed) {
   if (!attrs.filesAvailable) {
     return (
       crumbs(parsed) +
-      `<main><p class="note">The <code>${esc(attrs.backend)}</code> backend ` +
-      `cannot enumerate this seal's tree. Individual files are still ` +
-      `readable at their paths; the listing is not available.</p></main>`
+      `<main><p class="dim">${esc(attrs.backend)} cannot list this seal</p></main>`
     );
   }
   let files = attrs.files ?? [];
@@ -927,9 +914,7 @@ async function viewSeal(parsed) {
     `<div><b>files</b> ${files.length}</div></div>` +
     filterBox(files.length, 'files') +
     `<table><thead><tr><th>path</th></tr></thead><tbody>${rows}</tbody></table>` +
-    `<p class="note">A sealed state never changes, so every one of these is ` +
-    `<code>immutable</code> — the same caching promise an exact version gets, ` +
-    `for a state that was never published at all.</p></main>`
+    `</main>`
   );
 }
 
@@ -950,8 +935,7 @@ async function viewSealFile(parsed) {
       `<div><b>kind</b> seal</div>` +
       `<div><b>seal</b> <span class="s-seal">${esc(String(parsed.seal).slice(0, 12))}</span></div>` +
       `<div><b>size</b> ${esc(bytes(text.length))}</div></div>` +
-      `<p class="note">this page <code>?at=${esc(url)}</code> · ` +
-      `the bytes <a href="${esc(url)}">${esc(url)}</a></p>` +
+      `<p class="raw"><a href="${esc(url)}">raw</a></p>` +
       `<div id="blob"></div></main>`,
     text,
     path: parsed.path,
@@ -986,10 +970,6 @@ async function viewAddress(input, vs) {
     (await siblings(parsed)) +
     `<main><div class="facts">` +
     (meta ? volatility(parsed, meta, seals) + compare(parsed, meta, seals, vs) : '') +
-    `<div><b>kind</b> ${esc(attrs.kind)}</div>` +
-    (attrs.version && attrs.version !== 'live'
-      ? `<div><b>version</b> <span class="s-version">${esc(attrs.version)}</span></div>`
-      : '') +
     hash(attrs.treeHash) +
     (attrs.size !== undefined ? `<div><b>size</b> ${esc(bytes(attrs.size))}</div>` : '') +
     (attrs.sha256 ? hash(attrs.sha256, 'sha256') : '') +
@@ -1010,18 +990,14 @@ async function viewAddress(input, vs) {
     if (other.missing) {
       return (
         head +
-        `<p class="note">Not present at <code>${esc(addressOf(target))}</code>. ` +
-        `On this side the file exists, so relative to that address it is an ` +
-        `addition.</p></main>`
+        `<p class="dim">added — not in ${esc(addressOf(target))}</p></main>`
       );
     }
     if (attrs.binary || other.binary) {
       return (
         head +
-        `<p class="note">Binary on at least one side, so there is nothing ` +
-        `honest to show line by line. The digests ` +
-        `${attrs.sha256 && attrs.sha256 === other.sha256 ? 'agree' : 'differ'}, ` +
-        `which is the whole of what can be said.</p></main>`
+        `<p class="dim">binary · digests ` +
+        `${attrs.sha256 && attrs.sha256 === other.sha256 ? 'agree' : 'differ'}</p></main>`
       );
     }
     return (
@@ -1039,15 +1015,12 @@ async function viewAddress(input, vs) {
   // ── file ────────────────────────────────────────────────────────────────
   if (data.type === 'file') {
     let raw = attrs.rawUrl;
-    head +=
-      `<p class="note">this page <code>?at=${esc(at)}</code> · ` +
-      `the bytes <a href="${esc(raw)}">${esc(raw)}</a></p>`;
+    head += `<p class="raw"><a href="${esc(raw)}">raw</a></p>`;
     if (attrs.binary) {
       return (
         head +
-        `<p>Binary. No preview — size, digest and download are the whole of ` +
-        `what can honestly be shown.</p>` +
-        `<p><a href="${esc(raw)}" download>download ${esc(attrs.path)}</a></p></main>`
+        `<p class="dim">binary</p>` +
+        `<p><a href="${esc(raw)}" download>download</a></p></main>`
       );
     }
     return {
@@ -1088,10 +1061,8 @@ function errorView(parsed, error) {
     `<b>${esc(error.code)}</b> — ${esc(error.message)}` +
     `<p class="dim">${
       permanence === 'permanent'
-        ? 'Permanent. No future publish can make this address resolve; the ' +
-          'spec itself is not a thing that can exist.'
-        : 'Transient. This is a legal address that nobody has published yet — ' +
-          'it may resolve later without anything being fixed.'
+        ? 'permanent — this address can never resolve'
+        : 'transient — not published yet'
     }</p></div></main>`
   );
 }

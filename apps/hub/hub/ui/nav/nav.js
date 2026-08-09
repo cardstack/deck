@@ -20,10 +20,10 @@
 // binding is documented anyway.
 
 const ROUTES = [
-  ['start', 'is it up, and what just happened'],
   ['browse', 'the depot at rest'],
   ['run', 'the assembled, executing thing'],
-  ['read', 'the protocol, taught'],
+  ['track', 'what changed, and where'],
+  ['start', 'this machine now, and the docs'],
 ];
 
 const esc = (value) =>

@@ -1,0 +1,17 @@
+{
+  "deck": {
+    "packages": {
+      "run": {
+        "version": "0.1.0",
+        "entry": "$DECK/run.js"
+      }
+    },
+    "dependencies": {
+      "ui/nav": "live"
+    }
+  },
+  "imports": {
+    "ui/nav/": "/hub/ui/nav/",
+    "ui/nav": "/hub/ui/nav/nav.js"
+  }
+}
