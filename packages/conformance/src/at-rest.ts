@@ -26,6 +26,10 @@ import { parseDependencyValue } from '@deck/core/lock';
 import { flattenInheritance, isExactParent } from '@deck/core/inherit';
 import { classifyReference } from '@deck/core/classify';
 import {
+  moduleSpecifiers,
+  unanalyzableDynamicImports,
+} from '@deck/core/es-lexer';
+import {
   createPacklist,
   parsePacklist,
   serializePacklist,
@@ -443,6 +447,33 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
         refused = true;
       }
       assert(refused, 'an unknown mode was accepted');
+    });
+
+    // An import the graph cannot see makes two of Deck's promises false at
+    // once — the preload closure claims to name every URL a page requests,
+    // and L6 says a sealed deck reaches nothing at runtime. An
+    // implementation that skips these edges reports a shorter graph and a
+    // clean bill of health for a tree that will fetch from anywhere.
+    await checks.run('L6', 'a computed dynamic import is not silently dropped', () => {
+      assertEqual(
+        unanalyzableDynamicImports("await import(whichever);\n").length,
+        1,
+        'import(expr)',
+      );
+      assertEqual(
+        unanalyzableDynamicImports('await import(`./l/${x}.js`);\n').length,
+        1,
+        'template',
+      );
+    });
+
+    // Worse than dropping: inventing. A specifier that is only the START of
+    // an expression is not an edge, and recording it puts a module in the
+    // graph that does not exist while the real one stays invisible.
+    await checks.run('L6', 'a partial specifier is not recorded as an edge', () => {
+      let source = "await import('./locales/' + lang);\n";
+      assertEqual(moduleSpecifiers(source).length, 0, 'no phantom edge');
+      assertEqual(unanalyzableDynamicImports(source).length, 1, 'counted instead');
     });
 
     // ---- L8 provenance ---------------------------------------------------
