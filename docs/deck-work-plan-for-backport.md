@@ -179,5 +179,6 @@ packaging — real, but it does not block Boxel from starting.
 | --- | --- | --- |
 | — | Browser-safe Core surface, lint-enforced | **done** (`deck/core-boundary`) |
 | — | Resolver takes the importer | **done** |
-| W1 | `extends` | in progress |
-| W2–W10 | | not started |
+| W1 | `extends` | **done** — core, server, conformance, `examples/remix` |
+| W2 | absolute-reference classifier | next |
+| W3–W10 | | not started |
