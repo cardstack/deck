@@ -181,5 +181,6 @@ packaging — real, but it does not block Boxel from starting.
 | — | Resolver takes the importer | **done** |
 | W1 | `extends` | **done** — core, server, conformance, `examples/remix` |
 | W2 | absolute-reference classifier | **done** — `@deck/core/classify`, conformance L11 |
-| W3 | provenance block | next |
-| W4–W10 | | not started |
+| W3 | provenance block | **done** — `PackProvenance`, `intakeReadiness`, conformance L11 |
+| W4 | pack modes `bare` / `hermetic` | next |
+| W5–W10 | | not started |
