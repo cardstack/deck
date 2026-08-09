@@ -17,3 +17,21 @@
 // rather than merely intended.
 
 export * from './resolve.ts';
+
+// The three-way merge.
+//
+// It is here rather than behind `/node` because it needs nothing but three
+// trees — no filesystem, no store, no clock. A host can merge in the page.
+//
+// It is on an ENTRY at all because of what happens when it is not. Merge is
+// the algorithm a consumer is most likely to reimplement badly: everyone has
+// written a line-level diff3 once, and the version that ships is usually the
+// one that loses a hunk in a way nobody notices for a month. A deep subpath
+// is a discoverability problem with a very expensive failure.
+export {
+  CONFLICT_MARKER,
+  mergeJsonValues,
+  mergeText,
+  mergeTrees,
+} from './merge.ts';
+export type { TextMergeResult, TreeMergeResult } from './merge.ts';

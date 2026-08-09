@@ -53,3 +53,78 @@ export {
 } from './store.ts';
 
 export { verifyLinks } from './verify-links.ts';
+
+export { readTreeFromDir, writeTreeToDir } from './tree.ts';
+export type { WriteTreeResult } from './tree.ts';
+
+// Resolution over a store: ranges in, pins out, plus the scopes that let two
+// decks disagree about a version. An embedder implementing catalog verbs —
+// install, upgrade, remix — is doing exactly this, and doing it by hand means
+// reimplementing range resolution against dist-tags and prereleases.
+export {
+  LIVE_SPEC,
+  applyLock,
+  lockDeck,
+  parseDependencyValue,
+  resolveDependencies,
+  resolveScopes,
+} from './lock.ts';
+export type {
+  DependencyResolution,
+  DependencyValue,
+  LockResult,
+  ResolveOptions,
+  ScopedResolution,
+} from './lock.ts';
+
+export { forkDeck } from './fork.ts';
+export type {
+  ForkOptions,
+  ForkResult,
+  ForkSource,
+  ForkTarget,
+} from './fork.ts';
+
+// Offers: a fork that records its base, so a proposal is a Version rather
+// than a diff. `applyRebase` is the only thing here that writes.
+export {
+  applyRebase,
+  discoverOffers,
+  offerTreeHash,
+  planRebase,
+  readForkedFrom,
+  writeForkedFrom,
+  writeOfferMap,
+} from './offer.ts';
+export type {
+  ForkedFrom,
+  Offer,
+  PlanRebaseOptions,
+  RebaseApplied,
+  RebasePlan,
+  RebaseState,
+} from './offer.ts';
+
+// Endorsement (L9/L10). `TREE_HASH_SPEC` is deliberately not re-exported
+// from here — `signature.ts` declares its own copy of the same constant, and
+// the one on this entry comes from `tree-hash.ts`, which is its home.
+export {
+  SIG_SPEC,
+  emptyEnvelope,
+  envelopePath,
+  generateKeyPair,
+  keyIdFor,
+  signTreeHash,
+  signingPayload,
+  summarizeEnvelope,
+  verifyEnvelope,
+  verifySignature,
+} from './signature.ts';
+export type {
+  EnvelopeVerdict,
+  KeyPair,
+  Signature,
+  SignatureEnvelope,
+  SignatureRole,
+  SignatureSummary,
+} from './signature.ts';

@@ -158,6 +158,17 @@ the wrong target — the package has two audiences with different runtimes,
 and the root goes to the browser because a missing export is a signpost
 while an accidental `node:fs` in someone's bundle is a morning.
 
+**The entries were incomplete, and the team brief caught it.** `mergeTrees`,
+`forkDeck` and `discoverOffers` were on neither entry — reachable only from
+deep subpaths. The Boxel brief's own PR 0 sample,
+`import { mergeTrees, publishToStore } from '@cardstack/deck/node'`, would
+have failed, and the likely repair is a hand-rolled diff3 in the consumer:
+the exact "fork the algorithm" outcome the contract exists to prevent. Merge
+is now on the ROOT entry (it needs nothing but three trees), and fork,
+offers, tree read/write, the decklist lock and endorsement are on `/node`.
+`entries-test.ts` now asserts the whole list the backport imports, keyed to
+the plan, so the gap cannot reopen quietly.
+
 **`.d.ts` struck from the plan.** `@cardstack/runtime-common` ships raw
 `.ts` — no build, no `types` field, no `dist` — and host and realm-server
 consume it as `workspace:*`. Deck already matches. Declarations would be
