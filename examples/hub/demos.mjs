@@ -85,13 +85,13 @@ export const DEMOS = [
     dir: 'fork-a-language',
     port: 8792,
     workload: 'W3 · bespoke to generic',
-    title: 'Fork a language, keep the engine',
-    lede: `Two decks implement one small filter language. One replaces a
-      single file — the parser — with a FEEL-shaped surface syntax instead of
-      a jq-shaped one, and adds a feature the original has no syntax for.`,
+    title: 'Two dialects. One evaluator.',
+    lede: `A two-pane console over one small filter language. Type an
+      expression in either dialect and both evaluate as you type — different
+      surface syntax, the same engine, and you can check that yourself.`,
     look: [
-      'Every question is asked in both dialects and the answers are compared. If the fork ever changed behaviour, the demo fails instead of shipping.',
-      '<code>eval.js</code> is byte-identical across the two decks, so the store holds one copy — which is the proof that both dialects run the same semantics.',
+      'Both engines run in the page, imported from two sealed decks. Type your own expression: an answer the author never thought of is still the same answer on both sides.',
+      'Each pane prints the SHA-256 of the <code>eval.js</code> bytes it fetched. The same digest twice, from two different URLs, is the proof that both dialects run the same semantics.',
       'The FEEL range <code>qty in [2..8]</code> desugars inside the parser into two comparisons the shared evaluator already understood. A new language feature, zero evaluator change.',
       '6 objects for two 4-file decks; two full copies would be 8.',
     ],
