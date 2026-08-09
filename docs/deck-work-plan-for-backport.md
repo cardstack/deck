@@ -124,9 +124,15 @@ negotiation.
 used for — and they prove the model while `negotiated` stays undesigned.
 
 **Done.** `planPack` in `@cardstack/deck/pack-mode` decides what each mode
-carries and prunes; `carryHermetic` in `@cardstack/deck-tools/pack-hermetic`
-goes and gets it, reusing `vendorFromCdn` unchanged. The split is the W7
-line: deciding is pure and browser-safe, fetching is intake work. Driven by
+carries and prunes; `carryHermetic` on `@cardstack/deck/node` goes and gets
+it, reusing `vendorFromCdn` unchanged.
+
+It shipped in Tools first, on the reasoning that carriage is intake work.
+Moved to Core on 2026-08-09 (Boxel decision): the realm download becoming a
+pack needs it, PR 0 deliberately does not take Tools, and the alternative was
+realm-server writing its own — forking the one thing the pack modes exist to
+make uniform. It costs Core nothing new, since every module it reaches was
+already there. Driven by
 `deck pack --hermetic`, verified end to end against a live HTTP origin — the
 graph lands under `_vendor/`, `importmap.json` is rewritten to `$DECK/…`, the
 pack round-trips, and a dependency that would stay live stops the pack.
@@ -207,9 +213,11 @@ in the first Boxel drop. Smaller cone, smaller review.
 
 **Done.** `@cardstack/deck-tools` holds `npm`, `vendor-npm`, `vendor-map`,
 `vendor-tree`, `derive`, the depot cooldown policy and the rebase daemon.
-Core is down to 26 modules from 30, its only runtime dependency is `semver`
-(`terser` left with `derive`), and `packages/core/src` now contains no
-`fetch`. The layering `core ← server ← tools ← cli` is two lint rules, both
+Core is down to 26 modules from 30 and its only runtime dependency is
+`semver` (`terser` left with `derive`). One network call site remains in
+Core — `vendor.ts`, injectable via `fetchImpl`. (An earlier note here said
+Core reached the network nowhere; the grep behind that claim missed
+`fetchImpl(`.) The layering `core ← server ← tools ← cli` is two lint rules, both
 negative-tested. Full suite **374 pass / 0 fail** against a 373 baseline —
 the extra test is a new one, see below.
 

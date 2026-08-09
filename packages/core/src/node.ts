@@ -41,6 +41,15 @@ export type {
 
 export { packagesFromPack } from './import-map-pack.ts';
 
+// Hermetic carriage: the half of `planPack` that fetches. On `/node` rather
+// than the root because it reaches the filesystem-side modules, and because
+// the only caller that matters is a server building a pack to hand over.
+export { VENDOR_PREFIX, carryHermetic } from './pack-hermetic.ts';
+export type {
+  CarryHermeticOptions,
+  CarryHermeticResult,
+} from './pack-hermetic.ts';
+
 export {
   inspectStore,
   listStorePackages,

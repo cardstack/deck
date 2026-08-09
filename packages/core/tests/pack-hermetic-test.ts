@@ -1,6 +1,6 @@
 import QUnit from 'qunit';
 const { module, test } = QUnit;
-import { pack, unpack } from '@cardstack/deck/pack';
+import { pack, unpack } from '../src/pack.ts';
 import { carryHermetic, VENDOR_PREFIX } from '../src/pack-hermetic.ts';
 
 // A CDN small enough to read. `three` has a two-module graph; `leaky`

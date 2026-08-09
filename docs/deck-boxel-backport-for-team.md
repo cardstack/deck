@@ -161,7 +161,7 @@ Think in subsystems, not Deck package names:
 | **`runtime-common`** | Resolver takes the *importer* (so two versions of the same library can coexist); realm write path records **Steps** (and publishes **Versions** when appropriate); classification of absolute URLs imported from Core — not reinvented. |
 | **`realm-server`** | Serve Deck-shaped addresses and cache headers; **Timeline attached for editable realms**; activity/claims read path; pack download/intake; later mirror job; ACL around offers. |
 | **`host` (Ember app)** | Remix / install / use UX; preview shows activity; restore/browse Steps from UI edits and agent turns; eventually base-realm URLs via Deck. |
-| **`boxel-cli`** | Local checkpoints align with Timeline/Steps; sync conflicts become 3-way merges against a Version (or Step) base. |
+| **`packages/boxel-cli`** | Local checkpoints align with Timeline/Steps; sync conflicts become 3-way merges against a Version (or Step) base. **The standalone `cardstack/boxel-cli` is retired** — this is the only CLI to migrate. |
 | **Catalog / realm content** | LibSpec cards, four consumption verbs, submission workflow cards, review tools — much of K5/K7/K13 is **content**, not core TS. |
 | **Outside the monorepo (early)** | Hosted Deck / vendor pipeline / corpus migration for third-party libs (K3 bulk). |
 
@@ -251,6 +251,11 @@ server has to answer `…/three@0.169.0/…` before anything can pin a version,
 so PR 1b has nothing to install from until this lands. The serve door is
 small — a read-only handler plus a thin registry gate.
 
+**PR 3 also starts the `deck conform` CI job** (decided 2026-08-09). It is
+the first Deck-shaped HTTP surface, so the program gate begins running here
+rather than arriving finished and late. Most laws will report *not
+applicable* at first; the job tightens as PR 6 and PR 4b land.
+
 What stays optional is the **corpus**: the npm crawl and bulk vendoring for
 third-party libs (**K3**, catalog **K2**/**K9**) can live on a hosted Deck
 outside the monorepo and must **not** block Track A or B. Staff the door now;
@@ -259,6 +264,13 @@ staff the corpus when someone owns it.
 ---
 
 ### Timeline hinge — PRs 4a–4d, then 5 (**Track B**) — *sliced*, not one epic
+
+**Runtime: the `jj` binary in the realm-server image** (decided 2026-08-09).
+The faster `historyd` backend is a later swap behind an identical contract;
+shipping a binary avoids a second process to deploy and supervise, and Steps
+are debounced so the per-call cost stays off the hot path. It is a deployment
+task with an owner. A realm whose Timeline cannot start degrades to
+Versions-only with a printed reason — it never fails writes.
 
 Do **not** ship editable realms as Versions-only and call K1 done.
 Do **not** land write path + host UI + claims + CLI sync in one PR.
@@ -300,8 +312,10 @@ after cache classes are trusted — easy to gold-plate; not a spine item.
 
 ### Catalog authority and collaboration — PR 11, then 13 (**K6**, then **K7**)
 
-GitHub as **mirror** (**K6**); share/gather + Base-Version remains the
-**interim** inter-realm truck. Full Matrix submission / retire GH-PR-as-
+GitHub as **mirror** (**K6**). **Caveat:** `share` / `gather` exist only in
+the retired standalone CLI, so the "interim truck" is currently the mirror
+export plus `Base-Version` trailers — no CLI verbs — unless someone scopes
+share/gather as new commands in `packages/boxel-cli`. Full Matrix submission / retire GH-PR-as-
 product (**K7**) **after** Tracks A+B are real — do not staff Matrix early.
 
 Catalog verb *polish* (pretty package pages, upgrade UX) lands here if not
@@ -349,7 +363,9 @@ don’t block.
 
 Collaboration across private realms long-term: **Matrix** (identity + room +
 message of intent) + optional Deck Pack; realm ACL for offer/rebase. Until
-Tracks A+B ship, GitHub share/gather is the truck — not the authority.
+Tracks A+B ship, the GitHub mirror is the truck — not the authority. (The
+`share`/`gather` CLI verbs that used to carry this live in the retired
+standalone repo; see PR 11.)
 
 ---
 

@@ -1,16 +1,20 @@
-import { planPack } from '@cardstack/deck/pack-mode';
-import { IMPORT_MAP_PATH, TREE_ROOT } from '@cardstack/deck/import-map';
-import { isValidTreePath } from '@cardstack/deck/tree-hash';
-import { vendorFromCdn } from '@cardstack/deck/vendor';
-import type { CarriedRecord, PackProvenance } from '@cardstack/deck/packlist';
+import { planPack } from './pack-mode.ts';
+import { IMPORT_MAP_PATH, TREE_ROOT } from './import-map.ts';
+import { isValidTreePath } from './tree-hash.ts';
+import { vendorFromCdn } from './vendor.ts';
+import type { CarriedRecord, PackProvenance } from './packlist.ts';
 
 // Hermetic carriage: turn a tree's external dependencies into files inside it.
 //
-// `planPack` (Core) decides WHAT a hermetic pack must carry. It is pure and
-// browser-safe, and deliberately does no fetching. This is the other half —
-// the part that goes and gets the bytes — and it lives in Tools because
-// fetching a dependency graph is intake work, and because Core reaches the
-// network nowhere at all.
+// `planPack` decides WHAT a hermetic pack must carry. It is pure and
+// browser-safe, and deliberately does no fetching. This is the other half:
+// the part that goes and gets the bytes.
+//
+// It lives in Core, on the `/node` entry, because the Boxel backport needs it
+// (realm download as a pack) and the alternative is realm-server writing its
+// own — forking the one thing the pack modes exist to make uniform. It costs
+// Core nothing new: every module it reaches was already here, including the
+// single network call site in `vendor.ts`.
 //
 // Nothing here is new machinery. `vendorFromCdn` already walks a module
 // graph over HTTP, rewrites every followed reference to stay inside the

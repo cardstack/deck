@@ -353,8 +353,8 @@ multi-package design, and
 
 ## Status
 
-**The reference implementation is built and tested** — 393 tests green
-(205 core, 22 history, 87 server, 59 tools, 7 conformance, 13 CLI), lint and
+**The reference implementation is built and tested** — 402 tests green
+(215 core, 22 history, 87 server, 49 tools, 7 conformance, 13 CLI), lint and
 typecheck clean, and `deck conform` reports 59 passed / 0 failed / 3 not
 applicable.
 
@@ -395,10 +395,10 @@ into Tools.
   carriage (tarball fetch, integrity, git-blob identity, GitHub tree
   verification), source-mode and map-mode **vendoring**, the transitive
   vendor planner, the depot **cooldown policy**, minified **derivation**
-  (the only reason anything here wants terser), **hermetic carriage** —
-  `deck pack --hermetic` fetches every declared dependency's graph into
-  `_vendor/` and records what arrived — and the **rebase daemon**, the half
-  of the offer queue that writes.
+  (the only reason anything here wants terser), and the **rebase daemon** —
+  the half of the offer queue that writes. Hermetic carriage started here and
+  moved to Core, because the Boxel backport needs it and the alternative was
+  a second implementation.
 - **`packages/cli`** — 27 commands in eight groups, one module per group
   (see [CLI.md](CLI.md)): **start** `hello serve` · **seal** `hash pack
   unpack list verify` · **publish** `publish tag release prune store derive

@@ -630,8 +630,12 @@ What Boxel gains from this, concretely:
 
 - **Core's only runtime dependency is `semver`.** `terser` left with
   `derive`, and it was Core's second.
-- **26 modules, not 30**, and `packages/core/src` now contains no `fetch`
-  at all. Every network call in the repo sits above the Core line.
+- **26 modules, not 30**, and **one** network call site left in Core —
+  `vendor.ts`, where `fetchImpl` defaults to `fetch` and can be injected.
+  (An earlier draft of this section claimed Core reached the network
+  nowhere at all. That was wrong: the grep behind it looked for `fetch(`
+  and missed `fetchImpl(`. One injectable call site is still a useful
+  property; "none" was not true.)
 - **The dependency review shrinks to what Boxel actually runs.** Reviewing
   "does Cardstack want npm tarball ingestion in the monorepo?" is a real
   question, and this defers it to the release that actually asks it.

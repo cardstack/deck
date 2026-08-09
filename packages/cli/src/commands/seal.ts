@@ -15,7 +15,7 @@ import {
 import { pack as packFiles, packFromDir, peekPacklist, unpack } from '@cardstack/deck/pack';
 import { readTreeFromDir } from '@cardstack/deck/tree';
 import { IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
-import { carryHermetic } from '@cardstack/deck-tools/pack-hermetic';
+import { carryHermetic } from '@cardstack/deck/pack-hermetic';
 import type { PackProvenance } from '@cardstack/deck/packlist';
 import { defineCommand, type Command } from '../command.ts';
 import { fail } from '../support.ts';

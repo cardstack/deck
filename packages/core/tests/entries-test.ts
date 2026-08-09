@@ -130,6 +130,7 @@ module('package entries', function () {
       ['pack', 'node'],
       ['unpack', 'node'],
       ['intakeReadiness', 'node'],
+      ['carryHermetic', 'node'],
       // identity and the store
       ['treeHashFromDir', 'node'],
       ['publishToStore', 'node'],

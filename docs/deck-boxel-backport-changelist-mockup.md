@@ -597,6 +597,31 @@ Touch `realm.ts`.
 **Done when.** A fixture vendored package is GET-able via its serve URL;
 the registry gate has a failing test if you skip the policy check.
 
+### Commit — Start the `deck conform` CI job
+
+**Story.** This is the first Deck-shaped HTTP surface, so it is where the
+program gate starts *running* instead of being an intention. Add a CI job
+pointing `deck conform <base-url>` at a deck-enabled fixture realm. Most
+checks will not apply yet — that is expected; conform reports
+`not applicable` per law rather than failing. Tighten as PR 6 (cache classes)
+and PR 4b (Timeline) land.
+
+**Touch.**
+
+```
+.github/workflows/…                                   +40 / -0
+packages/realm-server/tests/… fixture realm boot      +60 / -0
+```
+
+**Do.** Put the passed / failed / not-applicable counts in the job summary,
+so a later PR shrinking the not-applicable list is visible.
+
+**Don’t.** Gate on laws the server does not claim yet. Skip the job because
+“it barely checks anything” — the point is that it exists and cannot regress.
+
+**Done when.** CI runs `deck conform` against the fixture and fails if any
+*applicable* law fails.
+
 ### Commit — LibSpec content (catalog)
 
 **Story.** In the catalog realm, create `Spec` instances whose `moduleHref`
@@ -660,8 +685,19 @@ in unit tests even if HTTP is the next PR.
 ## PR 4b — Timeline HTTP + restore through write
 
 **Why.** Realm-server needs list Steps / Versions, file-at-Step, and
-restore **through** normal `Realm.write` so indexing follows. Attach jj or
-historyd per **editable** realm; Versions-only mounts OK for RO catalog.
+restore **through** normal `Realm.write` so indexing follows. Attach a
+Timeline per **editable** realm; Versions-only mounts OK for RO catalog.
+
+**Runtime decided (2026-08-09): the `jj` binary in the realm-server image.**
+Deck's history package offers two backends — the jj CLI (one subprocess per
+operation) and `historyd` (jj-lib over localhost HTTP, measured ~5–6x faster
+per call). Ship the binary: no second process to deploy, supervise or
+version, and Steps are debounced so the fork/exec cost stays off the hot
+path. `historyd` is the upgrade if profiles ever say so, and the contract is
+identical, so swapping is configuration. Treat this as a **deployment** task
+with an owner, not a line in a handler: the image needs `jj`, and a realm
+whose Timeline cannot start must degrade to `kind: 'none'` with a printed
+reason rather than failing writes.
 
 **Unlocks.** Remote restore API for host and CLI.
 
@@ -774,13 +810,20 @@ Ship CLI sync here (PR 5).
 
 **The last Timeline slice / Track B.** Infra spine end: **1 → 4a → 5**.
 
-**Why.** Standalone `boxel-cli` still thinks in git checkpoints and
-`--prefer-local` / `--prefer-remote` as the main story. Once realms have
-Steps and Versions, sync can finally merge with a **real common ancestor**
-via Deck’s `mergeTrees`. prefer-* becomes the fallback when the merge
-reports conflicts — not the everyday path. This is a parallel-repo PR that
-depends on PR **4b** APIs; it is not the monorepo `@cardstack/boxel-cli`
-package (different command set).
+**Which CLI.** `packages/boxel-cli` in the monorepo — **the only one**. The
+standalone `cardstack/boxel-cli` repo is being retired (decision 2026-08-09),
+so nothing here touches it. An earlier draft of this PR was written against
+that repo's paths; they are all wrong. The surviving CLI has everything this
+describes: `src/lib/checkpoint-manager.ts` shelling git into
+`.boxel-history/.git`, and `src/commands/realm/{sync,history,milestone,
+restore,pull,push}.ts`.
+
+**Why.** `CheckpointManager` still thinks in git, and `realm sync` still
+offers `--prefer-local` / `--prefer-remote` / `--prefer-newest` as the main
+story — three ways to pick a side, none of them a merge. Once realms have
+Steps and Versions, sync can merge with a **real common ancestor** via Deck's
+`mergeTrees`. prefer-* becomes the fallback when the merge reports conflicts,
+not the everyday path. Depends on PR **4b** APIs.
 
 **Unlocks.** **K4**.
 
@@ -810,20 +853,22 @@ before                                    after
 
 ### Commit — Checkpoints speak Timeline
 
-**Story.** `CheckpointManager` today shells git. Replace the backend with
-realm Timeline APIs: create → Step, restore → `restoreStep`, list → Steps.
-`markMilestone` becomes “publish / tag a Version,” not a git tag in
-`.boxel-history`. Keep the class’s command-facing API stable where you can
-so `history` / `track` callers don’t churn for sport.
+**Story.** `CheckpointManager` spawns git against `.boxel-history/.git`.
+Replace the backend with realm Timeline APIs: create → Step, restore →
+`restoreStep`, list → Steps. `markMilestone` becomes “publish / tag a
+Version,” not a git tag. Keep the class’s command-facing API stable where
+you can, so the `realm/*` callers don’t churn for sport — `find-checkpoint.ts`
+resolves a 1-based index or short hash, and that shape can survive.
 
 **Touch.**
 
 ```
-src/lib/checkpoint-manager.ts                         +200 / -350
-src/lib/find-checkpoint.ts                            +40 / -60
+packages/boxel-cli/src/lib/checkpoint-manager.ts      +200 / -350
+packages/boxel-cli/src/lib/find-checkpoint.ts         +40 / -60
 ```
 
-**Do.** Delete git subprocess usage for checkpoints.
+**Do.** Delete git subprocess usage for checkpoints. There are three
+`--prefer-*` flags, not two — keep all three as conflict fallbacks.
 
 **Don’t.** Leave a second source of truth in local git “for rollback.”
 
@@ -840,7 +885,7 @@ prefer-* flags remain only for unresolved conflicts.
 **Touch.**
 
 ```
-src/commands/sync.ts                                  +180 / -220
+packages/boxel-cli/src/commands/realm/sync.ts         +180 / -220
 ```
 
 **Do.** Integration-test the happy path before polishing flags.
@@ -858,8 +903,8 @@ Document the old footgun in help text: stop watch before restore.
 **Touch.**
 
 ```
-src/commands/history.ts                               +80 / -120
-src/commands/milestone.ts                             +40 / -40
+packages/boxel-cli/src/commands/realm/history.ts      +80 / -120
+packages/boxel-cli/src/commands/realm/milestone.ts    +40 / -40
 ```
 
 **Done when.** Help text and commands say Step/Version; no git log.
@@ -872,7 +917,7 @@ src/commands/milestone.ts                             +40 / -40
 **Touch.**
 
 ```
-test/…                                                +200 / -50
+packages/boxel-cli/test/…                             +200 / -50
 ```
 
 **Done when.** Both cases green.
@@ -1224,15 +1269,23 @@ packages/realm-server/tests/pack-intake-test.ts (new)  +200 / -0
 
 ### Commit — Hermetic carriage
 
-**Story.** `planPack({ mode: 'hermetic' })` plus existing Deck vendor
-helpers put dependency bytes in the pack. You are wiring carriage — not
-redesigning prune negotiation.
+**Story.** Call `carryHermetic` from `@cardstack/deck/node` — it plans with
+`planPack({ mode: 'hermetic' })`, fetches each declared dependency's graph
+into `_vendor/`, rewrites the decklist to resolve inside, and records
+`provenance.carried`. You are wiring carriage, not redesigning prune
+negotiation, and **not** reimplementing it in realm-server: an earlier draft
+of this commit proposed a local `pack-hermetic.ts`, which is the fork this
+plan exists to prevent.
 
 **Touch.**
 
 ```
-packages/realm-server/lib/pack-hermetic.ts (new)      +150 / -0
+packages/realm-server/handlers/handle-download-realm.ts  +40 / -10
+packages/realm-server/tests/…                            +80 / -0
 ```
+
+**Don't.** Write a second hermetic implementation. Pass `allowExternal` —
+there is no escape hatch; a dependency that would stay live stops the pack.
 
 **Done when.** Hermetic pack opens without network for declared deps.
 
@@ -1313,23 +1366,17 @@ packages/realm-server/routes.ts                       +10 / -15
 
 **Done when.** Opening a random PR on a RO mirror does not publish the catalog.
 
-### Commit — Optional CLI share / gather rewrite
+### ~~Commit — Optional CLI share / gather rewrite~~ — **dropped**
 
-**Story.** Replace copy-wipe share/gather with Deck-shaped verbs: share
-stamps RRI `Base-Version` + trailers; gather runs `mergeTrees` into live or
-publish. Force-with-lease on share branches only.
+`share` and `gather` exist only in the standalone `cardstack/boxel-cli`,
+which is being retired; `packages/boxel-cli` has no equivalent. There is
+nothing to rewrite — and once the retirement completes, the “GitHub
+share/gather as the interim truck” story has no CLI behind it.
 
-**Touch.**
-
-```
-src/commands/share.ts                                 +100 / -150
-src/commands/gather.ts                                +120 / -80
-```
-
-**Don’t.** Restore dest wipe. Force-push `main` or Version tags.
-
-**Done when.** Share PR body contains Base-Version RRI; gather conflicts list
-paths.
+**Decide before relying on it.** Either the interim truck is the mirror
+export plus `Base-Version` trailers alone, with no CLI verbs, or
+`packages/boxel-cli` gains share/gather as *new* commands — a feature, not a
+rewrite, and it should be scoped as one.
 
 ---
 
@@ -1534,7 +1581,7 @@ packages/realm-server (only if a GET is missing)      +50 / -0
 | 2 | M | Publish handler (parallel) |
 | **3** | **S–M** | **Serve handlers; corpus outside** (spine — the address space) |
 | **4a–4d** | **L sliced** | **Write path → HTTP → host → claims** |
-| 5 | L | CLI rewrite (standalone repo) |
+| 5 | L | CLI rewrite (`packages/boxel-cli` — the only CLI) |
 | 6 | S | Headers + tests |
 | 7 | S–M | Derive pipeline (demoted) |
 | 8 | S code / **XL blast** | Base pin — after 4c |

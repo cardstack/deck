@@ -28,6 +28,7 @@ await import('./inherit-test.ts');
 await import('./classify-test.ts');
 await import('./provenance-test.ts');
 await import('./pack-mode-test.ts');
+await import('./pack-hermetic-test.ts');
 await import('./entries-test.ts');
 await import('./vendor-test.ts');
 await import('./source-graph-test.ts');
