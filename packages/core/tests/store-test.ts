@@ -422,4 +422,108 @@ module('store: content addressing and pruning', function (hooks) {
       ['7.0.0', '7.1.0'],
     );
   });
+
+  // A list of versions is only a timeline if the versions carry times, and
+  // the two available times mean different things. The upstream instant is a
+  // fact about the library; the local one is a fact about this machine. They
+  // are years apart for anything vendored, so a reader that treats either as
+  // "the" publish time will sort a 2018 release above a 2024 one — or the
+  // reverse — depending on which one it happened to pick.
+  test('a version records when it landed here and when upstream published it', async function (assert) {
+    let upstreamPublishedAt = '2018-08-27T00:00:00.000Z';
+    let vendoredPack = pack([
+      {
+        path: 'importmap.json',
+        bytes: Buffer.from(
+          JSON.stringify({
+            deck: {
+              packages: {
+                lib: {
+                  version: '1.0.0',
+                  entry: '$DECK/lib.js',
+                  vendoredFrom: {
+                    registry: 'npm',
+                    name: 'lib',
+                    version: '1.0.0',
+                    publishedAt: upstreamPublishedAt,
+                  },
+                },
+              },
+            },
+          }),
+        ),
+      },
+      { path: 'lib.js', bytes: Buffer.from('export const v = 1;\n') },
+    ]);
+
+    let vendoredOn = new Date('2024-03-01T12:00:00.000Z');
+    await publishToStore(storeDir, 'lib', '1.0.0-dev.1', vendoredPack, {
+      now: vendoredOn,
+      tag: 'dev',
+    });
+    let record = (await readStoreMeta(storeDir, 'lib'))!.versions['1.0.0-dev.1'];
+    assert.strictEqual(
+      record.publishedAt,
+      vendoredOn.toISOString(),
+      'the local clock says when this store took it',
+    );
+    assert.strictEqual(
+      record.upstreamPublishedAt,
+      upstreamPublishedAt,
+      'the upstream clock survives the trip, unrounded and unrewritten',
+    );
+
+    // A release names existing bytes as a new version. Nothing was published
+    // upstream, so claiming it was would be an invention — but the release
+    // itself IS an event, and dating it to the source version's publish would
+    // lose the only thing that happened.
+    let releasedOn = new Date('2024-06-01T09:30:00.000Z');
+    let released = await releaseVersion(
+      storeDir,
+      'lib',
+      '1.0.0',
+      { tag: 'dev' },
+      { now: releasedOn, tag: 'latest' },
+    );
+    assert.strictEqual(released.publishedAt, releasedOn.toISOString());
+    assert.strictEqual(
+      released.upstreamPublishedAt,
+      upstreamPublishedAt,
+      'same bytes, same upstream — carried, not restamped',
+    );
+    assert.strictEqual(
+      released.treeHash,
+      record.treeHash,
+      'and still no copy',
+    );
+
+    // Migration rewrites records to drop the legacy archive path. The times
+    // are facts about the release, not about how its bytes are stored, so
+    // they have to survive a change of storage.
+    let migrated = await migrateStore(storeDir);
+    assert.deepEqual(migrated.failures, []);
+    let after = (await readStoreMeta(storeDir, 'lib'))!.versions['1.0.0-dev.1'];
+    assert.strictEqual(after.publishedAt, vendoredOn.toISOString());
+    assert.strictEqual(after.upstreamPublishedAt, upstreamPublishedAt);
+  });
+
+  // Nothing backfills. A store written before these fields existed has no
+  // honest time to report, and the alternatives — the file's mtime, the
+  // moment it was first read — would make an at-rest store answer differently
+  // depending on when it was asked.
+  test('a record written without times reads back without times', async function (assert) {
+    await mkdir(join(storeDir, 'lib'), { recursive: true });
+    await writeFile(
+      join(storeDir, 'lib', 'meta.json'),
+      JSON.stringify({
+        name: 'lib',
+        versions: { '1.0.0': { treeHash: 'a'.repeat(64) } },
+        tags: {},
+      }),
+    );
+    let record = (await readStoreMeta(storeDir, 'lib'))!.versions['1.0.0'];
+    assert.strictEqual(record.publishedAt, undefined);
+    assert.strictEqual(record.upstreamPublishedAt, undefined);
+    assert.strictEqual(record.storage, 'blobs-v1', 'still normalised on read');
+  });
 });

@@ -34,6 +34,14 @@ import {
   onActivityChange,
   scoreOf,
 } from 'ui/activity';
+import {
+  attachScrub,
+  foldBursts,
+  installTimelineStyles,
+  stepBy,
+  stepsFor,
+  timelineHtml,
+} from 'ui/timeline';
 import { diffLines, diffWordsWithSpace, structuredPatch } from 'diff';
 import hljs from 'highlight-js';
 import {
@@ -47,6 +55,7 @@ import { storeReactivityBindings } from '@tanstack/table-core/dist/store-reactiv
 
 installNavStyles();
 installActivityStyles();
+installTimelineStyles();
 
 const app = document.getElementById('app');
 const keys = document.querySelector('deck-keys');
@@ -280,6 +289,91 @@ async function sealsOf(depot) {
 }
 
 // ---------------------------------------------------------------------------
+// The Timeline, in the reading lens
+//
+// /run has the same scrubber and scopes it differently, and the difference is
+// the whole reason both exist.
+//
+//   run     Steps that touched anything in the page's CLOSURE. You are
+//           watching a running thing, and it breaks when a module it imports
+//           three levels down changes — the change that matters is often not
+//           in a file you have open.
+//
+//   browse  Steps that touched THIS PATH. You are reading bytes. A change to
+//           a module this file imports does not change these bytes, and a
+//           tape that jumped on it would offer you fifty notches that all
+//           render the same text.
+//
+// Same component, same gesture, one predicate apart. Getting that predicate
+// wrong is not a cosmetic difference: it decides whether stepping back shows
+// you something different.
+// ---------------------------------------------------------------------------
+
+/**
+ * The depot-relative prefix the current address is about, or '' for the whole
+ * depot. `filesSummary` speaks depot-relative paths — the mount name is the
+ * server's business and never appears in a seal — so a scope built from the
+ * URL has to drop it too.
+ */
+function scopeOf(parsed) {
+  if (parsed.seal) return parsed.path ?? '';
+  return [parsed.publisher, parsed.pkg, parsed.path].filter(Boolean).join('/');
+}
+
+/**
+ * The same thing, at another Step. `''` means live.
+ *
+ * A live address and a Step address are different SHAPES, not the same shape
+ * with a field swapped: live is `/<depot>/<pub>/<pkg>/<path>` and a Step is
+ * `/<depot>/_history/<id>/<pub>/<pkg>/<path>`. Stepping has to rebuild the
+ * address rather than edit it, and stepping back to live has to know which
+ * publisher and package the path belonged to — which is why the live address
+ * is remembered rather than re-derived from a path that no longer carries it.
+ */
+function atStep(parsed, changeId) {
+  let within = scopeOf(parsed);
+  if (!changeId) {
+    // Back to live. A path under `_history` is depot-relative, so its first
+    // two segments are the publisher and package it lives in.
+    if (!parsed.seal) return addressOf({ ...parsed, spec: undefined });
+    let [publisher, pkg, ...rest] = within.split('/').filter(Boolean);
+    return addressOf({
+      depot: parsed.depot,
+      publisher,
+      pkg,
+      path: rest.length ? rest.join('/') : undefined,
+    });
+  }
+  return `/${[parsed.depot, HISTORY, changeId, within].filter(Boolean).join('/')}`;
+}
+
+/** The Timeline the last render drew, so the keys agree with what is on screen. */
+let lastTimeline = [];
+
+/**
+ * The scrubber, or nothing at all.
+ *
+ * Nothing when the depot has no history backend (tier 1 — versions ARE the
+ * history, and a tape with no steps on it is furniture), and nothing on the
+ * depot list, which is not an address in time.
+ */
+async function timelineBar(parsed) {
+  if (!parsed.depot) return '';
+  let scope = scopeOf(parsed);
+  let steps = foldBursts(stepsFor(await sealsOf(parsed.depot), scope ? [scope] : []));
+  lastTimeline = steps;
+  if (!steps.length) return '';
+  return timelineHtml({
+    steps,
+    current: parsed.seal && parsed.seal !== true ? String(parsed.seal) : '',
+    // Not "undo". /run frames a running app, where stepping back IS the undo
+    // preview. Here you are reading, and the honest word for moving a file
+    // back through its saves is the file's own history.
+    label: scope ? 'this path' : 'this depot',
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Pieces
 // ---------------------------------------------------------------------------
 
@@ -378,10 +472,41 @@ function relative(timestamp) {
   return `${Math.round(seconds / 86400)}d ago`;
 }
 
-/** The store records no publish time yet, so this says nothing rather than lying. */
+/**
+ * WHICH CLOCK. A vendored version has two times and they are years apart.
+ *
+ * `upstreamPublishedAt` is when npm published three.js r150. `publishedAt` is
+ * when this depot took it. Showing only the second makes a 2021 library look
+ * like today's news because someone ran `deck vendor` this morning; showing
+ * only the first hides the fact that we adopted it this morning, which is the
+ * part with a decision behind it.
+ *
+ * So: upstream leads when it exists, because it is what the version IS, and
+ * the local time follows as "vendored". A version nobody vendored has one
+ * clock and says one thing. A version with neither says nothing at all —
+ * records written before these fields existed have no honest time, and
+ * "unknown" in a dropdown is noise where an empty space is not.
+ */
 function whenPublished(meta, version) {
-  let at = meta?.versions?.[version]?.publishedAt;
-  return at ? `${relative(at)} · ` : '';
+  let record = meta?.versions?.[version];
+  let upstream = record?.upstreamPublishedAt;
+  let local = record?.publishedAt;
+  if (upstream && local) {
+    return `${relative(upstream)} upstream · vendored ${relative(local)} · `;
+  }
+  return upstream || local ? `${relative(upstream ?? local)} · ` : '';
+}
+
+/**
+ * The instant a version should SORT by, as a number, newest largest.
+ *
+ * Upstream first for the same reason it is shown first — an ordering by when
+ * we happened to run the vendor command is an ordering of our own typing, not
+ * of the software. Unknown sorts last rather than first: absent is not new.
+ */
+export function publishedOrder(record) {
+  let when = Date.parse(record?.upstreamPublishedAt ?? record?.publishedAt ?? '');
+  return Number.isFinite(when) ? when : -Infinity;
 }
 
 function addressOptions(parsed, meta, seals) {
@@ -900,7 +1025,20 @@ function gapRow(id, from, to) {
  * without their expanders colliding — which is the whole point of the
  * multi-file view, and the thing that breaks first if the ids are positional.
  */
-function reviewFile({ id, path, before, after, open = true }) {
+/**
+ * `href`/`vs` make the heading a way through to the file itself.
+ *
+ * A review page shows twelve files cropped to their changed lines, which is
+ * the right default and is not always enough — the next question after "what
+ * changed here" is "what does the rest of this file look like", and the path
+ * printed at the top of each section is exactly where a reader points to ask
+ * it. It was inert text, so the answer was: retype the address.
+ *
+ * The link carries the SAME PAIR the review is showing, not just the file. A
+ * heading that dropped `vs` would land you on the file with no comparison
+ * selected, which is a different page than the one the click promised.
+ */
+function reviewFile({ id, path, before, after, open = true, href, vs }) {
   let beforeLines = before.split('\n');
   let afterLines = after.split('\n');
   if (beforeLines.at(-1) === '') beforeLines.pop();
@@ -964,7 +1102,11 @@ function reviewFile({ id, path, before, after, open = true }) {
     `<section class="review" data-file="${esc(id)}" data-open="${open ? 1 : 0}">` +
     `<header class="review-head" data-role="fold" tabindex="0" role="button">` +
     `<b class="fold-mark">${open ? '▾' : '▸'}</b>` +
-    `<span class="review-path">${esc(path)}</span>` +
+    (href
+      ? `<a class="review-path" href="?at=${esc(href)}${vs ? `&vs=${esc(vs)}` : ''}" ` +
+        `data-at="${esc(href)}"${vs ? ` data-vs="${esc(vs)}"` : ''} ` +
+        `title="open this file at this version">${esc(path)}</a>`
+      : `<span class="review-path">${esc(path)}</span>`) +
     `<span class="review-count">` +
     (added ? `<b class="ok">+${added}</b>` : '') +
     (removed ? ` <b class="bad">−${removed}</b>` : '') +
@@ -1230,6 +1372,10 @@ async function viewSeal(parsed, vs) {
           path: file.path,
           before: file.before,
           after: file.after,
+          // Both sides, already computed above: `at` is this file at the
+          // viewed step, `against` is the same file at the base.
+          href: file.at,
+          vs: file.against,
           // Everything open by default: a save touches a handful of files and
           // collapsing them by default would add a click per file to reach
           // the thing the page exists to show. Big diffs fold themselves —
@@ -1479,10 +1625,14 @@ async function render() {
     else if (parsed.pkg) out = await viewAddress(parsed, vs);
     else out = await viewCatalog(parsed);
 
+    // The tape goes ABOVE the view, outside whatever that view builds, so it
+    // is in the same place on every page rather than something each view has
+    // to remember to include.
+    let tape = await timelineBar(parsed);
     if (typeof out === 'string') {
-      app.innerHTML = out;
+      app.innerHTML = tape + out;
     } else {
-      app.innerHTML = out.html;
+      app.innerHTML = tape + out.html;
       document.getElementById('blob').append(blob(out.text, out.path));
       if (location.hash) document.querySelector(location.hash)?.scrollIntoView();
     }
@@ -1491,6 +1641,26 @@ async function render() {
   }
   cursor = -1;
   keys.keys = bindings();
+
+  // SCRUB PREVIEWS NOTHING HERE; RELEASE COMMITS.
+  //
+  // /run previews during the drag, because swapping an iframe's src is one
+  // assignment against an already-cached closure. Reading is not that: a
+  // preview would be a fetch and a re-highlight per animation frame, and
+  // sixty of those across one drag is how you make the fastest thing in the
+  // app the slowest.
+  //
+  // Nothing is lost, because the popover under the pointer already reports
+  // what each Step was — when, who, which files, and anything they said —
+  // which is the question you are asking WHILE dragging. The bytes are the
+  // answer to the question you ask by letting go.
+  attachScrub(app, {
+    onCommit: (step) => {
+      let now = parseAddress(currentAt());
+      let target = atStep(now, step);
+      if (target !== currentAt()) go(target);
+    },
+  });
 
   // A DIFF OPENS ON THE CHANGE — ONCE.
   //
@@ -1569,13 +1739,27 @@ function parentAddress() {
 }
 
 /**
- * `[` and `]` walk the volatility list without opening it.
+ * `[` and `]` move back and forward through time.
  *
- * This is the time-travel control. The list is ordered live → tags → versions
- * → seals, so holding `]` walks backwards through every state the thing has
- * been in, one keystroke per state, and the page follows. Finding the save
- * that broke something is that loop and nothing else.
+ * THE TAPE FIRST, when there is one. It is scoped to this path, so every
+ * keystroke lands on a Step where these bytes actually changed — holding `]`
+ * walks the file's own edits and nothing else. That is the loop for finding
+ * the save that broke something, and it is the same keys as /run so the
+ * gesture survives switching lens.
+ *
+ * The volatility list is the fallback and stays the right answer where there
+ * is no tape: a store-only deck has versions and tags and no Steps at all,
+ * and `live → tags → versions` is still an ordering through time.
  */
+function stepTime(delta) {
+  if (lastTimeline.length) {
+    let parsed = parseAddress(currentAt());
+    let here = parsed.seal && parsed.seal !== true ? String(parsed.seal) : '';
+    return go(atStep(parsed, stepBy(lastTimeline, here, delta)));
+  }
+  return stepVolatility(delta);
+}
+
 function stepVolatility(delta) {
   let control = select('vol');
   if (!control) return;
@@ -1604,7 +1788,11 @@ let hunk = -1;
 function bindings() {
   let list = [[['j', 'k'], 'move'], ['↵', 'open'], ['u', 'up']];
   if (app.querySelector('[data-role="filter"]')) list.push(['/', 'filter']);
-  if (select('vol')) list.push([['[', ']'], 'time travel']);
+  // The legend is derived from the view, so it has to name what the keys
+  // will ACTUALLY do here — the tape when there is one, the volatility list
+  // when there is not. Two different moves through time, one pair of keys.
+  if (lastTimeline.length) list.push([['[', ']'], 'step']);
+  else if (select('vol')) list.push([['[', ']'], 'time travel']);
   if (select('vs')) list.push(['d', 'compare']);
   if (app.querySelector('pre.diff')) list.push([['n', 'p'], 'change']);
   if (app.querySelector('.note a[href^="/"]')) list.push(['o', 'raw bytes']);
@@ -1642,9 +1830,9 @@ addEventListener('keydown', (event) => {
       event.preventDefault();
       return go(parentAddress());
     case '[':
-      return stepVolatility(-1);
+      return stepTime(-1);
     case ']':
-      return stepVolatility(1);
+      return stepTime(1);
     case 'n':
       return stepChange(1);
     case 'p':
@@ -1723,7 +1911,24 @@ app.addEventListener('click', (event) => {
   let gap = event.target.closest('.gap[data-gap]');
   if (gap) return expandGap(gap);
 
-  let fold = event.target.closest('[data-role="fold"]');
+  // The tape: a notch is a position, the jump buttons are relative moves.
+  // Both resolve to an address and go there — same as clicking a file.
+  let notch = event.target.closest('[data-role="step"]');
+  if (notch) return go(atStep(parseAddress(currentAt()), notch.dataset.step));
+
+  let by = event.target.closest('[data-role="step-by"]');
+  if (by) {
+    let parsed = parseAddress(currentAt());
+    let here = parsed.seal && parsed.seal !== true ? String(parsed.seal) : '';
+    return go(atStep(parsed, stepBy(lastTimeline, here, Number(by.dataset.by))));
+  }
+
+  // The fold header now contains a link to the file itself, and the header is
+  // the larger target — so the specific thing has to be tested first or the
+  // link can never be clicked, only folded.
+  let fold = event.target.closest('a[data-at]')
+    ? undefined
+    : event.target.closest('[data-role="fold"]');
   if (fold) {
     let section = fold.closest('.review');
     let open = section.dataset.open === '1';

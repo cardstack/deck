@@ -304,7 +304,7 @@ export function attachScrub(root, { onScrub, onCommit } = {}) {
       (step.folded > 1 ? ` <span class="dim">${step.folded} saves</span>` : '') +
       (step.actor ? ` <span class="tl-pop-actor">${esc(step.actor)}</span>` : '') +
       `</div>` +
-      (step.claim ? `<div class="tl-pop-claim">claimed — ${esc(step.claim)}</div>` : '') +
+      (step.claim ? `<div class="tl-pop-claim">active — ${esc(step.claim)}</div>` : '') +
       (step.note ? `<div class="tl-pop-note">${esc(step.note)}</div>` : '') +
       `<div class="tl-pop-files">` +
       files.slice(0, 6).map((path) => `<div>${esc(path)}</div>`).join('') +

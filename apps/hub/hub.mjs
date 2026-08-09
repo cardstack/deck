@@ -23,11 +23,12 @@
 // change to the server, and if anyone ever creates a depot actually named
 // `browse` the depot wins. Real data beating a convenience alias is the
 // correct precedence, and it costs nothing to get right.
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readFile, readdir, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDeckServer } from '@deck/server/server';
 import { storeDirFor, watchDepot } from '@deck/server/depot';
+import { claimsDirFor } from '@deck/server/activity';
 import { createHistory } from '@deck/history/create';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -399,6 +400,43 @@ const server = createDeckServer({
         });
         res.end(body);
       });
+    }
+    // Local wrap-up only — same bytes as `deck claim --clear` / deleting the
+    // file. Not protocol: the Deck server stays read-only; Hub is the
+    // operator console on this machine, and Release is how you remember to
+    // stop an agent you started.
+    if (path === '/_hub/release-claim' && req.method === 'POST') {
+      return (async () => {
+        let chunks = [];
+        for await (let chunk of req) chunks.push(chunk);
+        let body = {};
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+        } catch {
+          res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ ok: false, error: 'bad-json' }));
+        }
+        let actor = String(body.actor ?? '').trim();
+        if (!actor || actor.includes('/') || actor.includes('\\')) {
+          res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ ok: false, error: 'actor-required' }));
+        }
+        for (let depot of depots) {
+          let file = join(claimsDirFor(depot.dir), `${actor}.json`);
+          let existed = await stat(file).then(() => true).catch(() => false);
+          if (!existed) continue;
+          // Leave `<actor>.json.until` so `deck claim --status` can still
+          // tell revoked from expired — same as `deck claim --clear`.
+          await rm(file, { force: true });
+          res.writeHead(200, {
+            'content-type': 'application/json; charset=utf-8',
+            'cache-control': 'no-store',
+          });
+          return res.end(JSON.stringify({ ok: true, actor, depot: depot.name }));
+        }
+        res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ ok: false, error: 'not-found' }));
+      })();
     }
     if (path === '/_hub/origins') {
       let body = JSON.stringify({

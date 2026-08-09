@@ -267,8 +267,10 @@ difference survives the file being deleted.
 Claims appear beside the `live` badge as a standing count, not a toast: a
 claim lasts half an hour and a notification that fades in four seconds cannot
 represent one — you would have to be looking when it arrived. Clicking opens
-the list, each row naming the actor, the path, the time remaining and how to
-release it.
+the list; each row names the actor, the path, the time remaining, and a
+**Release** button. Release is Hub-local (`POST /_hub/release-claim`) — same
+bytes as deleting the claim file / `deck claim --clear` — so wrap-up is one
+click instead of remembering a path. The Deck HTTP surface stays read-only.
 
 ### 3.2 Note — record, permanent, and a deck
 

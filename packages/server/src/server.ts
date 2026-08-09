@@ -901,9 +901,24 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               versions: Object.fromEntries(
                 Object.entries(meta?.versions ?? {}).map(([version, r]) => [
                   version,
-                  { treeHash: r.treeHash, ...(r.file ? { file: r.file } : {}) },
+                  {
+                    treeHash: r.treeHash,
+                    ...(r.file ? { file: r.file } : {}),
+                    // Two clocks, both optional, never folded into one field:
+                    // when this store took the version, and when the registry
+                    // published what it took. A client sorting by the wrong
+                    // one gets a defensible but different answer, so it has
+                    // to choose rather than be chosen for.
+                    ...(r.publishedAt ? { publishedAt: r.publishedAt } : {}),
+                    ...(r.upstreamPublishedAt
+                      ? { upstreamPublishedAt: r.upstreamPublishedAt }
+                      : {}),
+                  },
                 ]),
               ),
+              // `<registry>:<name>` when anything here was vendored. Says
+              // whether the times above have an upstream to be about.
+              upstream: meta?.upstream,
               distTags: meta?.tags ?? {},
             };
           }),
@@ -969,9 +984,24 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               versions: Object.fromEntries(
                 Object.entries(meta?.versions ?? {}).map(([version, r]) => [
                   version,
-                  { treeHash: r.treeHash, ...(r.file ? { file: r.file } : {}) },
+                  {
+                    treeHash: r.treeHash,
+                    ...(r.file ? { file: r.file } : {}),
+                    // Two clocks, both optional, never folded into one field:
+                    // when this store took the version, and when the registry
+                    // published what it took. A client sorting by the wrong
+                    // one gets a defensible but different answer, so it has
+                    // to choose rather than be chosen for.
+                    ...(r.publishedAt ? { publishedAt: r.publishedAt } : {}),
+                    ...(r.upstreamPublishedAt
+                      ? { upstreamPublishedAt: r.upstreamPublishedAt }
+                      : {}),
+                  },
                 ]),
               ),
+              // `<registry>:<name>` when anything here was vendored. Says
+              // whether the times above have an upstream to be about.
+              upstream: meta?.upstream,
               distTags: meta?.tags ?? {},
             },
           },

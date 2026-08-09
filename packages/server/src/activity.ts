@@ -108,21 +108,31 @@ export function claimsDirFor(depotDir: string): string {
 export class ClaimRegister {
   #dirs: { name: string; dir: string }[];
   #cache = new Map<string, Claim>();
-  #readAt = 0;
+  /** Max mtime of claims dirs last load; `-1` means never loaded. */
+  #stamp = -1;
 
   constructor(depots: DepotMount[]) {
     this.#dirs = depots.map((depot) => ({ name: depot.name, dir: depot.dir }));
   }
 
   /**
-   * Reload if the record might have moved. One small JSON per depot, at most
-   * every two seconds — presence is a live signal and a stale one is a lie,
-   * but re-reading nine files per request would be silly.
+   * Reload when a claims directory's mtime moved.
+   *
+   * A two-second clock throttle kept a *deleted* claim painted after Release
+   * — wrap-up looked like a no-op. Mtime sees the file gone on the next GET.
+   * Expiry still filters from cache in `under()` when disk is unchanged.
    */
   async refresh(): Promise<void> {
+    let stamp = 0;
+    for (let depot of this.#dirs) {
+      let mtime = await stat(claimsDirFor(depot.dir))
+        .then((info) => info.mtimeMs)
+        .catch(() => 0);
+      if (mtime > stamp) stamp = mtime;
+    }
+    if (stamp === this.#stamp) return;
+    this.#stamp = stamp;
     let now = Date.now();
-    if (now - this.#readAt < 2000) return;
-    this.#readAt = now;
     let next = new Map<string, Claim>();
     for (let depot of this.#dirs) {
       let dir = claimsDirFor(depot.dir);
@@ -136,7 +146,7 @@ export class ClaimRegister {
           claim = JSON.parse(raw) as Partial<Claim>;
         } catch {
           // A half-written file during a CLI write is an ordinary race, not
-          // an error worth surfacing: the next read is two seconds away.
+          // an error worth surfacing: the next read picks it up.
           continue;
         }
         if (!claim.actor || !claim.prefix || !claim.until) continue;

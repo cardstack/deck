@@ -151,8 +151,11 @@ export function activityCell(heat, detail = {}) {
   // the present, so when both are true the bar reports the claim — the reader
   // needs to know somebody is in there before they need to know how busy it
   // has been. The time still prints, so nothing is lost.
+  //
+  // "active here" rather than "claimed by": the protocol's noun is `claim`
+  // and the reader's question is whether somebody is in this file right now.
   let title = claims.length
-    ? `claimed by ${claims.map((claim) => claim.actor).join(', ')}` +
+    ? `${claims.map((claim) => claim.actor).join(', ')} active here` +
       (claims[0].text ? ` — ${claims[0].text}` : '')
     : when;
   return (

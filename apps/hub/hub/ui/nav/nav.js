@@ -293,6 +293,27 @@ export class DeckNav extends HTMLElement {
       let list = this.querySelector('[data-role="claim-list"]');
       list.hidden = !list.hidden;
     });
+    this.querySelector('[data-role="claim-list"]').addEventListener('click', (event) => {
+      let release = event.target.closest('[data-role="release-claim"]');
+      if (!release) return;
+      event.preventDefault();
+      event.stopPropagation();
+      let actor = release.dataset.actor;
+      if (!actor) return;
+      release.disabled = true;
+      fetch('/_hub/release-claim', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ actor }),
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error(`release ${response.status}`);
+          return this.#paintClaims?.();
+        })
+        .catch(() => {
+          release.disabled = false;
+        });
+    });
   }
 
   /**
@@ -326,7 +347,11 @@ export class DeckNav extends HTMLElement {
         list.hidden = true;
         return;
       }
-      button.textContent = `${claims.length} claim${claims.length === 1 ? '' : 's'}`;
+      // "1 claim" is the protocol's word wearing a badge. Nobody reading a
+      // status bar wants a noun for the record — they want to know somebody is
+      // in there right now, which is what "1 active" says. The wire keeps
+      // `claims`; the chrome says what it means.
+      button.textContent = `${claims.length} active`;
       list.innerHTML = claims
         .map((claim) => {
           let left = Math.max(0, Math.round((claim.until - Date.now()) / 60000));
@@ -334,16 +359,19 @@ export class DeckNav extends HTMLElement {
             `<div class="deck-claim">` +
             `<b>${esc(claim.actor)}</b> ` +
             `<a href="/browse?at=${esc(claim.at)}">${esc(claim.at)}</a> ` +
-            `<span class="dim">${left}m left</span>` +
+            `<span class="dim">${left}m left</span> ` +
+            `<button type="button" class="deck-claim-release" ` +
+            `data-role="release-claim" data-actor="${esc(claim.actor)}">` +
+            `Release</button>` +
             (claim.text ? `<div class="dim">${esc(claim.text)}</div>` : '') +
-            `<div class="dim">release it by deleting ` +
-            `<code>.deck/claims/${esc(claim.actor)}.json</code> — the agent ` +
-            `reads that as "stop working here"</div>` +
+            `<div class="dim">stops the agent — same as deleting ` +
+            `<code>.deck/claims/${esc(claim.actor)}.json</code></div>` +
             `</div>`
           );
         })
         .join('');
     };
+    this.#paintClaims = paint;
     await paint();
     onLiveChange(() => paint());
     // Claims expire on a clock nothing announces, so the countdown has to be
@@ -396,6 +424,7 @@ export class DeckNav extends HTMLElement {
   }
 
   #settle;
+  #paintClaims;
 }
 
 /**
@@ -640,6 +669,13 @@ export const NAV_CSS = `
 }
 .deck-claim + .deck-claim { margin-top: .6em; border-top: 1px solid var(--line); padding-top: .6em; }
 .deck-claim a { color: var(--fg); }
+.deck-claim-release {
+  font: inherit; cursor: pointer; margin-left: .5ch; padding: 0 .6ch;
+  background: none; border: 1px solid var(--a-publisher);
+  color: var(--a-publisher);
+}
+.deck-claim-release:hover { background: var(--a-publisher); color: var(--bg); }
+.deck-claim-release:disabled { opacity: .5; cursor: wait; }
 
 .deck-keys {
   position: fixed; left: 0; right: 0; bottom: 0;

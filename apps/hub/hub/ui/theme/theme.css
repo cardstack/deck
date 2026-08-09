@@ -280,6 +280,13 @@ pre.blob.diff .ln.gap .mk { color: var(--dim); }
 }
 .review-head:hover, .review-head:focus-visible { background: var(--sel); outline: none; }
 .review-path { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+/* The heading is a link to the file, inside a header that folds. Underlining
+   only on hover keeps twelve stacked headings from reading as a wall of
+   links, while still saying "this one is clickable" at the moment you ask. */
+a.review-path { color: inherit; text-decoration: none; }
+a.review-path:hover, a.review-path:focus-visible {
+  color: var(--a-package); text-decoration: underline;
+}
 .review-count { white-space: nowrap; }
 .review-count .ok { color: var(--green); }
 .review-count .bad { color: var(--red); }

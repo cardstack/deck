@@ -17,6 +17,7 @@
 //   auto-saved  the watcher published that save as `-dev.N`, unasked
 //   published   somebody cut an immutable version on purpose
 //   released    a dist-tag moved onto one. No bytes copied; a name changed.
+//   vendored    a version was taken from an upstream registry
 //   proposed    a fork was put forward against upstream
 //   rebased     the daemon re-merged a proposal onto newer upstream
 //   conflicted  a merge stopped and wrote NOTHING
@@ -25,10 +26,12 @@
 // one is a keystroke that stopped moving, the other is a decision. They are
 // both immutable versions and they are not the same event.
 //
-// Two more verbs — `vendored` and `forked` — are missing, and honestly so:
-// telling them apart needs `vendoredFrom` / `forkedFrom`, which live inside
-// each deck's importmap and would cost one request per deck to read. They
-// belong in `/_packages`; until they are there, this does not guess.
+// `forked` is still missing, and honestly so: telling a fork apart needs
+// `forkedFrom`, which lives inside each deck's importmap and would cost one
+// request per deck to read. It belongs in `/_packages`; until it is there,
+// this does not guess. `vendored` used to be missing for the same reason and
+// no longer is — the store records the upstream coordinate and the upstream
+// publish time, so the row can say it without opening anything.
 //
 // SCOPE IS THE POINT. Not everything that happened: everything that happened
 // under THIS address, plus the forks related to it. An unscoped change river
@@ -134,17 +137,38 @@ async function collect(scope) {
       for (let deck of depot.packages) {
         for (let [version, record] of Object.entries(deck.versions ?? {})) {
           rows.push({
-            kind: isDev(version)
-              ? 'auto-published'
-              : Object.values(deck.distTags ?? {}).includes(version)
-                ? 'released'
-                : 'published',
+            // `vendored` is now sayable. It used to be guesswork, because
+            // telling a vendored version from a hand-cut one meant reading
+            // `vendoredFrom` out of each deck's importmap — one request per
+            // deck, to answer a question about a list. The store records the
+            // upstream coordinate, `/_packages` reports it, and a version
+            // that also carries an upstream publish time is one we took from
+            // somewhere rather than one we cut.
+            kind: record.upstreamPublishedAt
+              ? 'vendored'
+              : isDev(version)
+                ? 'auto-published'
+                : Object.values(deck.distTags ?? {}).includes(version)
+                  ? 'released'
+                  : 'published',
             depot: depot.name,
             publisher: deck.publisher,
             pkg: deck.name,
             id: version,
             what: version,
-            when: '',
+            // THE ROW'S OWN CLOCK, not the library's.
+            //
+            // Every other row here is dated by when the event happened on
+            // this machine, and a vendored row is no different: what happened
+            // was that we took it. Sorting these by npm's publish date would
+            // interleave "we adopted three.js this morning" into 2021, where
+            // nobody scanning a change feed would ever look for it.
+            //
+            // The upstream date is not lost — it is the second line, where it
+            // reads as a property of the thing rather than as an event.
+            when: record.publishedAt ?? '',
+            upstreamWhen: record.upstreamPublishedAt,
+            upstream: deck.upstream,
             treeHash: record.treeHash,
             at: `/${depot.name}/${deck.publisher}/${deck.name}@${version}`,
             // A version's natural comparison is the one before it.
@@ -332,6 +356,7 @@ const KINDS = [
   'auto-published',
   'published',
   'released',
+  'vendored',
   'proposed',
   'rebased',
   'conflicted',
@@ -440,6 +465,7 @@ const MARK = {
   'auto-published': '·',
   published: '▲',
   released: '★',
+  vendored: '⤓',
   proposed: '◆',
   rebased: '◆',
   conflicted: '✕',
@@ -662,6 +688,14 @@ function entry(row) {
       ? `<span class="sep">/</span><span class="s-package">${esc(row.pkg)}</span>`
       : '') +
     (detail ? ` <span class="dim">${detail}</span>` : '') +
+    // Provenance sits on the second line because it is a property of the
+    // thing, not the event: `npm:three · published 2y ago` answers "what did
+    // we take on", while the row's own timestamp answers "when did we".
+    (row.upstream
+      ? ` <span class="dim upstream">${esc(row.upstream)}` +
+        (row.upstreamWhen ? ` · published ${esc(ago(row.upstreamWhen))}` : '') +
+        `</span>`
+      : '') +
     `</div></div>` +
     `<a class="entry-go" href="${esc(browse)}">${row.vs ? 'diff' : 'open'} →</a>` +
     `</li>`
@@ -917,3 +951,5 @@ setInterval(() => {
 }, 60_000);
 
 render();
+
+// touch: verify publishedAt reaches the store

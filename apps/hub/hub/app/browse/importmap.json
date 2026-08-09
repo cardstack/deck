@@ -9,7 +9,9 @@
     "@tanstack/table-core/": "/hub/lib/tanstack-table-core@9.1.1-browser.72f09cd7/",
     "@tanstack/table-core": "/hub/lib/tanstack-table-core@9.1.1-browser.72f09cd7/dist/index.js",
     "ui/activity/": "/hub/ui/activity/",
-    "ui/activity": "/hub/ui/activity/activity.js"
+    "ui/activity": "/hub/ui/activity/activity.js",
+    "ui/timeline/": "/hub/ui/timeline/",
+    "ui/timeline": "/hub/ui/timeline/timeline.js"
   },
   "deck": {
     "packages": {
@@ -23,7 +25,8 @@
       "diff": "lib/diff@^9.0.0",
       "highlight-js": "lib/highlight-js@esm",
       "@tanstack/table-core": "lib/tanstack-table-core@browser",
-      "ui/activity": "live"
+      "ui/activity": "live",
+      "ui/timeline": "live"
     }
   },
   "scopes": {
