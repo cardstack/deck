@@ -190,5 +190,6 @@ packaging — real, but it does not block Boxel from starting.
 | W2 | absolute-reference classifier | **done** — `@deck/core/classify`, conformance L11 |
 | W3 | provenance block | **done** — `PackProvenance`, `intakeReadiness`, conformance L11 |
 | W4 | pack modes `bare` / `hermetic` | **decision layer done** — `planPack`; byte carriage reuses `vendor.ts`, not yet wired |
-| W5 | foreign conformance | next |
-| W6–W10 | | not started |
+| W5 | foreign conformance | **done** — `--export` + at-rest excluded from foreign runs |
+| W6 | one entry + types | next |
+| W7–W10 | | not started |
