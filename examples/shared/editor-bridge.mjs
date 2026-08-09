@@ -17,10 +17,10 @@
 
 import { createServer } from 'node:http';
 import { createSecureServer } from 'node:http2';
-import { readFile, writeFile } from 'node:fs/promises';
+import { cp, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { resolveTlsMaterials } from '@deck/server/tls';
-import { DEMO_TLS, demoOrigin } from './depot.mjs';
+import { DEMO_TLS } from './depot.mjs';
 
 const MAX_BYTES = 64 * 1024;
 
@@ -43,6 +43,43 @@ function body(req) {
 }
 
 /**
+ * Read an example's editable-file declaration, if it has one.
+ *
+ * The declaration is data in the example directory, so the example's own
+ * demo.mjs and the Hub start the same bridge over the same allow-list
+ * instead of each keeping its own copy of the list.
+ */
+export async function readEditable(exampleDir) {
+  try {
+    let text = await readFile(join(exampleDir, 'editable.json'), 'utf8');
+    let declared = JSON.parse(text);
+    return Object.keys(declared.files ?? {}).length > 0 ? declared : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Copy an example's `starter/` tree into its depot, once.
+ *
+ * The seeded directory is gitignored, so an edit made in the browser never
+ * dirties the repository — and it is only copied when absent, so a re-run
+ * keeps whatever the last reader left behind.
+ */
+export async function seedEditable(exampleDir, declared) {
+  if (!declared?.seed) return 'none';
+  let from = join(exampleDir, declared.seed);
+  let seeded = [];
+  for (let relative of Object.values(declared.files)) {
+    let target = join(exampleDir, 'depot', relative.split('/').slice(0, -1).join('/'));
+    if (await stat(target).then(() => true).catch(() => false)) continue;
+    await cp(join(from, target.split('/').at(-1)), target, { recursive: true });
+    seeded.push(relative);
+  }
+  return seeded.length > 0 ? 'seeded' : 'kept';
+}
+
+/**
  * Serve a write endpoint for a fixed, named set of files.
  *
  * `files` is the allow-list: `{ '<id>': '<path under depotDir>' }`. A
@@ -57,9 +94,13 @@ function body(req) {
  * @param {object} options
  * @param {string} options.depotDir
  * @param {Record<string,string>} options.files
- * @param {number} options.port
+ * @param {number} options.port  0 asks the kernel for a free one
+ * @param {boolean} [options.tls]  defaults to whatever the demos are using.
+ *   The bridge has to speak the SAME scheme as the page that calls it: a
+ *   fetch from an http page to an https port fails with nothing useful on
+ *   screen, and the page reads that as "no bridge running".
  */
-export async function startEditorBridge({ depotDir, files, port }) {
+export async function startEditorBridge({ depotDir, files, port, tls: wantTls }) {
   let originals = new Map();
   for (let [id, relative] of Object.entries(files)) {
     originals.set(id, await readFile(join(depotDir, relative), 'utf8'));
@@ -132,11 +173,20 @@ export async function startEditorBridge({ depotDir, files, port }) {
     }
   }
 
-  let tls = DEMO_TLS ? resolveTlsMaterials(true) : undefined;
+  let secure = wantTls ?? DEMO_TLS;
+  let tls = secure ? resolveTlsMaterials(true) : undefined;
   let server = tls
     ? createSecureServer({ cert: tls.cert, key: tls.key, allowHTTP1: true }, respond)
     : createServer(respond);
 
+  // Port 0 asks the kernel for whatever is free, which is the only way to
+  // ask that has no race in it. The caller learns the answer from the
+  // listener, never from the number it passed in.
   await new Promise((resolve) => server.listen(port, resolve));
-  return { server, origin: demoOrigin(port) };
+  let bound = server.address().port;
+  return {
+    server,
+    port: bound,
+    origin: `${secure ? 'https' : 'http'}://localhost:${bound}`,
+  };
 }

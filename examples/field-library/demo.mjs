@@ -27,7 +27,7 @@
 //
 //   pnpm --filter @deck/example-field-library demo
 //   open http://localhost:8793/
-import { cp, mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { IMPORT_MAP_PATH, parseDependencies } from '@deck/core/import-map';
@@ -46,7 +46,11 @@ import {
   openDemoDepot,
   serveLive,
 } from '../shared/depot.mjs';
-import { startEditorBridge } from '../shared/editor-bridge.mjs';
+import {
+  readEditable,
+  seedEditable,
+  startEditorBridge,
+} from '../shared/editor-bridge.mjs';
 import { demoBuildMode } from '../shared/reset.mjs';
 import { publishShared } from '../shared/publish.mjs';
 
@@ -90,13 +94,9 @@ const EDITABLE = 'you/ship-by';
 const APP = 'app/library';
 const VERSION = '1.0.0';
 
-async function seedEditableField() {
-  let target = join(depotDir, 'you', 'ship-by');
-  let present = await stat(target).then(() => true).catch(() => false);
-  if (present) return 'kept';
-  await cp(join(here, 'starter', 'ship-by'), target, { recursive: true });
-  return 'seeded';
-}
+// Which files a reader may edit is declared in editable.json, so this demo
+// and the Hub start the same bridge over the same allow-list.
+const EDITABLE_FILES = await readEditable(here);
 
 
 const buildMode = await demoBuildMode({
@@ -110,7 +110,7 @@ if (buildMode === 'rebuild') {
 }
 await mkdir(storeDir, { recursive: true });
 
-let seedState = await seedEditableField();
+let seedState = await seedEditable(here, EDITABLE_FILES);
 
 if (buildMode !== 'serve') {
 
@@ -353,6 +353,18 @@ let depot = await openDemoDepot({ name: DEPOT, dir: depotDir });
 let server = createDemoServer({
   depots: [depot],
   fallback: (req, res) => {
+    // Where the editor bridge is listening, answered by the origin the page
+    // was loaded from. A GET, so it passes the read-only gate; the page can
+    // then find the bridge whatever port it landed on — which matters,
+    // because the Hub gives it an ephemeral one.
+    if (req.url?.startsWith('/_demo/editor')) {
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'cache-control': 'no-store',
+      });
+      res.end(JSON.stringify({ origin: bridge.origin, files: EDITABLE_FILES.files }));
+      return;
+    }
     res.writeHead(302, { location: `/${DEPOT}/${APP}@${VERSION}/index.html` });
     res.end();
   },
@@ -360,7 +372,7 @@ let server = createDemoServer({
 
 let bridge = await startEditorBridge({
   depotDir,
-  files: { 'ship-by': join('you', 'ship-by', 'index.js') },
+  files: EDITABLE_FILES.files,
   port: BRIDGE_PORT,
 });
 

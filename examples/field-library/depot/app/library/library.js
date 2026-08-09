@@ -30,9 +30,16 @@ const params = new URLSearchParams(location.search);
 // different answer from "no ?with= at all" and has to stay different.
 const asked = params.get('with');
 const picked = asked === null ? '1.0.0' : asked === MINE ? 'live' : asked.replace(`${MINE}@`, '');
-// The editor bridge is a sibling process on the next port. Protocol and host
-// come from this page, so the demo works over HTTP or HTTPS without a rebuild.
-const BRIDGE = `${location.protocol}//${location.hostname}:${shelf.bridgePort ?? Number(location.port) + 1}`;
+// Where the editor bridge is listening, asked of the origin this page came
+// from. It cannot be guessed: this demo runs standalone on a fixed port and
+// inside the Hub on one the kernel chose, and the answer differs. The
+// declared port in shelf.json is the fallback for a page opened from a build
+// that predates the route.
+const BRIDGE = await fetch('/_demo/editor')
+  .then((response) => (response.ok ? response.json() : undefined))
+  .then((found) => found?.origin)
+  .catch(() => undefined)
+  ?? `${location.protocol}//${location.hostname}:${shelf.bridgePort ?? Number(location.port) + 1}`;
 
 installPillStyles();
 
@@ -134,7 +141,12 @@ function repaintRow(deck) {
 
 // ── The version rail ────────────────────────────────────────────────────
 async function versionsOfMine() {
-  let response = await fetch(`/_packages/${DEPOT}/${MINE}`);
+  // `cache: 'no-store'` matters. /_packages/<depot>/<publisher>/<package> is
+  // a name resolution, and the server caches it for a minute — correct for a
+  // consumer asking "what version answers to this name", and blinding for a
+  // page waiting to see a new one appear. Asking for a fresh answer is the
+  // caller's job, because only the caller knows it is polling.
+  let response = await fetch(`/_packages/${DEPOT}/${MINE}`, { cache: 'no-store' });
   if (!response.ok) return { versions: {}, tags: {} };
   let { data } = await response.json();
   return { versions: data.attributes.versions ?? {}, tags: data.attributes.distTags ?? {} };

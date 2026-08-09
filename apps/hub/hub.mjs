@@ -30,6 +30,11 @@ import { createDeckServer } from '@deck/server/server';
 import { storeDirFor, watchDepot } from '@deck/server/depot';
 import { claimsDirFor } from '@deck/server/activity';
 import { createHistory } from '@deck/history/create';
+import {
+  readEditable,
+  seedEditable,
+  startEditorBridge,
+} from '../../examples/shared/editor-bridge.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..', '..');
@@ -123,6 +128,10 @@ async function demoDepots() {
       dir,
       storeDir: storeDirFor(dir),
       sidecarDir: join(examplesDir, entry.name),
+      // An example that declares editable files gets an editor bridge below.
+      // The declaration is the example's, so the Hub never keeps a second
+      // copy of which files a reader may write.
+      editable: await readEditable(join(examplesDir, entry.name)),
     });
   }
   return found;
@@ -222,6 +231,37 @@ let depots = [hub, ...demos];
 // and is also simply what is true: there is one timeline here.
 const origins = new Map();
 const originErrors = new Map();
+// The write path, for the examples that have one. Not part of Deck: the deck
+// server answers GET and HEAD and nothing else, so a page cannot ask it to
+// save a file, and a demo that wants the reader to make an edit runs a second
+// process that puts bytes on disk the way their editor would. Port 0 for the
+// same reason the demo mounts use it — nothing here is entitled to a number.
+const bridges = new Map();
+for (let depot of demos) {
+  if (!depot.editable) continue;
+  try {
+    await seedEditable(depot.sidecarDir, depot.editable);
+    let bridge = await startEditorBridge({
+      depotDir: depot.dir,
+      files: depot.editable.files,
+      port: 0,
+      // The Hub and its demo mounts are plain HTTP, and the bridge has to
+      // match: a fetch from an http page to an https port fails silently.
+      tls: false,
+    });
+    bridges.set(depot.name, { origin: bridge.origin, files: depot.editable.files });
+  } catch (error) {
+    console.error(`   editor bridge: ${depot.name} — ${error.message ?? error}`);
+  }
+}
+
+// A demo that hands the reader an editor also needs the loop that turns a
+// save into a Version, or the edit lands on disk and nothing happens. Only
+// those depots are watched: nine watchers over trees nobody is editing —
+// three.js alone is 374 files — costs real descriptors for no signal.
+// The array is what keeps the controllers reachable for the process's life.
+const demoWatchers = [];
+
 for (let depot of demos) {
   let server = createDeckServer({
     depots: [
@@ -234,6 +274,17 @@ for (let depot of demos) {
     ],
     fallback(req, res) {
       let path = new URL(req.url ?? '/', 'http://localhost').pathname;
+      // Where this demo's editor bridge is listening, answered by the origin
+      // the page was loaded from. The page cannot guess it — the port is
+      // whatever the kernel gave us.
+      if (path === '/_demo/editor' && bridges.has(depot.name)) {
+        res.writeHead(200, {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store',
+        });
+        res.end(JSON.stringify(bridges.get(depot.name)));
+        return;
+      }
       serveSidecar(depot, path, res).then((served) => {
         if (served) return;
         res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
@@ -247,6 +298,21 @@ for (let depot of demos) {
       server.listen(0, () => resolve(server.address().port));
     });
     origins.set(depot.name, `http://localhost:${port}`);
+    if (bridges.has(depot.name)) {
+      let watcher = watchDepot({
+        depot: { name: 'site', dir: depot.dir, storeDir: depot.storeDir, history: depot.history },
+        onLiveChange: (event) => server.liveBus.emit(event),
+        onPublish: (event) =>
+          console.log(
+            event.reused
+              ? `   ${depot.name}: ${event.name} is already published as ${event.version}`
+              : `   ${depot.name}: saved → ${event.name}@${event.version}`,
+          ),
+        onError: (error) => console.error(`   ${depot.name} watch: ${error}`),
+      });
+      watcher.rescan();
+      demoWatchers.push(watcher);
+    }
   } catch (error) {
     // One depot that cannot get a listener is one demo that cannot run. It is
     // not a reason to take the other eight down with it, and it is absolutely
