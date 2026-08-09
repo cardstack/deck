@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Deck protocol core: canonical tree hash, packlist, pack/unpack laws",
   "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts",
     "./resolve": "./src/resolve.ts",
     "./import-map-pack": "./src/import-map-pack.ts",
     "./inherit": "./src/inherit.ts",

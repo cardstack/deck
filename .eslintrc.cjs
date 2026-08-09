@@ -37,6 +37,7 @@ module.exports = {
       // Adding a file to this list is a promise about its whole import
       // closure, not just its first line. Check what it reaches.
       files: [
+        'packages/core/src/index.ts',
         'packages/core/src/resolve.ts',
         'packages/core/src/inherit.ts',
         'packages/core/src/classify.ts',

@@ -37,8 +37,15 @@ export {
   flattenInheritance,
   isExactParent,
   parseExtends,
+  parseLink,
+  resolveInheritance,
 } from './inherit.ts';
-export type { FlatMap, InheritableMap, MapValue } from './inherit.ts';
+export type {
+  DecklistLink,
+  FlatMap,
+  InheritableMap,
+  MapValue,
+} from './inherit.ts';
 
 /**
  * Resolve one specifier the way a browser resolves it against an import map.
