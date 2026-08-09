@@ -7,7 +7,7 @@
 // disk this second.
 import { table } from 'ui/table';
 import { spark } from 'charts/spark';
-import { pill, legend, installPillStyles } from 'ui/pills';
+import { pill, installPillStyles } from 'ui/pills';
 
 installPillStyles();
 
@@ -29,27 +29,54 @@ let [decisions, ...sets] = await Promise.all([
   ...SETS.map((set) => load(set.url)),
 ]);
 
-function swatches(tokens) {
+// A token set is not a table of numbers, it is a look. So the page renders
+// one small interface per set, from that set's own values, and an agent's
+// edit repaints something you recognise: the corners get rounder, the button
+// changes colour, the spacing opens up.
+function preview(tokens) {
   if (!tokens) return '<em class="quiet">not served</em>';
-  return Object.entries(tokens.color ?? {})
-    .map(
-      ([name, value]) =>
-        `<span class="sw"><i style="background:${value}"></i>${name}</span>`,
-    )
-    .join('');
+  let color = tokens.color ?? {};
+  let gap = (tokens.scale ?? [8])[1] ?? 8;
+  let pad = (tokens.scale ?? [16])[2] ?? 16;
+  let accent = color.accent ?? color.ink ?? '#5a586a';
+  return `<div class="theme" style="
+      --r:${tokens.radius ?? 4}px; --gap:${gap}px; --pad:${pad}px;
+      --ink:${color.ink ?? '#272330'}; --surface:${color.surface ?? '#fff'};
+      --accent:${accent}; --muted:${color.muted ?? '#b9b9c0'};">
+    <div class="tcard">
+      <div class="trow"><span class="tdot"></span><b>${tokens.name ?? '—'}</b></div>
+      <div class="tbar"></div>
+      <div class="tbar short"></div>
+      <div class="tactions">
+        <span class="tbtn">Confirm</span>
+        ${color.warning ? '<span class="twarn">Check stock</span>' : ''}
+      </div>
+    </div>
+  </div>
+  <div class="swatches">${Object.entries(color)
+    .map(([name, value]) => `<span class="sw"><i style="background:${value}"></i>${name}</span>`)
+    .join('')}</div>`;
 }
 
 document.getElementById('board').innerHTML = `
   <header>
-    <h1>Two agents, one depot</h1>
+    <div class="crumb">deck · example · W1</div>
+    <h1>A rule resolves it. No rule refuses.</h1>
     <p>
-      Both were editing at the same moment. They never collided on their own
-      decks — ${pill('deck', 'ui/table')} and ${pill('deck', 'charts/spark')}
-      are different names, so there is nothing to merge. They collided on the
-      one thing they share: ${pill('deck', 'std/tokens')}.
+      Two agents edited at the same moment. On their own decks —
+      ${pill('deck', 'ui/table')} and ${pill('deck', 'charts/spark')} — there
+      was nothing to merge. On ${pill('deck', 'std/tokens')} there was.
     </p>
-    ${legend()}
   </header>
+
+  <div class="refusal">
+    <b>refused</b>
+    <p><code>name</code> has no rule in <code>merge-policy.json</code>, so the
+      resolver wrote <strong>nothing at all</strong> — not even the keys it
+      could have settled. Agent A's tree is byte for byte what it was. A
+      resolver that quietly picks a side is worse than none, because you stop
+      reading its output.</p>
+  </div>
 
   <section class="sets">
     ${SETS.map(
@@ -57,12 +84,9 @@ document.getElementById('board').innerHTML = `
       <article>
         <h2>${set.label}</h2>
         ${pill('deck', set.url.replace(/^\/site\//, '').replace(/\/tokens\.json$/, ''), { wrap: true })}
-        <dl>
-          <dt>name</dt><dd>${sets[i]?.name ?? '—'}</dd>
-          <dt>radius</dt><dd>${sets[i]?.radius ?? '—'}</dd>
-          <dt>scale</dt><dd>${(sets[i]?.scale ?? []).join(' · ') || '—'}</dd>
-        </dl>
-        <div class="swatches">${swatches(sets[i])}</div>
+        ${preview(sets[i])}
+        <p class="nums">radius <b>${sets[i]?.radius ?? '—'}</b> · scale
+          <b>${(sets[i]?.scale ?? []).join(' · ') || '—'}</b></p>
       </article>`,
     ).join('')}
   </section>
@@ -70,13 +94,11 @@ document.getElementById('board').innerHTML = `
   <section>
     <h2>What the policy decided</h2>
     <p>
-      Agent A and upstream changed the same two keys differently. Nothing
-      generic can resolve that, because nothing generic knows that
-      <code>scale</code> is a set and <code>radius</code> is a scalar with a
-      house rule. Those rules are published data —
-      <code>merge-policy.json</code>, in upstream's own sealed tree — so the
-      resolution is a pure function of three values and a rule anyone can
-      read.
+      Nothing generic can resolve two different answers to one key, because
+      nothing generic knows that <code>scale</code> is a set and
+      <code>radius</code> is a scalar with a house rule. The rules are
+      published data, in upstream's own sealed tree, so the resolution is a
+      pure function of three values and a rule anyone can read.
     </p>
     ${
       decisions?.length
@@ -97,12 +119,6 @@ document.getElementById('board').innerHTML = `
           </table>`
         : '<p class="quiet">no decisions recorded</p>'
     }
-    <p>
-      And one key it refused: <code>name</code> has no rule, so the resolver
-      wrote <strong>nothing at all</strong> — not even the keys it could have
-      settled. A resolver that quietly picks a side is worse than none,
-      because you stop reading its output.
-    </p>
   </section>
 
   <section>
@@ -143,6 +159,29 @@ document.head.insertAdjacentHTML(
   dl { display: grid; grid-template-columns: auto 1fr; gap: .1rem .7rem; margin: .8rem 0 .6rem; font-size: .88rem; }
   dt { color: var(--quiet); }
   dd { margin: 0; font-family: var(--mono); }
+  .crumb { font: 600 11px var(--sans); letter-spacing: .11em; text-transform: uppercase; color: var(--quiet); }
+  .refusal { display: flex; gap: .9rem; align-items: flex-start; margin: 0 0 1.6rem;
+    background: #fff1f1; border: 1px solid #f0c9c9; border-left: 5px solid #c02626;
+    border-radius: 10px; padding: .85rem 1rem; }
+  .refusal b { font: 600 .72rem var(--sans); letter-spacing: .1em; text-transform: uppercase;
+    color: #c02626; padding-top: .18rem; }
+  .refusal p { margin: 0; font-size: .88rem; color: #6b1a1a; }
+  .refusal strong { color: #c02626; }
+  /* The preview paints itself from the set's own tokens. Nothing here picks a
+     colour or a radius — every value below comes off the JSON. */
+  .theme { margin: .8rem 0 .6rem; }
+  .tcard { background: var(--surface); color: var(--ink); border: 1px solid #e2e8f0;
+    border-radius: var(--r); padding: var(--pad); display: grid; gap: var(--gap); }
+  .trow { display: flex; align-items: center; gap: .5rem; font-size: .9rem; }
+  .tdot { width: .7rem; height: .7rem; border-radius: var(--r); background: var(--accent); }
+  .tbar { height: .5rem; border-radius: var(--r); background: var(--muted); opacity: .45; }
+  .tbar.short { width: 60%; }
+  .tactions { display: flex; gap: var(--gap); align-items: center; }
+  .tbtn { background: var(--accent); color: #fff; border-radius: var(--r);
+    padding: .3rem .7rem; font-size: .78rem; }
+  .twarn { color: #d97706; font-size: .78rem; }
+  .nums { margin: .3rem 0 0; font-size: .78rem; color: var(--quiet); }
+  .nums b { color: var(--body); font-family: var(--mono); }
   .swatches { display: flex; flex-wrap: wrap; gap: .4rem; font-size: .76rem; color: var(--body); }
   .sw { display: inline-flex; align-items: center; gap: .3rem; }
   .sw i { width: .8rem; height: .8rem; border-radius: 3px; border: 1px solid var(--line); }

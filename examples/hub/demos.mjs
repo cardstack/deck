@@ -129,12 +129,13 @@ export const DEMOS = [
     dir: 'two-agents',
     port: 8795,
     workload: 'W1 · concurrent agents',
-    title: 'Two agents at once, and the merge that needs a rule',
-    lede: `Two agents editing the same depot in the same minute. On their own
-      decks there is nothing to merge, because they never wrote to the same
-      name. On the one thing they share, they eventually do — and the generic
-      merge refuses, correctly, because it does not know what the key means.`,
+    title: 'A rule resolves it. No rule refuses.',
+    lede: `Two agents editing the same depot in the same minute. Each token
+      set is rendered as the interface it describes, so an edit repaints
+      something you recognise — and the one key nobody wrote a rule for is the
+      loudest thing on the page.`,
     look: [
+      'The three sets are drawn as three small interfaces, from their own values. Agent A rounded the corners and picked a green accent; agent B added a warning colour. Nothing on the page chooses those — they come off the JSON.',
       'Both component saves auto-publish and are <b>sealed</b> — this is the demo that runs a Timeline, so every save has a changeId, not just every publish.',
       'Round one: three different keys under one object. Both forks absorb upstream and keep their own addition. Nobody reviewed anything.',
       'Round two: the same two keys, two answers. Reported <code>conflicted</code>, and the fork’s tree hash is byte-identical before and after — a conflicted pass writes nothing at all.',
