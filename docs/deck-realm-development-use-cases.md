@@ -20,7 +20,7 @@ order) · 📐 designed, later phase.
 STATUS UPDATE (2026-08-07, after the at-rest descope and the L0–L5
 build): the at-rest protocol is BUILT — publish, dist-tags, versioned
 serving, compiled modules, and the importmap.json manifest (see
-`deck-at-rest-protocol.md`). The gate, migrations, security verbs, and
+`deck-at-rest.md`). The gate, migrations, security verbs, and
 the shim layer are DEFERRED by ruling, so their cells below read 📐.
 The old 🔨 S-numbers refer to the pre-descope build plan.
 

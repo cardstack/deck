@@ -8,7 +8,7 @@
 
 Status (updated 2026-08-07): the at-rest half of this story (Stages
 A–D: play, name, test, release) is BUILT — see
-`deck-at-rest-protocol.md`. Stage E's migration machinery and the
+`deck-at-rest.md`. Stage E's migration machinery and the
 manifest/shim layer are deferred design; today documents move by
 direct edits or agent batches.
 

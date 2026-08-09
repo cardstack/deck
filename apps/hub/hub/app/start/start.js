@@ -1062,7 +1062,13 @@ function view(state) {
     // contents and a desktop reader can still collapse it.
     `<details class="toc" data-role="toc"${WIDE.matches ? ' open' : ''}>` +
     `<summary>contents</summary>` +
-    `<nav>${toc}</nav>` +
+    // The Deckbook is the long form of this page and a separate document, so
+    // it belongs in the same contents list — marked as a departure rather
+    // than dressed up as one more section of this one.
+    `<nav>${toc}` +
+    `<a class="toc-out" href="/deckbook"><i>↗</i>The Deckbook<br>` +
+    `<span class="dim">worked examples, full transcripts</span></a>` +
+    `</nav>` +
     `</details>` +
     `<main class="start-main" data-role="main">` +
     // WHAT IS THIS. The hero said "Everything here is runnable", which is a
@@ -1338,6 +1344,14 @@ ul.plain li { margin-bottom: 4px; }
 .toc a:hover { color: var(--fg); }
 .toc a[data-here='1'] { color: var(--fg); font-weight: 600; }
 .toc a[data-here='1'] i { opacity: 1; color: var(--a-package); }
+/* A departure from this page, so it sits below a rule rather than in the
+   run of sections — the numbering stops and the arrow says why. */
+.toc-out {
+  margin-top: var(--s2); padding-top: var(--s2) !important;
+  border-top: 1px solid var(--line);
+}
+.toc-out i { color: var(--a-package); opacity: 1 !important; }
+.toc-out .dim { display: block; }
 
 @media (min-width: 62rem) {
   .start {

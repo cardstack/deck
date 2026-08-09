@@ -16,7 +16,7 @@ read of
 unpkg-esm transformer, unpkg-files Fly.io origin, unpkg-worker shared
 lib, plus the 891-line `docs/esm-unpkg-spec.md`). Compared against the
 Deck at-rest implementation on the `deck/*` stacked branches
-(HEAD cc0be4c532). Companion: `deck-at-rest-protocol.md`.
+(HEAD cc0be4c532). Companion: `deck-at-rest.md`.
 
 The two systems differ in **sourcing** and agree in **delivery**:
 

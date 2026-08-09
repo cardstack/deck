@@ -14,9 +14,13 @@ vendored in (PDF-font-style embedding). A pack can live INSIDE a
 deck and be used recursively via a path or a local root alias. Both
 directions of the transformation belong in the protocol.
 
-Companions: `deck-at-rest-protocol.md` (the at-rest half),
-`deck-cardpack-requirements.md` (the recovered cardpack v0.2 logic
-this design supersedes and absorbs).
+Companions: `deck-at-rest.md` (the at-rest half),
+`deck-cardpack-requirements.md` (the recovered v0.2 logic this design
+supersedes and absorbs).
+
+Naming, current: the artifact is a **Deck Pack**, and the file form is
+`.pack.zip`. `cardpack` and `.cardpack` are the v0.2 names, kept below only
+where the text is about what v0.2 did.
 
 ## 1. One identity, four homes
 

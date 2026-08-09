@@ -9,7 +9,7 @@
 Status: IMPLEMENTED, 2026-08-07. Commit `cc0be4c532` on the branch
 `deck/05-package-map`. All tests pass. This file stays as the design
 record. The current protocol description is
-`deck-at-rest-protocol.md`. This file uses ASD-STE100 Simplified
+`deck-at-rest.md`. This file uses ASD-STE100 Simplified
 Technical English.
 
 ## 1. The rules this design follows

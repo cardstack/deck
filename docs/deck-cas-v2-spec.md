@@ -18,7 +18,7 @@ Original status: **SPEC** (2026-08-08) — design for three coupled workstreams 
 harden content addressing without changing `tree-hash-v1` identity.
 Companions: `deck-pack-equivalence.md` (homes, carriage, round-trip laws),
 `deck-competitive-gaps.md` (G5 signatures, G1 distribution),
-`deck-at-rest-protocol.md` (serving rules), `packages/core/src/tree-hash.ts`
+`deck-at-rest.md` (serving rules), `packages/core/src/tree-hash.ts`
 (normative v1 algorithm).
 
 ## 0. Problem and non-goals

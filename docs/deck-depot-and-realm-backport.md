@@ -4,7 +4,7 @@
 That word is Boxel’s. This note freezes the standalone terms and how they
 map when Deck is backported onto a realm server.
 
-Companions: `deck-at-rest-protocol.md` (still realm-shaped in places —
+Companions: `deck-at-rest.md` (still realm-shaped in places —
 historical), `deck-laws.md`, `packages/server` URL grammar.
 
 ---

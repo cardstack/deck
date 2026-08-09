@@ -8,6 +8,12 @@
   /* Boxel light surface tier — the same tokens the workspace chrome uses:
      one stage colour, white panels, hairline borders, a teal interactive,
      and shadows that stay under the content. */
+  /* CONTRAST IS MEASURED, NOT JUDGED BY EYE.
+     Every colour used for text meets WCAG AA (4.5:1) against both --bg and
+     --panel. Two did not and were darkened: --faint was 3.18 and --accent
+     was 3.22, which is the band that looks fine to whoever chose it and is
+     unreadable to a fair number of people who did not.
+     Measured with the ratios in docs/deck-hub-typography.md §6. */
   :root {
     --bg: #f7f8fa;
     --panel: #ffffff;
@@ -16,8 +22,8 @@
     --hairline: #eceef1;
     --text: #272330;
     --muted: #5a586a;
-    --faint: #8b8b93;
-    --accent: #0c9d7c;
+    --faint: #6f6f78;
+    --accent: #097a60;
     --accent-2: #0069f9;
     --warn: #b45309;
     --danger: #d92d20;
@@ -26,6 +32,14 @@
     --sans: "IBM Plex Serif", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     --ui: "IBM Plex Sans", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   }
+  /* The link back to /start. Set in the mono, in capitals, the same wordmark
+     treatment the Hub nav uses — one name, one face, wherever it appears. */
+  .up {
+    display: inline-block; margin-bottom: 1rem;
+    font-family: var(--mono); font-size: 0.78rem; font-weight: 700;
+    letter-spacing: 0.12em; color: var(--text); text-decoration: none;
+  }
+  .up:hover { color: var(--accent-2); text-decoration: none; }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
@@ -264,6 +278,9 @@
 <body>
 <div class="wrap">
 <nav class="toc" aria-label="Deckbook contents">
+  <!-- The way back. This page is reached from /start's contents rail, and a
+       document you can enter and not leave is a trap. -->
+  <a class="up" href="/start">← DECK · start</a>
   <h1><span>Deck</span>book</h1>
   <p class="blurb">Taught from the reference implementation — what runs, what it means, what to try next.</p>
   <ol>
@@ -273,7 +290,7 @@
     <li><a href="#volatility">4. Three volatilities</a></li>
     <li><a href="#loop">5. The live loop</a></li>
     <li><a href="#store">6. Store &amp; packs</a></li>
-    <li><a href="#history">7. History tiers</a></li>
+    <li><a href="#history">7. History: Versions, or a Timeline</a></li>
     <li><a href="#vendor">8. Safe vendor</a></li>
     <li><a href="#fork">9. Fork, lock, offers</a></li>
     <li><a href="#http">10. HTTP surface</a></li>
@@ -296,8 +313,8 @@
   </p>
   <div class="badges">
     <span class="badge ok">Reference impl built</span>
-    <span class="badge ok">Tier‑1 store always on</span>
-    <span class="badge ok">Tier‑2 history optional</span>
+    <span class="badge ok">Versions always on</span>
+    <span class="badge ok">Timeline optional</span>
     <span class="badge dim">No framework required</span>
   </div>
 </header>
@@ -315,9 +332,9 @@
     <tbody>
       <tr><td>Instant feedback</td><td>Version-less URL → working tree, <code>Cache-Control: no-store</code></td></tr>
       <tr><td>Never lose work</td><td>Auto-publish <code>&lt;base&gt;-dev.N</code> + optional per-save seals</td></tr>
-      <tr><td>Revert anytime</td><td><code>deck unpack</code> a pack, or <code>deck restore &lt;changeId&gt;</code> (tier 2)</td></tr>
+      <tr><td>Revert anytime</td><td><code>deck unpack</code> a pack, or <code>deck restore &lt;changeId&gt;</code> (with a Timeline)</td></tr>
       <tr><td>Ship any version</td><td><code>deck release --from dev</code> — pointer, zero bytes copied</td></tr>
-      <tr><td>Share a milestone</td><td><code>deck pack</code> → <code>.pack.zip</code> (standard zip)</td></tr>
+      <tr><td>Share a milestone</td><td><code>deck pack</code> → a Deck Pack (<code>.pack.zip</code>, a standard zip)</td></tr>
       <tr><td>Use any library</td><td><code>deck vendor</code> hermetic CDN graph → your store</td></tr>
       <tr><td>Fork freely</td><td><code>deck fork</code> into your publisher scope</td></tr>
       <tr><td>Stability on demand</td><td><code>deck lock</code> turns ranges into exact pins</td></tr>
@@ -336,10 +353,10 @@
       <tr><td><strong>deck</strong></td><td>A package: <code>&lt;publisher&gt;/&lt;name&gt;</code> with an <code>importmap.json</code>.</td></tr>
       <tr><td><strong>decklist</strong></td><td>The manifest entry: versions, entry, exports, declared deps.</td></tr>
       <tr><td><strong>live tree</strong></td><td>Bytes on disk right now. Editing surface.</td></tr>
-      <tr><td><strong>sealed deck / version</strong></td><td>Immutable published state addressed by semver.</td></tr>
-      <tr><td><strong>pack</strong></td><td><code>.pack.zip</code> — faithful transport of a tree + packlist.</td></tr>
+      <tr><td><strong>Version</strong></td><td>A published tree that does not change. A semver number addresses it. (Was “sealed deck”.)</td></tr>
+      <tr><td><strong>Deck Pack</strong></td><td><code>.pack.zip</code> — one tree and its packlist in one file. Any zip tool opens it. (Was “cardpack”.)</td></tr>
       <tr><td><strong>treeHash</strong></td><td>Content identity of a whole tree (<code>tree-hash-v1</code>).</td></tr>
-      <tr><td><strong>seal / changeId</strong></td><td>Tier‑2 history checkpoint (jj / historyd).</td></tr>
+      <tr><td><strong>Step / changeId</strong></td><td>One capture of the working tree, one for each save. The Steps in order are the Timeline. Needs a history backend (jj / historyd).</td></tr>
       <tr><td><strong>offer</strong></td><td>A fork that records its upstream base — a proposal you can run.</td></tr>
     </tbody>
   </table>
@@ -359,7 +376,7 @@
        /site/acme/palette@1.1.0/palette.js
                                         sealed copy, immutable forever
        /site/_history/&lt;changeId&gt;/acme/palette/palette.js
-                                        any state it was ever in (tier 2)</code></pre>
+                                        any Step it was ever in</code></pre>
   <div class="callout">
     <strong>Publisher segment = fork boundary.</strong>
     <code>acme/palette</code> and <code>you/palette</code> are different
@@ -393,7 +410,7 @@
 # → debounce (~500ms quiet)
 # → treeHash unchanged? stop
 # → packFromDir → publish &lt;base&gt;-dev.N, tag:dev
-# → [tier 2] history backend seals the save too
+# → [with a Timeline] the save is recorded as a Step too
 
 deck release --depot ./work/site --publisher acme --name palette \
   --version 1.1.0 --from dev --tag latest</code></pre>
@@ -424,18 +441,20 @@ deck release --depot ./work/site --publisher acme --name palette \
 </section>
 
 <section id="history">
-  <h2>7. History tiers (be honest)</h2>
+  <h2>7. History: Versions, or a Timeline</h2>
+  <p>A depot has one of two answers, and the server reports which. These are
+  not numbered levels — each one has a name that says what you get.</p>
   <table>
-    <thead><tr><th>Tier</th><th>What you get</th><th>Status</th></tr></thead>
+    <thead><tr><th>Answer</th><th>What you get</th><th>Status</th></tr></thead>
     <tbody>
       <tr>
-        <td><strong>1 — store only</strong></td>
-        <td>Every settled save → immutable <code>-dev.N</code> pack. Restore by unpacking. No seals between publishes.</td>
+        <td><strong>Versions only</strong></td>
+        <td>Every settled save becomes an immutable <code>-dev.N</code> Version. The Versions are the history. Restore by unpacking one.</td>
         <td><span class="badge ok">Always on</span></td>
       </tr>
       <tr>
-        <td><strong>2 — jj / historyd</strong></td>
-        <td>Every save sealed; <code>/&lt;depot&gt;/_history/&lt;changeId&gt;/…</code>; <code>deck history</code> / <code>deck restore</code>; packlist can name <code>sealChangeId</code>.</td>
+        <td><strong>A Timeline</strong></td>
+        <td>Every save also becomes a Step at <code>/&lt;depot&gt;/_history/&lt;changeId&gt;/…</code>, with <code>deck history</code> and <code>deck restore</code>. A packlist can name the Step it was cut from.</td>
         <td><span class="badge ok">Implemented</span> when <code>--history auto|jj|historyd</code> attaches</td>
       </tr>
     </tbody>
@@ -443,7 +462,7 @@ deck release --depot ./work/site --publisher acme --name palette \
   <div class="callout warn">
     <strong>Capability is reported, not pretended.</strong>
     <code>GET /_packages</code> includes a history block (<code>tier</code>, <code>jj</code>, <code>historyd</code>).
-    Missing jj or a dead daemon degrades to tier 1 with a printed reason — the live/auto-publish loop keeps working.
+    Missing jj or a dead daemon leaves the depot with Versions only, and prints the reason — the live/auto-publish loop keeps working.
   </div>
 <pre><code>deck serve --root ./work --history auto
 deck history ./work/site
@@ -509,7 +528,7 @@ GET /site/_offers</code></pre>
       <tr><td><code>?meta</code></td><td>Machine-readable listing (incl. seal when present)</td></tr>
       <tr><td><code>?format=pack</code></td><td>Faithful stored pack bytes</td></tr>
       <tr><td><code>…/vendor.pack.zip!/inner.js</code></td><td>Mount into a nested pack (depth-capped)</td></tr>
-      <tr><td><code>GET /&lt;depot&gt;/_history</code></td><td>Seal log (tier 2)</td></tr>
+      <tr><td><code>GET /&lt;depot&gt;/_history</code></td><td>The Timeline, when a history backend is attached</td></tr>
       <tr><td><code>GET /&lt;depot&gt;/_history/&lt;id&gt;/…</code></td><td>File at any seal</td></tr>
       <tr><td><code>GET /_packages</code></td><td>Catalog + capability truth</td></tr>
       <tr><td><code>GET /_browse/…</code></td><td>Directory / file JSON for the store browser</td></tr>
@@ -617,7 +636,7 @@ content-type: text/javascript; charset=utf-8
 repr-digest: sha-256=:LCVAhA3V5YjeY287uQSy1dLTffMDbV7pvtIxdhQlxNA=:
 x-deck-depot: tool</code></pre>
   <div class="callout warn">
-    <strong>Without <code>jj</code></strong> the first line reads tier 1
+    <strong>Without <code>jj</code></strong> the first line reads Versions only
     instead, and everything else here still works. You keep every settled save
     as an immutable version; what you lose is the saves <em>between</em>
     publishes, and with them <code>deck history</code> and
@@ -1001,7 +1020,7 @@ nothing written. One person decides one key, instead of three.</code></pre>
   </p>
   <div class="callout">
     Runnable: <code>pnpm --filter @deck/example-two-agents demo</code>, or the
-    <b>two-agents</b> panel in the hub. It is also the demo that turns tier-2
+    <b>two-agents</b> panel in the hub. It is also the demo that turns a Timeline
     history on, so every save there has a changeId and not just every publish.
   </div>
 
@@ -1062,7 +1081,7 @@ C  app/gallery@1.1.0-try.c  tags: try-c   1305 bytes, still rebuilds</code></pre
     <li><a href="/_packages">/_packages</a> — JSON catalog + history capability block</li>
     <li><a href="/_live/hmr.js">/_live/hmr.js</a> — drop-in HMR client source</li>
     <li><a href="/site/_offers">/&lt;depot&gt;/_offers</a> — the open proposals, re-merged on read</li>
-    <li><a href="/site/_history">/&lt;depot&gt;/_history</a> — the seal log, when tier 2 attached</li>
+    <li><a href="/site/_history">/&lt;depot&gt;/_history</a> — the Timeline, when a history backend is attached</li>
   </ul>
   <p>
     And <code>pnpm demo</code> in the repo starts all seven examples at once —

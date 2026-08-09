@@ -250,6 +250,13 @@ Design set in [docs/](docs/) — start with:
   disk: layout, store, addresses, and what the Timeline adds. The earlier
   ratified version is kept unedited at
   [reference/at-rest-protocol-v2.md](reference/at-rest-protocol-v2.md).
+- [deck-in-motion.md](docs/deck-in-motion.md) — the other half: offers,
+  claims, notes, signing and testing, each labelled by how finished it is.
+  The at-rest half is settled; this one is not, and the file says which
+  parts are which.
+- [deck-testing.md](docs/deck-testing.md) — a test suite is a deck, a run
+  is one suite Version against one tree hash, you run it locally, and the
+  result is a statement signed by a person. Designed, not built.
 - [deck-step-version-vocabulary.md](docs/deck-step-version-vocabulary.md)
   — Version, Step and Timeline, and the words they replaced.
 - [deck-hub-typography.md](docs/deck-hub-typography.md) — the type
