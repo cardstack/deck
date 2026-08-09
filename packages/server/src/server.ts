@@ -1366,6 +1366,25 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         );
         return;
       }
+      // Live trees redirect a deck directory to its index.html. History must
+      // do the same: `/_history/<id>/app/form` without that hop is served as
+      // application/octet-stream (no extension), and the browser downloads a
+      // file named `form` instead of framing the page.
+      let leaf = rest.split('/').pop() ?? '';
+      if (!leaf.includes('.')) {
+        let index = `${rest}/index.html`;
+        if (isValidHistoryPath(index)) {
+          let indexBytes = await backend.fileAt(depot.dir, revision, index);
+          if (indexBytes !== undefined) {
+            respond(req, res, 302, {
+              location: `/${depot.name}/_history/${revision}/${index}${search}`,
+              'cache-control': IMMUTABLE_CACHE,
+              'access-control-allow-origin': '*',
+            });
+            return;
+          }
+        }
+      }
       let bytes = await backend.fileAt(depot.dir, revision, rest);
       if (bytes === undefined) {
         respondError(

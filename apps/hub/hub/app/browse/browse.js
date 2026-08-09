@@ -27,13 +27,13 @@
 import 'ui/nav';
 import { installNavStyles, onLiveChange } from 'ui/nav';
 import {
-  heatCell,
-  heatScale,
-  installHeatStyles,
-  loadHeat,
-  onHeatChange,
+  activityCell,
+  activityScale,
+  installActivityStyles,
+  loadActivity,
+  onActivityChange,
   scoreOf,
-} from 'ui/heat';
+} from 'ui/activity';
 import { diffLines, diffWordsWithSpace, structuredPatch } from 'diff';
 import hljs from 'highlight-js';
 import {
@@ -46,7 +46,7 @@ import {
 import { storeReactivityBindings } from '@tanstack/table-core/dist/store-reactivity-bindings.js';
 
 installNavStyles();
-installHeatStyles();
+installActivityStyles();
 
 const app = document.getElementById('app');
 const keys = document.querySelector('deck-keys');
@@ -605,13 +605,13 @@ function listing(parsed, attrs) {
   let heats = ordered.map((entry) =>
     scoreOf(`/${parsed.depot}/${parsed.publisher}/${parsed.pkg}/${entry.path}`),
   );
-  let scale = heatScale(heats.map((entry) => entry.score));
+  let scale = activityScale(heats.map((entry) => entry.score));
   let body = ordered
     .map((entry, index) => {
       let at = addressOf({ ...parsed, path: entry.path });
       return (
         `<tr data-name="${esc(entry.name.toLowerCase())}">` +
-        heatCell(scale(heats[index].score), { last: heats[index].last }) +
+        activityCell(scale(heats[index].score), { last: heats[index].last, claims: heats[index].claims }) +
         `<td><a href="?at=${esc(at)}" data-at="${esc(at)}" ` +
         `class="${entry.type === 'dir' ? 's-dir' : 's-file'}">` +
         `${esc(entry.name)}${entry.type === 'dir' ? '/' : ''}</a></td>` +
@@ -948,7 +948,7 @@ async function viewDepots() {
   // Heat first, so the list arrives already sorted by where the work is
   // rather than alphabetically by an accident of naming.
   let scored = data.map((depot) => ({ depot, ...scoreOf(`/${depot.name}`) }));
-  let scale = heatScale(scored.map((row) => row.score));
+  let scale = activityScale(scored.map((row) => row.score));
   return (
     `<h1>depots on this server</h1>` +
     `<table><thead><tr><th class="heat-cell"></th><th>depot</th>` +
@@ -956,9 +956,9 @@ async function viewDepots() {
     `<th>history</th><th>on disk</th></tr></thead><tbody>` +
     scored
       .map(
-        ({ depot, score, last }) =>
+        ({ depot, score, last, claims }) =>
           `<tr data-name="${esc(depot.name)}">` +
-          heatCell(scale(score), { last }) +
+          activityCell(scale(score), { last, claims }) +
           `<td><a class="s-depot" href="?at=/${esc(depot.name)}" ` +
           `data-at="/${esc(depot.name)}">${esc(depot.name)}</a></td>` +
           `<td class="num">${depot.packages.length}</td>` +
@@ -998,7 +998,7 @@ async function viewCatalog(parsed) {
   let heats = decks.map((deck) =>
     scoreOf(`/${depot.name}/${deck.publisher}/${deck.name}`),
   );
-  let scale = heatScale(heats.map((entry) => entry.score));
+  let scale = activityScale(heats.map((entry) => entry.score));
   let rows = decks
     .map((deck, index) => {
       let at = `/${depot.name}/${deck.publisher}/${deck.name}`;
@@ -1006,7 +1006,7 @@ async function viewCatalog(parsed) {
       let newest = deck.distTags?.latest ?? versions.at(-1);
       return (
         `<tr data-name="${esc(`${deck.publisher}/${deck.name}`.toLowerCase())}">` +
-        heatCell(scale(heats[index].score), { last: heats[index].last }) +
+        activityCell(scale(heats[index].score), { last: heats[index].last, claims: heats[index].claims }) +
         `<td><a href="?at=${esc(at)}" data-at="${esc(at)}">` +
         `${parsed.publisher ? '' : `<span class="s-publisher">${esc(deck.publisher)}</span><span class="sep">/</span>`}` +
         `<span class="s-package">${esc(deck.name)}</span></a></td>` +
@@ -1754,7 +1754,7 @@ app.addEventListener('change', (event) => {
 
 // Heat before the first paint, so no list renders undecorated and then jumps.
 // One small request, and every view reads it synchronously afterwards.
-await loadHeat();
+await loadActivity();
 // And again whenever the depot moves. A decoration that only updates on
 // reload is a decoration that lies for as long as the tab stays open — which,
 // for the person watching an agent work, is the whole time.
@@ -1764,10 +1764,10 @@ await loadHeat();
 // discards scroll position, any gap the reader had expanded, and any file
 // they had folded, several times a minute while an agent is running. Reading
 // code in a live depot has to be possible.
-onHeatChange(() => {
+onActivityChange(() => {
   if (app.querySelector('pre.blob')) return;
   render();
 });
-onLiveChange(() => loadHeat());
+onLiveChange(() => loadActivity());
 
 render();

@@ -1,25 +1,26 @@
-// Heat — one decoration, every list, everywhere.
+// Activity — where the work is, and who has declared they are doing it.
 //
-// The Hub is a front end for a thing that is being WORKED ON, usually right
-// now, often by an agent that is faster than you are. A list of ten depots
-// that reads the same whether one of them was touched four seconds ago or
-// four months ago is a list you cannot navigate; you can only search it, and
-// searching requires already knowing the answer.
+// Two channels, and the protocol is explicit that they must never be blended
+// (docs/deck-activity-protocol.md §1.1):
 //
-// So every list here decorates its rows with heat, and heat means the same
-// thing in all of them: how much change has landed here lately, weighted so
-// that recent counts more. Follow the warm row down and you arrive at the
-// file being edited, without having been told where to look.
+//   TOUCH   bytes actually changed here lately.       Observed.  score/last
+//   CLAIM   somebody SAID they are working here.      Declared.  claims[]
 //
-// WHY THIS IS ONE MODULE AND NOT FOUR IMPLEMENTATIONS. If /browse invented
-// its own warmth and /run invented another, the same depot would read hot in
-// one and cold in the next, and a reader would stop trusting the colour —
-// which costs more than never having had it. It is one function over one
-// endpoint, imported by every app at `ui/heat`.
+// A claim with no edits yet is the most informative thing on the screen: work
+// about to happen, and the only warning anyone gets. Blending it into one
+// number would erase exactly that, and would make "how much landed here"
+// something an agent could inflate by announcing itself. So they are two
+// signals with two colours, never one.
 //
-// The server (hub.mjs) does the decay; see the note there for why the score
-// is a sum. Everything below is the consequence: because it is a sum, rolling
-// up to a prefix is `filter + add`, and there is nothing to keep in sync.
+// This was `ui/heat` and read `/_hub/heat`, a ranking the Hub computed for
+// its own decoration. It now reads `/_activity` from the depot server, which
+// every mount answers — so a second consumer cannot invent a second ranking
+// that disagrees with this one.
+//
+// WHY ONE MODULE. If /browse invented its own warmth and /run invented
+// another, the same deck would read hot in one and cold in the next, and a
+// reader would stop trusting the colour — which costs more than never having
+// had it.
 
 let REPORT = { now: Date.now(), scores: {}, last: {} };
 let listeners = new Set();
@@ -31,19 +32,34 @@ let listeners = new Set();
  * keep the list. Everything below degrades to zero, which renders as an
  * ordinary undecorated row.
  */
-export async function loadHeat() {
+export async function loadActivity() {
   try {
-    let response = await fetch('/_hub/heat', { headers: { accept: 'application/json' } });
-    if (response.ok) REPORT = await response.json();
+    let response = await fetch('/_activity?top=400&grain=file', {
+      headers: { accept: 'application/json' },
+    });
+    if (response.ok) {
+      let body = await response.json();
+      // The endpoint answers foci; this index wants them by id, because every
+      // caller asks "what about this address" rather than "give me the top".
+      let scores = {};
+      let last = {};
+      let claims = {};
+      for (let focus of body.foci ?? []) {
+        scores[focus.id] = focus.score;
+        last[focus.id] = focus.last;
+        if (focus.claims?.length) claims[focus.id] = focus.claims;
+      }
+      REPORT = { now: body.now, scores, last, claims };
+    }
   } catch {
-    // no decoration this time
+    // Soft degrade: no endpoint, no decoration, and the list still works.
   }
   for (let listener of listeners) listener();
   return REPORT;
 }
 
 /** Re-fetch whenever the depot changes, so a row warms while you watch it. */
-export function onHeatChange(listener) {
+export function onActivityChange(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
@@ -65,13 +81,20 @@ export function scoreOf(prefix) {
   let score = 0;
   let last = 0;
   let files = 0;
+  let claims = [];
   for (let [path, value] of Object.entries(REPORT.scores ?? {})) {
     if (path !== clean && !path.startsWith(`${clean}/`)) continue;
     score += value;
     files += 1;
     last = Math.max(last, REPORT.last?.[path] ?? 0);
   }
-  return { score, last, files };
+  // Claims roll up the same way touch does — a claim on a file makes its deck
+  // claimed, because that is what somebody working in there means.
+  for (let [path, list] of Object.entries(REPORT.claims ?? {})) {
+    if (path !== clean && !path.startsWith(`${clean}/`)) continue;
+    claims.push(...list);
+  }
+  return { score, last, files, claims };
 }
 
 /**
@@ -90,7 +113,7 @@ export function scoreOf(prefix) {
  * rows up to where they are still visible, which is exactly the population
  * this is for.
  */
-export function heatScale(scores) {
+export function activityScale(scores) {
   let max = Math.max(0, ...scores);
   if (max <= 0) return () => 0;
   return (score) => (score <= 0 ? 0 : Math.min(1, (score / max) ** 0.25));
@@ -121,15 +144,32 @@ export function decorate(element, heat, detail = {}) {
 }
 
 /** The markup for the heat gutter cell. Same glyph in every app. */
-export function heatCell(heat, detail = {}) {
-  let when = detail.last ? ago(detail.last) : '';
+export function activityCell(heat, detail = {}) {
+  let when = detail.last ? `touched ${ago(detail.last)}` : '';
+  let claims = detail.claims ?? [];
+  // A CLAIM OUTRANKS WARMTH IN THE GUTTER. Warmth is the past and a claim is
+  // the present, so when both are true the bar reports the claim — the reader
+  // needs to know somebody is in there before they need to know how busy it
+  // has been. The time still prints, so nothing is lost.
+  let title = claims.length
+    ? `claimed by ${claims.map((claim) => claim.actor).join(', ')}` +
+      (claims[0].text ? ` — ${claims[0].text}` : '')
+    : when;
   return (
     `<td class="heat-cell" style="--heat:${heat.toFixed(3)}" ` +
-    `data-heat="${heat > 0.02 ? 1 : 0}"${when ? ` title="last change ${when}"` : ''}>` +
+    `data-heat="${heat > 0.02 ? 1 : 0}"` +
+    `${claims.length ? ' data-claimed="1"' : ''}` +
+    `${title ? ` title="${title.replace(/"/g, '&quot;')}"` : ''}>` +
     `<span class="heat-bar"></span>` +
-    `<span class="heat-when">${when}</span></td>`
+    `<span class="heat-when">${claims.length ? esc(claims[0].actor) : ago(detail.last ?? 0)}</span></td>`
   );
 }
+
+const esc = (value) =>
+  String(value).replace(
+    /[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
+  );
 
 // The colours are inherited from the page's palette, never declared here, for
 // the same reason the nav does it: a theme is a deck, and this has to look
@@ -140,7 +180,7 @@ export function heatCell(heat, detail = {}) {
 // nine things selected in it. A bar in the gutter is a second channel that
 // nothing else is using, and it stacks with hover and cursor states instead
 // of fighting them.
-export const HEAT_CSS = `
+export const ACTIVITY_CSS = `
 .heat-cell {
   width: 1%; white-space: nowrap; padding-right: 1ch;
   vertical-align: baseline;
@@ -155,6 +195,14 @@ export const HEAT_CSS = `
   opacity: calc(0.15 + 0.85 * var(--heat, 0));
 }
 .heat-cell[data-heat='0'] .heat-bar { background: var(--line); opacity: .5; }
+/* The claim channel: a different colour, never a hotter green. Two signals,
+   two hues — the protocol is explicit that they must not read as one scale,
+   because "busy lately" and "somebody is in here now" are different facts
+   and only one of them is a reason to wait. */
+.heat-cell[data-claimed='1'] .heat-bar {
+  background: var(--a-publisher); opacity: 1;
+}
+.heat-cell[data-claimed='1'] .heat-when { color: var(--a-publisher); opacity: 1; }
 .heat-when {
   display: inline-block; min-width: 5ch; margin-left: .8ch;
   font-size: 11px; color: var(--dim);
@@ -176,10 +224,10 @@ export const HEAT_CSS = `
 }
 `;
 
-export function installHeatStyles(doc = document) {
-  if (doc.querySelector('style[data-deck-heat]')) return;
+export function installActivityStyles(doc = document) {
+  if (doc.querySelector('style[data-deck-activity]')) return;
   let style = doc.createElement('style');
-  style.dataset.deckHeat = 'v1';
-  style.textContent = HEAT_CSS;
+  style.dataset.deckActivity = 'v1';
+  style.textContent = ACTIVITY_CSS;
   doc.head.append(style);
 }

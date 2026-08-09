@@ -26,16 +26,16 @@ import {
 } from 'ui/timeline';
 import {
   ago,
-  heatCell,
-  heatScale,
-  installHeatStyles,
-  loadHeat,
-  onHeatChange,
+  activityCell,
+  activityScale,
+  installActivityStyles,
+  loadActivity,
+  onActivityChange,
   scoreOf,
-} from 'ui/heat';
+} from 'ui/activity';
 
 installNavStyles();
-installHeatStyles();
+installActivityStyles();
 installTimelineStyles();
 
 const app = document.getElementById('app');
@@ -295,12 +295,12 @@ async function viewIndex() {
   // meaning, same module as /browse and /track — a reader who has learned it
   // once has learned it everywhere.
   let heats = items.map((item) => scoreOf(`/${item.depot}/${item.deck}`));
-  let scale = heatScale(heats.map((entry) => entry.score));
+  let scale = activityScale(heats.map((entry) => entry.score));
   let rows = items
     .map(
       (item, index) =>
         `<tr data-name="${esc(item.at.toLowerCase())}">` +
-        heatCell(scale(heats[index].score), { last: heats[index].last }) +
+        activityCell(scale(heats[index].score), { last: heats[index].last, claims: heats[index].claims }) +
         `<td><a href="?at=${esc(item.at)}" data-at="${esc(item.at)}">` +
         `<span class="s-depot">${esc(item.depot)}</span><span class="sep">/</span>` +
         `<span class="s-publisher">${esc(item.publisher)}</span><span class="sep">/</span>` +
@@ -850,12 +850,12 @@ app.addEventListener('input', (event) => {
 });
 
 await loadOrigins();
-await loadHeat();
-onHeatChange(() => {
+await loadActivity();
+onActivityChange(() => {
   // Only the index is decorated, and re-rendering while a demo is framed
   // would tear the iframe down and restart whatever it was doing.
   if (!currentAt()) render();
 });
-onLiveChange(() => loadHeat());
+onLiveChange(() => loadActivity());
 
 render();

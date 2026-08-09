@@ -8,16 +8,16 @@
     },
     "dependencies": {
       "ui/nav": "live",
-      "ui/heat": "live",
-      "ui/timeline": "live"
+      "ui/timeline": "live",
+      "ui/activity": "live"
     }
   },
   "imports": {
     "ui/nav/": "/hub/ui/nav/",
     "ui/nav": "/hub/ui/nav/nav.js",
-    "ui/heat/": "/hub/ui/heat/",
-    "ui/heat": "/hub/ui/heat/heat.js",
     "ui/timeline/": "/hub/ui/timeline/",
-    "ui/timeline": "/hub/ui/timeline/timeline.js"
+    "ui/timeline": "/hub/ui/timeline/timeline.js",
+    "ui/activity/": "/hub/ui/activity/",
+    "ui/activity": "/hub/ui/activity/activity.js"
   }
 }

@@ -1,9 +1,9 @@
 {
   "deck": {
     "packages": {
-      "heat": {
+      "activity": {
         "version": "0.1.0",
-        "entry": "$DECK/heat.js"
+        "entry": "$DECK/activity.js"
       }
     }
   }
