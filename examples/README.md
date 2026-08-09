@@ -30,7 +30,7 @@ real address space, not a demo router.
 | [fork-a-language](fork-a-language/) | W3 — bespoke to generic | A two-pane console: **type an expression** and both dialects evaluate it live. The parser differs, the evaluator is byte-identical, and each pane prints the digest of the bytes it fetched. |
 | [field-library](field-library/) | W4 — patterns and fields | A shipment form built from seven field decks. **Edit the seventh in the page**: the save auto-publishes `1.0.0-dev.N`, and the form redraws at `?with=`. Also aliasing, scopes (two chroma-js versions in one document), and dedupe. |
 | [two-agents](two-agents/) | W1 — concurrent agents | Three token sets, each **rendered as the interface it describes**, so an agent's edit repaints something recognisable. A merge policy published as data resolves the keys it covers and refuses — writing nothing — for the one it does not. Runs a Timeline, so every save has a changeId. |
-| [variations](variations/) | W4 — choosing agent output | An agent offers three answers at three layers. Review is four iframes of one sealed page. Choosing is `deck release --from try-b` — a tag moves, zero bytes copied — and the two you rejected stay published and addressable, just not `latest`. |
+| [variations](variations/) | W4 — choosing agent output | A plant shop, and an agent's three answers to "make it denser" — one per layer, each looking obviously unlike the other two. Review is four iframes of one sealed page. Choosing is `deck release --from try-b`: a tag moves, zero bytes copied, and the two you rejected stay addressable. |
 
 ## Three kinds of name
 

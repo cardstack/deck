@@ -718,7 +718,14 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         })
       ).map(({ scope, imports: table }) => [scope, table]),
     );
-    return { imports, scopes };
+    // A version the caller NAMED beats one derived from what a substitute
+    // declares. `?with=app/gallery@1.0.0&with=ui/card@1.0.0` asks for two
+    // exact things; without this, the gallery's own scope re-resolves its
+    // `ui/card: ^1.0.0` range against the store and quietly reinstates
+    // whatever `latest` points at — so the trial disagrees with itself and
+    // renders the version the caller was trying to avoid. A range in a
+    // substitute is a question; the query string already answered it.
+    return { imports, scopes: rebindScopes(scopes, imports) };
   }
 
   async function readLiveBytes(

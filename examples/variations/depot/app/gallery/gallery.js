@@ -1,14 +1,18 @@
 // The composition layer. Arranges cards; owns nothing else.
+//
+// It decides how many cards fit across, and that is the third place an agent
+// could answer "make it denser" — the narrowest of the three, because nothing
+// outside this page changes.
 import { tokens } from 'std/tokens';
 import { card } from 'ui/card';
 
 const ITEMS = [
-  { title: 'Ingest', note: 'warehouse → staging, hourly' },
-  { title: 'Reconcile', note: 'two ledgers, one truth' },
-  { title: 'Publish', note: 'sealed, immutable, addressable' },
-  { title: 'Notify', note: 'only when something changed' },
-  { title: 'Archive', note: 'cold storage after 90 days' },
-  { title: 'Audit', note: 'who saw what, and when' },
+  { title: 'Monstera deliciosa', light: 'bright, indirect', price: 24, pot: '#3f6f4f' },
+  { title: 'Snake plant', light: 'anywhere, honestly', price: 16, pot: '#8a9a5b' },
+  { title: 'Fiddle-leaf fig', light: 'bright, fussy', price: 45, pot: '#c08457' },
+  { title: 'Pothos', light: 'low light, forgiving', price: 12, pot: '#6b8f71' },
+  { title: 'Rubber plant', light: 'medium, steady', price: 28, pot: '#7d5a50' },
+  { title: 'ZZ plant', light: 'shade, near-immortal', price: 19, pot: '#4f6457' },
 ];
 
 export async function gallery() {
