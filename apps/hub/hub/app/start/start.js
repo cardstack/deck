@@ -478,10 +478,28 @@ const LAWS = [
 ];
 
 const PROTOCOL = `
-<p class="lede">Deck is a protocol, not a product — the same way Matrix is a
-protocol with a reference server. What follows is what a second
-implementation has to agree with. It is small: twelve laws, one
-hash, three address forms and a handful of read-only endpoints.</p>
+<p class="lede">This section is what a second implementation must agree with.
+It is small: twelve laws, one hash, three forms of address, and a few
+read-only endpoints.</p>
+
+<p><b>Be accurate about the word "protocol".</b> Deck is an addressing scheme
+and two formats, supplied over HTTP with defined cache behaviour. It is not a
+federation protocol. Matrix defines how independent servers exchange messages
+with each other; Deck defines what a URL means, what the bytes at that URL
+are, and how long a client may keep them. Those are different sizes of
+claim.</p>
+
+<p>The part that is most like a protocol is the <b>address</b>. Two programs
+that agree on the grammar below, and on the cache rule for each form of
+address, can exchange packages without any other agreement. The
+<code>tree-hash-v1</code> algorithm and the Deck Pack are <b>formats</b>, in
+the same sense that a tarball and a digest are formats. The store layout, the
+command-line tool and the watcher are <b>implementation</b>, and the laws say
+so: nothing requires a server to store anything the way this one does.</p>
+
+<p>Deck does have one part that needs two servers: an offer, and an
+endorsement addressed by tree hash. Those are the beginning of federation.
+They are not finished, and this page does not count them.</p>
 
 <h3>The shape of an address</h3>
 <pre class="term"><code>/&lt;depot&gt;/&lt;publisher&gt;/&lt;package&gt;[@&lt;spec&gt;]/&lt;path&gt;
@@ -955,8 +973,7 @@ function view(state) {
     `<header class="hero">` +
     // The mark, then the sentence. Only the NAME is the mark — "is" belongs to
     // the sentence and takes the sentence's face, or the mark grows a word.
-    `<h1><b>DECK</b> is a protocol to store, to version and to serve code as
-     files with addresses.</h1>` +
+    `<h1><b>DECK</b> gives code an address, a version, and a history.</h1>` +
     `<p class="lede">A directory is also a URL space. Each file in the
      directory has an address. The address shows where the file is. Each save
      becomes a state that does not change. You can go back to any of these
@@ -965,10 +982,11 @@ function view(state) {
      depot. The server then supplies that library. There is no install step, no
      lockfile and no bundler. The browser runs the bytes that are on the disk.
      An import map gives the address of each byte when the browser asks.</p>` +
-    `<p class="lede">Deck is a protocol first. It has twelve laws and a test
-     suite that examines them. This server and its command-line tool are the
-     reference implementation. If a different implementation obeys the test
-     suite, that implementation is also Deck.</p>` +
+    `<p class="lede">What Deck specifies is small: the grammar of the address,
+     the bytes that the address supplies, and how long a client may keep them.
+     Twelve laws state it, and a test suite examines them. This server and its
+     command-line tool are one implementation. If a different implementation
+     obeys the test suite, that implementation is also Deck.</p>` +
     `<p class="lede">The three lenses at the top of the page ask three
      questions about one address: what the address is, what it does, and what
      changed. The lenses are decks. This server supplies them from the store

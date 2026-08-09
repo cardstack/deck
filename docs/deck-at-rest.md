@@ -7,6 +7,16 @@ Simplified Technical English.
 It replaces `reference/at-rest-protocol-v2.md`, which stays in the repository
 without changes because it is the record of the rulings of 2026-08-07.
 
+**What Deck specifies, and what it does not.** Deck is an addressing scheme
+and two formats, supplied over HTTP with defined cache behaviour. The address
+grammar, the cache rule for each form of address, and the read-only endpoints
+are the agreement between two programs. `tree-hash-v1` and the Deck Pack are
+formats. The store layout in section 3, the command-line tool and the watcher
+are implementation: no law requires a server to store anything this way.
+
+Deck is not a federation protocol. Offers and endorsements addressed by tree
+hash are the parts that need two servers, and they are not finished.
+
 **The laws are the contract, not this document.** `docs/deck-laws.md` states
 the twelve laws. `packages/conformance` examines them, and it also examines a
 broken implementation, to prove that the examination can fail.
