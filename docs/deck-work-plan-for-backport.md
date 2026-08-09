@@ -1,6 +1,6 @@
 # Work plan: make the backport a one-way port
 
-**Status: PLAN** (2026-08-09). The deck-repo counterpart to
+**Status: PLAN** (2026-08-09). Branch: `deck/backport-ready`. The deck-repo counterpart to
 [`deck-boxel-monorepo-change-register.md`](deck-boxel-monorepo-change-register.md),
 which lists what changes inside `cardstack/boxel`.
 
@@ -127,8 +127,10 @@ publishes to, and the name it will have *after* it moves into the monorepo,
 so relocating is a directory move with no consumer churn. Doing it in one
 pass keeps it out of every other diff.
 
-**Blocked on:** confirmation that publishing is intended at all. `deck` on
-npm is someone else's.
+**Decided (2026-08-09): `@cardstack/deck`.** A scope Cardstack already
+publishes to, and the name Core will keep after it moves into the monorepo,
+so relocating becomes a directory move with no consumer churn. Do the rename
+before W6's entry consolidation, or the same import sites get touched twice.
 
 ### W9 — the L12 amendment
 
@@ -149,6 +151,27 @@ realm must accept writes. Better fixed here than discovered in review.
 monorepo PR arrives demonstrated rather than argued. The second decides the
 512 MB / 10,000-entry ceiling, and therefore whether `bare` mode can replace
 the download button outright or must coexist with it.
+
+---
+
+## 1a. Embroider lessons applied
+
+From `deck-embroider-lessons.md`, read against the real repo at
+`~/Projects/embroider`:
+
+| | Lesson | State |
+| --- | --- | --- |
+| §4 | Dynamic import policy — only string-literal `import()` | **done.** The lexer now counts unanalyzable calls instead of skipping them, and conformance binds it under L6. Found and fixed a worse bug on the way: `import('./p/' + x)` was being recorded as a real edge to `./p/`. |
+| §3 | Compat out of `@deck/server` | **done.** Lint rule over `packages/server/src/**`, verified to fire. |
+| §7 | Catalog verbs pull by default | already the model — `extends` (W1) is pull; remix is the copy-on-write escape hatch. |
+| §1 | Scenario suite over ugly real packages | not started. The highest-leverage remaining item. |
+| §5 | Graph performance budget in CI | not started. |
+| §6 | Tree-diff the watcher hot path | not started. |
+| §2 | Native-deck checklist | not started (doc). |
+| §8 | Ambiguity resolution table | not started (doc + tests). |
+
+The two that landed were the two that were *enforceable*. The rest are
+either already true or need a body of fixtures behind them.
 
 ---
 
@@ -184,12 +207,16 @@ packaging — real, but it does not block Boxel from starting.
 
 | | Item | State |
 | --- | --- | --- |
-| — | Browser-safe Core surface, lint-enforced | **done** (`deck/core-boundary`) |
+| — | Browser-safe Core surface, lint-enforced | **done** |
 | — | Resolver takes the importer | **done** |
 | W1 | `extends` | **done** — core, server, conformance, `examples/remix` |
 | W2 | absolute-reference classifier | **done** — `@deck/core/classify`, conformance L11 |
 | W3 | provenance block | **done** — `PackProvenance`, `intakeReadiness`, conformance L11 |
 | W4 | pack modes `bare` / `hermetic` | **decision layer done** — `planPack`; byte carriage reuses `vendor.ts`, not yet wired |
 | W5 | foreign conformance | **done** — `--export` + at-rest excluded from foreign runs |
-| W6 | one entry + types | next |
-| W7–W10 | | not started |
+| W6 | one entry + types | next — after W8, or the same imports move twice |
+| W7 | lean trim | not started |
+| W8 | naming → `@cardstack/deck` | **decided**; rename not yet done |
+| W9 | L12 amendment | not started |
+| W10 | two proofs | scopes proof partly covered by `examples/remix` |
+| — | Embroider §3 and §4 | **applied** (see §1a) |
