@@ -7,7 +7,7 @@ locator, commentary — without a second focus API.
 
 Companions: `deck-live-autopublish.md`, `deck-hub-brief.md` (`/track`,
 `/run`, `/browse`), `deck-land-hostnames.md`, `deck-laws.md`,
-`deck-tick-version-vocabulary.md` (Version / Tick / Timeline).  
+`deck-step-version-vocabulary.md` (Version / Step / Timeline).  
 Supersedes: `deck-heat-protocol.md` (folded in here).
 
 ---

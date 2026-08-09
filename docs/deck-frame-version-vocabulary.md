@@ -1,5 +1,5 @@
-# Frame · Version · Timeline → Tick
+# Frame · Version · Timeline → Step
 
-**Superseded** (2026-08-09). **Frame** renamed to **Tick**.
+**Superseded** (2026-08-09). Frame → Tick → **Step**.
 
-See **[deck-tick-version-vocabulary.md](deck-tick-version-vocabulary.md)**.
+See **[deck-step-version-vocabulary.md](deck-step-version-vocabulary.md)**.

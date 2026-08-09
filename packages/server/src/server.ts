@@ -1377,6 +1377,71 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         );
         return;
       }
+      // A STEP HAS TO BE RUNNABLE, OR IT IS ONLY READABLE.
+      //
+      // This served the bytes and injected nothing, so framing a page from
+      // three steps ago produced a document whose every import 404'd — a
+      // blank iframe, the exact failure this codebase spent a morning
+      // removing. Stepping back through a timeline is only a time dimension
+      // if the thing you step to still runs.
+      //
+      // The map comes from THAT step, not from the working tree, which is
+      // the more correct reading anyway: a page from three steps ago should
+      // resolve with the pins it had three steps ago. Taking today's pins
+      // would silently show you a hybrid that never existed.
+      let injected = false;
+      if (rest.endsWith('.html')) {
+        let segments = rest.split('/');
+        if (segments.length >= 3) {
+          let mapPath = `${segments[0]}/${segments[1]}/${IMPORT_MAP_PATH}`;
+          let mapBytes = await backend.fileAt(depot.dir, revision, mapPath);
+          if (mapBytes) {
+            try {
+              let parsed = JSON.parse(mapBytes.toString('utf8'));
+              // AND ITS LIVE PINS RESOLVE INSIDE THE STEP.
+              //
+              // `deck lock` writes a versionless target for a dependency
+              // declared `live` — `/hub/ui/nav/nav.js`. Left alone, a page
+              // from three steps ago would load its own old bytes wired to
+              // TODAY's dependencies: a hybrid that never ran, presented as
+              // history. Worse than not offering the step at all.
+              //
+              // A step is a whole-depot snapshot, so every live pin has a
+              // state inside it. Rewriting only the versionless targets is
+              // exact — an `@1.4.0` pin is immutable and already means the
+              // same bytes at any point on the timeline.
+              let intoStep = (target: string) =>
+                target.startsWith(`/${depot.name}/`) &&
+                !target.includes('@') &&
+                !target.startsWith(`/${depot.name}/_history/`)
+                  ? `/${depot.name}/_history/${revision}/${target.slice(
+                      depot.name.length + 2,
+                    )}`
+                  : target;
+              let atStep = (table: Record<string, string>) =>
+                Object.fromEntries(
+                  Object.entries(table ?? {}).map(([key, value]) => [
+                    key,
+                    intoStep(value),
+                  ]),
+                );
+              ({ bytes, injected } = injectImportMap(
+                bytes,
+                atStep(parsed.imports ?? {}),
+                Object.fromEntries(
+                  Object.entries(
+                    (parsed.scopes ?? {}) as Record<string, Record<string, string>>,
+                  ).map(([scope, table]) => [intoStep(scope), atStep(table)]),
+                ),
+              ));
+            } catch {
+              // A step whose import map does not parse is a step that was
+              // saved mid-edit. Serve the page as it was — unresolved and
+              // honest — rather than refusing to show it at all.
+            }
+          }
+        }
+      }
       // A sealed state never changes — the same caching promise an exact
       // version gets, for a state that was never published at all.
       respond(
@@ -1389,6 +1454,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           'repr-digest': reprDigest(bytes),
           'x-deck-seal': revision,
           'x-deck-depot': depot.name,
+          ...(injected ? { 'x-deck-importmap': 'injected' } : {}),
           'access-control-allow-origin': '*',
         },
         bytes,
