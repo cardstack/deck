@@ -180,12 +180,34 @@ referenced a binding from inside `if (buildMode !== 'serve')` in code that
 runs after it, so the process printed its whole transcript, printed
 "serving", and then died. All eleven now boot and serve.
 
-**Not done.**
+- **`contribute-to-codelist`** — both proposals are boards at the top, side
+  by side, each with one control: `try this one`. The conflicted one looks
+  like a stopped machine and says the thing the old copy buried — it still
+  runs; what stopped is the merge into upstream.
+- **`variations`** — the subject is a plant shop, and the three answers stop
+  looking alike: A tightens and squares every token, B changes what a card
+  *is*, C doubles the columns. One axis each.
+- **`potluck`, `three-js`, `prosemirror`** — copy and framing. potluck no
+  longer mentions Deck to a reader signing up for lunch, and names the deck
+  behind each control on hover; three.js leads with the canvases; prosemirror
+  states its gap in two sentences.
 
-- `contribute-to-codelist` — still a picker. The brief wants two proposals
-  side by side as running boards with one `try this one` control.
-- `variations` — still about variations of a card. The brief wants the
-  subject moved to something a person would argue about, such as a product
-  page hero.
-- `potluck`, `three-js`, `prosemirror` — the copy and framing pass in
-  section 3 has not been made.
+**Two bugs the rebuild found, both invisible before it.**
+
+Five demos crashed on start — each referenced a binding from inside
+`if (buildMode !== 'serve')` in code that runs after it, so the process
+printed its whole transcript, printed "serving", and died. All eleven boot
+now.
+
+And `?with=` disagreed with itself. A trial resolves each substitute's own
+scopes, which is what lets a substitute bring its dependencies along; but a
+substitute that declares a *range* had that range re-resolved against the
+store, quietly reinstating whatever `latest` names. The variations page
+pinned `ui/card@1.0.0` for its "before" frame and rendered variation B. A
+version the caller named now wins inside those scopes too.
+
+**Still open.** The Hub only runs a watcher over depots that declare editable
+files, so an edit made anywhere else in a demo depot does not auto-publish
+while the Hub is what is serving it. That is deliberate — nine watchers over
+trees nobody is editing costs descriptors for no signal — but it means the
+live loop is only demonstrable where an editor is offered.
