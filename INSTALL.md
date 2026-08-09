@@ -94,7 +94,7 @@ the same run.
 pnpm test && pnpm lint
 ```
 
-Expect 185 core, 19 history, 76 server, 4 conformance, 13 CLI — all
+Expect 189 core, 22 history, 79 server, 4 conformance, 13 CLI — all
 passing — and no lint or type errors.
 
 ## Check whether you got a Timeline

@@ -147,3 +147,45 @@ state its rebuild gap as a fact in one line, not a paragraph.
 5. `two-agents` — make the theme visible.
 6. `potluck`, `three-js`, `prosemirror`, `fork-an-app` — copy and framing
    only.
+
+---
+
+## 5. What was done, 2026-08-09
+
+Against section 4's order. Written after the work, not before it.
+
+**Rebuilt.**
+
+- **`field-library`** — the largest change. A shipment form over seven field
+  decks, one of which the reader edits in the page. The save goes through a
+  separate process (`examples/shared/editor-bridge.mjs`), because the deck
+  server answers `GET` and `HEAD` and nothing else; the watcher publishes
+  `1.0.0-dev.N`, and the page reloads at `?with=` and redraws. The dedupe and
+  two-chroma evidence is one click down instead of three sections up.
+- **`fork-a-language`** — a two-pane console. Type an expression on either
+  side and both dialects evaluate it live. Each pane prints the SHA-256 of the
+  `eval.js` bytes it fetched, so byte-identical is measured on the page rather
+  than asserted beside it.
+- **`codelist`** — one board with a state switcher. Rows grow in and out as
+  you move between the four sealed states, the count moves with them, and the
+  rows that arrive flash once.
+- **`two-agents`** — each token set is drawn as the small interface it
+  describes, so an agent's edit repaints something recognisable. The refusal
+  is a banner above the sets rather than a closing paragraph.
+- **`fork-an-app`** — copy only, as planned. Four paragraphs cut to one line;
+  the cost sits under the map it is about.
+
+**Fixed along the way.** Five of the eleven demos crashed on start. Each
+referenced a binding from inside `if (buildMode !== 'serve')` in code that
+runs after it, so the process printed its whole transcript, printed
+"serving", and then died. All eleven now boot and serve.
+
+**Not done.**
+
+- `contribute-to-codelist` — still a picker. The brief wants two proposals
+  side by side as running boards with one `try this one` control.
+- `variations` — still about variations of a card. The brief wants the
+  subject moved to something a person would argue about, such as a product
+  page hero.
+- `potluck`, `three-js`, `prosemirror` — the copy and framing pass in
+  section 3 has not been made.
