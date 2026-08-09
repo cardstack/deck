@@ -1,6 +1,10 @@
 **/.store/
 *.log
 .DS_Store
+# pnpm's own content-addressable store. It normally lives under ~/Library, but
+# a run that cannot reach the global one drops a store here instead, and the
+# index is a machine-local cache over machine-local files.
+.pnpm-store/
 .deck/
 # A depot carries its own machinery inside itself, and none of it is source:
 # `.deck/` is the store, `.jj/` is the seal log, and jj colocates a backing
