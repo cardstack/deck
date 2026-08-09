@@ -1,55 +1,24 @@
-/* The Hub's one stylesheet, as a deck.
+/* The Hub's STRUCTURE, as a deck.
  *
- * Four apps, one lattice and one palette. It is not copied into each of them
- * and not built into a bundle — it is an ordinary deck at an ordinary
- * address, linked by every app, which is the same claim `ui/nav` makes and
- * the reason both exist as decks rather than as files.
+ * Four apps, one lattice. Not copied into each and not bundled — an ordinary
+ * deck at an ordinary address, linked by every app. Same claim `ui/nav`
+ * makes, and the reason both exist as decks rather than as files.
+ *
+ * There is NO PALETTE in here. Colour lives in a separate theme deck under
+ * `/hub/theme/<name>/`, which is nothing but custom properties, and the Hub
+ * swaps which one is linked. Splitting them is what makes a theme a thing
+ * somebody can write, seal, version and fork without touching a rule of
+ * layout — and it is why the theme format is CSS custom properties rather
+ * than JSON: a JSON palette needs a program to become styling, and custom
+ * properties ARE the styling, cascade and all, with nothing in between.
  *
  * A deck with NO ENTRY: nothing imports a stylesheet.
  */
 
 :root {
-  color-scheme: dark light;
   /* The lattice. Change these two and the page re-rules itself. */
   --row: 1.5;
   --gut: 2ch;
-
-  /* A near-neutral GROUND so code stays readable, and saturated
-     accents on top of it. The ground is grey; nothing else has to be. */
-  --bg: #151517;
-  --panel: #1e1e23;
-  --fg: #e4e4e8;
-  --dim: #85858f;
-  --line: #2f2f37;
-  --sel: #34343f;
-
-  --red: #ff6b81;
-  --green: #5fdd95;
-  --amber: #ffb454;
-  --blue: #6cb6ff;
-  --violet: #c792ea;
-  --cyan: #4fd6de;
-  --pink: #ff7bd5;
-  --orange: #ff9152;
-}
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f4f4f2;
-    --panel: #e7e7e3;
-    --fg: #18181b;
-    --dim: #6b6b73;
-    --line: #d6d6d1;
-    --sel: #dcdcd6;
-
-    --red: #c8283c;
-    --green: #147a48;
-    --amber: #9a6100;
-    --blue: #1a5fc4;
-    --violet: #7635bd;
-    --cyan: #0a7580;
-    --pink: #b3268f;
-    --orange: #bc5108;
-  }
 }
 
 /* ── COLOUR MEANS THE GRAMMAR ───────────────────────────────────────
@@ -107,8 +76,11 @@ body {
   font-variant-ligatures: none;
   -webkit-font-smoothing: antialiased;
 }
-a { color: var(--fg); text-decoration: underline; text-underline-offset: 2px; }
-a:hover { background: var(--sel); }
+/* Colour is the affordance; the underline is reserved for hover. A page made
+   almost entirely of addresses is unreadable when every one of them is
+   underlined — the rules stack up into texture and stop meaning anything. */
+a { color: var(--fg); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 2px; }
 :focus-visible { outline: 1px solid var(--fg); outline-offset: 1px; }
 /* The UA stylesheet sets `font-family: monospace` on pre/code/kbd and
    `font-family: <system>` on form controls, and both beat inheritance.
@@ -205,9 +177,12 @@ tr[hidden] { display: none; }
    at a glance from anywhere on the page, which is the whole job when
    the cursor is being driven by `j` and `k` rather than by a pointer. */
 tbody tr[data-here] { background: var(--sel); box-shadow: inset 3px 0 0 var(--a-package); }
-tbody tr[data-here] a { text-decoration: underline; }
 tbody tr:hover:not([data-here]) { background: var(--panel); }
 tbody td:first-child { padding-left: 3px; }
+/* The link fills its cell, so the click target is the row and not the glyphs
+   in it. Hitting a two-character filename should not require aim. */
+tbody td > a { display: block; }
+tbody td > a:hover { text-decoration: none; }
 .filter { margin-bottom: calc(var(--row) * .4em); }
 /* Related decks sit above the fold, not in a panel you have to look
    for: on this server the fork of the thing you are reading is usually
@@ -344,3 +319,58 @@ h2.scope {
   margin: calc(var(--row) * 1em) 0 calc(var(--row) * .2em) 0;
 }
 td.indent { padding-left: 2ch; }
+
+/* The way out of the frame: above it, never over it. */
+.stagebar { display: flex; justify-content: flex-end; }
+.popout {
+  padding: 0 1.5ch; color: var(--dim);
+  background: var(--panel); border: 1px solid var(--line); border-bottom: 0;
+}
+.popout:hover {
+  background: var(--a-package); color: var(--bg);
+  border-color: var(--a-package); text-decoration: none;
+}
+
+/* The theme picker rides in the nav, so every app has it. */
+.deck-nav-theme {
+  margin-right: 2ch; height: auto; padding: 0 2.5ch 0 1ch;
+  border-color: transparent; background-color: transparent; color: var(--dim);
+}
+.deck-nav-theme:hover { color: var(--fg); border-color: var(--line); }
+
+/* ── /track ─────────────────────────────────────────────────────────────── */
+
+/* Facets are toggles, and a pressed toggle must not be mistakable for an
+   unpressed one — so pressed is filled, not merely tinted. */
+.facets { display: inline-flex; flex-wrap: wrap; margin-bottom: calc(var(--row) * .6em); }
+.facet {
+  font: inherit; cursor: pointer; display: inline-flex; align-items: baseline; gap: .8ch;
+  padding: 0 1.5ch; height: calc(var(--row) * 1.3em);
+  background: var(--panel); color: var(--dim);
+  border: 1px solid var(--line); border-radius: 0;
+}
+.facet i { font-style: normal; }
+.facet b { font-weight: 400; opacity: .7; }
+.facet + .facet { border-left: 0; }
+.facet:hover { color: var(--fg); }
+.facet[aria-pressed] { background: var(--sel); color: var(--fg); border-color: var(--dim); }
+.facet[data-kind='seal'][aria-pressed] i { color: var(--a-seal); }
+.facet[data-kind='version'][aria-pressed] i { color: var(--a-sealed); }
+.facet[data-kind='proposal'][aria-pressed] i { color: var(--a-publisher); }
+
+table.track td.mark { white-space: nowrap; color: var(--dim); }
+table.track tr[data-kind='seal'] td.mark i { color: var(--a-seal); }
+table.track tr[data-kind='version'] td.mark i { color: var(--a-sealed); }
+table.track tr[data-kind='proposal'] td.mark i { color: var(--a-publisher); }
+/* `what` absorbs the slack so `compare` is never pushed off the edge — the
+   handoff into /browse is the row's reason to exist and must always be
+   reachable. */
+/* `what` absorbs the slack. Setting width:100% ON that cell is the trap —
+   in table layout it inflates the whole table past its container and pushes
+   the last column off the edge. The columns that should stay tight get
+   width:1% (shrink-to-fit) and the flexible one is left auto. */
+table.track td:not(:nth-child(4)), table.track th:not(:nth-child(4)) { width: 1%; }
+table.track td:nth-child(4), table.track th:nth-child(4) { width: auto; white-space: normal; }
+table.track td:last-child, table.track th:last-child { padding-right: 0; text-align: right; }
+table.track td:last-child a { white-space: nowrap; color: var(--a-package); }
+.facet[data-kind='dev'][aria-pressed] i { color: var(--dim); }

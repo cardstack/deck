@@ -85,6 +85,47 @@ async function publishOnce(_storeDir, name, version, bytes, options) {
   return { treeHash, reused: false };
 }
 
+
+/**
+ * Fold `process.env.NODE_ENV === "development"` to `false`.
+ *
+ * Several packages ship browser code that guards dev-only warnings on a Node
+ * global a browser does not have. It works everywhere else only because a
+ * bundler's define plugin constant-folds the condition away before the bytes
+ * reach a browser. Deck has no bundler, so it performs the same fold as an
+ * ordinary edit to ordinary files — the result is what every production
+ * bundle of these libraries already contains, arrived at by changing files
+ * you can read rather than by running a build you cannot.
+ *
+ * Fails closed: if nothing matched, or anything still reaches for `process`,
+ * this refuses rather than sealing a deck that throws on first use.
+ */
+// Both spellings of "am I in development", because packages disagree about
+// which way round to write it and each is a different string to match.
+const NODE_GUARDS = [
+  'process.env.NODE_ENV === "development"',
+  'process.env.NODE_ENV !== "production"',
+];
+
+function foldNodeGuard(files, label) {
+  let patched = [];
+  let out = files.map(({ path, bytes }) => {
+    let text = bytes.toString('utf8');
+    if (!NODE_GUARDS.some((guard) => text.includes(guard))) return { path, bytes };
+    patched.push(path);
+    for (let guard of NODE_GUARDS) text = text.split(guard).join('false');
+    return { path, bytes: Buffer.from(text, 'utf8') };
+  });
+  let stragglers = out.filter(({ bytes }) => bytes.toString('utf8').includes('process.'));
+  if (!patched.length || stragglers.length) {
+    throw new Error(
+      `${label}: folded ${patched.length} file(s), ${stragglers.length} still ` +
+        `reference process.* (${stragglers.map((file) => file.path).join(', ')})`,
+    );
+  }
+  return { files: out, patched };
+}
+
 console.log('\n  DECK HUB — vendoring the Hub\'s own dependencies\n');
 
 // ---------------------------------------------------------------------------
@@ -309,24 +350,7 @@ const TABLE_DECK = 'lib/tanstack-table-core';
   // with it, and the result is what every production bundle of this library
   // already contains — arrived at by changing nine files rather than by
   // running a build nobody can inspect afterwards.
-  const GUARD = 'process.env.NODE_ENV === "development"';
-  let patched = 0;
-  let files = table.files.map(({ path, bytes }) => {
-    let text = bytes.toString('utf8');
-    if (!text.includes(GUARD)) return { path, bytes };
-    patched += 1;
-    return { path, bytes: Buffer.from(text.split(GUARD).join('false'), 'utf8') };
-  });
-  // Fail closed: if upstream changes the spelling of that guard, this must
-  // stop rather than seal a deck that throws on first use.
-  let stragglers = files.filter(({ bytes }) => bytes.toString('utf8').includes('process.'));
-  if (!patched || stragglers.length) {
-    throw new Error(
-      `table-core browser fold: patched ${patched} file(s), ` +
-        `${stragglers.length} still reference process.* ` +
-        `(${stragglers.map((file) => file.path).join(', ')})`,
-    );
-  }
+  let { files, patched } = foldNodeGuard(table.files, 'table-core');
   const tableVersion = `9.1.1-browser.${hashBytes(
     Buffer.concat(files.map(({ bytes }) => bytes)),
   ).slice(0, 8)}`;
@@ -344,9 +368,7 @@ const TABLE_DECK = 'lib/tanstack-table-core';
               forkedFrom: {
                 package: '@tanstack/table-core',
                 version: '9.1.1',
-                changed: files
-                  .filter(({ bytes }, index) => bytes !== table.files[index].bytes)
-                  .map(({ path }) => path),
+                changed: patched,
                 reason:
                   'Nine files guard dev-only warnings with ' +
                   '`process.env.NODE_ENV === "development"`, which is not ' +
@@ -370,12 +392,75 @@ const TABLE_DECK = 'lib/tanstack-table-core';
       `${sealedTable.treeHash.slice(0, 12)}…${sealedTable.reused ? ' (already sealed)' : ''}`,
   );
   console.log(
-    `    folded the Node guard out of ${patched} of ${files.length} files — no bundler, no shim`,
+    `    folded the Node guard out of ${patched.length} of ${files.length} files — no bundler, no shim`,
   );
 }
 
 // ---------------------------------------------------------------------------
-// 4. Commit Mono — the typeface, as a deck.
+// 4. @tanstack/query-core — fetching, caching and invalidation for /track.
+//
+// `build/modern/index.js` is 24 modules; the same package's `.cjs` entry is a
+// bundle. Headless like table-core: it owns request state and renders
+// nothing.
+//
+// /track fans out over every mounted depot — a seal log, a version list and
+// an offers queue each — so the same depot gets asked the same question by
+// several facets at once. That is what a query cache is for, and writing one
+// by hand is how you end up with a worse one.
+// ---------------------------------------------------------------------------
+{
+  let vendored = await vendorFromNpmSource({
+    spec: '@tanstack/query-core@5.101.4',
+    policy: POLICY,
+    entry: 'build/modern/index.js',
+  });
+  // Same Node guard as table-core, same fold.
+  let { files, patched } = foldNodeGuard(vendored.files, 'query-core');
+  let version = `5.101.4-browser.${hashBytes(
+    Buffer.concat(files.map(({ bytes }) => bytes)),
+  ).slice(0, 8)}`;
+  let bytes = pack([
+    {
+      path: 'importmap.json',
+      bytes: json({
+        deck: {
+          packages: {
+            'tanstack-query-core': {
+              version,
+              entry: `$DECK/${vendored.entryPath}`,
+              vendoredFrom: vendored.vendoredFrom,
+              forkedFrom: {
+                package: '@tanstack/query-core',
+                version: '5.101.4',
+                changed: patched,
+                reason:
+                  '`process.env.NODE_ENV === "development"` guards folded to ' +
+                  '`false`, the same constant-fold a bundler performs, so the ' +
+                  'package runs in a browser without a build step or a shim.',
+              },
+            },
+          },
+        },
+      }),
+    },
+    ...files,
+  ]);
+  let { treeHash, reused } = await publishOnce(
+    storeDir,
+    'lib/tanstack-query-core',
+    version,
+    bytes,
+    { tag: 'browser' },
+  );
+  console.log(
+    `  lib/tanstack-query-core@${version}  ${vendored.modules.length} modules · ` +
+      `${treeHash.slice(0, 12)}…${reused ? ' (already sealed)' : ''}`,
+  );
+  console.log(`    folded the Node guard out of ${patched.length} files`);
+}
+
+// ---------------------------------------------------------------------------
+// 5. Commit Mono — the typeface, as a deck.
 //
 // L6 says a sealed deck reaches nothing at runtime, and a webfont from
 // Google's CDN is a runtime reach: a third party learns every reader's IP and

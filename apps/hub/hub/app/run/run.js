@@ -1,22 +1,18 @@
 // /run — the assembled, executing thing.
 //
 //   ?at=/three-js/app/studio/index.html   what to run
-//   &lens=read                            run it, or read what it resolved to
 //   &with=lib/three=me/three@0.160.0-holo…  swap a part, without a checkout
 //
-// THE TOGGLE IS THE PRODUCT.
-// ══════════════════════════
-// Every package site can show you source. A few can show you a demo. None can
-// show you that the source and the demo are the same bytes, because on every
-// other system they are not: what runs came out of a build, and what you read
-// went in. Here the address the browser executed IS the address you can open,
-// so `run` and `read` are two renderings of one fact rather than two artifacts
-// that ought to agree.
+// NO MODE. The page runs, and underneath it is the table of what it resolved
+// to. There was a run/read toggle here and it was ceremony: both facts fit on
+// one screen, and making them alternatives meant you could only ever see half
+// of the thing the app exists to show.
 //
-// `read` is therefore not "view source". It is the resolved import map — the
-// exact table the server injected into the page that is running — with every
-// node a link into /browse at the address that answered. On any other site
-// "what am I actually running" is an inference. Here it is a readout.
+// The table is not "view source" — /browse is view source. It is the RESOLVED
+// import map, the exact one the server injected into the document that ran,
+// with every node linking into /browse at the address that answered. On any
+// other package site "what am I actually running" is an inference. Here it is
+// a readout, sitting directly below the thing doing the running.
 import 'ui/nav';
 import { installNavStyles } from 'ui/nav';
 
@@ -33,16 +29,13 @@ const esc = (value) =>
 
 const params = () => new URLSearchParams(location.search);
 const currentAt = () => params().get('at') ?? '';
-const currentLens = () => (params().get('lens') === 'read' ? 'read' : 'run');
 const currentWith = () => params().getAll('with');
 
 function go(next = {}) {
   let query = new URLSearchParams();
   let at = 'at' in next ? next.at : currentAt();
-  let lens = 'lens' in next ? next.lens : currentLens();
   let withs = 'with' in next ? next.with : currentWith();
   if (at) query.set('at', at);
-  if (lens === 'read') query.set('lens', 'read');
   for (let value of withs) query.append('with', value);
   let text = query.toString();
   history.pushState({}, '', text ? `?${decodeURIComponent(text)}` : location.pathname);
@@ -197,19 +190,13 @@ function mapRows(table, indent = false) {
 }
 
 async function viewOne(at) {
-  let lens = currentLens();
   let withs = currentWith();
   let url = runUrl(at, withs);
   let head =
     `<div class="prompt"><span class="prompt-mark">deck run</span> ` +
     `<a href="?" data-at="">~</a><span class="sep">/</span>` +
     `<b>${esc(at.replace(/^\//, ''))}</b></div>` +
-    `<main>` +
-    // The toggle. One control, two positions, same place on every page.
-    `<div class="lens" data-lens="${lens}">` +
-    `<button data-role="lens" value="run"${lens === 'run' ? ' aria-current="true"' : ''}>run</button>` +
-    `<button data-role="lens" value="read"${lens === 'read' ? ' aria-current="true"' : ''}>read</button>` +
-    `</div>`;
+    `<main>`;
 
   if (withs.length) {
     // C5: a trial is not the sealed representation and must never be mistaken
@@ -220,18 +207,17 @@ async function viewOne(at) {
       ` <button data-role="clear-with">exit</button></div>`;
   }
 
-  if (lens === 'run') {
-    return (
-      head +
-      `<iframe class="stage" src="${esc(url)}" title="${esc(at)}"></iframe>` +
-      `<p class="raw"><a href="${esc(url)}">open standalone</a></p></main>`
-    );
-  }
-
   let map = await resolvedMap(url);
   let scopes = Object.entries(map.scopes ?? {});
   return (
     head +
+    // The way out of the frame sits ABOVE it, right-aligned. Overlapping the
+    // stage would cover the running page — the one thing on screen this app
+    // exists to show — and an iframe is already a compromise without the
+    // chrome eating a corner of it.
+    `<div class="stagebar"><a class="popout" href="${esc(url)}" ` +
+    `target="_blank" rel="noopener">Pop Out ↗</a></div>` +
+    `<iframe class="stage" src="${esc(url)}" title="${esc(at)}"></iframe>` +
     `<div class="facts">` +
     `<div><b>imports</b> ${Object.keys(map.imports ?? {}).filter((k) => !k.endsWith('/')).length}</div>` +
     `<div><b>scopes</b> ${scopes.length}</div>` +
@@ -286,9 +272,9 @@ function moveCursor(delta, absolute) {
 
 function bindings() {
   let list = [[['j', 'k'], 'move'], ['↵', 'open']];
-  if (currentAt()) list.push(['t', 'run / read'], ['u', 'up']);
+  if (currentAt()) list.push(['u', 'up']);
   if (app.querySelector('[data-role="filter"]')) list.push(['/', 'filter']);
-  list.push([['g', 'G'], 'ends'], ['y', 'copy address'], [['1', '4'], 'apps']);
+  list.push([['g', 'G'], 'ends'], ['y', 'copy address']);
   return list;
 }
 
@@ -319,8 +305,6 @@ addEventListener('keydown', (event) => {
       if (link) go({ at: link.dataset.at });
       return;
     }
-    case 't':
-      return go({ lens: currentLens() === 'run' ? 'read' : 'run' });
     case 'u':
       return go({ at: '' });
     case '/': {
@@ -338,8 +322,6 @@ addEventListener('keydown', (event) => {
 });
 
 app.addEventListener('click', (event) => {
-  let lens = event.target.closest('[data-role="lens"]');
-  if (lens) return go({ lens: lens.value });
   if (event.target.closest('[data-role="clear-with"]')) return go({ with: [] });
   let link = event.target.closest('a[data-at]');
   if (!link || event.metaKey || event.ctrlKey || event.shiftKey) return;

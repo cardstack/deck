@@ -51,10 +51,10 @@ const HUB = { name: 'hub', dir: join(here, 'hub') };
 // built says so; it does not 404 as though it were a typo, and it does not
 // quietly redirect somewhere else as though the user asked for that.
 const APPS = [
+  { route: 'start', deck: 'app/start', title: 'this machine now, and the docs' },
   { route: 'browse', deck: 'app/browse', title: 'the depot at rest' },
   { route: 'run', deck: 'app/run', title: 'the assembled, executing thing' },
   { route: 'track', deck: 'app/track', title: 'what changed, and where' },
-  { route: 'start', deck: 'app/start', title: 'this machine now, and the docs' },
 ];
 
 // ---------------------------------------------------------------------------

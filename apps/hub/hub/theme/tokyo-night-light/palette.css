@@ -1,0 +1,33 @@
+/* Tokyo Night Light (the "Day" flavour), as a Deck theme.
+ *
+ * Authentic values, including the one that makes it distinctive and slightly
+ * hard here: the foreground is `#3760bf`, a real blue. In an editor that is
+ * fine — code is mostly syntax-coloured anyway. In a document made almost
+ * entirely of addresses it means body text and links start from the same
+ * hue, and links lean on the hover underline to separate.
+ *
+ * Kept faithful rather than corrected. A theme deck that quietly rewrites its
+ * upstream is not that theme, and picking between honest alternatives is what
+ * the switcher is for.
+ *
+ * Upstream: enkia/tokyo-night-vscode-theme, Light.
+ */
+:root {
+  color-scheme: light;
+
+  --bg: #e1e2e7;
+  --panel: #d4d6de;
+  --fg: #3760bf;
+  --dim: #848cb5;
+  --line: #c4c8da;
+  --sel: #b7c1e3;
+
+  --red: #f52a65;
+  --green: #587539;
+  --amber: #8c6c3e;
+  --blue: #2e7de9;
+  --violet: #9854f1;
+  --cyan: #007197;
+  --pink: #d20065;
+  --orange: #b15c00;
+}

@@ -1188,7 +1188,7 @@ function bindings() {
   if (select('vs')) list.push(['d', 'compare']);
   if (app.querySelector('pre.diff')) list.push([['n', 'p'], 'change']);
   if (app.querySelector('.note a[href^="/"]')) list.push(['o', 'raw bytes']);
-  list.push([['g', 'G'], 'ends'], ['y', 'copy address'], [['1', '4'], 'apps']);
+  list.push([['g', 'G'], 'ends'], ['y', 'copy address']);
   return list;
 }
 

@@ -20,10 +20,10 @@
 // binding is documented anyway.
 
 const ROUTES = [
+  ['start', 'this machine now, and the docs'],
   ['browse', 'the depot at rest'],
   ['run', 'the assembled, executing thing'],
   ['track', 'what changed, and where'],
-  ['start', 'this machine now, and the docs'],
 ];
 
 const esc = (value) =>
@@ -31,6 +31,53 @@ const esc = (value) =>
     /[&<>"]/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
   );
+
+/**
+ * Themes are DECKS.
+ *
+ * `/hub/theme/<name>/palette.css` is an ordinary address holding nothing but
+ * custom properties, and switching theme is swapping which one is linked. So
+ * a theme can be written, sealed, versioned, endorsed and forked like
+ * anything else here, and adding one needs no change to this file beyond a
+ * line in the list.
+ *
+ * CSS custom properties rather than a JSON token file, deliberately: JSON
+ * needs a program to turn it into styling, and custom properties already ARE
+ * styling — cascade, media queries, per-element overrides and all — with
+ * nothing in between to ship or to go wrong.
+ */
+const THEMES = [
+  ['mocha', 'mocha'],
+  ['latte', 'latte'],
+  ['tokyo-night-light', 'tokyo night light'],
+];
+const THEME_KEY = 'deck.theme';
+
+/** The stored choice, or whichever the operating system is asking for. */
+function theme() {
+  let stored = localStorage.getItem(THEME_KEY);
+  if (stored && THEMES.some(([name]) => name === stored)) return stored;
+  return matchMedia('(prefers-color-scheme: light)').matches ? 'latte' : 'mocha';
+}
+
+export function applyTheme(name = theme()) {
+  localStorage.setItem(THEME_KEY, name);
+  let link = document.querySelector('link[data-role="palette"]');
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.dataset.role = 'palette';
+    document.head.append(link);
+  }
+  let href = `/hub/theme/${name}/palette.css`;
+  if (link.getAttribute('href') !== href) link.setAttribute('href', href);
+  let select = document.querySelector('[data-role="theme"]');
+  if (select && select.value !== name) select.value = name;
+}
+
+// At import time, before the app renders, so no page flashes an unstyled
+// palette while its module graph loads.
+applyTheme();
 
 export class DeckNav extends HTMLElement {
   connectedCallback() {
@@ -47,8 +94,18 @@ export class DeckNav extends HTMLElement {
           : `<a href="/${esc(route)}" title="${esc(title)}">${esc(route)}</a>`,
       ).join('') +
       `<span class="deck-nav-gap"></span>` +
+      `<select class="deck-nav-theme" data-role="theme" title="theme">` +
+      THEMES.map(
+        ([name, label]) =>
+          `<option value="${esc(name)}"${name === theme() ? ' selected' : ''}>` +
+          `${esc(label)}</option>`,
+      ).join('') +
+      `</select>` +
       `<span class="deck-nav-live" data-live="?">live</span>` +
       `</nav>`;
+    this.querySelector('[data-role="theme"]').addEventListener('change', (event) => {
+      applyTheme(event.target.value);
+    });
     this.#watchLive();
     this.#numberKeys();
   }
