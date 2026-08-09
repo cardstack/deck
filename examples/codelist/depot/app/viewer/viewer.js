@@ -1,19 +1,20 @@
-// The viewer is an ordinary consumer. It knows four URLs and fetches them
-// the way any page would — no Deck client library, no SDK. That is the
-// point: a sealed deck is just files at an address.
+// A reference-data board over four sealed states of one codelist.
 //
-// It renders the four states side by side so the *shape* of the merge is
-// visible: which keys each state has, who introduced them, and the fact
-// that nowhere in the sequence did anyone resolve a conflict.
+// The viewer is an ordinary consumer. It knows four URLs and fetches them the
+// way any page would — no Deck client library, no SDK. A sealed deck is just
+// files at an address.
+//
+// The four states are shown as one board rather than four columns, because
+// the thing worth seeing is a row arriving. Switch between states and the
+// rows grow in and out and the count changes. Two people amended this list at
+// the same time; both amendments are here, and nobody resolved anything.
 
-import { installPillStyles, legend, pill } from 'ui/pills';
+import { installPillStyles, pill } from 'ui/pills';
 
 const { depot, states } = await (await fetch('./states.json')).json();
 
 installPillStyles();
 
-// Fetch each sealed state. These are immutable URLs — the browser may cache
-// them forever, and the server says so.
 let loaded = await Promise.all(
   states.map(async (state) => ({
     ...state,
@@ -24,192 +25,196 @@ let loaded = await Promise.all(
   })),
 );
 
-let [shared, amended, fork, rebased] = loaded;
+let [shared, amended, fork] = loaded;
 
-// Every key that appears anywhere, so the columns line up and an absence is
-// as visible as a presence.
-let allKeys = [...new Set(loaded.flatMap((s) => Object.keys(s.codes)))].sort();
+// Every key that appears in any state, so a row can be absent rather than
+// missing. Rows keep their place in the board across a switch.
+let allKeys = [...new Set(loaded.flatMap((state) => Object.keys(state.codes)))].sort();
+let names = Object.fromEntries(
+  allKeys.map((key) => [key, loaded.find((state) => key in state.codes).codes[key]]),
+);
 
-// Where each key came from, for the legend colour.
-let origin = (key) => {
+const origin = (key) => {
   if (key in shared.codes) return 'base';
   if (key in fork.codes && !(key in amended.codes)) return 'acme';
   return 'added';
 };
-
 const ORIGIN_LABEL = {
   base: 'in 1.4.0 already',
   added: 'added upstream in 1.5.0',
   acme: "acme's internal code",
 };
 
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+
+let at = 0;
+let previous = 0;
+
 let app = document.querySelector('#app');
 app.classList.remove('loading');
 app.innerHTML = `
-  <header>
-    <h1>The merge that is not a conflict</h1>
-    <p class="lede">
-      Two people added different currency codes to the same list at the same
-      time. A codelist is a <em>set of keys</em>, so that was never a
-      conflict — only a line-based merge would have called it one.
-      All four states below are sealed versions at immutable URLs.
-      <strong>Nothing on this page required a login or a write endpoint.</strong>
-    </p>
-  </header>
+<div class="crumb">deck · example · W2</div>
+<h1>Two amendments. No conflict.</h1>
 
-  <section class="legend">
-    ${Object.entries(ORIGIN_LABEL)
-      .map(([k, label]) => `<span class="chip ${k}"><i></i>${label}</span>`)
-      .join('')}
-  </section>
+<div class="switch">
+  ${loaded
+    .map(
+      (state, index) => `<button data-at="${index}"${index === 0 ? ' class="on"' : ''}>
+        <b>${esc(state.deck)}@${esc(state.version)}</b>
+        <span>${esc(state.label)}</span>
+      </button>`,
+    )
+    .join('')}
+</div>
 
-  <section class="namekey">
-    ${legend(['deck'])}
-    <p class="namenote">
-      Every address on this page is a <em>Deck</em> address — this depot's own
-      delivery space. Nothing here came from a registry or a repository, which
-      is why there is only one pill to learn.
-    </p>
-  </section>
-
-  <section class="states">
-    ${loaded
+<section class="board">
+  <div class="bhead">
+    <div class="count"><b data-role="count">0</b><span>codes</span></div>
+    <p class="note" data-role="note"></p>
+    <div class="key">
+      ${Object.entries(ORIGIN_LABEL)
+        .map(([kind, label]) => `<span class="chip ${kind}"><i></i>${esc(label)}</span>`)
+        .join('')}
+    </div>
+  </div>
+  <ol class="rows">
+    ${allKeys
       .map(
-        (s) => `
-      <article class="state">
-        <div class="strip">
-          <span class="dot pinned" title="an exact version — immutable"></span>
-          <code class="deck">${s.deck}</code>
-          <code class="version">${s.version}</code>
-        </div>
-        <h2>${s.label}</h2>
-        <p class="note">${s.note}</p>
-        <p class="count"><strong>${Object.keys(s.codes).length}</strong> keys</p>
-        <ul class="keys">
-          ${allKeys
-            .map((k) =>
-              k in s.codes
-                ? `<li class="${origin(k)}" title="${s.codes[k].name}">${k}</li>`
-                : `<li class="absent">·</li>`,
-            )
-            .join('')}
-        </ul>
-        <a class="url" href="${s.url}">${pill('deck', s.url, { wrap: true })}</a>
-        <p class="hash" title="tree-hash-v1">${s.hash.slice(0, 24)}…</p>
-      </article>`,
+        (key) => `<li data-key="${esc(key)}" class="row ${origin(key)}">
+          <code>${esc(key)}</code>
+          <span class="name">${esc(names[key].name)}</span>
+          <span class="minor">${names[key].minor} minor</span>
+        </li>`,
       )
       .join('')}
-  </section>
+  </ol>
+  <div class="bfoot">
+    <a data-role="raw" href="">${pill('deck', '', { wrap: true })}</a>
+    <code class="hash" data-role="hash"></code>
+  </div>
+</section>
 
-  <section class="reading">
-    <h3>What to read here</h3>
-    <ol>
-      <li>
-        <strong>1.4.0 → 1.5.0 gained three keys and lost nothing.</strong>
-        Two people amended concurrently. Both amendments are present, and
-        neither person resolved anything.
-      </li>
-      <li>
-        <strong>The fork kept its three internal codes across the upgrade.</strong>
-        Rebasing it onto 1.5.0 absorbed upstream's new keys and left
-        <code>XAC</code>, <code>XPT</code> and <code>XVC</code> untouched.
-        No <em>data</em> collided, because nobody touched the same key.
-      </li>
-      <li>
-        <strong>Exactly one thing did need a person, and it was the right one.</strong>
-        The rebase reported a conflict in <code>importmap.json</code>: the
-        fork called itself <code>1.4.0-acme.1</code> and upstream called
-        itself <code>1.5.0</code>, so both sides edited the same key. A
-        machine can combine two sets of codes, because &ldquo;both&rdquo; is
-        well defined. It cannot decide what to <em>name</em> the
-        combination — that is a judgement about compatibility, and the merge
-        says so rather than guessing.
-      </li>
-      <li>
-        <strong>Every column is still there.</strong> There is no unpublish.
-        1.4.0 did not become wrong when 1.5.0 appeared, so a consumer pinned
-        to it keeps working forever.
-      </li>
-    </ol>
-    <p class="foot">
-      Try the raw addresses — they are the same bytes this page fetched:<br />
-      ${loaded.map((s) => `<a href="${s.url}">${pill('deck', `${s.deck}@${s.version}`)}</a>`).join(' ')}
-    </p>
-  </section>
+<section class="reading">
+  <h2>What to read here</h2>
+  <ol>
+    <li><b>1.4.0 → 1.5.0 gained three rows and lost none.</b> Two people
+      amended at the same time. A codelist is a set of keys, so that was never
+      a conflict — only a line-based merge would have called it one.</li>
+    <li><b>The fork kept its three internal codes across the upgrade.</b>
+      Rebasing onto 1.5.0 absorbed upstream's new keys and left
+      <code>XAC</code>, <code>XPT</code> and <code>XVC</code> alone. No data
+      collided, because nobody touched the same key.</li>
+    <li><b>One thing did need a person, and it was the right one.</b> The
+      rebase reported a conflict in <code>importmap.json</code>: the fork
+      called itself <code>1.4.0-acme.1</code> and upstream called itself
+      <code>1.5.0</code>. A machine can combine two sets of codes, because
+      "both" is well defined. It cannot decide what to name the combination.</li>
+    <li><b>Every state is still there.</b> There is no unpublish. 1.4.0 did
+      not become wrong when 1.5.0 appeared, so a consumer pinned to it keeps
+      working for ever.</li>
+  </ol>
+</section>
 `;
 
-// Styling lives here so the demo is two files, not five. A real app would
-// ship CSS as another file in the same deck.
+const rows = new Map([...app.querySelectorAll('[data-key]')].map((li) => [li.dataset.key, li]));
+
+function paint() {
+  let state = loaded[at];
+  let before = loaded[previous];
+  for (let [key, li] of rows) {
+    let here = key in state.codes;
+    li.classList.toggle('off', !here);
+    // A row that was not in the state you came from is the news. Flash it,
+    // and only it — highlighting everything highlights nothing.
+    li.classList.toggle('fresh', here && !(key in before.codes) && previous !== at);
+  }
+  app.querySelector('[data-role="count"]').textContent = Object.keys(state.codes).length;
+  app.querySelector('[data-role="note"]').textContent = state.note;
+  let raw = app.querySelector('[data-role="raw"]');
+  raw.href = state.url;
+  raw.innerHTML = pill('deck', state.url, { wrap: true });
+  app.querySelector('[data-role="hash"]').textContent = `${state.hash.slice(0, 24)}…`;
+  for (let button of app.querySelectorAll('[data-at]')) {
+    button.classList.toggle('on', Number(button.dataset.at) === at);
+  }
+}
+
+let fade;
+app.addEventListener('click', (event) => {
+  let button = event.target.closest('[data-at]');
+  if (!button) return;
+  previous = at;
+  at = Number(button.dataset.at);
+  paint();
+  // The highlight is a flash, not a state. Leaving it on turns "these three
+  // are new" into "these three are green", which is a different claim.
+  clearTimeout(fade);
+  fade = setTimeout(() => {
+    for (let li of rows.values()) li.classList.remove('fresh');
+  }, 1800);
+});
+
+paint();
+
 let style = document.createElement('style');
 style.textContent = `
-  /* Boxel light surface tier — one stage colour, white panels, hairline
-     borders. Light only: the demo hub frames this page in the same palette,
-     and two themes fighting inside one console reads as two products. */
-  :root {
-    --bg: #f7f8fa; --panel: #fff; --line: #e2e8f0;
-    --ink: #272330; --dim: #5a586a;
-    --base: #c9ced8; --added: #0c9d7c; --acme: #b45309;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; padding: 3rem 1.5rem 5rem;
-    background: var(--bg); color: var(--ink);
-    font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif;
-  }
-  #app { max-width: 74rem; margin: 0 auto; }
-  #app.loading { color: var(--dim); }
-  h1 { font-size: 1.6rem; margin: 0 0 .5rem; letter-spacing: -0.01em; }
-  .lede { color: var(--dim); max-width: 46rem; margin: 0 0 2rem; }
-  .lede strong { color: var(--ink); }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; }
+:root{--bg:#f7f8fa;--panel:#fff;--line:#e2e8f0;--hair:#eceef1;--ink:#272330;
+  --dim:#54525f;--quiet:#6f6f78;--meta:#8b8b93;
+  --base:#94a3b8;--added:#097a60;--acme:#a45309;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;padding:2rem 1.5rem 4rem;background:var(--bg);color:var(--ink);
+  font:15px/1.6 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif}
+#app{max-width:62rem;margin:0 auto}#app.loading{color:var(--quiet)}
+.crumb{font:600 11px/1 inherit;letter-spacing:.11em;text-transform:uppercase;color:var(--meta)}
+h1{font-size:1.7rem;margin:.35rem 0 1.1rem;letter-spacing:-.02em}
+h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--meta);margin:0 0 .6rem}
+code{font-family:var(--mono);font-size:.86em}
 
-  .legend { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-bottom: 1rem; }
-  .chip { display: inline-flex; align-items: center; gap: .45rem; color: var(--dim); font-size: .82rem; }
-  .chip i { width: .7rem; height: .7rem; border-radius: 2px; display: inline-block; }
-  .chip.base i { background: var(--base); }
-  .chip.added i { background: var(--added); }
-  .chip.acme i { background: var(--acme); }
+.switch{display:grid;gap:.5rem;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));margin-bottom:1rem}
+.switch button{text-align:left;font:inherit;cursor:pointer;background:#fff;
+  border:1px solid var(--line);border-radius:10px;padding:.55rem .75rem;color:var(--ink)}
+.switch button b{display:block;font:600 .78rem var(--mono)}
+.switch button span{display:block;font-size:.76rem;color:var(--quiet)}
+.switch button:hover{border-color:var(--added)}
+.switch .on{border-color:var(--added);box-shadow:inset 0 0 0 1px var(--added)}
 
-  .namekey { margin: 0 0 1.5rem; padding: .8rem .95rem; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
-  .namenote { margin: .55rem 0 0; font-size: .82rem; color: var(--dim); max-width: 46rem; }
+.board{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.bhead{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.8rem 1rem;border-bottom:1px solid var(--hair);background:#fcfcfd}
+.count{display:flex;align-items:baseline;gap:.35rem}
+.count b{font-size:1.8rem;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.count span{font-size:.76rem;color:var(--quiet)}
+.bhead .note{margin:0;flex:1;min-width:12rem;font-size:.84rem;color:var(--dim)}
+.key{display:flex;flex-wrap:wrap;gap:.6rem;font-size:.72rem;color:var(--quiet)}
+.chip{display:inline-flex;align-items:center;gap:.3rem}
+.chip i{width:.55rem;height:.55rem;border-radius:2px;background:var(--base)}
+.chip.added i{background:var(--added)}.chip.acme i{background:var(--acme)}
 
-  .states { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
-  .state {
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: 10px; padding: 1rem 1.1rem 1.2rem;
-  }
-  .strip { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
-  .dot { width: .6rem; height: .6rem; border-radius: 50%; flex: none; }
-  /* Hollow = pinned, per the badge vocabulary in deck-fitted-thesis.md. */
-  .dot.pinned { border: 2px solid var(--dim); }
-  .deck { color: var(--dim); }
-  .version {
-    margin-left: auto; padding: .1rem .45rem; border-radius: 4px;
-    background: var(--line); color: var(--ink);
-  }
-  .state h2 { font-size: .98rem; margin: 0 0 .3rem; }
-  .note { color: var(--dim); font-size: .84rem; margin: 0 0 .8rem; min-height: 2.4em; }
-  .count { margin: 0 0 .6rem; font-size: .84rem; color: var(--dim); }
-  .count strong { color: var(--ink); font-size: 1.15rem; }
+.rows{list-style:none;margin:0;padding:0}
+/* A row leaves by collapsing, so an absence is a gap that opens in front of
+   you rather than a cell that was never filled in. */
+.row{display:grid;grid-template-columns:4rem minmax(0,1fr) auto;gap:1rem;align-items:center;
+  padding:.5rem 1rem;border-bottom:1px solid var(--hair);
+  box-shadow:inset 3px 0 0 var(--base);overflow:hidden;
+  max-height:3rem;opacity:1;transition:max-height .28s ease,opacity .2s ease,padding .28s ease,background .6s ease}
+.row.added{box-shadow:inset 3px 0 0 var(--added)}
+.row.acme{box-shadow:inset 3px 0 0 var(--acme)}
+.row.off{max-height:0;opacity:0;padding-top:0;padding-bottom:0;border-bottom-width:0}
+.row.fresh{background:#e8f7f1}
+.row code{font-weight:600}
+.name{color:var(--dim);font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.minor{font-size:.74rem;color:var(--meta);font-variant-numeric:tabular-nums}
 
-  .keys { list-style: none; display: flex; flex-wrap: wrap; gap: .25rem; padding: 0; margin: 0 0 .9rem; }
-  .keys li {
-    font: 600 .72rem/1 ui-monospace, monospace; padding: .3rem .35rem;
-    border-radius: 3px; background: var(--base); color: #fff; min-width: 2.6rem; text-align: center;
-  }
-  .keys li.added { background: var(--added); color: #fff; }
-  .keys li.acme { background: var(--acme); color: #fff; }
-  .keys li.absent { background: transparent; color: var(--line); }
+.bfoot{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.6rem 1rem;border-top:1px solid var(--hair);background:#fcfcfd}
+.bfoot a{text-decoration:none}
+.hash{font-size:.7rem;color:var(--meta)}
 
-  .url { display: block; text-decoration: none; }
-  .hash { color: var(--line); font: .7rem ui-monospace, monospace; margin: .4rem 0 0; }
-
-  .reading { margin-top: 2.5rem; border-top: 1px solid var(--line); padding-top: 1.5rem; }
-  .reading h3 { font-size: 1rem; margin: 0 0 .75rem; }
-  .reading ol { margin: 0; padding-left: 1.2rem; color: var(--dim); max-width: 50rem; }
-  .reading li { margin-bottom: .6rem; }
-  .reading strong { color: var(--ink); font-weight: 600; }
-  .foot { margin-top: 1.5rem; color: var(--dim); font-size: .85rem; }
-  .foot a { color: var(--dim); }
+.reading{margin-top:1.5rem;background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:1rem 1.2rem}
+.reading ol{margin:0;padding-left:1.2rem}
+.reading li{margin:.5rem 0;font-size:.88rem;color:var(--dim)}
+.reading b{color:var(--ink)}
 `;
 document.head.append(style);

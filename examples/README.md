@@ -24,7 +24,7 @@ real address space, not a demo router.
 
 | Example | Workload | Shows |
 | --- | --- | --- |
-| [codelist](codelist/) | W2 — shared reference data | Two people amend one table concurrently and both land. A fork absorbs upstream and keeps its own codes. Every state is at rest, at an immutable URL. |
+| [codelist](codelist/) | W2 — shared reference data | One board, four sealed states. Switch between them and rows **grow in and out** while the count changes: two concurrent amendments both land, and a fork absorbs upstream while keeping its own codes. |
 | [contribute-to-codelist](contribute-to-codelist/) | W2 — the write side | `deck fork` → amend → `_offers` → rebase daemon. Two proposals, one rebases itself and one stops merging; a reviewer runs either with `?with=` without checking anything out. |
 | [fork-an-app](fork-an-app/) | W3 — adapters and forks | Vendor Leaflet from npm source, change one file, run yours next to upstream. The fork costs 2 objects out of 87. Nothing reaches the network at runtime. |
 | [fork-a-language](fork-a-language/) | W3 — bespoke to generic | A two-pane console: **type an expression** and both dialects evaluate it live. The parser differs, the evaluator is byte-identical, and each pane prints the digest of the bytes it fetched. |
