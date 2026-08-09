@@ -661,6 +661,36 @@ td.indent { padding-left: 2ch; }
 .prose h2:first-child, .prose h3:first-child { margin-top: 0; }
 
 .prose ul, .prose ol { max-width: var(--measure); margin: 0 0 var(--s2); padding-left: var(--s3); }
+
+/* TERM AND ANSWER. The left side is a run of words the reader already owns;
+   the right side is what each one turns out to be. They read as one sentence
+   per row, so the term is not a heading — it is the first half, and it gets
+   weight rather than a line of its own. Two columns where there is room,
+   because the repetition down the right-hand side IS the argument, and a
+   stacked list hides it. */
+.isjust { max-width: var(--measure); margin: 0 0 var(--s3); }
+.isjust dt {
+  font-weight: 600;
+  margin-top: var(--s2);
+}
+.isjust dt:first-child { margin-top: 0; }
+.isjust dd {
+  margin: 0;
+  color: var(--dim);
+}
+@media (min-width: 60rem) {
+  .isjust {
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 28ch) minmax(0, 46ch);
+    column-gap: var(--s3);
+    align-items: baseline;
+  }
+  .isjust dt, .isjust dd { margin-top: 0; padding: var(--s1) 0; }
+  .isjust dt { border-top: 1px solid var(--line, rgba(128,128,128,.2)); }
+  .isjust dd { border-top: 1px solid var(--line, rgba(128,128,128,.2)); }
+  .isjust dt:first-of-type, .isjust dt:first-of-type + dd { border-top: none; }
+}
 .prose li { margin-bottom: 4px; }
 
 /* Blocks get air on both sides — they are a change of mode, and running them

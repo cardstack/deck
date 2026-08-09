@@ -306,10 +306,18 @@
 <header class="hero">
   <h1>The <em>Deck</em>book</h1>
   <p>
-    Deck is a protocol for versioning, publishing, and serving ES modules
-    and JSON from plain state — a directory tree, an import map, seals, and
-    immutable version pointers. This book teaches the running reference
-    implementation: CLI, store, server, history, and the workflows they unlock.
+    <strong>Deck is version management without the commit, package management
+    without the install, and delivery without the deploy.</strong>
+  </p>
+  <p>
+    One thing makes all three true: there is only one kind of object here — a
+    file, named by the hash of its own bytes, reachable at a URL. A tree is a
+    list of those names. A Version, a Step, a dependency, a fork and a release
+    are all pointers to trees. Commit, install and deploy all do the same job:
+    they move a copy to a second place that names things differently. Here
+    there is no second place. This book teaches the running reference
+    implementation: the CLI, the store, the server, the Timeline, and the
+    workflows they open up.
   </p>
   <div class="badges">
     <span class="badge ok">Reference impl built</span>

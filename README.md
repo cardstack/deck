@@ -1,5 +1,31 @@
 # Deck
 
+**Deck is version management without the commit, package management
+without the install, and delivery without the deploy.**
+
+One thing makes all three true: there is only one kind of object here — a
+file, named by the hash of its own bytes, reachable at a URL. A tree is a
+list of those names. A Version, a Step, a dependency, a fork and a release
+are all pointers to trees. Commit, install and deploy all do the same job:
+they move a copy to a second place that names things differently. Here
+there is no second place.
+
+| | |
+| --- | --- |
+| A commit, a save, a snapshot are just | the hash of the tree, taken when you stopped typing. |
+| A version, a tag, a release, a staging environment are just | pointers to one of those hashes. Moving a pointer copies nothing. |
+| An import, an install, a lockfile, `node_modules` are just | an address in an import map, written into a file you can read. |
+| A branch, a fork, a pull request are just | the same package under your own publisher, with the tree you started from recorded. That record is the whole difference between a copy and a proposal. |
+| A code review, a preview environment are just | the page loaded with `?with=` pointing somewhere else, for one request. |
+| A merge is just | three trees: yours, theirs, and the one you both started from. |
+| A revert, a rollback, a checkout are just | reading a different address. Nothing on disk changes. |
+| A build, a bundle, a deploy, a CDN are just | absent — except the bundle, which is another version derived from the first, at its own address. |
+
+None of those is really a mechanism. They exist because three systems each
+keep their own address space, and something has to translate between them.
+With one address space, committing, installing and deploying are not three
+things you do to code — they are three names for pointing at it.
+
 ```bash
 node packages/cli/bin/deck.js hello
 ```
@@ -10,12 +36,6 @@ a file, reload, see it. That is the whole loop.
 Nothing here is published to npm yet, and **`npx deck` is somebody else's
 package** — install from this repo. [INSTALL.md](INSTALL.md) covers the
 three ways; [CLI.md](CLI.md) is the CLI's own readme.
-
-**No npm. No GitHub. No deploy. No PR.** Instant feedback. Ship any
-version, share any milestone, revert anytime, use any ESM library from
-the web, keep the whole web platform, never lose work, reuse and
-combine what you built before, and fork an experiment with no
-consequences.
 
 ## The layout is the address
 

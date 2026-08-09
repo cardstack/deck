@@ -991,7 +991,17 @@ function view(state) {
         state ? depotTable(state) + activeNote(state) : `<p class="dim">reading the depots…</p>`
       }</div>`,
     ],
-    ['quickstart', 'Quickstart: from nothing to a running deck', QUICKSTART],
+    [
+      'quickstart',
+      'Quickstart: from nothing to a running deck',
+      QUICKSTART +
+        // Said here, not in a closing section, because this is the paragraph
+        // a reader has their hands on the keyboard for.
+        `<p class="lede"><b>Deck is not on npm.</b> A different package has
+         that name. There is no <code>npx</code> command for Deck, and there
+         will not be one. Install Deck from this repository, as
+         <code>INSTALL.md</code> describes.</p>`,
+    ],
     [
       'any',
       'What Deck gives any system',
@@ -1011,17 +1021,6 @@ function view(state) {
        the conformance suite examines each item that this page says is
        built.</p>` +
         `<table class="fit stack"><tbody>${status}</tbody></table>`,
-    ],
-    [
-      'more',
-      'Further reading and installation',
-      `<p>The <a href="/deckbook">Deckbook</a> contains the material that does
-       not belong on this page: complete command transcripts for each use
-       case, and a longer description of how to write code on Deck. A real run
-       produced each transcript in that book.</p>
-       <p><b>Deck is not on npm.</b> A different package has that name. There
-       is no <code>npx</code> command for Deck, and there will not be one.
-       Install Deck from this repository. Read <code>INSTALL.md</code>.</p>`,
     ],
   ];
 
@@ -1078,15 +1077,53 @@ function view(state) {
     `<header class="hero">` +
     // The mark, then the sentence. Only the NAME is the mark — "is" belongs to
     // the sentence and takes the sentence's face, or the mark grows a word.
-    `<h1><b>DECK</b> gives code an address, a version, and a history.</h1>` +
-    `<p class="lede">A directory is also a URL space. Each file in the
-     directory has an address. The address shows where the file is. Each save
-     becomes a state that does not change. You can go back to any of these
-     states.</p>` +
-    `<p class="lede">You can also copy a library from a registry into your own
-     depot. The server then supplies that library. There is no install step, no
-     lockfile and no bundler. The browser runs the bytes that are on the disk.
-     An import map gives the address of each byte when the browser asks.</p>` +
+    `<h1><b>DECK</b> is version management without the commit, package
+     management without the install, and delivery without the deploy.</h1>` +
+    // The unifying assumption, before any mechanism. Three claims that each
+    // sound like a separate trick are one claim said three times, and a
+    // reader who does not get that in the second paragraph reads the rest as
+    // a feature list.
+    `<p class="lede">One thing makes all three true: there is only one kind of
+     object here — a file, named by the hash of its own bytes, reachable at a
+     URL. A tree is a list of those names. A Version, a Step, a dependency, a
+     fork and a release are all pointers to trees. Commit, install and deploy
+     all do the same job: they move a copy to a second place that names things
+     differently. Here there is no second place.</p>` +
+    // The same claim again, in the reader's own vocabulary. The grouping is
+    // the argument: `fork` and `pull request` land on one line because they
+    // are one thing, and `build`, `deploy` and `CDN` land on one line because
+    // they are none.
+    `<dl class="isjust">` +
+    [
+      ['A commit, a save, a snapshot are just',
+       'the hash of the tree, taken when you stopped typing.'],
+      ['A version, a tag, a release, a staging environment are just',
+       'pointers to one of those hashes. Moving a pointer copies nothing.'],
+      ['An import, an install, a lockfile, <code>node_modules</code> are just',
+       'an address in an import map, written into a file you can read.'],
+      ['A branch, a fork, a pull request are just',
+       'the same package under your own publisher, with the tree you started' +
+       ' from recorded. That record is the whole difference between a copy' +
+       ' and a proposal.'],
+      ['A code review, a preview environment are just',
+       'the page loaded with <code>?with=</code> pointing somewhere else, for' +
+       ' one request.'],
+      ['A merge is just',
+       'three trees: yours, theirs, and the one you both started from.'],
+      ['A revert, a rollback, a checkout are just',
+       'reading a different address. Nothing on disk changes.'],
+      ['A build, a bundle, a deploy, a CDN are just',
+       'absent — except the bundle, which is another version derived from the' +
+       ' first, at its own address.'],
+    ]
+      .map(([term, is]) => `<dt>${term}</dt><dd>${is}</dd>`)
+      .join('') +
+    `</dl>` +
+    `<p class="lede">None of those is really a mechanism. They exist because
+     three systems each keep their own address space, and something has to
+     translate between them. With one address space, committing, installing
+     and deploying are not three things you do to code — they are three names
+     for pointing at it.</p>` +
     `<p class="lede">What Deck specifies is small: the grammar of the address,
      the bytes that the address supplies, and how long a client may keep them.
      Twelve laws state it, and a test suite examines them. This server and its
