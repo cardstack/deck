@@ -89,6 +89,13 @@ negotiation.
 **Why.** They cover backup and archival — what the realm download is actually
 used for — and they prove the model while `negotiated` stays undesigned.
 
+**Done so far:** `planPack` in `@deck/core/pack-mode` decides what each mode
+carries and prunes, and emits the provenance block's `pruned` record.
+**Not done:** wiring `hermetic`'s byte carriage to the existing vendoring in
+`vendor.ts` / `vendor-tree.ts`. The decision is the part the backport needed
+settled; the copying is machinery that already works and can be connected
+when a caller wants a hermetic pack for real.
+
 ### W5 — conformance against a foreign implementation
 
 **What.** `deck conform <base-url>` as a black box over HTTP, runnable
@@ -182,5 +189,6 @@ packaging — real, but it does not block Boxel from starting.
 | W1 | `extends` | **done** — core, server, conformance, `examples/remix` |
 | W2 | absolute-reference classifier | **done** — `@deck/core/classify`, conformance L11 |
 | W3 | provenance block | **done** — `PackProvenance`, `intakeReadiness`, conformance L11 |
-| W4 | pack modes `bare` / `hermetic` | next |
-| W5–W10 | | not started |
+| W4 | pack modes `bare` / `hermetic` | **decision layer done** — `planPack`; byte carriage reuses `vendor.ts`, not yet wired |
+| W5 | foreign conformance | next |
+| W6–W10 | | not started |
