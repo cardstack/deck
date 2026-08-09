@@ -106,10 +106,23 @@ converts "we ported it" into a CI gate the monorepo can keep passing.
 
 ### W6 — one installable entry, with types
 
-**What.** Collapse 25 subpath exports into one package entry. Ship `.d.ts`.
+**What.** Replace 25 module-shaped subpaths with entries split by runtime.
 
-**Why.** Check 2. Boxel wants a contract, not an archaeology dig — and the
-shipped types are what retire `@ts-expect-error` at the card boundary.
+**Why.** Check 2. Boxel wants a contract, not an archaeology dig.
+
+**Done: two entries, not one.** `@cardstack/deck` is the browser-safe
+surface and `@cardstack/deck/node` adds the filesystem half. One entry was
+the wrong target — the package has two audiences with different runtimes,
+and the root goes to the browser because a missing export is a signpost
+while an accidental `node:fs` in someone's bundle is a morning.
+
+**`.d.ts` struck from the plan.** `@cardstack/runtime-common` ships raw
+`.ts` — no build, no `types` field, no `dist` — and host and realm-server
+consume it as `workspace:*`. Deck already matches. Declarations would be
+dead weight and lossier than the source. (Boxel splits browser from node
+with conditional `imports` rather than separate entries; explicit entries
+are the deliberate divergence, because a condition makes the split
+invisible and this one should fail loudly.)
 
 ### W7 — the lean trim
 
@@ -214,7 +227,7 @@ packaging — real, but it does not block Boxel from starting.
 | W3 | provenance block | **done** — `PackProvenance`, `intakeReadiness`, conformance L11 |
 | W4 | pack modes `bare` / `hermetic` | **decision layer done** — `planPack`; byte carriage reuses `vendor.ts`, not yet wired |
 | W5 | foreign conformance | **done** — `--export` + at-rest excluded from foreign runs |
-| W6 | entries | **done** — `@cardstack/deck` (browser) + `/node`. Shipping `.d.ts` needs a build step this repo does not have; not started. |
+| W6 | entries | **done** — `@cardstack/deck` (browser) + `/node`. `.d.ts` struck: Boxel consumes TS source (see W6 note). |
 | W7 | lean trim | not started |
 | W8 | naming → `@cardstack/deck` | **done** |
 | W9 | L12 amendment | not started |

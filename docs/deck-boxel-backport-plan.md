@@ -589,12 +589,24 @@ The backport is "just wiring" when:
 - [x] the resolver takes the importer, so scopes are expressible
 - [ ] every function Boxel needs is reachable from a documented entry — no
       reaching into internals
-- [ ] one publishable tarball rather than 25 subpath exports
-      (`@cardstack/deck` currently exports 25 subpaths; the split doc calls this
-      "package archaeology")
+- [x] two entries split by runtime rather than 25 by module —
+      `@cardstack/deck` (browser-safe) and `@cardstack/deck/node`
 - [ ] conformance runnable against a *foreign* implementation over HTTP, so
       it can gate the realm server in CI
-- [ ] types shipped, so `@ts-expect-error` dies at the boundary
+- [x] ~~types shipped~~ — **not needed, and struck deliberately.**
+      `@cardstack/runtime-common` ships raw `.ts` with no build, no
+      `types` field and no `dist`, consumed as `workspace:*` by host and
+      realm-server. Deck already matches that convention, so declarations
+      would be dead weight in the monorepo and lossier than the source
+      they were generated from. A build only becomes necessary if Core is
+      consumed by something that will not transpile `node_modules` — and
+      that consumer is not Boxel.
+
+      This entry also conflated two problems. The `@ts-expect-error` on
+      every CDN import in card code (§3.2) is not about Deck Core's own
+      declarations at all — it dies when VENDORING carries a library's
+      own `.d.ts` into the vendored tree. Different mechanism, different
+      workstream (K3).
 
 ### 7.6 What stays irreducibly monorepo
 
