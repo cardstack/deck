@@ -9,7 +9,8 @@
     "./fixture": "./src/fixture.ts",
     "./at-rest": "./src/at-rest.ts",
     "./over-http": "./src/over-http.ts",
-    "./run": "./src/run.ts"
+    "./run": "./src/run.ts",
+    "./export": "./src/export.ts"
   },
   "scripts": {
     "test": "node tests/index.ts",

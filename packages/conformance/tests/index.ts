@@ -17,5 +17,6 @@ QUnit.on('runEnd', (runEnd) => {
 });
 
 await import('./conformance-test.ts');
+await import('./export-test.ts');
 
 QUnit.start();
