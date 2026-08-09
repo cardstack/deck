@@ -168,11 +168,23 @@ const THEMES = [
 ];
 const THEME_KEY = 'deck.theme';
 
-/** The stored choice, or whichever the operating system is asking for. */
+/**
+ * The stored choice, or the default for the operating system's preference.
+ *
+ * Tokyo Night is the light default. It is the one with enough contrast for a
+ * page of prose — latte sets its body grey at about 3:1 against the
+ * background, which is fine for a filename and under the WCAG AA floor for a
+ * paragraph, and /start is mostly paragraphs.
+ *
+ * A stored choice always wins. This only decides what somebody sees before
+ * they have had an opinion.
+ */
 function theme() {
   let stored = localStorage.getItem(THEME_KEY);
   if (stored && THEMES.some(([name]) => name === stored)) return stored;
-  return matchMedia('(prefers-color-scheme: light)').matches ? 'latte' : 'mocha';
+  return matchMedia('(prefers-color-scheme: light)').matches
+    ? 'tokyo-night-light'
+    : 'mocha';
 }
 
 export function applyTheme(name = theme()) {
@@ -333,7 +345,22 @@ export class DeckNav extends HTMLElement {
     let button = this.querySelector('[data-role="claims"]');
     let list = this.querySelector('[data-role="claim-list"]');
     if (FRAMED) return;
+    // NEVER TWO AT ONCE.
+    //
+    // This is driven by the change bus, and while an agent is editing, the bus
+    // fires about once a second. `/_activity` walks every depot and takes
+    // longer than that under load, so each paint started before the last one
+    // came back — and a browser holds only six connections per origin. Five
+    // stacked polls plus the SSE stream is the whole budget, and every OTHER
+    // request the page wants sits in a queue that never drains. The page looks
+    // hung; the server is idle; nothing anywhere throws.
+    //
+    // A skipped paint costs nothing: the next event repaints, and the one
+    // in flight is already fetching the state we would have asked for.
+    let painting = false;
     let paint = async () => {
+      if (painting) return;
+      painting = true;
       let claims = await fetch('/_activity?top=200&grain=file')
         .then((response) => (response.ok ? response.json() : { foci: [] }))
         .then((body) =>
@@ -341,7 +368,10 @@ export class DeckNav extends HTMLElement {
             (focus.claims ?? []).map((claim) => ({ ...claim, at: focus.id })),
           ),
         )
-        .catch(() => []);
+        .catch(() => [])
+        .finally(() => {
+          painting = false;
+        });
       button.hidden = claims.length === 0;
       if (!claims.length) {
         list.hidden = true;
@@ -611,11 +641,36 @@ export const NAV_CSS = `
 .deck-nav a, .deck-nav-here { padding: 0 1ch; margin-right: 1ch; }
 .deck-nav a { color: var(--dim); text-decoration: none; }
 .deck-nav a:hover { color: var(--fg); background: var(--sel); }
+/* THE WORDMARK IS FIXED. IT IS NOT PART OF THE PALETTE.
+   ═════════════════════════════════════════════════════
+   This took --a-depot, the cyan that means "depot segment" in an address.
+   Two things were wrong with that. The mark is not a depot, so it borrowed a
+   colour that already means something else and diluted it; and --a-depot is
+   whatever each theme says cyan is, which in Tokyo Night is close enough to
+   green to read as a status, not a name.
+
+   So the mark is now specified and does not move:
+
+     face        Commit Mono, the vendored typeface at /hub/type
+     case        upper
+     weight      700
+     tracking    .22em — caps set tight read as one blob; four letters can
+                 afford the air, and the extra space is what makes a
+                 four-letter word read as a mark rather than as a heading
+     colour      the foreground. Full strength, no hue.
+
+   A wordmark in the text colour is the strongest thing on the row without
+   claiming to be a status. Hover inverts it, which is the same gesture the
+   current tab uses — one convention, two places. */
 .deck-nav-mark {
-  font-weight: 600; letter-spacing: .18em; margin-right: 2ch;
-  color: var(--a-depot) !important; padding-left: 0 !important;
+  font-weight: 700; letter-spacing: .22em; margin-right: 2.5ch;
+  color: var(--fg) !important; padding-left: 0 !important;
+  font-feature-settings: 'ss01' off;
 }
-.deck-nav-mark:hover { background: var(--a-depot) !important; color: var(--bg) !important; }
+.deck-nav-mark:hover {
+  background: var(--fg) !important; color: var(--bg) !important;
+  text-decoration: none;
+}
 .deck-nav-here {
   background: var(--a-package); color: var(--bg) !important; font-weight: 600;
 }
@@ -696,6 +751,26 @@ kbd {
   padding: 0 .5ch; margin-right: .2ch; line-height: 1.3; display: inline-block;
 }
 `;
+
+/**
+ * Give every table its own horizontal scroll port.
+ *
+ * Call once per render, after the HTML lands. It is a DOM pass rather than a
+ * rule in the stylesheet because the two CSS-only ways of doing this both
+ * break something else — see the note beside `.scrollx` in theme.css.
+ *
+ * Idempotent: a table already inside a port is left alone, so calling this
+ * twice on the same DOM does not nest wrappers.
+ */
+export function wrapTables(root = document) {
+  for (let table of root.querySelectorAll('table')) {
+    if (table.parentElement?.classList.contains('scrollx')) continue;
+    let port = document.createElement('div');
+    port.className = 'scrollx';
+    table.replaceWith(port);
+    port.append(table);
+  }
+}
 
 export function installNavStyles(doc = document) {
   if (doc.querySelector('style[data-deck-nav]')) {

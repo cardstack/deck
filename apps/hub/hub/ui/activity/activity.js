@@ -26,13 +26,29 @@ let REPORT = { now: Date.now(), scores: {}, last: {} };
 let listeners = new Set();
 
 /**
- * Fetch the report. Cheap, uncached on the server, ~5 KB.
+ * Fetch the report. ~5 KB, cached on the server for a few seconds.
  *
- * Never throws: a Hub that cannot report heat should lose the decoration and
- * keep the list. Everything below degrades to zero, which renders as an
+ * Never throws: a Hub that cannot report activity should lose the decoration
+ * and keep the list. Everything below degrades to zero, which renders as an
  * ordinary undecorated row.
+ *
+ * SINGLE FLIGHT, for the same reason the server has it. Callers here are
+ * driven by the change bus, which fires about once a second while an agent is
+ * working — faster than this round-trips under load. Overlapping calls do not
+ * get fresher data, they just each hold one of the browser's six per-origin
+ * connections until the page has none left for anything else.
  */
+let inFlight;
+
 export async function loadActivity() {
+  if (inFlight) return inFlight;
+  inFlight = fetchActivity().finally(() => {
+    inFlight = undefined;
+  });
+  return inFlight;
+}
+
+async function fetchActivity() {
   try {
     let response = await fetch('/_activity?top=400&grain=file', {
       headers: { accept: 'application/json' },

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>start — Deck Hub</title>
+
+    <!--
+      The typeface is a deck. `/hub/type/commit-mono@5.3.0/` is an ordinary
+      address in an ordinary depot, pinned to an exact version, served from
+      this machine. Not Google Fonts, not a CDN: L6 says a sealed deck reaches
+      nothing at runtime, and a webfont request is a third party learning
+      every reader's IP and holding the power to change the bytes.
+    -->
+    <link rel="stylesheet" href="/hub/type/commit-mono@5.3.0/font.css" />
+    <link rel="stylesheet" href="/hub/ui/theme/theme.css" />
+  </head>
+  <body>
+    <deck-nav app="start"></deck-nav>
+    <div id="app" class="dim">loading…</div>
+    <deck-keys></deck-keys>
+    <script type="module" src="/_live/hmr.js"></script>
+    <script type="module" src="./start.js"></script>
+  </body>
+</html>

@@ -19,6 +19,9 @@
   /* The lattice. Change these two and the page re-rules itself. */
   --row: 1.5;
   --gut: 2ch;
+  /* Named once, so the prose system can reach for the mono without
+     restating the stack and drifting from it. */
+  --mono: 'Commit Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
 /* ── COLOUR MEANS THE GRAMMAR ───────────────────────────────────────
@@ -70,7 +73,7 @@ body {
   padding: 0 var(--gut) 6em;
   background: var(--bg);
   color: var(--fg);
-  font-family: 'Commit Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family: var(--mono);
   font-size: 13px;
   line-height: var(--row);
   font-variant-ligatures: none;
@@ -157,6 +160,39 @@ input[type='search']::-webkit-search-cancel-button { filter: grayscale(1) opacit
 .cmp[data-on] select { color: var(--a-publisher); border-color: var(--a-publisher); }
 
 /* ── tables on the lattice ──────────────────────────────────────── */
+
+/* WIDE CONTENT SCROLLS INSIDE ITSELF; THE PAGE NEVER DOES.
+   ═══════════════════════════════════════════════════════
+   Cells are `nowrap` because they usually hold addresses, and an address
+   broken across two lines is worse than one you have to scroll to. The cost
+   is that a table is as wide as its widest address — which on a narrow
+   window makes the whole DOCUMENT scroll sideways. Then the nav slides off,
+   the key legend slides off, and every other section inherits a horizontal
+   scrollbar it did not ask for, to fit one long path in one row.
+
+   The scroll port is a WRAPPER, and it has to be. Two shortcuts look easier
+   and both are wrong:
+
+     `main { overflow-x: auto }`      — there is no such thing as scrolling
+                                        one axis. The spec computes the other
+                                        axis from `visible` to `auto`, so
+                                        `main` quietly becomes a nested
+                                        VERTICAL scroller too, and the page
+                                        scrolls to content that is no longer
+                                        where the page thinks it is. The
+                                        symptom is a blank screen.
+
+     `table { display: block }`       — makes the table its own scroll
+                                        container, which then becomes the
+                                        containing block for its own sticky
+                                        `th`. The headers stop sticking to
+                                        the viewport, which is the one thing
+                                        they exist for on a 374-file listing.
+
+   A wrapper has neither problem: it scrolls horizontally, it is not in the
+   table's sticky chain, and the table inside it keeps being a table. */
+.scrollx { max-width: 100%; overflow-x: auto; }
+
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 0 var(--gut) 0 0; white-space: nowrap; }
 th {
@@ -544,4 +580,152 @@ td.indent { padding-left: 2ch; }
   border-left: 2px solid var(--a-publisher);
   padding: calc(var(--row) * .3em) 1.5ch;
   margin: calc(var(--row) * .5em) 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PROSE — the documentation type system
+   ═══════════════════════════════════════════════════════════════════════
+   Scoped to `.prose`, so it governs /start and the Deckbook and touches
+   nothing in the three lens apps. Those are instruments and their monospace
+   lattice is correct for what they do; this is for pages that are read.
+
+   Written down in full in docs/deck-hub-typography.md. The short version:
+   two faces with one rule for choosing between them, a 1.25 modular scale,
+   an 8px rhythm where the space above a heading is three times the space
+   below it, a 68ch measure on paragraphs only, and tables treated as a
+   first-class element rather than as prose in a grid.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.prose {
+  /* Two faces. The rule is not "code gets mono" — it is that anything a
+     reader could type into a terminal or a URL bar is mono. */
+  --face-prose: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+
+  /* A 1.25 modular scale on a 16px base. Leading runs inverse to size:
+     display text needs less, body text needs 1.65 or the eye loses the
+     line return. */
+  --t-title: 31px;
+  --t-h2: 25px;
+  --t-h3: 20px;
+  --t-body: 16px;
+  --t-small: 14px;
+  --t-micro: 12.5px;
+
+  /* One spacing unit, 8px, and every gap is a multiple of it. */
+  --s1: 8px;
+  --s2: 16px;
+  --s3: 24px;
+  --s4: 32px;
+  --s6: 48px;
+
+  /* 66 characters is the target; 68 is the practical cap. Paragraphs only —
+     tables and code are scanned in two dimensions and take the full column. */
+  --measure: 68ch;
+
+  font-family: var(--face-prose);
+  font-size: var(--t-body);
+  line-height: 1.65;
+  color: var(--fg);
+  /* No synthesised italics: the mono has no true italic and the slant the
+     browser fakes is ugly. A real face has one, so emphasis can mean
+     something visually. */
+  font-synthesis: none;
+}
+
+/* Anything that IS a byte keeps the mono, one step down — monospace at a
+   matched point size always reads larger, because the character widths are
+   uniform and the line is denser. */
+.prose code,
+.prose kbd,
+.prose pre,
+.prose samp { font-family: var(--mono, ui-monospace, monospace); font-size: var(--t-small); }
+
+.prose p { max-width: var(--measure); margin: 0 0 var(--s2); }
+.prose p:last-child { margin-bottom: 0; }
+
+/* PROXIMITY. A heading belongs to what comes after it, so the space above is
+   three times the space below. A heading sitting equidistant between two
+   blocks belongs to neither, and the reader has to work out which — the most
+   common failure in generated documentation. */
+.prose h1, .prose h2, .prose h3 {
+  font-family: var(--face-prose); color: var(--fg);
+  margin: 0; text-transform: none; letter-spacing: normal;
+}
+.prose h1 {
+  font-size: var(--t-title); line-height: 1.2; font-weight: 400;
+  max-width: 26ch; margin-bottom: var(--s3);
+}
+.prose h2 { font-size: var(--t-h2); line-height: 1.25; font-weight: 600; margin: var(--s6) 0 var(--s2); }
+.prose h3 { font-size: var(--t-h3); line-height: 1.3; font-weight: 600; margin: var(--s4) 0 var(--s1); }
+.prose h2:first-child, .prose h3:first-child { margin-top: 0; }
+
+.prose ul, .prose ol { max-width: var(--measure); margin: 0 0 var(--s2); padding-left: var(--s3); }
+.prose li { margin-bottom: 4px; }
+
+/* Blocks get air on both sides — they are a change of mode, and running them
+   flush against a paragraph makes the reader parse where prose stopped. */
+.prose pre, .prose .scrollx, .prose figure { margin: var(--s3) 0; }
+
+/* Commands you are meant to copy. A tint and real padding, no border: the
+   background says "this is the machine talking" without drawing a box around
+   every second paragraph. */
+.prose pre {
+  background: var(--panel); padding: var(--s2) 1.5ch;
+  overflow-x: auto; line-height: 1.55;
+}
+.prose :not(pre) > code {
+  background: var(--panel); padding: 0 .4ch; border-radius: 2px;
+}
+
+/* ── tables you can scan ─────────────────────────────────────────────────
+   Horizontal rules only: alignment already separates the columns, and
+   vertical rules add ink without adding information. */
+.prose table { border-collapse: collapse; width: 100%; font-size: var(--t-small); }
+.prose th {
+  font-family: var(--face-prose);
+  font-size: var(--t-micro); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .08em;
+  color: var(--dim); text-align: left;
+  padding: 0 var(--s3) var(--s1) 0;
+  border-bottom: 1px solid var(--fg);
+  position: static; background: none;
+}
+.prose td {
+  padding: var(--s1) var(--s3) var(--s1) 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.prose tr:last-child td { border-bottom: none; }
+/* The first column is the key — what the reader scans down. Everything else
+   is what they read once they have found the row. */
+.prose tbody td:first-child { font-weight: 600; white-space: nowrap; }
+/* Prose cells wrap and get a measure of their own; identifier cells do not. */
+.prose td.says, .prose tbody td:last-child:not(:first-child) {
+  font-weight: 400; white-space: normal; max-width: 56ch;
+}
+.prose td.num, .prose th.num {
+  text-align: right; font-variant-numeric: tabular-nums;
+  font-family: var(--mono, ui-monospace, monospace);
+}
+/* A cell holding an address must not wrap, whatever else is true of it. */
+.prose td code { white-space: nowrap; }
+
+/* ── narrow ──────────────────────────────────────────────────────────────
+   Everything that breaks on a phone breaks the same way: it assumed
+   horizontal room. Three columns of prose is unreadable at 375px however it
+   scrolls, so a reference table becomes stacked blocks — the key on its own
+   line, the text beneath it. */
+@media (max-width: 40rem) {
+  .prose { --t-title: 25px; --t-h2: 20px; --t-h3: 17px; }
+  .prose p, .prose ul, .prose ol { max-width: none; }
+  .prose table.stack thead { display: none; }
+  .prose table.stack tr {
+    display: block; padding: var(--s1) 0; border-bottom: 1px solid var(--line);
+  }
+  .prose table.stack td {
+    display: block; padding: 0 0 4px; border: none;
+    white-space: normal !important; max-width: none;
+  }
+  .prose table.stack tbody td:first-child { white-space: normal; }
 }

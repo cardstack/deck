@@ -254,6 +254,21 @@ export class ActivityIndex {
   #leaves = new Map<string, Leaf>();
   #computedAt = 0;
   #ttlMs: number;
+  // SINGLE FLIGHT. A TTL alone does not prevent a stampede — it only helps
+  // requests that arrive AFTER one has finished. Twelve depots take about
+  // half a second to walk, a browser will happily have six requests in the
+  // air at once, and every one of them arriving inside that half-second
+  // missed the cache and started its own full walk.
+  //
+  // The failure was not slowness. Those six requests each hold one of the
+  // browser's six per-origin connections, so the page could not issue any
+  // OTHER request at all — it sat on `loading…` for ever while the server
+  // sat at 0% CPU. Starvation does not throw and nothing in the console
+  // says a word about it.
+  //
+  // So the second caller through the door does not compute anything; it
+  // awaits the first caller's promise. One walk, however many askers.
+  #inFlight: Promise<void> | undefined;
 
   constructor(depots: DepotMount[], options: { ttlMs?: number } = {}) {
     this.#depots = depots;
@@ -270,6 +285,18 @@ export class ActivityIndex {
   }
 
   async #refresh(): Promise<void> {
+    if (!this.#inFlight) {
+      // Cleared in a `finally` rather than after the await, so a walk that
+      // throws does not wedge every later request behind a promise that will
+      // never be replaced.
+      this.#inFlight = this.#walk().finally(() => {
+        this.#inFlight = undefined;
+      });
+    }
+    return this.#inFlight;
+  }
+
+  async #walk(): Promise<void> {
     // Claims refresh on their own, shorter clock: presence changes faster
     // than the touch index and must not wait on it.
     await this.#claims.refresh();

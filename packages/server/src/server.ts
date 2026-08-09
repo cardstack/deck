@@ -44,7 +44,7 @@ import {
   resolveVersionSpec,
 } from '@deck/core/store';
 import { resolveDependencies, resolveScopes } from '@deck/core/lock';
-import { isValidTreePath } from '@deck/core/tree-hash';
+import { isValidTreePath, treeHashFromDir } from '@deck/core/tree-hash';
 import {
   isValidHistoryPath,
   isValidRevisionId,
@@ -1545,6 +1545,71 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     let rest = rawRest?.replace(/^\/+/, '').replace(/\/+$/, '') ?? '';
     if (rest !== '' && (!isValidTreePath(rest) || isHiddenPath(rest))) {
       respondError(req, res, 404, 'file-not-found', 'invalid path', 'no-store');
+      return;
+    }
+
+    // LIVE ?meta — same shape as a sealed package-meta, built by walking the
+    // working tree. Without this, "compare this -dev.N to live" could only
+    // shrug: the digests exist (tree-hash-v1), the UI just had no way to ask
+    // for them. no-store: the answer moves with every save.
+    if (url.searchParams.has('meta')) {
+      let segments = rest === '' ? [] : rest.split('/');
+      if (segments.length !== 2) {
+        respondError(
+          req,
+          res,
+          404,
+          'no-manifest',
+          'live ?meta is for a package root (publisher/package)',
+          'no-store',
+        );
+        return;
+      }
+      let [publisher, pkg] = segments;
+      let name = `${publisher}/${pkg}`;
+      let dir = join(depot.dir, publisher, pkg);
+      let info = await stat(dir).catch(() => undefined);
+      if (!info?.isDirectory()) {
+        respondError(
+          req,
+          res,
+          404,
+          'package-not-found',
+          `no live tree for ${depot.name}/${name}`,
+          'no-store',
+        );
+        return;
+      }
+      let hashed = await treeHashFromDir(dir);
+      respondJson(
+        req,
+        res,
+        {
+          data: {
+            type: 'package-meta',
+            id: `${depot.name}/${name}@live`,
+            attributes: {
+              depot: depot.name,
+              publisher,
+              name: pkg,
+              version: 'live',
+              treeHash: hashed.treeHash,
+              entry: null,
+              exports: {},
+              baseApi: null,
+              sealChangeId: null,
+              signatures: [],
+              files: hashed.entries.map((entry) => entry.path),
+              tree: hashed.entries.map((entry) => ({
+                path: entry.path,
+                sha256: entry.sha256,
+              })),
+            },
+          },
+        },
+        'no-store',
+        { 'x-deck-tree-hash': hashed.treeHash },
+      );
       return;
     }
     let found = rest === '' ? undefined : await readLiveBytes(depot, rest);

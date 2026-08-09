@@ -14,7 +14,7 @@
 // other package site "what am I actually running" is an inference. Here it is
 // a readout, sitting directly below the thing doing the running.
 import 'ui/nav';
-import { installNavStyles, onLiveChange } from 'ui/nav';
+import { installNavStyles, onLiveChange, wrapTables } from 'ui/nav';
 import {
   attachScrub,
   foldBursts,
@@ -698,6 +698,7 @@ async function render() {
       `${esc(error.message)}</div></main>`;
   }
   cursor = -1;
+  wrapTables(app);
   keys.keys = bindings();
 }
 

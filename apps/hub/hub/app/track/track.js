@@ -42,7 +42,7 @@
 // of code. They compose through the URL, which is the same joint everything
 // else here uses.
 import 'ui/nav';
-import { installNavStyles, onLiveChange } from 'ui/nav';
+import { installNavStyles, onLiveChange, wrapTables } from 'ui/nav';
 import { QueryClient } from '@tanstack/query-core';
 import {
   constructTable,
@@ -805,6 +805,7 @@ async function render() {
       `${esc(error.message)}</div></main>`;
   }
   cursor = -1;
+  wrapTables(app);
   keys.keys = bindings();
 }
 

@@ -25,7 +25,7 @@
 // link — they are entries in the same volatility control as everything else,
 // because choosing between them is the same act.
 import 'ui/nav';
-import { installNavStyles, onLiveChange } from 'ui/nav';
+import { installNavStyles, onLiveChange, wrapTables } from 'ui/nav';
 import {
   activityCell,
   activityScale,
@@ -867,20 +867,20 @@ function blob(text, path) {
 // ---------------------------------------------------------------------------
 
 /**
- * A sealed version's manifest, or undefined.
+ * A package's digest inventory — sealed Version or live working tree.
  *
- * `?meta` only answers for an EXACT version — a live tree has no manifest,
- * because a manifest is something a seal produces. Returning undefined rather
- * than throwing lets the caller say which side is missing one and why, which
- * is a real answer; the alternative was reading `.attributes` off undefined
- * and showing the reader a TypeError.
+ * Exact `@version?meta` reads the packlist; live `publisher/pkg?meta` walks
+ * the working tree with tree-hash-v1. Same `tree[]` shape either way, so
+ * compare can do "this -dev.N vs live" without pretending live is latest.
  */
-const metaOf = (target) =>
-  target?.spec
-    ? getJson(`${addressOf({ ...target, path: undefined })}?meta`)
-        .then((body) => body.data?.attributes)
-        .catch(() => undefined)
-    : Promise.resolve(undefined);
+const metaOf = (target) => {
+  if (!target?.publisher || !target?.pkg || target.seal) {
+    return Promise.resolve(undefined);
+  }
+  return getJson(`${addressOf({ ...target, path: undefined })}?meta`)
+    .then((body) => body.data?.attributes)
+    .catch(() => undefined);
+};
 
 const labelOf = (target) =>
   target.seal
@@ -1567,18 +1567,17 @@ async function viewAddress(input, vs) {
   // ── deck, compared ──────────────────────────────────────────────────────
   if (vs && parsed.pkg && !parsed.path) {
     let target = otherSide(parsed, vs);
-    let here = { ...parsed, spec: parsed.spec ?? meta?.distTags?.latest };
+    // Keep live as live. Substituting `latest` here used to hide unpublished
+    // edits and, when there was no `latest`, produced the bogus "no manifest
+    // for @live" note even though the digests were one ?meta away.
+    let here = { ...parsed };
     let [left, right] = await Promise.all([metaOf(target), metaOf(here)]);
     if (!left || !right) {
-      // A tree comparison is two manifests, and only a seal has one. Naming
-      // the side that lacks one — and what to do instead — beats both a
-      // crash and a silently empty diff.
       let missing = [!right && labelOf(here), !left && labelOf(target)].filter(Boolean);
       return (
         head +
-        `<p class="note">no manifest for ${missing.map(esc).join(' or ')} — a live ` +
-        `tree has none until it is sealed. Pick a published version above, or ` +
-        `open a file to compare it line by line.</p></main>`
+        `<p class="note">no digest inventory for ${missing.map(esc).join(' or ')}. ` +
+        `Compare needs two package roots (live or a Version).</p></main>`
       );
     }
     return (
@@ -1640,6 +1639,7 @@ async function render() {
     app.innerHTML = errorView(parsed, error);
   }
   cursor = -1;
+  wrapTables(app);
   keys.keys = bindings();
 
   // SCRUB PREVIEWS NOTHING HERE; RELEASE COMMITS.
