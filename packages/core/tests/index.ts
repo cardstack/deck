@@ -24,6 +24,7 @@ await import('./pack-test.ts');
 await import('./store-test.ts');
 await import('./es-lexer-test.ts');
 await import('./import-map-test.ts');
+await import('./inherit-test.ts');
 await import('./vendor-test.ts');
 await import('./vendor-npm-test.ts');
 await import('./vendor-map-test.ts');

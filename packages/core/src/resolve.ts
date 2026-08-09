@@ -21,6 +21,15 @@ export {
 } from './import-map.ts';
 export type { PackageMapEntry } from './import-map.ts';
 
+export {
+  EXTENDS_KEY,
+  EXTENDS_MAX_DEPTH,
+  flattenInheritance,
+  isExactParent,
+  parseExtends,
+} from './inherit.ts';
+export type { FlatMap, InheritableMap, MapValue } from './inherit.ts';
+
 /**
  * Resolve one specifier the way a browser resolves it against an import map.
  *

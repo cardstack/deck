@@ -7,6 +7,7 @@
   "exports": {
     "./resolve": "./src/resolve.ts",
     "./import-map-pack": "./src/import-map-pack.ts",
+    "./inherit": "./src/inherit.ts",
     "./tree-hash": "./src/tree-hash.ts",
     "./canonical-zip": "./src/canonical-zip.ts",
     "./packlist": "./src/packlist.ts",
