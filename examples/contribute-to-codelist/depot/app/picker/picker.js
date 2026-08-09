@@ -11,7 +11,7 @@
 //   forked, re-merged against upstream on read, with the ones that stopped
 //   merging named.
 import * as upstream from 'std/currencies';
-import { installPillStyles, legend, pill } from 'ui/pills';
+import { installPillStyles, pill } from 'ui/pills';
 
 installPillStyles();
 
@@ -52,14 +52,27 @@ const sourceUrl = new URL(upstream.source).pathname;
 const sourceLabel = sourceUrl.replace(/^\/site\//, '').replace(/\/index\.js$/, '');
 const isBaselineView = counts.added + counts.changed + counts.removed === 0;
 
+// Each proposal's own tree, read straight off its live address. A reviewer
+// should be able to see what two proposals contain at the same time; making
+// them take turns in one frame is the thing this page is arguing against.
+const proposals = await Promise.all(
+  offers.data.map(async (offer) => {
+    let codes = await fetch(`/site/${offer.id}/currencies.json`)
+      .then((response) => response.json())
+      .catch(() => ({}));
+    let added = Object.keys(codes).filter((code) => !(code in baseline));
+    let changed = Object.keys(codes).filter(
+      (code) => code in baseline && !same(baseline[code], codes[code]),
+    );
+    return { offer, codes, added, changed };
+  }),
+);
+
+// Upstream's two views only. The proposals have their own control on their
+// own card, and listing them twice reads as two different mechanisms.
 const VIEWS = [
   { label: 'the released list', query: '', hint: 'std/currencies@1.4.0' },
   { label: 'the next release', query: '?with=std/currencies@1.5.0', hint: 'a version, not a fork' },
-  ...offers.data.map((offer) => ({
-    label: `${offer.id.split('/')[0]}’s proposal`,
-    query: offer.attributes.tryWith,
-    hint: `live — every save, no publish`,
-  })),
 ];
 const here = location.pathname;
 const activeQuery = location.search;
@@ -75,24 +88,38 @@ let app = document.querySelector('#app');
 app.classList.remove('loading');
 app.innerHTML = `
 <header class="masthead">
-  <div class="crumb">deck · example</div>
-  <h1>Review a proposal without checking it out</h1>
-  <p class="lede">
-    This page imports <code>std/currencies</code> once and renders it. Every
-    view below is the same sealed page, resolved against something different
-    for one request.
-  </p>
-  <div class="namekey">
-    ${legend(['deck'])}
-    <p class="namenote">
-      Every address here is a <em>Deck</em> address, and that is what makes the
-      review possible: the released list, the next release, and both open
-      proposals are all just URLs this depot answers. A proposal does not need
-      to reach a registry or a repository to be reviewable — it only needs to
-      exist at an address.
-    </p>
-  </div>
+  <div class="crumb">deck · example · W2</div>
+  <h1>Run a proposal before you accept it.</h1>
 </header>
+
+<section class="boards">
+  ${proposals
+    .map(({ offer, codes, added, changed }) => {
+      let a = offer.attributes;
+      let stopped = a.state === 'conflicted' || a.state === 'unresolvable';
+      return `<article class="board ${esc(a.state)}">
+        <div class="bhead">
+          ${pill('deck', offer.id)}
+          <span class="state ${esc(a.state)}">${stopped ? 'stopped merging' : 'merges clean'}</span>
+        </div>
+        <p class="delta">
+          <b>${Object.keys(codes).length}</b> codes ·
+          <b class="add">+${added.length}</b>
+          ${added.length > 0 ? `<span class="which">${added.map(esc).join(' ')}</span>` : ''}
+          ${changed.length > 0 ? `<b class="chg">~${changed.length}</b> <span class="which">${changed.map(esc).join(' ')}</span>` : ''}
+        </p>
+        <p class="why">${
+          stopped
+            ? `both sides changed ${a.conflicts.map((file) => `<code>${esc(file)}</code>`).join(', ')}, so the daemon wrote nothing. It still runs — what stopped is the merge into upstream, and that needs a person.`
+            : esc(STATE_NOTE[a.state] ?? a.detail ?? '')
+        }</p>
+        <a class="try${a.tryWith === activeQuery ? ' on' : ''}" href="${esc(here + a.tryWith)}">
+          ${a.tryWith === activeQuery ? 'running this one' : 'try this one'}
+        </a>
+      </article>`;
+    })
+    .join('')}
+</section>
 
 <nav class="views">
   ${VIEWS.map(
@@ -142,54 +169,17 @@ app.innerHTML = `
   </tbody>
 </table>
 
-<section class="queue">
-  <h2>The queue <span class="quiet">/site/_offers</span></h2>
-  <p class="note">
-    Every deck in this depot that records what it forked. The server re-merges
-    each one against upstream on read, so this is the current answer, not a
-    stored status. A maintainer wants the ones that stopped merging — the rest
-    do not need looking at.
-  </p>
-  ${
-    offers.data.length === 0
-      ? '<p class="note">No open proposals.</p>'
-      : `<div class="offers">${offers.data
-          .map((offer) => {
-            let a = offer.attributes;
-            return `<article class="offer ${esc(a.state)}">
-        <div class="ohead">
-          ${pill('deck', offer.id)}
-          <span class="pill ${esc(a.state)}">${esc(a.state)}</span>
-        </div>
-        <p class="odetail">forked ${pill('deck', a.upstream)}${
-          a.upstreamVersion ? ` · upstream is now ${pill('deck', `${a.upstream}@${a.upstreamVersion}`)}` : ''
-        }</p>
-        <p class="onote">${esc(STATE_NOTE[a.state] ?? a.detail ?? '')}</p>
-        ${
-          a.conflicts.length > 0
-            ? `<p class="conflicts">conflicts: ${a.conflicts.map((c) => `<code>${esc(c)}</code>`).join(', ')}</p>`
-            : ''
-        }
-        <a class="try" href="${esc(here + a.tryWith)}">run the app against it →</a>
-      </article>`;
-          })
-          .join('')}</div>`
-  }
-</section>
-
 <section class="explain">
-  <h2>What just happened</h2>
   <p>
-    A contribution here is not a diff and not a branch. It is a
-    <strong>tree that exists</strong>, in the contributor's own publisher
-    scope, which records the exact tree it forked. That single recorded
-    <code>treeHash</code> is the third input a three-way merge needs, so the
-    server can answer “does this still merge?” at any moment without a commit
-    graph, a patch queue, or anyone rebasing anything.
+    A contribution here is a <strong>tree that exists</strong>, in the
+    contributor's own publisher scope, recording the exact tree it forked.
+    That recorded <code>treeHash</code> is the third input a three-way merge
+    needs, so <code>/site/_offers</code> answers “does this still merge?” on
+    every read — no commit graph, no patch queue, nobody rebasing.
   </p>
   <p>
-    And because the proposal is already a tree at a URL, reviewing it is not a
-    checkout — it is a different resolution of one import.
+    Reviewing it is not a checkout. It is a different resolution of one
+    import, for one request.
   </p>
 </section>
 `;
@@ -217,6 +207,26 @@ h2 .quiet{font:400 .78rem var(--mono);color:var(--ink-meta);margin-left:.5rem}
 .note{margin:0 0 .9rem;max-width:46rem;color:var(--ink-body);font-size:.9rem}
 .namekey{margin:0 0 1.25rem;padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
 .namenote{margin:.6rem 0 0;font-size:.85rem;color:var(--ink-body);max-width:50rem;line-height:1.7}
+.boards{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fit,minmax(19rem,1fr));margin:0 0 1.25rem}
+.board{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:.85rem 1rem;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:.5rem}
+/* A stopped machine, not an error message: the whole card carries it. */
+.board.conflicted,.board.unresolvable{background:#fffaf8;border-color:#f0cfc4;
+  box-shadow:inset 4px 0 0 #c02626,var(--shadow)}
+.bhead{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.state{font:600 .68rem var(--sans);letter-spacing:.09em;text-transform:uppercase;
+  border-radius:999px;padding:.12rem .55rem;background:#eef7f3;color:#097a60}
+.state.conflicted,.state.unresolvable{background:#fdecec;color:#c02626}
+.delta{margin:0;font-size:.9rem;color:var(--ink-body)}
+.delta b{font-variant-numeric:tabular-nums;color:var(--ink)}
+.delta .add{color:#097a60}.delta .chg{color:#a45309}
+.which{font-family:var(--mono);font-size:.78rem;color:var(--ink-quiet)}
+.why{margin:0;font-size:.82rem;color:var(--ink-body);line-height:1.55}
+.board .try{margin-top:auto;align-self:flex-start;text-decoration:none;font-size:.84rem;
+  border:1px solid var(--border);border-radius:8px;padding:.35rem .8rem;color:var(--ink)}
+.board .try:hover{border-color:#097a60;color:#097a60}
+.board .try.on{background:#097a60;border-color:#097a60;color:#fff}
+
 .views{display:grid;gap:.6rem;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));margin-bottom:1.1rem}
 .view{display:block;text-decoration:none;color:inherit;background:var(--surface);border:1px solid var(--border);
   border-radius:10px;padding:.7rem .85rem;box-shadow:var(--shadow);transition:box-shadow .18s,border-color .12s}

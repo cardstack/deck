@@ -87,6 +87,11 @@ function readout(row) {
   if (field.tone) {
     let tone = field.tone(value);
     parts.push(`<span class="tone t-${esc(tone)}">${esc(tone)}</span>`);
+    // The tone reaches the whole row, not a chip in the corner. A field that
+    // changes its mind about a value should be impossible to miss from across
+    // the room; a small grey word going slightly amber is not that.
+    let band = document.querySelector(`[data-out="${CSS.escape(row.deck)}"]`)?.closest('.row');
+    if (band) band.dataset.tone = tone;
   }
   if (field.css) {
     let { background, foreground } = field.css(value);
@@ -137,6 +142,18 @@ function repaintRow(deck) {
   let row = ROWS.find((candidate) => candidate.deck === deck);
   let cell = document.querySelector(`[data-out="${CSS.escape(deck)}"]`);
   if (row && cell) cell.innerHTML = readout(row);
+}
+
+// readout() sets data-tone as a side effect, and on first paint the row does
+// not exist yet. One pass after the markup lands settles them.
+function paintTones() {
+  for (let row of ROWS) {
+    if (!row.field?.tone) continue;
+    document
+      .querySelector(`[data-out="${CSS.escape(row.deck)}"]`)
+      ?.closest('.row')
+      ?.setAttribute('data-tone', row.field.tone(state.get(row.deck)));
+  }
 }
 
 // ── The version rail ────────────────────────────────────────────────────
@@ -190,8 +207,8 @@ const SUGGESTED = [
     return format(date, 'EEE d MMM yyyy');`,
     replace: `    let date = parseISO(value.ship);
     let days = differenceInCalendarDays(date, today);
-    let when = days < 0 ? \`\${-days} days late\` : days === 0 ? 'today' : \`in \${days} days\`;
-    return \`\${format(date, 'EEE d MMM yyyy')} · \${when}\`;`,
+    let when = days < 0 ? \`\${-days} DAYS LATE\` : days === 0 ? 'TODAY' : \`\${days} days out\`;
+    return \`\${when} — \${format(date, 'EEE d MMM')}\`;`,
   },
   {
     label: 'Draw the runway',
@@ -388,6 +405,7 @@ if (bridgeFiles) {
   say('editor bridge unreachable', 'bad');
 }
 
+paintTones();
 rail.innerHTML = railHtml(await versionsOfMine());
 if (mineError) say(`the last save does not load: ${mineError.message}`, 'bad');
 
@@ -482,11 +500,15 @@ h2{margin:0;font-size:.95rem}
 .auto{font-size:.8rem;color:var(--meta)}
 .out{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem;min-height:2rem;padding-top:.3rem}
 .read{font-size:.9rem;font-variant-numeric:tabular-nums}
-.tone{font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;font-weight:600;
-  border-radius:999px;padding:.1rem .5rem}
+.tone{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;font-weight:700;
+  border-radius:999px;padding:.15rem .6rem}
 .t-ok{background:var(--track);color:var(--quiet)}
-.t-soon{background:#fdf1de;color:var(--warn)}
-.t-late,.t-overdue{background:#fdecec;color:var(--bad)}
+.t-soon{background:#fbe3bd;color:#7a3d05}
+.t-late,.t-overdue{background:#fbd5d5;color:#8a1414}
+/* The row itself carries the verdict. Changing one constant in the field
+   repaints this whole band, which is the point of the first suggested edit. */
+.row[data-tone='soon']{background:#fff8ec;box-shadow:inset 3px 0 0 var(--warn)}
+.row[data-tone='late'],.row[data-tone='overdue']{background:#fff3f3;box-shadow:inset 3px 0 0 var(--bad)}
 .chip{border-radius:999px;padding:.1rem .6rem;font-size:.76rem;font-weight:600}
 .invalid{font-size:.76rem;color:var(--bad)}
 .bar{flex-basis:100%;height:.55rem;border-radius:999px;background:var(--track);overflow:hidden}
