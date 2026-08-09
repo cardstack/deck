@@ -68,6 +68,27 @@ mechanism. Today each would be designed separately, in three different PRs.
 **Done when:** the resolver handles inheritance, conformance covers it, and a
 demo remixes a deck by overriding one entry.
 
+**Amended (2026-08-09): a parent may be named in any address space.**
+`isExactParent` accepted only `pub/pkg@1.2.3`, which is how a DEPOT names its
+own decks — and that quietly made `extends` unusable anywhere else. A Boxel
+realm names a parent with a fully-qualified URL today and with a scoped alias
+(`@catalog/…`) once the RRI migration lands; both were refused, so remix (K8)
+and the four verbs (K5) could not have been wired at all.
+
+The invariant L4 actually needs is that the version cannot MOVE. Where the
+parent lives is the host's business. All three forms are now accepted, with
+the exactness check applied in each, and a trailing slash optional because a
+realm addresses a deck as a directory:
+
+    acme/blog@1.2.3                              depot-local
+    https://app.example/catalog/acme/blog@1.2.3/ fully qualified
+    @catalog/acme/blog@1.2.3/                    scoped alias
+
+Tags and ranges are still refused in every space, and so is a name with no
+version. Accepting the alias form now rather than later is deliberate: it
+means the RRI migration is a change of what Boxel writes, with no Deck
+change trailing behind it.
+
 ### W2 — the absolute-reference classifier
 
 **What.** `(string, decklist) → leave | rebind | rewrite`. Pure, browser-safe.

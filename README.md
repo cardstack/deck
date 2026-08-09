@@ -353,8 +353,8 @@ multi-package design, and
 
 ## Status
 
-**The reference implementation is built and tested** — 392 tests green
-(204 core, 22 history, 87 server, 59 tools, 7 conformance, 13 CLI), lint and
+**The reference implementation is built and tested** — 393 tests green
+(205 core, 22 history, 87 server, 59 tools, 7 conformance, 13 CLI), lint and
 typecheck clean, and `deck conform` reports 59 passed / 0 failed / 3 not
 applicable.
 

@@ -22,6 +22,39 @@ module('extends: naming a parent', function () {
     assert.false(isExactParent('acme/blog'));
   });
 
+  // L4's requirement is that the parent cannot move. WHERE it lives is the
+  // host's business, and a host that is not a depot has to be able to say so:
+  // a Boxel realm names a parent with a fully-qualified URL today, and with a
+  // scoped alias once the RRI migration lands. Refusing both made `extends`
+  // a depot-only feature by accident.
+  test('a parent may be depot-local, fully qualified, or a scoped alias', function (assert) {
+    for (let ok of [
+      'acme/blog@1.2.3',
+      'https://app.example/catalog/acme/blog@1.2.3',
+      'https://app.example/catalog/acme/blog@1.2.3/',
+      'http://localhost:4201/catalog/acme/blog@1.2.3/',
+      '@catalog/acme/blog@1.2.3',
+      '@catalog/acme/blog@1.2.3/',
+      '@catalog/acme/blog@2.0.0-dev.7/',
+    ]) {
+      assert.true(isExactParent(ok), ok);
+    }
+    // Exactness is still the rule in every space, and a name without a
+    // version is not a parent in any of them.
+    for (let no of [
+      'https://app.example/catalog/acme/blog@latest/',
+      'https://app.example/catalog/acme/blog@^1.2.3/',
+      'https://app.example/catalog/acme/blog/',
+      '@catalog/acme/blog@latest/',
+      '@catalog/acme/blog/',
+      '@catalog',
+      'ftp://app.example/catalog/acme/blog@1.2.3/',
+      'blog@1.2.3',
+    ]) {
+      assert.false(isExactParent(no), no);
+    }
+  });
+
   test('a decklist that does not inherit reports nothing', function (assert) {
     assert.strictEqual(parseExtends('{"deck":{"packages":{}}}'), undefined);
     assert.strictEqual(parseExtends('not json'), undefined);
