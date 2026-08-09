@@ -19,12 +19,75 @@
 // at the foot of every page carries them instead, which is where every other
 // binding is documented anyway.
 
+// FOUR APPS, BUT ONLY THREE OF THEM ARE LENSES.
+//
+// `start` is about the machine. The other three are three questions about one
+// address: what is it, what does it do, what happened to it. That is not a
+// naming observation, it is the whole interaction model — an address you have
+// found in one of them is an address you want to ask the other two about, so
+// it TRAVELS, and the tab strip is a lens selector rather than four doors.
+//
+// The mechanism is already there and was going unused: all three apps read
+// `?at=`. Carrying it across a tab click costs one query string.
+const LENSES = new Set(['browse', 'run', 'track']);
+
 const ROUTES = [
   ['start', 'this machine now, and the docs'],
   ['browse', 'the depot at rest'],
   ['run', 'the assembled, executing thing'],
   ['track', 'what changed, and where'],
 ];
+
+/** The focused address, or ''. The one piece of state the lenses share. */
+export function focus() {
+  return new URLSearchParams(location.search).get('at') ?? '';
+}
+
+/**
+ * ONE EventSource PER DOCUMENT. Not one per feature.
+ *
+ * An SSE stream is a connection held open forever, and HTTP/1.1 allows six
+ * per origin. The nav opens one for the live badge; heat wanted one; /track
+ * wanted one. Three is half the budget gone before the page has fetched
+ * anything — and /run frames another Hub page inside itself, which doubles
+ * it. The symptom was not an error: the inner frame simply sat on `loading…`
+ * for ever, because its requests were queued behind connections that never
+ * close. Starvation does not throw.
+ *
+ * So there is exactly one stream, and anything that cares subscribes to it.
+ * Opened lazily, so a page that never subscribes never opens it at all.
+ */
+let liveSource;
+const liveListeners = new Set();
+
+export function onLiveChange(listener) {
+  liveListeners.add(listener);
+  if (!liveSource) {
+    liveSource = new EventSource('/_live/events');
+    liveSource.addEventListener('change', (event) => {
+      for (let each of liveListeners) each(event);
+    });
+  }
+  return () => liveListeners.delete(listener);
+}
+
+/**
+ * Where a lens tab points.
+ *
+ * With a focus, at that focus. Without one, at the lens's own index. And the
+ * ACTIVE tab with a focus points at its own index — clicking the tab you are
+ * already on drops the subject and takes you back up.
+ *
+ * That last rule is the iOS tab bar's, and it is here because it is the one
+ * "click it again" convention people already have: tapping the selected tab
+ * pops to root. It gives the strip a second job without a second control,
+ * and it means the same click always means "show me this lens, plainly".
+ */
+function lensHref(route, current, at) {
+  if (!LENSES.has(route)) return `/${route}`;
+  if (!at) return `/${route}`;
+  return route === current ? `/${route}` : `/${route}?at=${encodeURIComponent(at)}`;
+}
 
 const esc = (value) =>
   String(value).replace(
@@ -79,20 +142,81 @@ export function applyTheme(name = theme()) {
 // palette while its module graph loads.
 applyTheme();
 
+/**
+ * THE URL CHANGES WITHOUT THE PAGE CHANGING, AND THE CHROME HAS TO HEAR IT.
+ *
+ * All three apps navigate with `history.pushState` — they are single
+ * documents that re-render, which is the right shape for them. But pushState
+ * fires no event. `popstate` only covers going BACK.
+ *
+ * So the nav read the focus once, at connect, and then kept it for ever.
+ * Browse ten directories deep, click `run`, and you were sent to whatever you
+ * had been looking at when the page first loaded. The tab strip is supposed
+ * to be the thing that carries your place; instead it pinned it. That is
+ * navigation that looks stuck, because it is.
+ *
+ * Wrapping the two methods once, here, is the smallest fix that cannot be
+ * forgotten by the next app: every state change now announces itself, and
+ * anything that renders from the URL listens.
+ */
+for (let method of ['pushState', 'replaceState']) {
+  let original = history[method];
+  history[method] = function patched(...args) {
+    let result = original.apply(this, args);
+    dispatchEvent(new Event('deck:navigate'));
+    return result;
+  };
+}
+addEventListener('popstate', () => dispatchEvent(new Event('deck:navigate')));
+
 export class DeckNav extends HTMLElement {
   connectedCallback() {
+    this.render();
+    // Re-point the lens tabs at wherever the app has since navigated to.
+    // Only the hrefs and titles change, so this is cheap and does not touch
+    // the theme picker or tear down the live badge's listener.
+    addEventListener('deck:navigate', () => this.#retarget());
+  }
+
+  #retarget() {
     let current = this.getAttribute('app') ?? '';
+    let at = focus();
+    for (let [route] of ROUTES) {
+      let link = this.querySelector(`[data-route="${route}"]`);
+      if (!link) continue;
+      link.setAttribute('href', lensHref(route, current, at));
+      if (route === current) link.dataset.inert = at ? '0' : '1';
+    }
+    this.querySelector('.deck-nav')?.toggleAttribute('data-focused', Boolean(at));
+  }
+
+  render() {
+    let current = this.getAttribute('app') ?? '';
+    let at = focus();
     this.innerHTML =
-      `<nav class="deck-nav">` +
+      `<nav class="deck-nav"${at ? ' data-focused="1"' : ''}>` +
       // The mark is the home button. `/` redirects to whichever app is the
       // front door, so this is one link that never needs updating when the
       // front door moves.
       `<a class="deck-nav-mark" href="/" title="Deck Hub — home">DECK</a>` +
-      ROUTES.map(([route, title]) =>
-        route === current
-          ? `<span class="deck-nav-here" aria-current="page">${esc(route)}</span>`
-          : `<a href="/${esc(route)}" title="${esc(title)}">${esc(route)}</a>`,
-      ).join('') +
+      ROUTES.map(([route, title]) => {
+        let href = lensHref(route, current, at);
+        if (route === current) {
+          // The active tab is still a link, because with a focus it does
+          // something: it drops it. Without one it is inert and says so by
+          // not offering a pointer.
+          return (
+            `<a class="deck-nav-here" aria-current="page" data-route="${esc(route)}" ` +
+            `href="${esc(href)}" data-inert="${at ? '0' : '1'}" ` +
+            `title="${at ? 'clear the subject and show all of ' + route : esc(title)}"` +
+            `>${esc(route)}</a>`
+          );
+        }
+        return (
+          `<a data-route="${esc(route)}" href="${esc(href)}" ` +
+          `title="${esc(title)}">${esc(route)}</a>`
+        );
+      }).join('') +
       `<span class="deck-nav-gap"></span>` +
       `<select class="deck-nav-theme" data-role="theme" title="theme">` +
       THEMES.map(
@@ -102,12 +226,76 @@ export class DeckNav extends HTMLElement {
       ).join('') +
       `</select>` +
       `<span class="deck-nav-live" data-live="?">live</span>` +
+      // Presence rides beside the live badge because it is the same kind of
+      // fact: not what the depot HOLDS, but what is happening to it now.
+      `<button class="deck-nav-claims" data-role="claims" hidden></button>` +
+      `<div class="deck-claims" data-role="claim-list" hidden></div>` +
       `</nav>`;
     this.querySelector('[data-role="theme"]').addEventListener('change', (event) => {
       applyTheme(event.target.value);
     });
     this.#watchLive();
+    this.#watchClaims();
     this.#numberKeys();
+    this.querySelector('[data-role="claims"]').addEventListener('click', () => {
+      let list = this.querySelector('[data-role="claim-list"]');
+      list.hidden = !list.hidden;
+    });
+  }
+
+  /**
+   * WHO IS WORKING, AND WHERE — the other half of live.
+   *
+   * The badge says the depot changed. This says somebody has DECLARED they
+   * are about to change something, which is the more useful of the two and
+   * the one nothing was showing: a claim with no edits yet is work that has
+   * not happened, and it is the only warning anyone gets.
+   *
+   * Deliberately not a toast that disappears. A claim lasts half an hour and
+   * a notification that vanishes in four seconds cannot represent it — you
+   * would have to be looking at the moment it arrived. It is a standing
+   * count you can open.
+   */
+  async #watchClaims() {
+    let button = this.querySelector('[data-role="claims"]');
+    let list = this.querySelector('[data-role="claim-list"]');
+    let paint = async () => {
+      let claims = await fetch('/_activity?top=200&grain=file')
+        .then((response) => (response.ok ? response.json() : { foci: [] }))
+        .then((body) =>
+          (body.foci ?? []).flatMap((focus) =>
+            (focus.claims ?? []).map((claim) => ({ ...claim, at: focus.id })),
+          ),
+        )
+        .catch(() => []);
+      button.hidden = claims.length === 0;
+      if (!claims.length) {
+        list.hidden = true;
+        return;
+      }
+      button.textContent = `${claims.length} claim${claims.length === 1 ? '' : 's'}`;
+      list.innerHTML = claims
+        .map((claim) => {
+          let left = Math.max(0, Math.round((claim.until - Date.now()) / 60000));
+          return (
+            `<div class="deck-claim">` +
+            `<b>${esc(claim.actor)}</b> ` +
+            `<a href="/browse?at=${esc(claim.at)}">${esc(claim.at)}</a> ` +
+            `<span class="dim">${left}m left</span>` +
+            (claim.text ? `<div class="dim">${esc(claim.text)}</div>` : '') +
+            `<div class="dim">release it by deleting ` +
+            `<code>.deck/claims/${esc(claim.actor)}.json</code> — the agent ` +
+            `reads that as "stop working here"</div>` +
+            `</div>`
+          );
+        })
+        .join('');
+    };
+    await paint();
+    onLiveChange(() => paint());
+    // Claims expire on a clock nothing announces, so the countdown has to be
+    // redrawn rather than waiting for a change that may never come.
+    setInterval(paint, 30_000);
   }
 
   // `1`…`4` go to a section, the way the numbers in the nav imply. Ignored
@@ -131,14 +319,11 @@ export class DeckNav extends HTMLElement {
   // makes a broken watcher look like a quiet depot.
   #watchLive() {
     let badge = this.querySelector('.deck-nav-live');
-    let source = new EventSource('/_live/events');
     let set = (state, text) => {
       badge.dataset.live = state;
       badge.textContent = text;
     };
-    source.addEventListener('open', () => set('on', 'live'));
-    source.addEventListener('error', () => set('off', 'live: disconnected'));
-    source.addEventListener('change', (event) => {
+    onLiveChange((event) => {
       let name = '';
       try {
         name = JSON.parse(event.data).name ?? '';
@@ -149,9 +334,100 @@ export class DeckNav extends HTMLElement {
       clearTimeout(this.#settle);
       this.#settle = setTimeout(() => set('on', 'live'), 4000);
     });
+    liveSource.addEventListener('open', () => set('on', 'live'));
+    liveSource.addEventListener('error', () => set('off', 'live: disconnected'));
   }
 
   #settle;
+}
+
+/**
+ * <deck-subject> — what all three lenses are pointed at.
+ *
+ * This replaces the `deck browse ❯ ~/…` prompt each app used to print, and it
+ * replaces it for two reasons.
+ *
+ * The prompt repeated the tab name back at you, and it opened with `~`, which
+ * meant "clear the subject" to nobody who had not been told. Worse, it was
+ * three separate prompt lines that happened to look alike, so nothing on
+ * screen said the subject was SHARED — switching tabs looked like leaving.
+ *
+ * One bar, drawn once, sitting directly under the strip and joined to the
+ * active tab, is the whole affordance: the bar does not move or change when
+ * you switch lenses, only the content below it does. You watch the subject
+ * stay put, and that is the lesson.
+ *
+ * The app supplies the trail, because only /browse knows that a segment is a
+ * publisher rather than a package and colours it accordingly. Everything else
+ * here — the clearing, the keys, the joinery — is the same in all three.
+ */
+export class DeckSubject extends HTMLElement {
+  #trail = '';
+  #fact = '';
+
+  /** HTML for the address itself. The app owns this; the frame does not. */
+  set trail(value) {
+    this.#trail = value ?? '';
+    this.render();
+  }
+
+  /** One short fact appropriate to the current lens, or ''. */
+  set fact(value) {
+    this.#fact = value ?? '';
+    this.render();
+  }
+
+  connectedCallback() {
+    this.render();
+    // The app sets `.trail` as part of its own render, but it does not set
+    // one when it has nothing focused — so the bar has to notice the focus
+    // going away by itself, or it keeps displaying the address you just left.
+    addEventListener('deck:navigate', () => {
+      if (!focus()) {
+        this.#trail = '';
+        this.#fact = '';
+      }
+      this.render();
+    });
+    addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !focus()) return;
+      let tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      this.clear();
+    });
+    this.addEventListener('click', (event) => {
+      if (!event.target.closest('[data-role="clear-subject"]')) return;
+      event.preventDefault();
+      this.clear();
+    });
+  }
+
+  /**
+   * Drop the subject, stay in this lens.
+   *
+   * A full navigation rather than a pushState: each app reads `?at=` at the
+   * top of its own render, and going through the URL means the three apps
+   * need no shared clearing protocol between them.
+   */
+  clear() {
+    location.href = location.pathname;
+  }
+
+  render() {
+    let at = focus();
+    if (!at) {
+      this.innerHTML = '';
+      return;
+    }
+    this.innerHTML =
+      `<div class="deck-subject">` +
+      `<span class="deck-subject-trail">${this.#trail || esc(at)}</span>` +
+      (this.#fact ? `<span class="deck-subject-fact">${this.#fact}</span>` : '') +
+      `<span class="deck-nav-gap"></span>` +
+      `<button class="deck-subject-clear" data-role="clear-subject" ` +
+      `title="clear the subject (esc)"><kbd>esc</kbd> clear</button>` +
+      `</div>`;
+  }
 }
 
 /**
@@ -227,6 +503,7 @@ export class DeckKeys extends HTMLElement {
 
 for (let [name, ctor] of [
   ['deck-nav', DeckNav],
+  ['deck-subject', DeckSubject],
   ['deck-keys', DeckKeys],
 ]) {
   if (!customElements.get(name)) {
@@ -253,14 +530,59 @@ export const NAV_CSS = `
   color: var(--a-depot) !important; padding-left: 0 !important;
 }
 .deck-nav-mark:hover { background: var(--a-depot) !important; color: var(--bg) !important; }
-.deck-nav-here { background: var(--a-package); color: var(--bg); font-weight: 600; }
+.deck-nav-here {
+  background: var(--a-package); color: var(--bg) !important; font-weight: 600;
+}
+/* With a subject, the active tab is a control: clicking it drops the subject.
+   Without one it is just a label, so it stops offering a pointer — the same
+   pixel must not look clickable when it is not. */
+.deck-nav-here[data-inert='1'] { cursor: default; }
+.deck-nav-here[data-inert='0']:hover {
+  background: var(--amber);
+}
 .deck-nav-gap { flex: 1; }
+
+/* ── The subject bar ───────────────────────────────────────────────────
+   Joined to the strip above it, and unchanged when you switch lenses. The
+   not-moving is the message: the tabs are three views of THIS, not three
+   places to go. */
+.deck-subject {
+  display: flex; align-items: baseline; gap: 1.5ch;
+  padding: calc(var(--row, 1.5) * .35em) 1ch;
+  border-top: 1px solid var(--a-package);
+  background: var(--sel);
+  font-size: 13px;
+}
+.deck-subject-trail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck-subject-trail a { text-decoration: none; }
+.deck-subject-trail a:hover { text-decoration: underline; }
+.deck-subject-fact { color: var(--dim); white-space: nowrap; }
+.deck-subject-clear {
+  font: inherit; cursor: pointer; background: none; border: 0;
+  color: var(--dim); padding: 0; white-space: nowrap;
+}
+.deck-subject-clear:hover { color: var(--fg); }
 .deck-nav-live { color: var(--dim); white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; max-width: 40ch; }
 .deck-nav-live::before { content: '● '; }
 .deck-nav-live[data-live='on']::before { color: var(--green); }
 .deck-nav-live[data-live='off']::before { color: var(--red); }
 .deck-nav-live[data-live='?']::before { color: var(--dim); }
+
+.deck-nav-claims {
+  font: inherit; cursor: pointer; margin-left: 2ch; padding: 0 1ch;
+  background: none; border: 1px solid var(--a-publisher);
+  color: var(--a-publisher); border-radius: 0;
+}
+.deck-nav-claims:hover { background: var(--a-publisher); color: var(--bg); }
+.deck-claims {
+  position: absolute; right: var(--gut, 2ch); top: 2.4em; z-index: 5;
+  max-width: 46ch; padding: .4em 1ch;
+  background: var(--bg); border: 1px solid var(--a-publisher);
+  font-size: 12px;
+}
+.deck-claim + .deck-claim { margin-top: .6em; border-top: 1px solid var(--line); padding-top: .6em; }
+.deck-claim a { color: var(--fg); }
 
 .deck-keys {
   position: fixed; left: 0; right: 0; bottom: 0;

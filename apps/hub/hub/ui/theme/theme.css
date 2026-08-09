@@ -248,6 +248,46 @@ pre.blob.diff .ln[data-mark='+'] .mk { color: var(--green); }
 pre.blob.diff .ln[data-mark='-'] { background: color-mix(in srgb, var(--red) 16%, transparent); }
 pre.blob.diff .ln[data-mark='-'] .mk { color: var(--red); }
 
+/* ── review: many files, cropped to what changed ──────────────────────
+   Word-level marking inside a changed line. A one-character change in a
+   long line is invisible when the whole line is red and the whole
+   replacement is green — you are told a line changed and left to find it.
+   Underline rather than a second background, so it stacks on the line
+   tint instead of fighting it. */
+pre.blob.diff u.w-add, pre.blob.diff u.w-del {
+  text-decoration: none; border-radius: 2px; padding: 0 1px;
+}
+pre.blob.diff u.w-add { background: color-mix(in srgb, var(--green) 34%, transparent); }
+pre.blob.diff u.w-del { background: color-mix(in srgb, var(--red) 34%, transparent); }
+
+/* The withheld run. It must not look like content — it is a control — so it
+   takes the dim treatment and a pointer, and says how much it is holding. */
+pre.blob.diff .ln.gap {
+  color: var(--dim); cursor: pointer;
+  background: color-mix(in srgb, var(--line) 30%, transparent);
+}
+pre.blob.diff .ln.gap:hover, pre.blob.diff .ln.gap:focus-visible {
+  color: var(--fg); background: var(--sel); outline: none;
+}
+pre.blob.diff .ln.gap .mk { color: var(--dim); }
+
+.review { margin: 0 0 calc(var(--row) * .8em) 0; border: 1px solid var(--line); }
+.review-head {
+  display: flex; align-items: baseline; gap: 1.5ch;
+  padding: calc(var(--row) * .3em) 1ch;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.review-head:hover, .review-head:focus-visible { background: var(--sel); outline: none; }
+.review-path { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.review-count { white-space: nowrap; }
+.review-count .ok { color: var(--green); }
+.review-count .bad { color: var(--red); }
+.fold-mark { width: 2ch; color: var(--dim); }
+.review[data-open='0'] > pre { display: none; }
+.review[data-open='0'] .review-head { border-bottom: 0; }
+.review > pre.blob.diff { margin: 0; }
+
 table.treediff td.mark { width: 3ch; font-weight: 600; }
 table.treediff tr[data-status='added'] td.mark { color: var(--green); }
 table.treediff tr[data-status='removed'] td.mark { color: var(--red); }

@@ -14,6 +14,7 @@ import {
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveTlsMaterials, type TlsOption } from './tls.ts';
+import { ActivityIndex } from './activity.ts';
 import { DECKBOOK_PATHS, loadDeckbookHtml } from './deckbook.ts';
 import { readZipEntry } from '@deck/core/canonical-zip';
 import {
@@ -124,6 +125,10 @@ const OFFERS_PATH = new RegExp(`^/(?<depot>${SEGMENT})/_offers/?$`);
 const SIGNATURES_PATH = new RegExp(
   `^/(?<depot>${SEGMENT})/_trees/(?<treeHash>[0-9a-f]{64})/signatures/?$`,
 );
+// One door for "where are agents working". See docs/deck-activity-protocol.md
+// and the note at the top of activity.ts for why this is protocol rather than
+// something the Hub computes for itself.
+const ACTIVITY_PATH = /^\/_activity\/?$/;
 const LIVE_EVENTS_PATH = '/_live/events';
 const LIVE_HMR_PATH = '/_live/hmr.js';
 const BROWSER_PATHS = new Set(['/', '/_browser', '/_browser/']);
@@ -238,6 +243,10 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   let { depots, fallback } = options;
   let liveBus = options.liveBus ?? createLiveBus();
   let byName = new Map(depots.map((depot) => [depot.name, depot]));
+  // The activity index reads the same depots the router serves, so "who is
+  // working here" can never be answered about a depot this server does not
+  // actually hold.
+  let activity = new ActivityIndex(depots);
   // Stored packs are immutable (published versions never change), so this
   // cache never invalidates; the cap only bounds memory.
   let packCache = new Map<string, CachedPack>();
@@ -734,12 +743,20 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> {
+    let url = new URL(req.url ?? '/', 'http://localhost');
+    let pathname = decodeURIComponent(url.pathname);
+
+    // The read-only gate. This server answers GET and HEAD and nothing else,
+    // and that is not a limitation to work around — it is what makes an
+    // address a promise. Every change to what a depot holds goes through the
+    // CLI or the watcher, INCLUDING claims: `deck claim` writes the record
+    // and this server reads it, so presence arrives by the same road as
+    // everything else and there is no write endpoint to secure.
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       respondError(req, res, 405, 'method-not-allowed', `${req.method}`);
       return;
     }
-    let url = new URL(req.url ?? '/', 'http://localhost');
-    let pathname = decodeURIComponent(url.pathname);
+
     let search = url.search;
 
     // `/` is the store browser — unless the embedder mounted something there.
@@ -832,6 +849,18 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         clearInterval(heartbeat);
         unsubscribe();
       });
+      return;
+    }
+
+    // ── /_activity ────────────────────────────────────────────────────
+    //
+    // Two channels, never blended: `score`/`last` is what actually changed
+    // here (observed), `claims` is what an agent SAID it is working on
+    // (declared, with a TTL). A claim deliberately does not move the score —
+    // otherwise "how much work landed here" becomes something an agent can
+    // inflate by announcing itself.
+    if (ACTIVITY_PATH.test(pathname)) {
+      respondJson(req, res, await activity.report(url.searchParams), 'no-store');
       return;
     }
 

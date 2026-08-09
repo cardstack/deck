@@ -14,7 +14,8 @@ export type GroupId =
   | 'propose'
   | 'endorse'
   | 'recall'
-  | 'prove';
+  | 'prove'
+  | 'say';
 
 export interface Group {
   id: GroupId;
@@ -66,6 +67,11 @@ export const GROUPS: Group[] = [
     id: 'prove',
     title: 'prove',
     blurb: 'the executable contract',
+  },
+  {
+    id: 'say',
+    title: 'say',
+    blurb: 'what you are working on, and what you did',
   },
 ];
 

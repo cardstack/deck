@@ -13,6 +13,7 @@ import { PROPOSE_COMMANDS } from './commands/propose.ts';
 import { ENDORSE_COMMANDS } from './commands/endorse.ts';
 import { RECALL_COMMANDS } from './commands/recall.ts';
 import { PROVE_COMMANDS } from './commands/prove.ts';
+import { SAY_COMMANDS } from './commands/say.ts';
 
 export const COMMANDS: Command[] = [
   ...START_COMMANDS,
@@ -23,6 +24,7 @@ export const COMMANDS: Command[] = [
   ...ENDORSE_COMMANDS,
   ...RECALL_COMMANDS,
   ...PROVE_COMMANDS,
+  ...SAY_COMMANDS,
 ];
 
 const BY_NAME = new Map(COMMANDS.map((command) => [command.name, command]));

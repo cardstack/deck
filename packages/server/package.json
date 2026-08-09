@@ -13,7 +13,8 @@
     "./rebase-daemon": "./src/rebase-daemon.ts",
     "./compression": "./src/compression.ts",
     "./preload": "./src/preload.ts",
-    "./tls": "./src/tls.ts"
+    "./tls": "./src/tls.ts",
+    "./activity": "./src/activity.ts"
   },
   "scripts": {
     "test": "node tests/index.ts",

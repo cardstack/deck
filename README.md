@@ -274,6 +274,9 @@ Design set in [docs/](docs/) — start with:
   **`GET /_activity`** replaces `/_heat`: one agent-activity door (EWMA
   trie + optional `story=1` run/code/commentary) for gutters and the
   watch canvas. ([old heat note](docs/deck-heat-protocol.md) points here.)
+- [deck-tick-version-vocabulary.md](docs/deck-tick-version-vocabulary.md)
+  — **ruled.** UI: **Version** / **Tick** / **Timeline**; imports:
+  **Import** / **Pin** / **Entry** / **Leaf** / **Closure**.
 - [deck-pack-equivalence.md](docs/deck-pack-equivalence.md) — deck ⇄
   pack: four homes, treeHash identity, carriage modes, round-trip
   laws, `!/` mounts, canonical-zip-v1. All opens ruled.

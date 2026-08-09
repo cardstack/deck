@@ -14,8 +14,9 @@
 // other package site "what am I actually running" is an inference. Here it is
 // a readout, sitting directly below the thing doing the running.
 import 'ui/nav';
-import { installNavStyles } from 'ui/nav';
+import { installNavStyles, onLiveChange } from 'ui/nav';
 import {
+  ago,
   heatCell,
   heatScale,
   installHeatStyles,
@@ -29,6 +30,7 @@ installHeatStyles();
 
 const app = document.getElementById('app');
 const keys = document.querySelector('deck-keys');
+const subject = document.querySelector('deck-subject');
 
 const esc = (value) =>
   String(value).replace(
@@ -39,6 +41,29 @@ const esc = (value) =>
 const params = () => new URLSearchParams(location.search);
 const currentAt = () => params().get('at') ?? '';
 const currentWith = () => params().getAll('with');
+
+/**
+ * The focused address as coloured, clickable segments.
+ *
+ * /browse can type these properly because it has parsed the address; here the
+ * first three segments are depot, publisher and package by position, which is
+ * true of every address /run is ever given. Ascending a segment stays in this
+ * lens, so `three-js/app` from a running page means "other runnable pages in
+ * app" and not "leave".
+ */
+function addressTrail(at) {
+  let parts = at.replace(/^\//, '').split('/');
+  let classes = ['s-depot', 's-publisher', 's-package'];
+  return parts
+    .map((part, index) => {
+      let upto = `/${parts.slice(0, index + 1).join('/')}`;
+      let cls = classes[index] ?? '';
+      return index === parts.length - 1
+        ? `<b class="${cls}">${esc(part)}</b>`
+        : `<a class="${cls}" href="?at=${esc(upto)}" data-at="${esc(upto)}">${esc(part)}</a>`;
+    })
+    .join('<span class="sep">/</span>');
+}
 
 function go(next = {}) {
   let query = new URLSearchParams();
@@ -258,14 +283,80 @@ function mapRows(table, indent = false) {
     .join('');
 }
 
-async function viewOne(at) {
+/**
+ * NO LENS IS EVER A DEAD END.
+ *
+ * The tab strip carries one address across three lenses, and the address you
+ * were reading in /browse is usually a source file. A source file does not
+ * run. If `run` answered that with "not runnable" the strip would be a lie
+ * half the time — you would learn that switching lenses sometimes throws your
+ * place away, and then you would stop switching.
+ *
+ * So a non-page focus resolves UP to the deck that contains it and runs that
+ * deck's page. The subject does not change, the substitution is stated, and
+ * the reader gets the thing they meant: the file they were reading, running.
+ *
+ * A deck with no page at all is the one honest refusal, and it is a fact
+ * about that deck — the eleven ProseMirror `src/` decks publish no entry —
+ * rather than a failure of the strip.
+ */
+async function resolveRunnable(at) {
+  if (/\.html?$/.test(at)) return { at };
+  let parts = at.replace(/^\//, '').split('/');
+  let [depot, publisher, pkgAndSpec] = parts;
+  if (!depot || !publisher || !pkgAndSpec) return { at };
+  let deck = `/${depot}/${publisher}/${pkgAndSpec}`;
+  let pages = await getJson(`/_browse${deck}`)
+    .then((body) =>
+      (body.data.attributes.entries ?? [])
+        .filter((entry) => /\.html?$/.test(entry.name))
+        .map((entry) => entry.path),
+    )
+    .catch(() => []);
+  if (!pages.length) {
+    return {
+      why:
+        `Nothing in ${pkgAndSpec} is a page, so there is nothing here to run. ` +
+        `That is a fact about the deck, not a missing feature — a deck can be ` +
+        `addressable, hashed and diffable and still have no entry a browser ` +
+        `can be pointed at.`,
+    };
+  }
+  // index.html when there is one, because that is what a directory means.
+  let page = pages.find((path) => /(^|\/)index\.html?$/.test(path)) ?? pages[0];
+  return { at: `${deck}/${page}`, instead: at };
+}
+
+async function viewOne(input) {
+  let resolved = await resolveRunnable(input);
+  if (!resolved.at) {
+    subject.trail = addressTrail(input);
+    subject.fact = '';
+    return (
+      `<main><div class="err"><b>nothing to run</b> — ${esc(resolved.why)}</div>` +
+      `<p class="dim"><a href="/browse?at=${esc(input)}">Read it in /browse</a>, ` +
+      `or <a href="/track?at=${esc(input)}">see what changed</a>.</p></main>`
+    );
+  }
+  let at = resolved.at;
+  let substituted = resolved.instead;
   let withs = currentWith();
   let { url, why } = runTarget(at, withs);
-  let head =
-    `<div class="prompt"><span class="prompt-mark">deck run</span> ` +
-    `<a href="?" data-at="">~</a><span class="sep">/</span>` +
-    `<b>${esc(at.replace(/^\//, ''))}</b></div>` +
-    `<main>`;
+  // The address goes to the shared subject bar. It is the same address
+  // /browse and /track are pointed at, so it is drawn once, in one place, by
+  // one component — and it stays put while you move between the three.
+  // The subject bar shows what you ASKED for, not what got substituted — the
+  // point of the strip is that your place survives the switch, so the bar has
+  // to keep saying it. What actually loaded is stated once, below.
+  subject.trail = addressTrail(substituted ?? at);
+  let heat = scoreOf((substituted ?? at).replace(/\/[^/]*\.\w+$/, ''));
+  subject.fact = heat.last ? `edited ${ago(heat.last)}` : '';
+  let head = `<main>`;
+  if (substituted) {
+    head +=
+      `<p class="dim">${esc(substituted.split('/').pop())} is not a page. ` +
+      `Running <b>${esc(at.split('/').pop())}</b>, the page in the same deck.</p>`;
+  }
 
   if (!url) {
     return (
@@ -382,19 +473,33 @@ function applyStage() {
   split.style.setProperty('--split', String(splitAt()));
   split.style.setProperty('--stagew', stageWidth());
   split.dataset.full = isFull() ? '1' : '0';
-  // MEASURED, not guessed. The chrome above this is a nav plus a prompt line
-  // plus sometimes a trial banner, and the legend at the foot shows or hides
-  // on a key. A hard-coded offset would be wrong for most of those states and
-  // would leave the page scrolling by a few pixels — which, on a pane that is
-  // supposed to fill the window exactly, reads as a broken layout.
-  let above = split.getBoundingClientRect().top + scrollY;
+  // MEASURED, not guessed. The chrome above this is a nav, a subject bar, and
+  // sometimes a trial banner; below it a legend that shows and hides on a
+  // key. A hard-coded offset is wrong in most of those states and leaves the
+  // page scrolling by a few pixels, which on a pane meant to fill the window
+  // exactly reads as broken.
+  //
+  // AND THE MEASUREMENT MUST NOT FEED ITSELF. This ran inside a
+  // ResizeObserver on the document, which is a loop with no exit: writing
+  // --chrome resizes the pane, resizing the pane resizes the document, and
+  // the observer fires again. The page did not error — it froze, which is the
+  // worst way for a layout bug to present because there is nothing to read.
+  //
+  // Two guards, and both are needed. Writing only on a real change breaks the
+  // feedback; measuring off `window` rather than the element means the input
+  // does not depend on the output at all.
   let legend = document.querySelector('deck-keys')?.offsetHeight ?? 0;
-  split.style.setProperty('--chrome', `${Math.round(above + legend + 8)}px`);
+  let above = split.getBoundingClientRect().top + scrollY;
+  let next = `${Math.round(above + legend + 8)}px`;
+  if (split.style.getPropertyValue('--chrome') !== next) {
+    split.style.setProperty('--chrome', next);
+  }
 }
 
-// The legend toggles with `h` and the trial banner comes and goes, so the
-// measurement has to be redone rather than taken once.
-new ResizeObserver(() => applyStage()).observe(document.documentElement);
+// Window resize only. The legend toggling and the trial banner appearing both
+// go through render(), which calls applyStage() itself — so nothing needs to
+// watch the document, and nothing can chase its own tail.
+addEventListener('resize', () => applyStage());
 
 function dragSplit(event) {
   let split = app.querySelector('[data-role="split"]');
@@ -569,6 +674,6 @@ onHeatChange(() => {
   // would tear the iframe down and restart whatever it was doing.
   if (!currentAt()) render();
 });
-new EventSource('/_live/events').addEventListener('change', () => loadHeat());
+onLiveChange(() => loadHeat());
 
 render();

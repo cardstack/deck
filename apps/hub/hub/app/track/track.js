@@ -39,7 +39,7 @@
 // of code. They compose through the URL, which is the same joint everything
 // else here uses.
 import 'ui/nav';
-import { installNavStyles } from 'ui/nav';
+import { installNavStyles, onLiveChange } from 'ui/nav';
 import { QueryClient } from '@tanstack/query-core';
 import {
   constructTable,
@@ -54,6 +54,7 @@ installNavStyles();
 
 const app = document.getElementById('app');
 const keys = document.querySelector('deck-keys');
+const subject = document.querySelector('deck-subject');
 
 const esc = (value) =>
   String(value).replace(
@@ -434,23 +435,29 @@ function attention(rows) {
   );
 }
 
+/**
+ * The scope, in the shared subject bar.
+ *
+ * `everything` is dropped from the trail here: with no scope there is no
+ * subject and the bar does not draw at all, which says the same thing more
+ * plainly than a word claiming to be an address. The classes match /browse's,
+ * because the same address must be the same colours in every lens or the
+ * colouring stops being a grammar and becomes decoration.
+ */
 function scopeBar(scope, at) {
-  let trail = [['everything', '']];
-  if (scope.depot) trail.push([scope.depot, `/${scope.depot}`]);
+  let trail = [];
+  if (scope.depot) trail.push([scope.depot, `/${scope.depot}`, 's-depot']);
   if (scope.publisher)
-    trail.push([scope.publisher, `/${scope.depot}/${scope.publisher}`]);
-  if (scope.pkg) trail.push([scope.pkg, at]);
-  return (
-    `<div class="prompt"><span class="prompt-mark">deck track</span> ` +
-    trail
-      .map(([label, value], index) =>
-        index === trail.length - 1
-          ? `<b>${esc(label)}</b>`
-          : `<a href="?at=${esc(value)}" data-at="${esc(value)}">${esc(label)}</a>`,
-      )
-      .join('<span class="sep">/</span>') +
-    `</div>`
-  );
+    trail.push([scope.publisher, `/${scope.depot}/${scope.publisher}`, 's-publisher']);
+  if (scope.pkg) trail.push([scope.pkg, at, 's-package']);
+  subject.trail = trail
+    .map(([label, value, cls], index) =>
+      index === trail.length - 1
+        ? `<b class="${cls}">${esc(label)}</b>`
+        : `<a class="${cls}" href="?at=${esc(value)}" data-at="${esc(value)}">${esc(label)}</a>`,
+    )
+    .join('<span class="sep">/</span>');
+  return '';
 }
 
 /**
@@ -688,7 +695,7 @@ app.addEventListener('input', (event) => {
 //
 // Invalidate rather than refetch: query-core then only re-fetches what is
 // actually mounted, and the seal log is the one query that grows.
-new EventSource('/_live/events').addEventListener('change', () => {
+onLiveChange(() => {
   client.invalidateQueries();
   render();
 });

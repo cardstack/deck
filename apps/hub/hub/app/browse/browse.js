@@ -25,7 +25,7 @@
 // link — they are entries in the same volatility control as everything else,
 // because choosing between them is the same act.
 import 'ui/nav';
-import { installNavStyles } from 'ui/nav';
+import { installNavStyles, onLiveChange } from 'ui/nav';
 import {
   heatCell,
   heatScale,
@@ -34,7 +34,7 @@ import {
   onHeatChange,
   scoreOf,
 } from 'ui/heat';
-import { diffLines } from 'diff';
+import { diffLines, diffWordsWithSpace, structuredPatch } from 'diff';
 import hljs from 'highlight-js';
 import {
   constructTable,
@@ -50,6 +50,7 @@ installHeatStyles();
 
 const app = document.getElementById('app');
 const keys = document.querySelector('deck-keys');
+const subject = document.querySelector('deck-subject');
 
 const esc = (value) =>
   String(value).replace(
@@ -130,6 +131,16 @@ function splitHighlighted(html) {
     }
     let next = html.indexOf('<', index);
     let chunk = html.slice(index, next === -1 ? html.length : next);
+    // A `<` that is neither `<span` nor `</span>` would leave `next === index`
+    // and `chunk` empty, and the loop would never advance — a hang, in a
+    // function that runs on every file you open. hljs escapes its text so
+    // this should not arise; "should not" is not a reason to be able to lock
+    // the tab. Consume the character and carry on.
+    if (next === index) {
+      current += '<';
+      index += 1;
+      continue;
+    }
     index = next === -1 ? html.length : next;
     let parts = chunk.split('\n');
     for (let part = 0; part < parts.length; part += 1) {
@@ -306,17 +317,23 @@ function crumbs(parsed) {
       trail.push([segment, addressOf({ ...parsed, path: sofar.join('/') })]);
     }
   }
-  return (
-    `<div class="prompt"><span class="prompt-mark">deck browse</span> ` +
-    trail
-      .map(([label, at, cls], index) =>
-        index === trail.length - 1
-          ? `<b class="${cls ?? ''}">${esc(label)}</b>`
-          : `<a class="${cls ?? ''}" href="?at=${esc(at)}" data-at="${esc(at)}">${esc(label)}</a>`,
-      )
-      .join('<span class="sep">/</span>') +
-    `</div>`
-  );
+  // The trail goes to the shared subject bar, not into a prompt line of this
+  // app's own. `~` is gone with it: it was a link labelled with a character
+  // that meant "clear the subject" to nobody who had not been told, and the
+  // bar now says `esc clear` in words.
+  //
+  // What the app still owns is the TYPING — only /browse knows that this
+  // segment is a publisher and that one is a package, and the colours are
+  // half of how an address is read here.
+  subject.trail = trail
+    .slice(1)
+    .map(([label, at, cls], index, all) =>
+      index === all.length - 1
+        ? `<b class="${cls ?? ''}">${esc(label)}</b>`
+        : `<a class="${cls ?? ''}" href="?at=${esc(at)}" data-at="${esc(at)}">${esc(label)}</a>`,
+    )
+    .join('<span class="sep">/</span>');
+  return '';
 }
 
 /**
@@ -750,45 +767,175 @@ function treeDiffView(parsed, vs, left, right, leftLabel, rightLabel) {
 }
 
 /** File level: which lines differ. */
-function fileDiffView(leftText, rightText, leftLabel, rightLabel) {
-  let out = [];
-  let a = 0;
-  let b = 0;
-  let changed = 0;
-  for (let part of diffLines(leftText, rightText)) {
-    let lines = part.value.split('\n');
-    if (lines.at(-1) === '') lines.pop();
-    for (let line of lines) {
-      if (part.added) {
-        b += 1;
-        changed += 1;
-        out.push(['+', '', b, line]);
-      } else if (part.removed) {
-        a += 1;
-        changed += 1;
-        out.push(['-', a, '', line]);
-      } else {
-        a += 1;
-        b += 1;
-        out.push([' ', a, b, line]);
+// ── Review: many files, cropped to what changed ────────────────────────────
+//
+// Printing whole files was honest and unusable. A save that touches three
+// lines in a 900-line module produced 900 lines of evidence, and the reader
+// had to find the point themselves — so `diff →` was technically answering
+// the question and practically refusing to.
+//
+// This is the arrangement every code review tool converged on, for the reason
+// they all converged on it: show the changed lines with a few lines of
+// context, replace every other run with a control that says how much is being
+// withheld and reveals it in place.
+//
+// NO EDITOR, AND NO NEW DEPENDENCY. It is tempting to reach for CodeMirror
+// here, and it would be a category error — an editor exists to support typing
+// and this surface is read-only, so you would ship a document model,
+// selection, input handling and undo to render text you cannot edit, and
+// still write the hunk logic yourself. `structuredPatch` was already inside
+// the `diff` deck this app vendored for line diffs; so was
+// `diffWordsWithSpace`. Both went unused until now.
+const CONTEXT = 3;
+
+/**
+ * Word-level marking within a changed line.
+ *
+ * A one-character change in a long line is invisible when the whole line is
+ * red and the whole replacement is green — you are told a line changed and
+ * left to spot the difference. Only for runs where the removals and additions
+ * pair up one-to-one; anything else is a rewrite, and inventing a
+ * correspondence for it produces confetti.
+ */
+function pairWords(removed, added) {
+  if (removed.length !== added.length || !removed.length) return undefined;
+  return removed.map((before, index) => {
+    let parts = diffWordsWithSpace(before, added[index]);
+    let left = '';
+    let right = '';
+    for (let part of parts) {
+      let text = esc(part.value);
+      if (part.added) right += `<u class="w-add">${text}</u>`;
+      else if (part.removed) left += `<u class="w-del">${text}</u>`;
+      else {
+        left += text;
+        right += text;
       }
     }
+    return [left, right];
+  });
+}
+
+function diffLine(mark, oldNumber, newNumber, html) {
+  return (
+    `<span class="ln" data-mark="${mark === ' ' ? '' : mark}">` +
+    `<i class="gut">${oldNumber || ''}</i><i class="gut">${newNumber || ''}</i>` +
+    `<b class="mk">${mark}</b>${html || '&#8203;'}</span>`
+  );
+}
+
+/** A run of unchanged lines nobody asked to see, and the way to see it. */
+function gapRow(id, from, to) {
+  let count = to - from;
+  if (count <= 0) return '';
+  return (
+    `<span class="ln gap" data-gap="${id}" data-from="${from}" data-to="${to}" ` +
+    `tabindex="0" role="button">` +
+    `<i class="gut"></i><i class="gut"></i><b class="mk">⋯</b>` +
+    `${count} unchanged line${count === 1 ? '' : 's'}</span>`
+  );
+}
+
+/**
+ * One file's worth of review.
+ *
+ * `id` namespaces the gap controls so several files can sit on one page
+ * without their expanders colliding — which is the whole point of the
+ * multi-file view, and the thing that breaks first if the ids are positional.
+ */
+function reviewFile({ id, path, before, after, open = true }) {
+  let beforeLines = before.split('\n');
+  let afterLines = after.split('\n');
+  if (beforeLines.at(-1) === '') beforeLines.pop();
+  if (afterLines.at(-1) === '') afterLines.pop();
+
+  let patch = structuredPatch('a', 'b', before, after, '', '', { context: CONTEXT });
+  let added = 0;
+  let removed = 0;
+  let body = '';
+  let cursor = 1; // next unshown line, in NEW-file numbering
+
+  for (let [index, hunk] of patch.hunks.entries()) {
+    body += gapRow(`${id}:${index}`, cursor, hunk.newStart);
+    let oldNumber = hunk.oldStart;
+    let newNumber = hunk.newStart;
+    // Buffer consecutive removals so the additions that follow can be paired
+    // against them for word-level marking.
+    let pendingRemoved = [];
+    let flush = (addedLines) => {
+      let paired = pairWords(pendingRemoved, addedLines);
+      pendingRemoved.forEach((line, position) => {
+        body += diffLine('-', oldNumber - pendingRemoved.length + position, '',
+          paired ? paired[position][0] : esc(line));
+      });
+      addedLines.forEach((line, position) => {
+        body += diffLine('+', '', newNumber - addedLines.length + position,
+          paired ? paired[position][1] : esc(line));
+      });
+      pendingRemoved = [];
+    };
+    let pendingAdded = [];
+    for (let raw of hunk.lines) {
+      let mark = raw[0];
+      let text = raw.slice(1);
+      if (mark === '-') {
+        if (pendingAdded.length) {
+          flush(pendingAdded);
+          pendingAdded = [];
+        }
+        pendingRemoved.push(text);
+        oldNumber += 1;
+        removed += 1;
+      } else if (mark === '+') {
+        pendingAdded.push(text);
+        newNumber += 1;
+        added += 1;
+      } else {
+        flush(pendingAdded);
+        pendingAdded = [];
+        body += diffLine(' ', oldNumber, newNumber, esc(text));
+        oldNumber += 1;
+        newNumber += 1;
+      }
+    }
+    flush(pendingAdded);
+    cursor = newNumber;
   }
+  body += gapRow(`${id}:end`, cursor, afterLines.length + 1);
+
+  return (
+    `<section class="review" data-file="${esc(id)}" data-open="${open ? 1 : 0}">` +
+    `<header class="review-head" data-role="fold" tabindex="0" role="button">` +
+    `<b class="fold-mark">${open ? '▾' : '▸'}</b>` +
+    `<span class="review-path">${esc(path)}</span>` +
+    `<span class="review-count">` +
+    (added ? `<b class="ok">+${added}</b>` : '') +
+    (removed ? ` <b class="bad">−${removed}</b>` : '') +
+    (!added && !removed ? `<span class="dim">byte-identical</span>` : '') +
+    `</span></header>` +
+    `<pre class="blob diff" data-lines="${afterLines.length}">${body}</pre>` +
+    `</section>`
+  );
+}
+
+// The texts stay in memory so expanding a gap is a slice rather than another
+// pair of requests. A review page has already fetched both sides of every
+// file it is showing; going back to the network to reveal lines it is
+// holding would be the kind of thing that makes a UI feel slow for no reason.
+const reviewTexts = new Map();
+
+function fileDiffView(leftText, rightText, leftLabel, rightLabel) {
+  reviewTexts.set('one', { before: leftText, after: rightText });
   return (
     `<div class="diffhead"><span class="dim">base</span> ` +
     `<b class="s-base">${esc(leftLabel)}</b> <span class="dim">→ viewing</span> ` +
-    `<b class="s-head">${esc(rightLabel)}</b> · ` +
-    (changed ? `<b>${changed}</b> lines differ` : `<span class="ok">byte-identical</span>`) +
-    `</div><pre class="blob diff">` +
-    out
-      .map(
-        ([mark, an, bn, line]) =>
-          `<span class="ln" data-mark="${mark === ' ' ? '' : mark}">` +
-          `<i class="gut">${an || ''}</i><i class="gut">${bn || ''}</i>` +
-          `<b class="mk">${mark}</b>${esc(line) || '​'}</span>`,
-      )
-      .join('') +
-    `</pre>`
+    `<b class="s-head">${esc(rightLabel)}</b></div>` +
+    reviewFile({
+      id: 'one',
+      path: rightLabel,
+      before: leftText,
+      after: rightText,
+    })
   );
 }
 
@@ -958,41 +1105,80 @@ async function viewSeal(parsed, vs) {
     }
     let beforePaths = new Set(other.files ?? []);
     let afterPaths = new Set(files);
-    let rows = [
-      ...new Set([...beforePaths, ...afterPaths]),
-    ]
-      .filter((path) => !beforePaths.has(path) || !afterPaths.has(path) ||
-        (attrs.changed ?? []).includes(path))
-      .sort();
-    // A seal manifest lists paths, not hashes, so a path present in both is
-    // only KNOWN to differ when the seal says which files it touched. Falling
-    // back to every shared path would list the entire depot as changed, which
-    // is worse than useless — so this trusts `filesSummary` where it exists.
+
+    // WHAT THIS SAVE TOUCHED COMES FROM THE SEAL LOG, NOT THE SEAL.
+    //
+    // `GET /<depot>/_history/<changeId>` answers with the whole tree as it
+    // was — 21 paths — and no statement about which of them this save
+    // changed. Only the LIST endpoint carries `filesSummary`. Reading it off
+    // the single-seal response therefore found nothing, fell through to
+    // "paths present on one side only", and rendered an empty diff for every
+    // save that merely modified files. Which is almost all of them.
+    //
+    // The list is already fetched and memoised for the volatility control, so
+    // this costs nothing. A manifest lists paths and not hashes, so without
+    // that summary there is no way to know which shared path differs short of
+    // fetching every file on both sides — and listing the entire tree as
+    // changed would be worse than useless.
+    let seals = await sealsOf(parsed.depot);
+    let record = seals.find((seal) => seal.changeId === parsed.seal);
     let touched = new Set(
-      (attrs.filesSummary ?? []).map((line) => line.replace(/^[A-Z]\s+/, '')),
+      (record?.filesSummary ?? []).map((line) => line.replace(/^[A-Z]\s+/, '').trim()),
     );
-    if (touched.size) {
-      rows = [...touched].sort();
-    }
-    let body = rows
-      .map((path) => {
-        let status = !beforePaths.has(path)
-          ? 'added'
-          : !afterPaths.has(path)
-            ? 'removed'
-            : 'changed';
+    let rows = touched.size
+      ? [...touched].sort()
+      : [...new Set([...beforePaths, ...afterPaths])]
+          .filter((path) => !beforePaths.has(path) || !afterPaths.has(path))
+          .sort();
+    // EVERY FILE, ON ONE PAGE. This is the `3 files edited` row's landing
+    // site, and sending it to a LIST of three files would be answering "what
+    // changed" with "here are three places you could go and find out".
+    //
+    // Both sides of every touched file, fetched together, rendered cropped.
+    // The cost is bounded by what the save touched rather than by the size of
+    // the depot, which is why this is affordable at all: a save is small even
+    // when the tree is not.
+    reviewTexts.clear();
+    let sides = await Promise.all(
+      rows.map(async (path) => {
         let at = `/${parsed.depot}/${HISTORY}/${parsed.seal}/${path}`;
         let against = `${vs}/${path}`;
-        return (
-          `<tr data-status="${status}" data-name="${esc(path.toLowerCase())}">` +
-          `<td class="mark">${MARK[status]}</td>` +
-          `<td>${
-            status === 'removed'
-              ? `<span class="dim">${esc(path)}</span>`
-              : `<a href="?at=${esc(at)}&vs=${esc(against)}" data-at="${esc(at)}" ` +
-                `data-vs="${esc(against)}">${esc(path)}</a>`
-          }</td></tr>`
-        );
+        // A miss on either side is not a failure: it is `added` or `removed`,
+        // and the empty string is the correct text for a file that was not
+        // there.
+        let [after, before] = await Promise.all([
+          fetch(at).then((response) => (response.ok ? response.text() : '')),
+          fetch(against).then((response) => (response.ok ? response.text() : '')),
+        ]);
+        return { path, at, against, before, after };
+      }),
+    );
+    let addedTotal = 0;
+    let removedTotal = 0;
+    let body = sides
+      .map((file, index) => {
+        let id = `f${index}`;
+        reviewTexts.set(id, { before: file.before, after: file.after });
+        let patch = structuredPatch('a', 'b', file.before, file.after, '', '', {
+          context: CONTEXT,
+        });
+        for (let hunk of patch.hunks) {
+          for (let line of hunk.lines) {
+            if (line[0] === '+') addedTotal += 1;
+            else if (line[0] === '-') removedTotal += 1;
+          }
+        }
+        return reviewFile({
+          id,
+          path: file.path,
+          before: file.before,
+          after: file.after,
+          // Everything open by default: a save touches a handful of files and
+          // collapsing them by default would add a click per file to reach
+          // the thing the page exists to show. Big diffs fold themselves —
+          // see below.
+          open: sides.length <= 12,
+        });
       })
       .join('');
     return (
@@ -1001,10 +1187,10 @@ async function viewSeal(parsed, vs) {
       `<span class="dim">base</span> <b class="s-base">${esc(shortSeal(vs))}</b> ` +
       `<span class="dim">→ viewing</span> ` +
       `<b class="s-head">${esc(String(parsed.seal).slice(0, 12))}…</b> · ` +
-      `<b>${rows.length}</b> file${rows.length === 1 ? '' : 's'} touched</div>` +
-      (rows.length
-        ? `<table class="treediff"><tbody>${body}</tbody></table>`
-        : `<p class="dim">no differences</p>`) +
+      `<b>${rows.length}</b> file${rows.length === 1 ? '' : 's'} · ` +
+      `<b class="ok">+${addedTotal}</b> <b class="bad">−${removedTotal}</b>` +
+      `</div>` +
+      (rows.length ? body : `<p class="dim">no differences</p>`) +
       `</main>`
     );
   }
@@ -1249,18 +1435,26 @@ async function render() {
   cursor = -1;
   keys.keys = bindings();
 
-  // A DIFF OPENS ON THE CHANGE.
+  // A DIFF OPENS ON THE CHANGE — ONCE.
   //
   // Landing at line 1 of a 900-line file to report that 23 lines differ makes
-  // the reader scroll until they find the point — and a /track row that says
-  // `diff →` promised to show them the change, not the file it is in. The
-  // first hunk is the answer to the question that was asked.
+  // the reader hunt for the point, and a /track row that said `diff →`
+  // promised the change, not the file it is in.
   //
-  // Only when arriving fresh: `hunk` is left where it was so that `n` and `p`
-  // continue from here rather than restarting at the top.
-  hunk = -1;
-  if (currentVs() && app.querySelector('pre.diff')) stepChange(1);
+  // But only on ARRIVAL. This used to run on every render, and /browse
+  // re-renders whenever the depot changes — so while an agent was working,
+  // the page yanked itself back to the first hunk every few seconds. The
+  // reader scrolls, it snaps back, and the app looks stuck. It was the same
+  // bug as a scroll-restoring loop: the fix is to notice that re-rendering
+  // the same address is not arriving at it.
+  if (arrived !== `${currentAt()}|${currentVs()}`) {
+    arrived = `${currentAt()}|${currentVs()}`;
+    hunk = -1;
+    if (currentVs() && app.querySelector('pre.diff')) stepChange(1);
+  }
 }
+
+let arrived = '';
 
 // ---------------------------------------------------------------------------
 // Keyboard
@@ -1440,11 +1634,68 @@ addEventListener('keydown', (event) => {
 // must survive are scroll and selection.
 addEventListener('popstate', render);
 
+/**
+ * Reveal a withheld run, in place.
+ *
+ * Both texts are already in memory — the page fetched them to compute the
+ * diff — so this is a slice and an insertion, not a request. The control
+ * replaces itself with the lines it was hiding, which means there is nothing
+ * to collapse again and nothing to keep in sync: the DOM is the state.
+ *
+ * Numbering comes from the NEW side, which is the side these lines are
+ * unchanged in. They are unchanged, so the old numbers would be a different
+ * arithmetic for the same rows, and printing both invites the reader to
+ * check a subtraction that is never interesting.
+ */
+function expandGap(control) {
+  let [id] = control.dataset.gap.split(':');
+  let texts = reviewTexts.get(id);
+  if (!texts) return;
+  let lines = texts.after.split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  let from = Number(control.dataset.from);
+  let to = Number(control.dataset.to);
+  let html = '';
+  for (let number = from; number < to; number += 1) {
+    html += diffLine(' ', number, number, esc(lines[number - 1] ?? ''));
+  }
+  control.outerHTML = html;
+}
+
 app.addEventListener('click', (event) => {
+  let gap = event.target.closest('.gap[data-gap]');
+  if (gap) return expandGap(gap);
+
+  let fold = event.target.closest('[data-role="fold"]');
+  if (fold) {
+    let section = fold.closest('.review');
+    let open = section.dataset.open === '1';
+    section.dataset.open = open ? '0' : '1';
+    fold.querySelector('.fold-mark').textContent = open ? '▸' : '▾';
+    return;
+  }
+
   let link = event.target.closest('a[data-at]');
   if (!link || event.metaKey || event.ctrlKey || event.shiftKey) return;
   event.preventDefault();
   go(link.dataset.at, link.dataset.vs ?? currentVs());
+});
+
+// Both controls are reachable from the keyboard, because both are buttons in
+// everything but element name — and a review you can only operate with a
+// pointer is a review this app's own legend would be lying about.
+app.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  let gap = event.target.closest?.('.gap[data-gap]');
+  if (gap) {
+    event.preventDefault();
+    return expandGap(gap);
+  }
+  let fold = event.target.closest?.('[data-role="fold"]');
+  if (fold) {
+    event.preventDefault();
+    fold.click();
+  }
 });
 
 // Filtering is a DOM operation, not a re-render: hiding rows keeps scroll
@@ -1507,7 +1758,16 @@ await loadHeat();
 // And again whenever the depot moves. A decoration that only updates on
 // reload is a decoration that lies for as long as the tab stays open — which,
 // for the person watching an agent work, is the whole time.
-onHeatChange(() => render());
-new EventSource('/_live/events').addEventListener('change', () => loadHeat());
+//
+// LISTS ONLY. Heat decorates rows; it does not appear in a blob or a diff, so
+// re-rendering one on every save buys nothing and costs everything — it
+// discards scroll position, any gap the reader had expanded, and any file
+// they had folded, several times a minute while an agent is running. Reading
+// code in a live depot has to be possible.
+onHeatChange(() => {
+  if (app.querySelector('pre.blob')) return;
+  render();
+});
+onLiveChange(() => loadHeat());
 
 render();

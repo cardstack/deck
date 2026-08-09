@@ -6,7 +6,8 @@ working** and, when asked, **enough story to watch them** — run URL, code
 locator, commentary — without a second focus API.
 
 Companions: `deck-live-autopublish.md`, `deck-hub-brief.md` (`/track`,
-`/run`, `/browse`), `deck-land-hostnames.md`, `deck-laws.md`.  
+`/run`, `/browse`), `deck-land-hostnames.md`, `deck-laws.md`,
+`deck-tick-version-vocabulary.md` (Version / Tick / Timeline).  
 Supersedes: `deck-heat-protocol.md` (folded in here).
 
 ---
@@ -193,41 +194,130 @@ Canvas pattern: poll `?top=12&story=0` often; on **enter/rise** or every
 
 ---
 
-## 3. Writes
+## 3. Writes — there is no write endpoint
+
+**RESOLVED (2026-08-09): no `POST`.** The server answers `GET` and `HEAD` and
+nothing else, and that rule is worth more than the convenience of a write
+endpoint — it is what makes an address a promise rather than an API. Every
+change to a depot arrives through the CLI or the watcher, **including these**.
+The server reads what is on disk.
+
+That is also the cheaper design. An agent editing a depot already runs `deck`;
+declaring itself is one more command, and it needs no token, no port, no CORS
+and no auth story.
 
 | Source | Channel | Updates |
 | --- | --- | --- |
-| Seal `filesSummary` | touch | file leaves + bubble; `actor` on seal/meta |
+| Seal `filesSummary` | touch | file leaves + bubble; `actor` from the seal |
 | Publish / live bus | touch | package (+ paths if known) |
-| `POST /_activity/claim` | **claim** | set/refresh declaration on prefix; **does not** bump \(S\) |
-| `DELETE /_activity/claim` | claim | clear (agent done / moved on) |
-| `POST /_activity/note` | story | commentary text; does not bump \(S\); may sit on a claim |
+| `deck claim` | **claim** | writes `<depot>/.deck/claims/<actor>.json`; **does not** bump \(S\) |
+| `deck claim --clear` | claim | removes that file |
+| `deck note` | story | writes a note deck entry; does not bump \(S\) |
 | Mtime walk | touch | bootstrap / reconcile only |
 
-### 3.1 Claim (required for the two-color story)
+### 3.1 Claim — intent, ephemeral
 
-```http
-POST /_activity/claim
-{ "prefix": "/site/acme/palette", "actor": "agent-b", "text": "merge policy for ZWG", "ttlSec": 1800 }
+```
+deck claim app/run --actor claude --text "wiring the splitter" --ttl 30m
+deck claim --clear --actor claude
+```
 
-DELETE /_activity/claim
-{ "prefix": "/site/acme/palette", "actor": "agent-b" }
+Stored one file per actor at `<depot>/.deck/claims/<actor>.json`:
+
+```json
+{ "actor": "claude", "prefix": "app/run", "since": 1735689400000, "until": 1735691200000,
+  "text": "wiring the splitter" }
 ```
 
 | Rule | |
 | --- | --- |
-| Default TTL | 30 min if omitted; server clamps (e.g. max 2h) |
-| Refresh | Same actor+prefix POST extends `until` |
-| One live claim per actor | New prefix moves the claim (or allow many — default **one** so the stage stays honest) |
-| Expiry | Dropped from `claims[]` when `now > until`; SSE may emit clear |
+| Where | `.deck/` — **machinery, not content.** Outside every tree, so a claim refreshing every 30 min can never churn a tree hash |
+| One file per actor | Two agents appending to one array is a lost update; two files are a set union |
+| Default TTL | 30 min; clamped to 2 h |
+| Refresh | Same actor+prefix keeps `since`, so "claimed for 40 minutes" stays true; a new prefix restarts the clock |
+| Expiry | Enforced by the **reader**. A crashed agent cannot clean up after itself, and a claim outliving its process is exactly the ghost this must not show |
+| Who claims | Agents **and people**. "I am editing this, I am going to change it" is the same statement whoever makes it |
+| What is claimed | Any path — a file, a folder, a deck, a whole tree |
 
-### 3.2 Note (optional text)
+#### Revocation: deleting a claim is an instruction
 
-```json
-{ "prefix": "/site/acme/palette", "actor": "agent-b", "text": "…" }
+Removing someone else's claim before it expires means **stop working here**.
+The absence of the file is the entire message — no second channel, no
+permission model beyond who can write the directory.
+
+Which is why an agent must be able to tell *taken* from *lapsed*:
+
+```
+deck claim --status
 ```
 
-Auth = cloud write auth; local Hub may open in dev.
+| exit | meaning | what the agent should do |
+| --- | --- | --- |
+| `0` | held | carry on |
+| `3` | **revoked** — gone before its TTL | stop, and say so |
+| `4` | expired — reached its deadline | refresh if still working |
+
+An agent that reads expiry as a stop signal quits for no reason; one that
+reads revocation as expiry ignores the person asking it to stop. The deadline
+is recorded beside the claim (`<actor>.json.until`) precisely so the
+difference survives the file being deleted.
+
+#### Presence in the Hub
+
+Claims appear beside the `live` badge as a standing count, not a toast: a
+claim lasts half an hour and a notification that fades in four seconds cannot
+represent one — you would have to be looking when it arrived. Clicking opens
+the list, each row naming the actor, the path, the time remaining and how to
+release it.
+
+### 3.2 Note — record, permanent, and a deck
+
+A note is **the half of a git commit Deck does not otherwise have.** A commit
+is `(tree, parents, author, time, message)`; the seal log already holds tree
+and parents, which leaves author, time and message homeless. This is where
+they live.
+
+```
+deck note --text "swapped the splitter to percent tracks; fr is illegal in calc()" \
+          --tree <sha256> --at /hub/app/run --actor claude
+```
+
+Stored as ordinary **content** — a JSON file in a deck:
+
+```
+/<depot>/<actor>/notes/20260809T011422Z.json
+
+{ "kind": "update", "actor": "claude", "at": "2026-08-09T01:14:22Z",
+  "about": { "tree": "<sha256>", "at": "/hub/app/run" },
+  "text": "…" }
+```
+
+| Decision | Why |
+| --- | --- |
+| Content, not metadata | It hashes, seals, versions, forks, diffs and endorses like everything else. No sidecar format, no bespoke endpoint, nothing new in the URL space |
+| Addressed **by tree hash** | Same reason L9 addresses endorsements by tree: a fork of the same bytes reads the same notes, and a rename or re-publish does not orphan the story |
+| Under the **actor's publisher** | The publisher segment is the fork boundary, so it is already the per-actor namespace. Two agents writing at the same instant cannot collide — by grammar, not by merge strategy |
+| One file per note | Same argument as claims, and the same one the codelist demo makes about sets |
+| Append-only | Not a rule this enforces — it falls out of immutability. A correction is a new note; the wrong one stays, which is what makes it evidence |
+
+**Backport:** each note file is already a card instance. `/track` becomes a
+reader of records rather than a jj viewer, and the feed is an app over real
+JSON.
+
+### 3.3 Why the two live in different places
+
+| | claim | note |
+| --- | --- | --- |
+| Tense | before / during | after |
+| Lifetime | expires | permanent |
+| Storage | `.deck/` (machinery) | a deck (content) |
+| Enters a tree hash | never | yes, and correctly |
+| Survives a restart | no, deliberately | yes |
+
+The asymmetry is the design, not an inconsistency: **intent is ephemeral and
+uncommitted; a record is history.** Putting a claim in a tree would rewrite a
+hash every heartbeat; keeping a note out of one would make the story the only
+part of the work that is not addressable.
 
 ---
 
