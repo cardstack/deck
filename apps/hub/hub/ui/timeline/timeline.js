@@ -71,34 +71,98 @@ export function stepsFor(steps, prefixes) {
 }
 
 /**
- * Collapse a run of saves by one hand into one hop.
+ * Merge only saves a reader could not tell apart.
  *
- * Ten consecutive saves to run.js are ten Steps and usually one intention.
- * Undoing them one at a time is twelve keypresses to reverse one change,
- * which is not undo, it is scrubbing with extra steps. Consecutive steps
- * within `gapMs` are folded into a single notch that carries the OLDEST id —
- * the state before the burst began, which is what "undo that" means.
+ * This folded by elapsed time and that was wrong twice over. At ninety
+ * seconds it swallowed a whole working session — forty-five Steps became two
+ * notches, and a timeline with two notches is not a timeline. Shrinking the
+ * window did not fix the idea.
+ *
+ * THE IDEA WAS WRONG FOR AGENTS. Time-folding assumes rapid saves are one
+ * fumbled intention, which is true of a person and false of an agent: an
+ * agent does not save twice because it changed its mind mid-keystroke. Each
+ * of its saves is a deliberate edit, and those are precisely the ones worth
+ * stepping through — folding them destroys the record of the work while
+ * claiming to tidy it.
+ *
+ * So the rule is not "close together" but "indistinguishable": the same file
+ * set, within a few seconds. That catches the watcher firing twice for one
+ * write, which is a genuine duplicate, and keeps every deliberate save
+ * whoever made it. When in doubt it does not fold — a tape that is too long
+ * can be navigated, and one that is too short has lost the destination.
  */
-export function foldBursts(steps, gapMs = 90_000) {
+export function foldBursts(steps, gapMs = 3000) {
+  // ONE PASS, ONE KEY PER STEP, NO SORT.
+  //
+  // Cost matters: this runs on every render, and the realm server will run it
+  // constantly over far longer tapes. The first version built a sorted joined
+  // string for BOTH sides of every comparison — two sorts and two allocations
+  // per step, for a test that almost always fails.
+  //
+  // Now each step's key is computed once as it is visited and carried
+  // forward, its timestamp is parsed once, and the two free tests run first.
+  // A time comparison is a subtraction and a length comparison is a property
+  // read; neither allocates, and between them they reject nearly every pair
+  // before any string is built.
+  //
+  // No sort, deliberately. `filesSummary` arrives from the history backend in
+  // its own stable order, so two changes touching the same set produce the
+  // same sequence. Sorting to defend against an ordering that does not vary
+  // would cost n log n per step to change nothing — and if some backend ever
+  // did reorder, the failure is one unfolded duplicate notch, which is the
+  // harmless direction to be wrong in.
   let out = [];
+  let lastKey;
+  let lastWhen;
+  let lastCount = -1;
   for (let step of steps) {
     let when = Date.parse(step.timestamp ?? '');
+    let summary = step.filesSummary ?? [];
     let last = out.at(-1);
-    let lastWhen = last ? Date.parse(last.timestamp ?? '') : undefined;
-    // Newest first, so "within the gap" means the previous entry is NEWER.
-    if (last && Number.isFinite(when) && Number.isFinite(lastWhen) &&
-        lastWhen - when < gapMs) {
+
+    let close =
+      last !== undefined &&
+      Number.isFinite(when) &&
+      Number.isFinite(lastWhen) &&
+      // Newest first, so "within the gap" means the previous entry is NEWER.
+      lastWhen - when < gapMs &&
+      summary.length === lastCount;
+
+    // Only now is building a string worth it.
+    let key = close ? summary.join(' ') : undefined;
+    if (close && key === lastKey) {
       last.folded = (last.folded ?? 1) + 1;
-      // Keep the oldest id in the burst: stepping onto this notch should
-      // land before the whole burst, not in the middle of it.
+      // Keep the OLDEST id in the run: stepping onto this notch should land
+      // before it began, not in the middle of it.
       last.changeId = step.changeId;
       last.timestamp = step.timestamp;
-      last.why = [...new Set([...(last.why ?? []), ...(step.why ?? [])])];
+      lastWhen = when;
       continue;
     }
+
     out.push({ ...step });
+    lastWhen = when;
+    lastCount = summary.length;
+    lastKey = key ?? summary.join(' ');
   }
   return out;
+}
+
+/**
+ * Where the previous / next notch is.
+ *
+ * `current` is a change id, or '' for live. Walking off the new end returns
+ * '' rather than clamping to the newest Step, because live is a real position
+ * on this tape and the one people expect to come back to.
+ */
+export function stepBy(steps, current, delta) {
+  let ordered = [...steps].reverse();
+  let here = current
+    ? ordered.findIndex((step) => step.changeId === current)
+    : ordered.length;
+  if (here < 0) here = ordered.length;
+  let next = Math.max(0, Math.min(ordered.length, here + delta));
+  return next >= ordered.length ? '' : ordered[next].changeId;
 }
 
 /**
@@ -173,19 +237,21 @@ export function timelineHtml({ steps, current, label = 'timeline', busy }) {
     `</span>` +
     `<button class="tl-jump" data-role="step-by" data-by="1" title="forward one">▶</button>` +
     `<button class="tl-jump" data-role="step-by" data-by="10" title="forward ten">▶▶</button>` +
+    // ONE SHORT READOUT. It carried the position, the age, the save count
+    // and two file paths, which wrapped the row onto three lines and pushed
+    // everything else off the end. All of that already lives in the popover,
+    // where it belongs — you get it by pointing at the notch you are asking
+    // about, rather than having it shouted about the notch you are on.
+    //
+    // No `back to live` button either: the live notch is the right-hand end
+    // of the tape, it is green, and it is already a click target. A second
+    // control for a thing that is on screen is furniture.
     `<span class="tl-read">` +
     (atLive
       ? `<b class="tl-now">live</b>`
-      : `<b>step ${ordered.length - index}</b> of ${ordered.length} back · ` +
-        `${esc(ago(selected?.timestamp))}` +
-        (selected?.folded ? ` · ${selected.folded} saves` : '') +
-        (selected?.why?.length
-          ? ` · <span class="dim">${esc(selected.why.slice(0, 2).join(' · '))}</span>`
-          : '')) +
+      : `<b>${ordered.length - index}</b><span class="dim">/${ordered.length}</span> · ` +
+        `${esc(ago(selected?.timestamp))}`) +
     `</span>` +
-    (atLive
-      ? ''
-      : `<button class="tl-back" data-role="step" data-step="">back to live</button>`) +
     `<span class="tl-timing" data-role="timing"></span>` +
     `<div class="tl-pop" data-role="tl-pop" hidden></div>` +
     `</div>`
@@ -199,12 +265,32 @@ export function timelineHtml({ steps, current, label = 'timeline', busy }) {
  * is fifty listeners to attach and tear down on every render, and one
  * delegated handler cannot leak them.
  */
-export function attachScrub(root) {
+/**
+ * Wire the popover AND drag-scrubbing.
+ *
+ * `onScrub(id)` fires continuously while the pointer is down: it is the
+ * PREVIEW, and it must be cheap. `onCommit(id)` fires once on release and is
+ * where the URL changes.
+ *
+ * That split is the whole reason this feels fast. Committing on every sample
+ * would push history state and re-render the page forty times across one
+ * drag; instead the only thing that moves during a scrub is the stage's src,
+ * pointed at an immutable address whose whole closure is already in cache.
+ * The page around it — the import table, the chrome, the tape itself — is
+ * untouched until you let go.
+ *
+ * Delegated from the track rather than per-notch, so a hundred notches is one
+ * listener that cannot leak across re-renders.
+ */
+export function attachScrub(root, { onScrub, onCommit } = {}) {
   let track = root.querySelector('.tl-track');
   let pop = root.querySelector('[data-role="tl-pop"]');
-  if (!track || !pop) return;
+  if (!track) return;
+
+  let notches = () => [...track.querySelectorAll('.tl-notch')];
 
   let show = (notch) => {
+    if (!pop) return;
     let raw = notch?.dataset.summary;
     if (!raw) {
       pop.hidden = true;
@@ -218,22 +304,13 @@ export function attachScrub(root) {
       (step.folded > 1 ? ` <span class="dim">${step.folded} saves</span>` : '') +
       (step.actor ? ` <span class="tl-pop-actor">${esc(step.actor)}</span>` : '') +
       `</div>` +
-      (step.claim
-        ? `<div class="tl-pop-claim">claimed — ${esc(step.claim)}</div>`
-        : '') +
+      (step.claim ? `<div class="tl-pop-claim">claimed — ${esc(step.claim)}</div>` : '') +
       (step.note ? `<div class="tl-pop-note">${esc(step.note)}</div>` : '') +
       `<div class="tl-pop-files">` +
-      files
-        .slice(0, 6)
-        .map((path) => `<div>${esc(path)}</div>`)
-        .join('') +
-      (files.length > 6
-        ? `<div class="dim">+${files.length - 6} more</div>`
-        : '') +
+      files.slice(0, 6).map((path) => `<div>${esc(path)}</div>`).join('') +
+      (files.length > 6 ? `<div class="dim">+${files.length - 6} more</div>` : '') +
       `</div>` +
       `<div class="dim tl-pop-id">${esc(String(step.id).slice(0, 12))}</div>`;
-    // Clamped to the track so a notch at either end does not push the panel
-    // off screen — the ends are exactly where people scrub to.
     let box = track.getBoundingClientRect();
     let spot = notch.getBoundingClientRect();
     pop.hidden = false;
@@ -242,60 +319,88 @@ export function attachScrub(root) {
     pop.style.left = `${Math.max(0, Math.min(box.width - width, left))}px`;
   };
 
-  // One update per frame. `show()` reads offsetWidth to centre the panel,
-  // which forces layout; doing that on every pointermove event during a drag
-  // is a synchronous reflow per mouse sample and makes scrubbing feel like
-  // the page has stopped responding — which, for those milliseconds, it has.
+  /**
+   * Which notch is under x — by ARITHMETIC, not hit-testing.
+   *
+   * `elementFromPoint` returns nothing once the pointer leaves the track
+   * vertically, so a drag that strays a few pixels above the row would stall
+   * mid-scrub. Notches are equal width by construction, so the index is a
+   * division, and the drag keeps working wherever the pointer wanders.
+   */
+  let notchAt = (clientX) => {
+    let all = notches();
+    if (!all.length) return undefined;
+    let box = track.getBoundingClientRect();
+    let ratio = (clientX - box.left) / box.width;
+    let index = Math.floor(ratio * all.length);
+    return all[Math.max(0, Math.min(all.length - 1, index))];
+  };
+
+  // One update per animation frame. `show()` reads offsetWidth to centre the
+  // panel, which forces layout — doing that per pointer sample is a
+  // synchronous reflow per mouse move, and the page stops responding for
+  // exactly as long as you are scrubbing.
   let queued = false;
   let pending;
+  let dragging = false;
   let flush = () => {
     queued = false;
     show(pending);
+    if (!dragging) return;
+    let id = pending?.dataset.step ?? '';
+    // Mark the position without re-rendering the tape: one attribute write
+    // per notch beats rebuilding forty buttons mid-drag.
+    for (let notch of notches()) {
+      notch.dataset.here = notch === pending ? '1' : '0';
+    }
+    onScrub?.(id);
   };
-  track.addEventListener('pointermove', (event) => {
-    // `elementFromPoint` rather than event.target, so holding the button
-    // down and dragging keeps updating: during a drag the target stays
-    // pinned to wherever the press started, which is precisely not what
-    // scrubbing means.
-    let notch = document.elementFromPoint(event.clientX, event.clientY);
-    pending = notch?.closest?.('.tl-notch');
+  let queue = (notch) => {
+    pending = notch;
     if (queued) return;
     queued = true;
     requestAnimationFrame(flush);
+  };
+
+  track.addEventListener('pointermove', (event) => {
+    queue(dragging ? notchAt(event.clientX) : notchAt(event.clientX));
   });
   track.addEventListener('pointerleave', () => {
-    pop.hidden = true;
+    if (!dragging && pop) pop.hidden = true;
   });
-}
 
-/**
- * Where the previous / next notch is.
- *
- * `current` is a change id or '' for live. Walking off the new end returns ''
- * (live) rather than clamping to the newest step, because live is a real
- * position on this tape and the one people expect to come back to.
- */
-export function stepBy(steps, current, delta) {
-  let ordered = [...steps].reverse();
-  let here = current ? ordered.findIndex((step) => step.changeId === current) : ordered.length;
-  if (here < 0) here = ordered.length;
-  let next = Math.max(0, Math.min(ordered.length, here + delta));
-  return next >= ordered.length ? '' : ordered[next].changeId;
+  track.addEventListener('pointerdown', (event) => {
+    dragging = true;
+    // Capture on the track, so the drag survives the pointer leaving it —
+    // scrubbing to the very end means overshooting the end.
+    track.setPointerCapture?.(event.pointerId);
+    queue(notchAt(event.clientX));
+  });
+
+  let end = (event) => {
+    if (!dragging) return;
+    dragging = false;
+    track.releasePointerCapture?.(event.pointerId);
+    if (pop) pop.hidden = true;
+    onCommit?.(pending?.dataset.step ?? '');
+  };
+  track.addEventListener('pointerup', end);
+  track.addEventListener('pointercancel', end);
 }
 
 /**
  * HOW FAST WAS THAT — measured, not claimed.
  *
- * The reason scrubbing a timeline is pleasant rather than painful is that
- * every step address is immutable, so the whole closure is `immutable`-cached
- * after the first visit. That is a real property of the protocol and it is
- * invisible unless somebody prints it, so this prints it: wall clock for the
- * frame, how many modules it pulled, and how many bytes actually crossed the
- * wire. On a re-visited step the third number is zero, which is the whole
- * argument for content addressing in one line of chrome.
+ * Scrubbing a timeline is pleasant rather than painful because every Step
+ * address is immutable, so the whole closure is `immutable`-cached after the
+ * first visit. That is a real property of the protocol and it is invisible
+ * unless somebody prints it, so this prints it: wall clock for the frame, how
+ * many modules it pulled, and how many bytes actually crossed the wire. On a
+ * revisited step the third number is zero, which is the argument for content
+ * addressing in one line of chrome.
  *
- * Resource timings are only readable for a same-origin frame, so a demo
- * running at its own origin reports wall clock alone rather than guessing.
+ * Resource timings are only readable for a same-origin frame, so a demo at
+ * its own origin reports wall clock alone rather than guessing the rest.
  */
 export function measureFrame(frame, into) {
   if (!frame || !into) return;
@@ -311,7 +416,7 @@ export function measureFrame(frame, into) {
         detail =
           ` · ${entries.length} module${entries.length === 1 ? '' : 's'} · ` +
           (bytes === 0
-            ? `<b class="ok">0 KB over the wire</b>`
+            ? `<b class="ok">0 KB</b>`
             : `${Math.round(bytes / 1024)} KB`);
       } catch {
         // Cross-origin frame: wall clock is all we are allowed to know, and
@@ -331,17 +436,23 @@ export const TIMELINE_CSS = `
 }
 .tl[data-busy] { opacity: .6; }
 .tl-label { color: var(--dim); text-transform: lowercase; }
-.tl-jump, .tl-back {
+.tl-jump {
   font: inherit; cursor: pointer; background: none; color: var(--dim);
   border: 1px solid var(--line); border-radius: 0; padding: 0 .8ch;
 }
-.tl-jump:hover, .tl-back:hover { color: var(--bg); background: var(--a-package); }
+.tl-jump:hover { color: var(--bg); background: var(--a-package); }
 
 /* The tape. Notches are uniform width and shrink to fit, so a hundred steps
    still lay out in one row rather than scrolling — the shape of the burst is
    the information, and it is lost the moment it needs a scrollbar. */
+/* The tape fills the row. Notches share the width equally, so three steps
+   are three wide bars and ninety are ninety thin ones — the tape is always
+   the same length and only its resolution changes, which is what makes the
+   position of the marker mean something at a glance. An earlier version
+   capped notch width and right-aligned them, so a short timeline was a few
+   small marks adrift in an empty rule, and read as broken. */
 .tl-track {
-  flex: 1; display: flex; align-items: stretch; justify-content: flex-end;
+  flex: 1; display: flex; align-items: stretch;
   gap: 1px; min-width: 12ch; height: 1.1em;
   border-bottom: 1px solid var(--line);
 }
@@ -349,7 +460,7 @@ export const TIMELINE_CSS = `
    maximum, a short timeline stretches each notch to 80px and the row stops
    looking like time at all. */
 .tl-notch {
-  flex: 1 1 0; min-width: 2px; max-width: 14px; padding: 0;
+  flex: 1 1 0; min-width: 2px; padding: 0;
   background: var(--line); border: 0; border-radius: 0; cursor: pointer;
 }
 .tl-notch:hover { background: var(--a-package); }
@@ -359,9 +470,9 @@ export const TIMELINE_CSS = `
 .tl-live { flex: 0 0 1.6ch; background: var(--green); }
 .tl-live[data-here='1'] { background: var(--green); box-shadow: inset 0 0 0 1px var(--fg); }
 
-.tl-read { white-space: nowrap; color: var(--dim); }
+.tl-read { white-space: nowrap; color: var(--dim); min-width: 9ch; }
 .tl-now { color: var(--green); }
-.tl-timing { white-space: nowrap; color: var(--dim); min-width: 12ch; }
+.tl-timing { white-space: nowrap; color: var(--dim); min-width: 10ch; text-align: right; }
 .tl-timing .ok { color: var(--green); }
 
 /* The scrub popover. Positioned against the track, above it, so it never

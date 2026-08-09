@@ -183,18 +183,54 @@ let hub = {
       ).backend
     : undefined,
 };
+// Demo depots already carry `.jj` when a demo (or `deck serve`) sealed them.
+// /run loads Timeline from `/<demo>/_history` on THIS server — without a
+// history backend attached here, that route answers `no-history` and the
+// tape reads "no steps here yet" even when the seals exist on disk.
 let demos = await demoDepots();
+if (WANT_HISTORY) {
+  demos = await Promise.all(
+    demos.map(async (depot) => {
+      let attachment = await createHistory({
+        dir: depot.dir,
+        onError: (error) => console.error(`   history ${depot.name}: ${error}`),
+      });
+      return { ...depot, history: attachment.backend };
+    }),
+  );
+}
 let depots = [hub, ...demos];
 
 // The second mount: each demo depot served as `site`, on its own port, so its
 // own pins resolve. `createDeckServer` is cheap and these share the store on
 // disk with the Hub's read-only mount — two names for one directory, which is
 // exactly what the pins needed.
+//
+// AND THE TIMELINE HAS TO COME WITH IT.
+//
+// Two mounts of one directory is two mounts of one depot, so a fact about
+// that directory cannot be true at one name and false at the other. It was:
+// history was attached to the Hub-named mount, so `/vale-sale/_history`
+// listed 45 Steps, while `/site/_history` — the origin /run actually frames —
+// answered `no-history`. The tape loaded and every step in it 404'd, which is
+// the worst arrangement of the two, because it looks like it works.
+//
+// The SAME backend object, not a second `createHistory` on the same path. Two
+// backends over one `.jj` are two processes' worth of locking against one
+// working copy, and jj is entitled to assume otherwise. Sharing costs nothing
+// and is also simply what is true: there is one timeline here.
 const origins = new Map();
 const originErrors = new Map();
 for (let depot of demos) {
   let server = createDeckServer({
-    depots: [{ name: 'site', dir: depot.dir, storeDir: depot.storeDir }],
+    depots: [
+      {
+        name: 'site',
+        dir: depot.dir,
+        storeDir: depot.storeDir,
+        history: depot.history,
+      },
+    ],
     fallback(req, res) {
       let path = new URL(req.url ?? '/', 'http://localhost').pathname;
       serveSidecar(depot, path, res).then((served) => {

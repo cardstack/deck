@@ -667,7 +667,27 @@ async function render() {
   try {
     app.innerHTML = at ? await viewOne(at) : await viewIndex();
     applyStage();
-    attachScrub(app);
+    // SCRUB PREVIEWS, RELEASE COMMITS.
+    //
+    // During a drag only the stage's src changes — pointed at an immutable
+    // step address whose whole closure is already cached, so the swap is a
+    // few milliseconds and nothing else on the page moves. Pushing history
+    // state per sample would re-render forty times across one drag and turn
+    // the fastest thing here into the slowest.
+    attachScrub(app, {
+      onScrub: (step) => {
+        let stage = app.querySelector('[data-role="stage"]');
+        if (!stage) return;
+        let next = runTarget(currentAt(), currentWith(), step).url;
+        if (next && stage.getAttribute('src') !== next) {
+          measureFrame(stage, app.querySelector('[data-role="timing"]'));
+          stage.setAttribute('src', next);
+        }
+      },
+      onCommit: (step) => {
+        if (step !== currentStep()) go({ step });
+      },
+    });
     // HOW FAST WAS THAT, measured rather than claimed. Every Step address is
     // immutable, so after the first visit the whole closure is served from
     // cache — scrubbing is near-instant and nothing on screen would say so

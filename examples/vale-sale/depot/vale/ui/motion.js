@@ -7,10 +7,24 @@ export function prefersReducedMotion() {
   );
 }
 
+/**
+ * /run scrubbing loads each Step in an iframe. Entrance motion that fades
+ * from 0 on every navigation makes the tape feel broken — skip it on
+ * history URLs and whenever the user asked for less motion.
+ */
+export function skipEntranceMotion() {
+  if (prefersReducedMotion()) return true;
+  try {
+    return /\/_history\//.test(location.pathname);
+  } catch {
+    return false;
+  }
+}
+
 /** Fade + rise in when an element enters the viewport. */
 export function reveal(el, { delay = 0, y = 28 } = {}) {
   if (!el) return;
-  if (prefersReducedMotion()) {
+  if (skipEntranceMotion()) {
     el.style.opacity = '1';
     el.style.transform = 'none';
     return;
@@ -42,7 +56,7 @@ export function reveal(el, { delay = 0, y = 28 } = {}) {
 
 /** Slow Ken-Burns drift on a full-bleed image wrapper. */
 export function breathe(el, { scale = 1.06, ms = 14000 } = {}) {
-  if (!el || prefersReducedMotion()) return;
+  if (!el || skipEntranceMotion()) return;
   el.animate(
     [
       { transform: 'scale(1) translate3d(0, 0, 0)' },
