@@ -309,7 +309,7 @@ async function viewIndex() {
         `<td>${
           item.live
             ? '<span class="s-version" data-live>live</span>'
-            : '<span class="s-version">sealed</span>'
+            : '<span class="s-version">Version</span>'
         }</td></tr>`,
     )
     .join('');
@@ -438,11 +438,6 @@ async function viewOne(input) {
   let heat = scoreOf((substituted ?? at).replace(/\/[^/]*\.\w+$/, ''));
   subject.fact = heat.last ? `edited ${ago(heat.last)}` : '';
   let head = `<main>`;
-  if (substituted) {
-    head +=
-      `<p class="dim">${esc(substituted.split('/').pop())} is not a page. ` +
-      `Running <b>${esc(at.split('/').pop())}</b>, the page in the same deck.</p>`;
-  }
 
   if (!url) {
     return (
@@ -539,7 +534,7 @@ async function viewOne(input) {
         `<button data-role="width" data-width="${value}" ` +
         `aria-pressed="${value === stageWidth() ? 'true' : 'false'}">${label}</button>`,
     ).join('') +
-    `<button data-role="reload" title="reload the frame">Reload</button>` +
+    `<button data-role="reload" title="reload the stage">Reload</button>` +
     `<span class="grow"></span>` +
     `<button data-role="full" aria-pressed="${isFull() ? 'true' : 'false'}">Full</button>` +
     `<a class="popout" href="${esc(url)}" target="_blank" rel="noopener">Pop Out ↗</a>` +
@@ -552,17 +547,17 @@ async function viewOne(input) {
     // wants is the sentence those numbers are evidence for.
     `<p class="dim">${
       specifiers.length === 0
-        ? 'resolves nothing — this page imports no decks'
-        : `${specifiers.length} specifier${specifiers.length === 1 ? '' : 's'} ` +
-          `answered by ${new Set(answered).size} deck${new Set(answered).size === 1 ? '' : 's'}` +
+        ? 'this page has no imports'
+        : `${specifiers.length} import${specifiers.length === 1 ? '' : 's'} → ` +
+          `${new Set(answered).size} pin${new Set(answered).size === 1 ? '' : 's'}. ` +
           (scopes.length
-            ? `, and ${scopes.length} of them bring their own dependencies`
-            : ', none of which bring dependencies of their own')
+            ? `${scopes.length} scope${scopes.length === 1 ? '' : 's'} add further pins.`
+            : 'All leaves — the closure stops here.')
     }</p>` +
     (map.trial ? `<p class="trialnote">standing in: <code>${esc(map.trial)}</code></p>` : '') +
     (map.missing
       ? `<p class="dim">no import map injected — this page resolves nothing</p>`
-      : `<table><thead><tr><th>specifier</th><th>answered by</th><th>path</th></tr></thead>` +
+      : `<table><thead><tr><th>Import</th><th>Pin</th><th>Entry</th></tr></thead>` +
         `<tbody>${mapRows(map.imports ?? {})}</tbody></table>` +
         scopes
           .map(
@@ -776,9 +771,9 @@ addEventListener('keydown', (event) => {
     case 'f':
       return app.querySelector('[data-role="full"]')?.click();
     case '[':
-      return go({ step: stepBy(lastTimeline, currentStep(), 1) });
-    case ']':
       return go({ step: stepBy(lastTimeline, currentStep(), -1) });
+    case ']':
+      return go({ step: stepBy(lastTimeline, currentStep(), 1) });
     case 'r':
       return app.querySelector('[data-role="reload"]')?.click();
     default:
@@ -797,9 +792,11 @@ app.addEventListener('click', (event) => {
 
   let by = event.target.closest('[data-role="step-by"]');
   if (by) {
-    // Negative is back in time. The list is newest-first, so the sign has to
-    // be flipped exactly once, and here is the only place that knows it.
-    return go({ step: stepBy(lastTimeline, currentStep(), -Number(by.dataset.by)) });
+    // NO SIGN FLIP. The tape runs oldest-left to live-right, and `stepBy`
+    // walks that same order — so `◀` (-1) is one step older and `▶` (+1) is
+    // one newer, which is what the arrows point at. This negated the delta
+    // and the buttons ran backwards: pressing "back" went forward.
+    return go({ step: stepBy(lastTimeline, currentStep(), Number(by.dataset.by)) });
   }
 
   let width = event.target.closest('[data-role="width"]');

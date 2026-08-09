@@ -45,8 +45,13 @@ import {
   openDemoDepot,
   serveLive,
 } from '../shared/depot.mjs';
+import { storeDirFor } from '@deck/server/depot';
 import { publishShared } from '../shared/publish.mjs';
-import { resetDemoDepot } from '../shared/reset.mjs';
+import {
+  demoBuildMode,
+  ensurePristine,
+  resetDemoDepot,
+} from '../shared/reset.mjs';
 import { BRIEF, VARIATIONS } from './agent.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -86,12 +91,24 @@ const unlocked = Object.fromEntries(
     }),
   ),
 );
-await resetDemoDepot({ depotDir, pristine: unlocked });
+
+const storeDir = storeDirFor(depotDir);
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'std/tokens', version: '1.0.0' },
+  label: 'A, B OR C',
+});
+if (buildMode === 'rebuild') {
+  await resetDemoDepot({ depotDir, pristine: unlocked });
+} else if (buildMode === 'seed') {
+  await ensurePristine(depotDir, unlocked);
+}
 
 console.log('\n  A, B OR C — three variations, one choice\n');
 const depot = await openDemoDepot({ name: DEPOT, dir: depotDir });
-const storeDir = depot.storeDir;
 
+let choiceBody;
+if (buildMode !== 'serve') {
 // ---------------------------------------------------------------------------
 // 1. The starting point: three decks, one per layer, all at 1.0.0.
 // ---------------------------------------------------------------------------
@@ -264,7 +281,7 @@ console.log(`   Change your mind later: release ${NEXT === '1.1.0' ? '1.2.0' : N
 // chooser page below is already resolving through it. No publish needed —
 // the page you are about to open is not a snapshot of a decision, it is the
 // decision.
-let choiceBody = Buffer.from(
+choiceBody = Buffer.from(
   json({ brief: BRIEF, chosen: CHOSEN, command, variations: state }),
   'utf8',
 );
@@ -282,6 +299,14 @@ let choiceBody = Buffer.from(
 // there. A sidecar costs nothing and makes the demo self-describing to any
 // server that mounts this depot. The Hub picks it up generically.
 await writeFile(join(here, 'choice.json'), choiceBody);
+} // end buildMode
+
+choiceBody =
+  choiceBody ??
+  (await readFile(join(here, 'choice.json')).catch(() =>
+    Buffer.from('{}', 'utf8'),
+  ));
+
 let server = createDemoServer({
   depots: [depot],
   fallback: (request, response) => {

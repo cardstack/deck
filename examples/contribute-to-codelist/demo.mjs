@@ -46,6 +46,7 @@ import { readTreeFromDir } from '@deck/core/tree';
 import { rebasePass } from '@deck/server/rebase-daemon';
 import { storeDirFor } from '@deck/server/depot';
 import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
+import { demoBuildMode, rmKeepingNotes } from '../shared/reset.mjs';
 import { publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -133,13 +134,21 @@ async function amend(deckDir, change) {
 const codesIn = async (deckDir) =>
   JSON.parse(await readFile(join(deckDir, 'currencies.json'), 'utf8'));
 
-// The forks are WRITTEN by `deck fork` into the depot, so they are rebuilt
-// from nothing on every run — and gitignored, because they are output.
-await rm(storeDir, { recursive: true, force: true });
-for (let publisher of ['ana', 'kim']) {
-  await rm(join(depotDir, publisher), { recursive: true, force: true });
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'std/currencies', version: '1.4.0' },
+  label: 'CONTRIBUTE TO A CODELIST',
+});
+if (buildMode === 'rebuild') {
+  await rm(storeDir, { recursive: true, force: true });
+  for (let publisher of ['ana', 'kim']) {
+    await rmKeepingNotes(join(depotDir, publisher));
+  }
+  console.log('   RESET=1 — wiped store + fork scopes; Notes kept');
 }
 await mkdir(storeDir, { recursive: true });
+
+if (buildMode !== 'serve') {
 
 console.log('\n  CONTRIBUTE TO A CODELIST — fork, amend, offer, review\n');
 
@@ -286,6 +295,8 @@ console.log(`   ${applied.rebased} rebased on the first pass, ${settled.rebased}
 // ---------------------------------------------------------------------------
 // 7. Serve. The reviewer's console is the app itself.
 // ---------------------------------------------------------------------------
+} // end buildMode
+
 let server = createDemoServer({
   depots: [depot],
   fallback: (req, res) => {

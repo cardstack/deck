@@ -42,7 +42,7 @@ import {
   serveLive,
 } from '../shared/depot.mjs';
 import { publishShared } from '../shared/publish.mjs';
-import { resetDemoDepot } from '../shared/reset.mjs';
+import { demoBuildMode, resetDemoDepot, ensurePristine, wantDemoReset } from '../shared/reset.mjs';
 import { RULES, mergeWithPolicy, resolveByPolicy } from './resolve.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -169,14 +169,33 @@ const AGENT_B_AFTER = AGENT_B_BEFORE.replace(
   'stroke-width="2" stroke-linecap="round"',
 );
 
-await resetDemoDepot({
-  depotDir,
-  output: ['agent-a', 'agent-b'],
-  pristine: {
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'std/tokens', version: '1.0.0' },
+  label: 'TWO AGENTS',
+});
+if (buildMode === 'rebuild') {
+  await resetDemoDepot({
+    depotDir,
+    output: ['agent-a', 'agent-b'],
+    pristine: {
+      'ui/table/table.js': AGENT_A_BEFORE,
+      'charts/spark/spark.js': AGENT_B_BEFORE,
+    },
+  });
+} else if (buildMode === 'seed') {
+  await ensurePristine(depotDir, {
     'ui/table/table.js': AGENT_A_BEFORE,
     'charts/spark/spark.js': AGENT_B_BEFORE,
-  },
-});
+  });
+}
+
+let decisionsBody = Buffer.from('[]', 'utf8');
+let depot;
+
+if (buildMode === 'serve') {
+  depot = await openDemoDepot({ name: DEPOT, dir: depotDir });
+} else {
 
 console.log('\n  TWO AGENTS — separate decks never collide; the shared one does\n');
 
@@ -184,7 +203,7 @@ console.log('\n  TWO AGENTS — separate decks never collide; the shared one doe
 // look like when it published that" has to have an answer — and the answer
 // is a seal per save, not per publish. Without jj or historyd on the machine
 // this degrades to tier 1 and says so; nothing else in the demo changes.
-const depot = await openDemoDepot({ name: DEPOT, dir: depotDir });
+depot = await openDemoDepot({ name: DEPOT, dir: depotDir });
 
 let base = await publishUpstream('1.0.0', TOKENS['1.0.0']);
 console.log(`0) ${UPSTREAM}@1.0.0 · ${base.treeHash.slice(0, 12)}…`);
@@ -413,7 +432,9 @@ await publishToStore(
   { tag: 'latest' },
 );
 
-let decisionsBody = Buffer.from(json(resolution.decisions), 'utf8');
+decisionsBody = Buffer.from(json(resolution.decisions), 'utf8');
+} // end buildMode
+
 let server = createDemoServer({
   depots: [depot],
   fallback: (request, response) => {

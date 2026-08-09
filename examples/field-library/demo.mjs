@@ -40,6 +40,7 @@ import { vendorFromNpmSource } from '@deck/core/vendor-npm';
 import { storeDirFor } from '@deck/server/depot';
 import { localFetch } from '@deck/server/tls';
 import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
+import { demoBuildMode } from '../shared/reset.mjs';
 import { publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -74,8 +75,19 @@ const FIELDS = [
 const APP = 'app/library';
 const VERSION = '1.0.0';
 
-await rm(storeDir, { recursive: true, force: true });
+
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'fields/swatch', version: '1.0.0' },
+  label: 'FIELD LIBRARY',
+});
+if (buildMode === 'rebuild') {
+  await rm(storeDir, { recursive: true, force: true });
+  console.log('   RESET=1 — wiped .deck/store; Notes and Claims kept');
+}
 await mkdir(storeDir, { recursive: true });
+
+if (buildMode !== 'serve') {
 
 console.log('\n  FIELD LIBRARY — aliasing, scopes, and dedupe across many decks\n');
 
@@ -295,6 +307,8 @@ if (drifted.length > 0) {
 // ---------------------------------------------------------------------------
 // 5. Serve. Everything is at rest: no write endpoint, no login.
 // ---------------------------------------------------------------------------
+} // end buildMode
+
 let server = createDemoServer({
   depots: [{ name: DEPOT, dir: depotDir, storeDir }],
   fallback: (req, res) => {

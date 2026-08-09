@@ -342,6 +342,48 @@ function crumbs(parsed) {
  * roughly newest-to-oldest — the direction people actually travel when they
  * are looking for the moment something broke.
  */
+/**
+ * Newest version first, comparing numerically segment by segment.
+ *
+ * `String.sort()` is lexical, which orders `0.1.0-dev.10` before
+ * `0.1.0-dev.2`. For a picker whose main job is "the one before this one",
+ * that is not a rearrangement — it is the wrong answer.
+ */
+function byVersionDesc(a, b) {
+  let parts = (value) => value.split(/[.\-+]/).map((bit) => (/^\d+$/.test(bit) ? Number(bit) : bit));
+  let left = parts(a);
+  let right = parts(b);
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    let x = left[index];
+    let y = right[index];
+    if (x === y) continue;
+    if (x === undefined) return 1;
+    if (y === undefined) return -1;
+    // A prerelease sorts BELOW the release it extends: 1.1.0 beats
+    // 1.1.0-try.a, which is the rule ranges already follow (C3).
+    if (typeof x === typeof y) return x < y ? 1 : -1;
+    return typeof x === 'number' ? -1 : 1;
+  }
+  return 0;
+}
+
+/** `4m ago` · `2h ago` · `3d ago`, for labelling a moment. */
+function relative(timestamp) {
+  let then = Date.parse(timestamp ?? '');
+  if (!Number.isFinite(then)) return 'unknown';
+  let seconds = Math.max(0, (Date.now() - then) / 1000);
+  if (seconds < 45) return 'just now';
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+  return `${Math.round(seconds / 86400)}d ago`;
+}
+
+/** The store records no publish time yet, so this says nothing rather than lying. */
+function whenPublished(meta, version) {
+  let at = meta?.versions?.[version]?.publishedAt;
+  return at ? `${relative(at)} · ` : '';
+}
+
 function addressOptions(parsed, meta, seals) {
   let options = [];
   if (meta?.live) {
@@ -350,19 +392,34 @@ function addressOptions(parsed, meta, seals) {
   for (let [tag, version] of Object.entries(meta?.distTags ?? {})) {
     options.push({ value: tag, label: tag, note: `→ ${version} · one hop`, kind: 'tag' });
   }
-  for (let version of Object.keys(meta?.versions ?? {}).sort().reverse()) {
-    options.push({ value: version, label: version, note: 'immutable · forever', kind: 'exact' });
+  // NEWEST FIRST, AND BY NUMBER. A lexical sort puts dev.10 between dev.1 and
+  // dev.2, so the list read `dev.2, dev.10, dev.1` — which is not an ordering
+  // anybody can use to find "the one before this one", the single most common
+  // reason to open this control.
+  for (let version of Object.keys(meta?.versions ?? {}).sort(byVersionDesc)) {
+    options.push({
+      value: version,
+      label: version,
+      note: `${whenPublished(meta, version)}immutable · forever`,
+      kind: 'exact',
+    });
   }
   // Seals only make sense for something with a live tree: a seal captures the
   // working tree, so a deck that exists only in the store was never in one.
   if (meta?.live && parsed.publisher && parsed.pkg) {
     for (let seal of seals ?? []) {
       options.push({
+        // A twelve-character change id is not a thing anyone recognises, so
+        // the LABEL is the time and the id is the note. You pick a step by
+        // when it happened; the id is what you copy afterwards.
         value: `seal:${seal.changeId}`,
-        label: seal.changeId.slice(0, 12),
+        // Time AND a short id: three saves in the same minute all read "15m
+        // ago", and a picker whose entries are indistinguishable is a picker
+        // you cannot use. The clock says which era, the id says which one.
+        label: `${relative(seal.timestamp)} · ${seal.changeId.slice(0, 8)}`,
         note: `${(seal.timestamp ?? '').slice(0, 16).replace('T', ' ')} · ${
-          seal.description?.replace(/^save:\s*/, '') ?? 'seal'
-        }`.slice(0, 78),
+          seal.changeId.slice(0, 12)
+        } · ${seal.description?.replace(/^save:\s*/, '') ?? 'step'}`.slice(0, 78),
         kind: 'seal',
       });
     }
@@ -965,8 +1022,8 @@ async function viewDepots() {
           `<td>${
             depot.history
               ? `<a class="s-seal" href="?at=/${esc(depot.name)}/${HISTORY}" ` +
-                `data-at="/${esc(depot.name)}/${HISTORY}">${esc(depot.history)} · seals</a>`
-              : '<span class="dim">tier 1</span>'
+                `data-at="/${esc(depot.name)}/${HISTORY}">Timeline</a>`
+              : '<span class="dim">Versions</span>'
           }</td>` +
           `<td class="dim">${esc(depot.dir)}</td></tr>`,
       )
@@ -1014,8 +1071,8 @@ async function viewCatalog(parsed) {
         `<td class="s-version">${newest ? esc(newest) : '<span class="dim">—</span>'}</td>` +
         `<td>${
           deck.live
-            ? '<span class="s-version" data-live>live</span> <span class="dim">+ sealed</span>'
-            : '<span class="dim">sealed only</span>'
+            ? '<span class="s-version" data-live>live</span> <span class="dim">+ Versions</span>'
+            : '<span class="dim">Versions only</span>'
         }</td></tr>`
       );
     })
@@ -1051,7 +1108,7 @@ async function viewSealLog(parsed) {
   if (!seals.length) {
     return (
       crumbs(parsed) +
-      `<main><p class="dim">tier 1 — no seals</p></main>`
+      `<main><p class="dim">History: Versions — no Timeline</p></main>`
     );
   }
   let rows = seals
@@ -1070,10 +1127,10 @@ async function viewSealLog(parsed) {
     .join('');
   return (
     crumbs(parsed) +
-    `<main><div class="facts"><div><b>seals</b> ${seals.length}</div>` +
+    `<main><div class="facts"><div><b>steps</b> ${seals.length}</div>` +
     `<div><b>newest</b> <span class="s-seal">${esc(seals[0].changeId.slice(0, 12))}</span></div></div>` +
-    filterBox(seals.length, 'seals') +
-    `<table><thead><tr><th>changeId</th><th>when</th><th class="num">files</th>` +
+    filterBox(seals.length, 'steps') +
+    `<table><thead><tr><th>step id</th><th>when</th><th class="num">files</th>` +
     `<th>what changed</th></tr></thead><tbody>${rows}</tbody></table>` +
     `</main>`
   );
@@ -1086,7 +1143,7 @@ async function viewSeal(parsed, vs) {
   if (!attrs.filesAvailable) {
     return (
       crumbs(parsed) +
-      `<main><p class="dim">${esc(attrs.backend)} cannot list this seal</p></main>`
+      `<main><p class="dim">Timeline cannot list files for this step</p></main>`
     );
   }
   let files = attrs.files ?? [];
@@ -1206,7 +1263,7 @@ async function viewSeal(parsed, vs) {
   return (
     crumbs(parsed) +
     `<main><div class="facts">` +
-    `<div><b>seal</b> <span class="s-seal">${esc(parsed.seal)}</span></div>` +
+    `<div><b>step</b> <span class="s-seal">${esc(parsed.seal)}</span></div>` +
     `<div><b>backend</b> ${esc(attrs.backend)}</div>` +
     `<div><b>files</b> ${files.length}</div></div>` +
     filterBox(files.length, 'files') +
@@ -1257,8 +1314,8 @@ async function viewSealFile(parsed, vs) {
     html:
       crumbs(parsed) +
       `<main><div class="facts">` +
-      `<div><b>kind</b> seal</div>` +
-      `<div><b>seal</b> <span class="s-seal">${esc(String(parsed.seal).slice(0, 12))}</span></div>` +
+      `<div><b>kind</b> step</div>` +
+      `<div><b>step</b> <span class="s-seal">${esc(String(parsed.seal).slice(0, 12))}</span></div>` +
       `<div><b>size</b> ${esc(bytes(text.length))}</div></div>` +
       `<p class="raw"><a href="${esc(url)}">raw</a></p>` +
       `<div id="blob"></div></main>`,

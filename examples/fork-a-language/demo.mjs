@@ -26,6 +26,7 @@ import { packFromDir } from '@deck/core/pack';
 import { publishToStore, inspectStore } from '@deck/core/store';
 import { storeDirFor } from '@deck/server/depot';
 import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
+import { demoBuildMode } from '../shared/reset.mjs';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -67,8 +68,19 @@ const PAIRS = [
 // Only the fork can express this one.
 const ONLY_FEEL = { ask: 'stock between 2 and 8 (a FEEL range)', feelish: 'items[qty in [2..8]].title' };
 
-await rm(storeDir, { recursive: true, force: true });
+
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'lang/jqish', version: '1.0.0' },
+  label: 'FORK A LANGUAGE',
+});
+if (buildMode === 'rebuild') {
+  await rm(storeDir, { recursive: true, force: true });
+  console.log('   RESET=1 — wiped .deck/store; Notes and Claims kept');
+}
 await mkdir(storeDir, { recursive: true });
+
+if (buildMode !== 'serve') {
 
 console.log('\n  FORK A LANGUAGE — keep the engine, replace the syntax\n');
 
@@ -173,6 +185,8 @@ await writeFile(
     2,
   ) + '\n',
 );
+
+} // end buildMode
 
 let server = createDemoServer({
   depots: [{ name: DEPOT, dir: depotDir, storeDir }],

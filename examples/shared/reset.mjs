@@ -7,9 +7,8 @@
 // first and history only ever grows. That is the whole promise — you cannot
 // lose work — and it is only true because nothing routinely deletes.
 //
-// DEFAULT FOR EVERY DEMO: do not call this. Re-run → serve what is already
-// there. `RESET=1` is the only switch that rebuilds a transcript from
-// scratch. Even then Notes and Claims are never deleted:
+// DEFAULT FOR EVERY DEMO: serve what is already there. `RESET=1` rebuilds a
+// transcript from scratch. Even then Notes and Claims are never deleted:
 //
 //   Notes   <depot>/<actor>/notes/     content in the tree
 //   Claims  <depot>/.deck/claims/      intent, outside the hash
@@ -18,7 +17,7 @@
 // history transcript; set RESET_HISTORY=0 to keep seals while refreshing
 // the store.
 
-import { rename, rm, writeFile, mkdir, access } from 'node:fs/promises';
+import { access, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { readStoreMeta } from '@deck/core/store';
 import { storeDirFor } from '@deck/server/depot';
@@ -28,10 +27,7 @@ export function wantDemoReset() {
   return process.env.RESET === '1';
 }
 
-/**
- * Has this package@version already been published into the depot store?
- * Used to skip rebuilds on ordinary re-runs.
- */
+/** Has this package@version already been published into the depot store? */
 export async function storeHasVersion(storeDir, name, version) {
   let meta = await readStoreMeta(storeDir, name);
   return Boolean(meta?.versions?.[version]);
@@ -41,7 +37,7 @@ export async function storeHasVersion(storeDir, name, version) {
  * Remove a directory but keep `<dir>/notes/` if present.
  * Notes are commentary about trees — wiping a fork scope must not erase them.
  */
-async function rmKeepingNotes(dir) {
+export async function rmKeepingNotes(dir) {
   let notes = join(dir, 'notes');
   let saved;
   try {
@@ -56,6 +52,14 @@ async function rmKeepingNotes(dir) {
   if (saved) {
     await mkdir(dir, { recursive: true });
     await rename(saved, notes);
+  }
+}
+
+async function writePristine(depotDir, pristine) {
+  for (let [relative, content] of Object.entries(pristine)) {
+    let path = join(depotDir, relative);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content);
   }
 }
 
@@ -88,15 +92,10 @@ export async function resetDemoDepot({
   }
 
   for (let relative of output) {
-    // Preserve Notes inside wiped fork/agent scopes.
     await rmKeepingNotes(join(depotDir, relative));
   }
 
-  for (let [relative, content] of Object.entries(pristine)) {
-    let path = join(depotDir, relative);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, content);
-  }
+  await writePristine(depotDir, pristine);
   await mkdir(storeDirFor(depotDir), { recursive: true });
   console.log(
     '   RESET=1 — wiped .deck/store' +
@@ -106,36 +105,32 @@ export async function resetDemoDepot({
 }
 
 /**
- * Run `build` only when the store lacks `probe`, or when RESET=1.
- * On RESET, call `reset` first (which must itself require wantDemoReset).
+ * Gate a demo rebuild.
+ *
+ *   'serve'   — store already has probe; skip build, just listen
+ *   'seed'    — first run; build without wiping Notes/Claims/Timeline
+ *   'rebuild' — RESET=1; wipe store (+ seals by default) then build
  *
  * @param {object} options
  * @param {string} options.storeDir
  * @param {{ name: string, version: string }} options.probe
- * @param {() => Promise<void>} [options.reset]
- * @param {() => Promise<void>} options.build
  * @param {string} [options.label]
  */
-export async function seedOrSkip({ storeDir, probe, reset, build, label }) {
+export async function demoBuildMode({ storeDir, probe, label }) {
   await mkdir(storeDir, { recursive: true });
   let seeded = await storeHasVersion(storeDir, probe.name, probe.version);
-
-  if (wantDemoReset()) {
-    if (reset) await reset();
-    else await rm(storeDir, { recursive: true, force: true });
-    await mkdir(storeDir, { recursive: true });
-    await build();
-    return 'rebuilt';
-  }
-
+  if (wantDemoReset()) return 'rebuild';
   if (seeded) {
     console.log(
-      `   ${label ?? probe.name}@${probe.version} already in store — ` +
-        `skipping rebuild (RESET=1 to rebuild from scratch)`,
+      `\n  ${label ?? 'DEMO'} — serving existing store\n` +
+        `   ${probe.name}@${probe.version} present. RESET=1 to rebuild.\n`,
     );
-    return 'skipped';
+    return 'serve';
   }
+  return 'seed';
+}
 
-  await build();
-  return 'seeded';
+/** Write pristine checked-in files without wiping anything. */
+export async function ensurePristine(depotDir, pristine) {
+  await writePristine(depotDir, pristine);
 }

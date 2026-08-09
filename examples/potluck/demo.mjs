@@ -20,11 +20,11 @@ import {
   serveLive,
 } from '../shared/depot.mjs';
 import { publishShared } from '../shared/publish.mjs';
+import { demoBuildMode, wantDemoReset } from '../shared/reset.mjs';
 import { STAGE } from './stages.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8802);
-const RESET = process.env.RESET === '1';
 const depotDir = join(here, 'depot');
 const storeDir = storeDirFor(depotDir);
 const formDir = join(depotDir, 'app', 'form');
@@ -59,16 +59,20 @@ async function copyPackage(fromStore, name) {
 }
 
 await mkdir(formDir, { recursive: true });
+
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'ui/pills', version: '1.0.0' },
+  label: 'POTLUCK',
+});
+if (buildMode === 'rebuild') {
+  // Store only — never Notes, Claims, or Timeline seals.
+  await rm(storeDir, { recursive: true, force: true });
+  console.log('   RESET=1 — wiped .deck/store; Notes and Claims kept');
+}
 await mkdir(storeDir, { recursive: true });
 
-if (RESET) {
-  // Store only — never Notes (`<actor>/notes/`), never Claims (`.deck/claims/`),
-  // never the Timeline (`.jj`). Those are durable; a demo reseed is not.
-  console.log('\n  RESET=1 — wiping .deck/store only (notes/claims/seals kept)\n');
-  await rm(storeDir, { recursive: true, force: true });
-  await mkdir(storeDir, { recursive: true });
-}
-
+if (buildMode !== 'serve') {
 console.log('\n  POTLUCK — form that grows across Steps\n');
 await publishShared(storeDir);
 
@@ -105,7 +109,7 @@ for (let name of [
 // Seed Stage 1 only when the live form is missing — never clobber a tree that
 // already has Steps / Notes on top of it.
 let formReady = await exists(join(formDir, 'index.html'));
-if (!formReady || RESET) {
+if (!formReady || wantDemoReset()) {
   let stage1 = STAGE[0];
   await writeFile(join(formDir, 'index.html'), stage1.html);
   await writeFile(join(formDir, 'form.css'), stage1.css);
@@ -115,6 +119,7 @@ if (!formReady || RESET) {
 } else {
   console.log('   live form present — left alone (run `pnpm steps` to evolve)');
 }
+} // end buildMode
 
 const depot = await openDemoDepot({ name: 'site', dir: depotDir });
 const server = createDemoServer({ depots: [depot] });

@@ -40,6 +40,7 @@ import { vendorFromNpmSource } from '@deck/core/vendor-npm';
 import { fetchNpmPackage } from '@deck/core/npm';
 import { storeDirFor } from '@deck/server/depot';
 import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
+import { demoBuildMode } from '../shared/reset.mjs';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -57,8 +58,19 @@ const ATLAS = 'world-atlas@2.0.2';
 // anything more at this zoom.
 const ATLAS_FILE = 'countries-110m.json';
 
-await rm(storeDir, { recursive: true, force: true });
+
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'lib/leaflet', version: '1.9.4' },
+  label: 'FORK AN APP',
+});
+if (buildMode === 'rebuild') {
+  await rm(storeDir, { recursive: true, force: true });
+  console.log('   RESET=1 — wiped .deck/store; Notes and Claims kept');
+}
 await mkdir(storeDir, { recursive: true });
+
+if (buildMode !== 'serve') {
 
 console.log('\n  FORK AN APP — take all of it, change the part you disagree with\n');
 
@@ -468,6 +480,8 @@ await writeFile(
     2,
   ) + '\n',
 );
+
+} // end buildMode
 
 let server = createDemoServer({
   depots: [{ name: DEPOT, dir: depotDir, storeDir }],

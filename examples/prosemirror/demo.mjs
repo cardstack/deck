@@ -53,8 +53,9 @@ import {
   openDemoDepot,
   serveLive,
 } from '../shared/depot.mjs';
+import { storeDirFor } from '@deck/server/depot';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
-import { resetDemoDepot } from '../shared/reset.mjs';
+import { demoBuildMode, resetDemoDepot } from '../shared/reset.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8798);
@@ -78,12 +79,21 @@ const PACKAGES = [
   { spec: 'rope-sequence', entry: 'dist/index.js' },
 ];
 
-await resetDemoDepot({ depotDir });
+
+const storeDir = storeDirFor(depotDir);
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'lib/prosemirror-model', version: '1.25.11' },
+  label: 'PROSEMIRROR',
+});
+if (buildMode === 'rebuild') {
+  await resetDemoDepot({ depotDir });
+}
 
 console.log('\n  PROSEMIRROR — where per-file vendoring runs out\n');
 const depot = await openDemoDepot({ name: DEPOT, dir: depotDir });
-const storeDir = depot.storeDir;
 
+if (buildMode !== 'serve') {
 // ---------------------------------------------------------------------------
 // 1. Measure the refusal. Every declared entry, every source map, every src/.
 // ---------------------------------------------------------------------------
@@ -371,6 +381,8 @@ await lockAndWrite({
   storeDir,
   deckDir: join(depotDir, 'app', 'editor'),
 });
+
+} // end buildMode
 
 let server = createDemoServer({
   depots: [depot],

@@ -37,8 +37,9 @@ import {
   openDemoDepot,
   serveLive,
 } from '../shared/depot.mjs';
+import { storeDirFor } from '@deck/server/depot';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
-import { resetDemoDepot } from '../shared/reset.mjs';
+import { demoBuildMode, resetDemoDepot } from '../shared/reset.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8797);
@@ -90,12 +91,21 @@ vec3 holo = outgoingLight * scan * mix( vec3( 1.0 ), iris, 0.6 ) + iris * rim * 
 gl_FragColor = vec4( holo, diffuseColor.a );`,
   );
 
-await resetDemoDepot({ depotDir });
+
+const storeDir = storeDirFor(depotDir);
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'lib/three', version: VERSION },
+  label: 'THREE.JS',
+});
+if (buildMode === 'rebuild') {
+  await resetDemoDepot({ depotDir });
+}
 
 console.log('\n  THREE.JS — 374 files, and you may edit any of them\n');
 const depot = await openDemoDepot({ name: DEPOT, dir: depotDir });
-const storeDir = depot.storeDir;
 
+if (buildMode !== 'serve') {
 // ---------------------------------------------------------------------------
 // 1. What npm actually published. This is the number the whole demo rests on.
 // ---------------------------------------------------------------------------
@@ -260,6 +270,8 @@ await lockAndWrite({
   storeDir,
   deckDir: join(depotDir, 'app', 'studio'),
 });
+
+} // end buildMode
 
 let server = createDemoServer({
   depots: [depot],

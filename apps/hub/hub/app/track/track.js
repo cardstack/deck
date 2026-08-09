@@ -135,7 +135,7 @@ async function collect(scope) {
         for (let [version, record] of Object.entries(deck.versions ?? {})) {
           rows.push({
             kind: isDev(version)
-              ? 'auto-saved'
+              ? 'auto-published'
               : Object.values(deck.distTags ?? {}).includes(version)
                 ? 'released'
                 : 'published',
@@ -329,14 +329,14 @@ const KINDS = [
   'removed',
   'renamed',
   'saved',
-  'auto-saved',
+  'auto-published',
   'published',
   'released',
   'proposed',
   'rebased',
   'conflicted',
 ];
-const NOISE = ['auto-saved'];
+const NOISE = ['auto-published'];
 const DEFAULT_KINDS = KINDS.filter((kind) => !NOISE.includes(kind));
 const ATTENTION = ['conflicted', 'proposed'];
 
@@ -437,7 +437,7 @@ const MARK = {
   removed: '−',
   renamed: '→',
   saved: '·',
-  'auto-saved': '·',
+  'auto-published': '·',
   published: '▲',
   released: '★',
   proposed: '◆',
@@ -499,7 +499,7 @@ const GROUP_GAP_MS = 5 * 60 * 1000;
  * out first — but they are listed anyway, because a set that says what it
  * excludes survives someone changing the band later.
  */
-const GROUPABLE = new Set(['added', 'edited', 'removed', 'renamed', 'saved', 'auto-saved']);
+const GROUPABLE = new Set(['added', 'edited', 'removed', 'renamed', 'saved', 'auto-published']);
 
 function groupRuns(rows) {
   let out = [];
@@ -545,12 +545,12 @@ function groupRuns(rows) {
 
 function controls(all, kinds) {
   let noise = all.filter((row) => NOISE.includes(row.kind)).length;
-  let showing = kinds.includes('auto-saved');
+  let showing = kinds.includes('auto-published');
   return (
     `<div class="controls">` +
     (noise
       ? `<button class="switch" data-role="noise"${showing ? ' aria-pressed="true"' : ''}>` +
-        `<i></i>auto-saves <b>${noise}</b></button>`
+        `<i></i>auto-publishes <b>${noise}</b></button>`
       : '') +
     `<button class="switch" data-role="grouped"${grouped() ? ' aria-pressed="true"' : ''}>` +
     `<i></i>group runs</button>` +
@@ -799,7 +799,7 @@ function bindings() {
   let list = [[['j', 'k'], 'move'], ['↵', 'diff']];
   if (app.querySelector('[data-role="filter"]')) list.push(['/', 'filter']);
   list.push(
-    ['a', 'auto-saves'],
+    ['a', 'auto-publishes'],
     [['g', 'G'], 'ends'],
     ['u', 'widen'],
   );
@@ -809,7 +809,7 @@ function bindings() {
 function toggleNoise() {
   let kinds = currentKinds();
   go({
-    kind: kinds.includes('auto-saved')
+    kind: kinds.includes('auto-published')
       ? kinds.filter((kind) => !NOISE.includes(kind))
       : [...kinds, ...NOISE],
   });
