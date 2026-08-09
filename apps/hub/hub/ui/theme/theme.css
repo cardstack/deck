@@ -358,10 +358,6 @@ td.indent { padding-left: 2ch; }
 .facet[data-kind='version'][aria-pressed] i { color: var(--a-sealed); }
 .facet[data-kind='proposal'][aria-pressed] i { color: var(--a-publisher); }
 
-table.track td.mark { white-space: nowrap; color: var(--dim); }
-table.track tr[data-kind='seal'] td.mark i { color: var(--a-seal); }
-table.track tr[data-kind='version'] td.mark i { color: var(--a-sealed); }
-table.track tr[data-kind='proposal'] td.mark i { color: var(--a-publisher); }
 /* `what` absorbs the slack so `compare` is never pushed off the edge — the
    handoff into /browse is the row's reason to exist and must always be
    reachable. */
@@ -369,8 +365,47 @@ table.track tr[data-kind='proposal'] td.mark i { color: var(--a-publisher); }
    in table layout it inflates the whole table past its container and pushes
    the last column off the edge. The columns that should stay tight get
    width:1% (shrink-to-fit) and the flexible one is left auto. */
-table.track td:not(:nth-child(4)), table.track th:not(:nth-child(4)) { width: 1%; }
-table.track td:nth-child(4), table.track th:nth-child(4) { width: auto; white-space: normal; }
-table.track td:last-child, table.track th:last-child { padding-right: 0; text-align: right; }
-table.track td:last-child a { white-space: nowrap; color: var(--a-package); }
 .facet[data-kind='dev'][aria-pressed] i { color: var(--dim); }
+
+/* ── the feed ───────────────────────────────────────────────────────────── */
+
+.controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4em 2.5ch;
+  margin-bottom: calc(var(--row) * .6em);
+}
+.sortbar label { color: var(--dim); margin-right: .6ch; }
+
+.feed { list-style: none; margin: 0; padding: 0; }
+
+/* RECENCY IS BRIGHTNESS. `--fresh` runs 1 → 0 over a day, and the entry fades
+   with it, so "something just happened" reads from across the room and stops
+   reading on its own schedule rather than when somebody dismisses it. The
+   floor is 0.55, not 0: old is quieter, never unreadable. */
+.entry {
+  display: grid;
+  grid-template-columns: 10ch 1fr auto;
+  gap: 0 var(--gut);
+  padding: calc(var(--row) * .25em) 0;
+  border-bottom: 1px solid var(--line);
+  opacity: calc(0.55 + 0.45 * var(--fresh, 0));
+}
+.entry:hover { background: var(--panel); opacity: 1; }
+.entry[data-here] { background: var(--sel); opacity: 1; box-shadow: inset 3px 0 0 var(--a-package); }
+.entry[hidden] { display: none; }
+
+.entry-when { color: var(--dim); text-align: right; white-space: nowrap; }
+.entry-head { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.entry-sub { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.entry-go { align-self: center; white-space: nowrap; color: var(--a-package); }
+
+/* The verb is the first thing read, so it is the only thing on the line with
+   weight — and its colour says which of the seven it is. */
+.verb { font-weight: 600; text-transform: uppercase; letter-spacing: .06em; font-size: .88em; }
+.verb i { font-style: normal; padding-right: .8ch; }
+.entry[data-kind='saved'] .verb { color: var(--a-seal); }
+.entry[data-kind='auto-saved'] .verb { color: var(--dim); }
+.entry[data-kind='published'] .verb { color: var(--a-sealed); }
+.entry[data-kind='released'] .verb { color: var(--amber); }
+.entry[data-kind='proposed'] .verb { color: var(--a-publisher); }
+.entry[data-kind='rebased'] .verb { color: var(--a-depot); }
+.entry[data-kind='conflicted'] .verb { color: var(--red); }

@@ -4,18 +4,31 @@
 //   &kind=seal,version         facets: which kinds of change to show
 //   &sort=when:desc            column and direction
 //
-// THREE KINDS OF CHANGE, ONE LIST.
-// ════════════════════════════════
-// A depot records change in three places and they are usually three screens:
+// VERBS, NOT OBJECT TYPES.
+// ════════════════════════
+// This listed `seal / version / proposal` for a while, and those are the
+// names of RECORDS, not of anything anybody did. Reading it told you what
+// kind of row you were looking at and not what happened, which is the one
+// thing a change list owes you.
 //
-//   seal      every save, published or not — the tier-2 history
-//   version   a published, immutable state — a decision, not a save
-//   proposal  a fork that records what it forked, waiting on somebody
+// So every row is an action, in the past tense:
 //
-// They are the same question asked at three velocities, so they belong in one
-// list with a facet rather than in three tabs. A seal is what happened, a
-// version is what was decided, and a proposal is what somebody else wants —
-// and "what changed here lately" spans all three or answers nothing.
+//   saved       a settled edit was sealed — the tier-2 history
+//   auto-saved  the watcher published that save as `-dev.N`, unasked
+//   published   somebody cut an immutable version on purpose
+//   released    a dist-tag moved onto one. No bytes copied; a name changed.
+//   proposed    a fork was put forward against upstream
+//   rebased     the daemon re-merged a proposal onto newer upstream
+//   conflicted  a merge stopped and wrote NOTHING
+//
+// The distinction that matters most is `auto-saved` against `published`:
+// one is a keystroke that stopped moving, the other is a decision. They are
+// both immutable versions and they are not the same event.
+//
+// Two more verbs — `vendored` and `forked` — are missing, and honestly so:
+// telling them apart needs `vendoredFrom` / `forkedFrom`, which live inside
+// each deck's importmap and would cost one request per deck to read. They
+// belong in `/_packages`; until they are there, this does not guess.
 //
 // SCOPE IS THE POINT. Not everything that happened: everything that happened
 // under THIS address, plus the forks related to it. An unscoped change river
@@ -101,7 +114,11 @@ async function collect(scope) {
       for (let deck of depot.packages) {
         for (let [version, record] of Object.entries(deck.versions ?? {})) {
           rows.push({
-            kind: isDev(version) ? 'dev' : 'version',
+            kind: isDev(version)
+              ? 'auto-saved'
+              : Object.values(deck.distTags ?? {}).includes(version)
+                ? 'released'
+                : 'published',
             depot: depot.name,
             publisher: deck.publisher,
             pkg: deck.name,
@@ -126,13 +143,22 @@ async function collect(scope) {
           let touched = (attrs.filesSummary ?? []).map((line) =>
             line.replace(/^[A-Z]\s+/, ''),
           );
+          // The subject of a save is the DECK it landed in, not the list of
+          // files — that list is the second line's job, and printing it
+          // twice made the first line unreadable and the second redundant.
+          let decks = [
+            ...new Set(touched.map((path) => path.split('/').slice(0, 2).join('/'))),
+          ];
           rows.push({
-            kind: 'seal',
+            kind: 'saved',
             depot: depot.name,
             publisher: touched[0]?.split('/')[0] ?? '',
             pkg: touched[0]?.split('/')[1] ?? '',
             id: attrs.changeId,
-            what: (attrs.description ?? '').replace(/^save:\s*/, ''),
+            what:
+              decks.length === 1
+                ? decks[0]
+                : `${touched.length} files across ${decks.length} decks`,
             when: attrs.timestamp ?? '',
             files: touched,
             at: `/${depot.name}/${HISTORY}/${attrs.changeId}`,
@@ -152,7 +178,12 @@ async function collect(scope) {
         let attrs = offer.attributes;
         let [publisher, pkg] = String(attrs.offer ?? '').split('/');
         rows.push({
-          kind: 'proposal',
+          kind:
+            attrs.state === 'conflicted'
+              ? 'conflicted'
+              : attrs.state === 'rebased'
+                ? 'rebased'
+                : 'proposed',
           depot: depot.name,
           publisher: publisher ?? '',
           pkg: pkg?.split('@')[0] ?? '',
@@ -196,20 +227,44 @@ function inScope(row, scope) {
 // Facets and sorting
 // ---------------------------------------------------------------------------
 
-// Four facets, and `dev` is OFF by default.
-//
-// Auto-published `-dev.N` prereleases are the watcher doing its job: one per
-// settled save, hundreds within an afternoon. They are real and worth keeping
-// — that is the point of tier-2 — but as list rows they bury every release
-// and every proposal under a wall of `0.1.0-dev.147`. A release is a
-// decision; a dev prerelease is a keystroke that stopped moving.
-//
-// So they are their own facet rather than filtered out: nothing is hidden,
-// and the default view is the one where every row earned its place.
-const KINDS = ['seal', 'version', 'dev', 'proposal'];
-const DEFAULT_KINDS = ['seal', 'version', 'proposal'];
+// `auto-saved` is OFF by default. The watcher emits one per settled save —
+// hundreds in an afternoon — and they bury every deliberate act under a wall
+// of `0.1.0-dev.147`. Nothing is hidden: it is one keypress, and the count is
+// always on the facet.
+const KINDS = ['saved', 'auto-saved', 'published', 'released', 'proposed'];
+const DEFAULT_KINDS = ['saved', 'published', 'released', 'proposed'];
 
 const isDev = (version) => /-dev\.\d+$/.test(version);
+
+/** Relative time, in the smallest unit that still reads as a number. */
+function ago(timestamp) {
+  if (!timestamp) return '';
+  let then = Date.parse(timestamp);
+  if (Number.isNaN(then)) return '';
+  let seconds = Math.max(0, (Date.now() - then) / 1000);
+  if (seconds < 45) return 'just now';
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+  if (seconds < 86400 * 30) return `${Math.round(seconds / 86400)}d ago`;
+  return new Date(then).toISOString().slice(0, 10);
+}
+
+/**
+ * How recent, from 1 (this minute) to 0 (a day or more).
+ *
+ * Recency is rendered as brightness rather than as a badge: the feed fades
+ * from the present into the past, so "something just happened" is legible
+ * from across the room without reading a single timestamp, and stops being
+ * legible on its own schedule instead of when somebody dismisses it.
+ */
+function freshness(timestamp) {
+  let then = Date.parse(timestamp ?? '');
+  if (Number.isNaN(then)) return 0;
+  let hours = (Date.now() - then) / 3_600_000;
+  if (hours <= 0.0833) return 1;      // last five minutes
+  if (hours >= 24) return 0;
+  return Math.max(0, 1 - Math.log10(1 + hours * 9) / Math.log10(1 + 24 * 9));
+}
 
 const params = () => new URLSearchParams(location.search);
 const currentAt = () => params().get('at') ?? '';
@@ -240,8 +295,8 @@ const COLUMNS = [
 ];
 
 function sortRows(rows) {
-  let [id, direction] = currentSort().split(':');
-  let sorting = id ? [{ id, desc: direction === 'desc' }] : [];
+  let [id, direction] = (currentSort() || 'when:desc').split(':');
+  let sorting = [{ id, desc: direction === 'desc' }];
   let table = constructTable({
     features: tableFeatures({
       coreReactivityFeature: storeReactivityBindings(),
@@ -261,7 +316,15 @@ function sortRows(rows) {
 // Render
 // ---------------------------------------------------------------------------
 
-const MARK = { seal: '·', version: '▲', dev: '△', proposal: '◆' };
+const MARK = {
+  saved: '·',
+  'auto-saved': '·',
+  published: '▲',
+  released: '★',
+  proposed: '◆',
+  rebased: '◆',
+  conflicted: '✕',
+};
 
 function facets(rows, kinds) {
   let counts = Object.fromEntries(
@@ -298,49 +361,73 @@ function scopeBar(scope, at) {
   );
 }
 
-function head(sorting) {
-  let active = sorting[0];
+/**
+ * A feed entry, two lines.
+ *
+ * One line per row could not carry this: the act, the thing it happened to,
+ * when, how big it was, and the way through to seeing it. Cramming those into
+ * columns made every one of them abbreviated and none of them scannable.
+ *
+ *   line 1   WHEN · VERB · the subject                    → the handoff
+ *   line 2   where it lives · what it touched
+ *
+ * The first line answers "what happened", the second "to what", and the eye
+ * only descends to the second when the first is interesting.
+ */
+function entry(row) {
+  let fresh = freshness(row.when);
+  let browse = row.vs ? `/browse?at=${row.at}&vs=${row.vs}` : `/browse?at=${row.at}`;
+  let detail =
+    row.files?.length
+      ? row.files
+          .slice(0, 3)
+          .map((path) => path.split('/').slice(2).join('/') || path)
+          .join(' · ') +
+        (row.files.length > 3 ? ` <span class="dim">+${row.files.length - 3}</span>` : '')
+      : row.detail ?? '';
   return (
-    `<thead><tr>` +
-    COLUMNS.map(
-      (column) =>
-        `<th data-role="sort" data-column="${column.id}" tabindex="0">${esc(column.label)}` +
-        `<i class="sortmark">${
-          active?.id === column.id ? (active.desc ? '↓' : '↑') : '⇅'
-        }</i></th>`,
-    ).join('') +
-    `<th>compare</th></tr></thead>`
+    `<li class="entry" data-kind="${esc(row.kind)}" style="--fresh:${fresh.toFixed(3)}" ` +
+    `data-name="${esc(
+      `${row.kind} ${row.depot} ${row.publisher} ${row.pkg} ${row.what}`.toLowerCase(),
+    )}">` +
+    `<div class="entry-when">${esc(ago(row.when)) || '<span class="dim">—</span>'}</div>` +
+    `<div class="entry-main">` +
+    `<div class="entry-head">` +
+    `<span class="verb"><i>${MARK[row.kind] ?? '·'}</i>${esc(row.kind)}</span> ` +
+    `<span class="s-package">${esc(row.what)}</span>` +
+    `</div>` +
+    `<div class="entry-sub">` +
+    `<span class="s-depot">${esc(row.depot)}</span>` +
+    (row.publisher
+      ? `<span class="sep">/</span><span class="s-publisher">${esc(row.publisher)}</span>`
+      : '') +
+    (row.pkg
+      ? `<span class="sep">/</span><span class="s-package">${esc(row.pkg)}</span>`
+      : '') +
+    (detail ? ` <span class="dim">${detail}</span>` : '') +
+    `</div></div>` +
+    `<a class="entry-go" href="${esc(browse)}">${row.vs ? 'diff' : 'open'} →</a>` +
+    `</li>`
   );
 }
 
-function body(rows) {
-  return rows
-    .map((row) => {
-      let browse = row.vs
-        ? `/browse?at=${row.at}&vs=${row.vs}`
-        : `/browse?at=${row.at}`;
-      return (
-        `<tr data-kind="${row.kind}" data-name="${esc(
-          `${row.kind} ${row.depot} ${row.publisher} ${row.pkg} ${row.what}`.toLowerCase(),
-        )}">` +
-        `<td class="mark"><i>${MARK[row.kind]}</i> ${row.kind}</td>` +
-        `<td class="dim">${esc((row.when ?? '').slice(0, 16).replace('T', ' '))}</td>` +
-        `<td><span class="s-depot">${esc(row.depot)}</span>` +
-        (row.publisher
-          ? `<span class="sep">/</span><span class="s-publisher">${esc(row.publisher)}</span>`
-          : '') +
-        (row.pkg
-          ? `<span class="sep">/</span><span class="s-package">${esc(row.pkg)}</span>`
-          : '') +
-        `</td>` +
-        `<td>${esc(row.what)}${
-          row.files?.length > 1 ? ` <span class="dim">+${row.files.length - 1}</span>` : ''
-        }</td>` +
-        // The handoff: /track says what changed, /browse shows it.
-        `<td><a href="${esc(browse)}">${row.vs ? 'diff' : 'open'} →</a></td></tr>`
-      );
-    })
-    .join('');
+const SORTS = [
+  ['when:desc', 'newest'],
+  ['when:asc', 'oldest'],
+  ['where:asc', 'where'],
+  ['kind:asc', 'action'],
+];
+
+function sortBar(current) {
+  return (
+    `<span class="sortbar"><label>sort</label> <select data-role="sort">` +
+    SORTS.map(
+      ([value, label]) =>
+        `<option value="${value}"${value === (current || 'when:desc') ? ' selected' : ''}>` +
+        `${label}</option>`,
+    ).join('') +
+    `</select></span>`
+  );
 }
 
 async function render() {
@@ -355,14 +442,14 @@ async function render() {
     app.innerHTML =
       scopeBar(scope, at) +
       `<main>` +
-      facets(all, kinds) +
+      `<div class="controls">` + facets(all, kinds) + sortBar(currentSort()) + `</div>` +
       (rows.length >= 25
         ? `<div class="filter"><b>filter</b> <input type="search" data-role="filter" ` +
           `size="24" placeholder="${rows.length} changes" autocomplete="off" /> ` +
           `<span class="dim" data-role="filter-count"></span></div>`
         : '') +
       (rows.length
-        ? `<table class="track">${head(sorting)}<tbody>${body(rows)}</tbody></table>`
+        ? `<ul class="feed">${rows.map(entry).join('')}</ul>`
         : `<p class="dim">nothing here</p>`) +
       `</main>`;
   } catch (error) {
@@ -379,7 +466,7 @@ async function render() {
 // ---------------------------------------------------------------------------
 
 let cursor = -1;
-const rows$ = () => [...app.querySelectorAll('tbody tr:not([hidden])')];
+const rows$ = () => [...app.querySelectorAll('.entry:not([hidden])')];
 
 function moveCursor(delta, absolute) {
   let all = rows$();
@@ -441,7 +528,7 @@ addEventListener('keydown', (event) => {
     case 'G':
       return moveCursor(0, 'last');
     case 'Enter': {
-      let link = rows$()[cursor]?.querySelector('td:last-child a');
+      let link = rows$()[cursor]?.querySelector('.entry-go');
       if (link) location.href = link.getAttribute('href');
       return;
     }
@@ -470,26 +557,21 @@ addEventListener('keydown', (event) => {
 app.addEventListener('click', (event) => {
   let facet = event.target.closest('[data-role="facet"]');
   if (facet) return toggleFacet(facet.value);
-  let sort = event.target.closest('th[data-role="sort"]');
-  if (sort) {
-    let [id, direction] = currentSort().split(':');
-    let column = sort.dataset.column;
-    return go({
-      sort:
-        id !== column ? `${column}:asc` : direction === 'asc' ? `${column}:desc` : '',
-    });
-  }
   let link = event.target.closest('a[data-at]');
   if (!link || event.metaKey || event.ctrlKey || event.shiftKey) return;
   event.preventDefault();
   go({ at: link.dataset.at });
 });
 
+app.addEventListener('change', (event) => {
+  if (event.target.dataset.role === 'sort') go({ sort: event.target.value });
+});
+
 app.addEventListener('input', (event) => {
   if (event.target.dataset.role !== 'filter') return;
   let needle = event.target.value.trim().toLowerCase();
   let shown = 0;
-  for (let row of app.querySelectorAll('tbody tr[data-name]')) {
+  for (let row of app.querySelectorAll('.entry[data-name]')) {
     let hit = !needle || row.dataset.name.includes(needle);
     row.hidden = !hit;
     if (hit) shown += 1;
