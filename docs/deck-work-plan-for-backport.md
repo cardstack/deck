@@ -181,6 +181,27 @@ before W6's entry consolidation, or the same import sites get touched twice.
 **Why.** As written, the law would forbid the realm server from existing — a
 realm must accept writes. Better fixed here than discovered in review.
 
+**Done.** L12's bullet was "writes → refused; the server is read-only". It
+now reads "refused **on the Deck surface**: no request may change what a
+later request returns", with a section saying why. The old wording was not
+merely imprecise — it was false of the reference implementation too, since
+`deck serve` runs the watcher (a Version per save) and can run the rebase
+daemon in the same process.
+
+Two consequences that used to look arbitrary now follow from the law: a
+work-in-progress claim is a file under `.deck/claims/` rather than a `POST`,
+and the offer queue is reported by an endpoint that can only plan.
+
+**The amendment is tested, not just written.** The conformance check was
+`writes are refused` — four methods, four 4xx. It is now `writes are refused,
+and change nothing`: it reads the body first and re-reads it after the four
+refusals. "Is this process read-only?" has no answer; "did a request through
+this door change what the next one returns?" does, and that is the question
+the amended law actually asks. Both halves inverted and watched to fail: a
+server whose method gate lets `PUT` through (58/1), and a `before` value
+perturbed so the re-read compares against bytes that never existed (58/1).
+Restored: 59 passed, 0 failed, 3 not applicable.
+
 ### W10 — two proofs
 
 **What.**
@@ -259,6 +280,6 @@ packaging — real, but it does not block Boxel from starting.
 | W6 | entries | **done** — `@cardstack/deck` (browser) + `/node`. `.d.ts` struck: Boxel consumes TS source (see W6 note). |
 | W7 | lean trim | **done** — `@cardstack/deck-tools`; Core 26 modules, `semver` only |
 | W8 | naming → `@cardstack/deck` | **done** |
-| W9 | L12 amendment | **partly done in code** — the serve path can no longer reach `applyRebase` (W7). The wording in `deck-laws.md` still says process, not surface. |
+| W9 | L12 amendment | **done** — law reworded, conformance now re-reads the bytes after the refusals; the serve path also cannot reach `applyRebase` (W7) |
 | W10 | two proofs | scopes proof partly covered by `examples/remix` |
 | — | Embroider §3 and §4 | **applied** (see §1a) |

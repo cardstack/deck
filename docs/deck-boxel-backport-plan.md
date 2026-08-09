@@ -701,9 +701,12 @@ right for every release after it.
 2. **Does `boxel-cli` keep git?** `checkpoint-manager.ts` is git-backed. K4
    can either replace git with Deck Versions or keep git locally and
    translate. Replacing is cleaner; keeping is cheaper and reversible.
-3. **L12 scope.** The realm server must write. So the read-only gate applies
-   to the Deck routes only — worth writing down as a law amendment rather
-   than an implementation detail.
+3. ~~**L12 scope.**~~ **Settled (W9).** `deck-laws.md` L12 now gates the Deck
+   *surface* rather than the process: no request may change what a later
+   request returns, while writes arrive by another route entirely. The realm
+   server can therefore keep writing, and the conformance check reads the
+   bytes back after the refusals so the amended wording is the wording that
+   is tested.
 4. **Prune negotiation (K14).** Unspecified. Needs its own design note.
 5. **Two live base Versions at once?** If base is deck-distributed, can two
    realms pin different base Versions and still exchange cards? This is the

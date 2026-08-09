@@ -174,14 +174,25 @@ export async function runHttpChecks(
     );
   });
 
-  await checks.run('L12', 'writes are refused', async () => {
+  // L12 gates the SURFACE, not the process. An implementation is free to
+  // write constantly by other routes — a watcher, a CLI, a realm's own write
+  // API — and every useful one does. What must hold is that no request
+  // through this door changes what a later request returns, which is why the
+  // refusal and the re-read belong to one check rather than two.
+  await checks.run('L12', 'writes are refused, and change nothing', async () => {
+    let before = await get(`${sealed}/index.js`).then((r) => r.text());
     for (let method of ['PUT', 'POST', 'DELETE', 'PATCH']) {
       let response = await get(`${sealed}/index.js`, { method });
       assert(
         response.status >= 400,
-        `${method} returned ${response.status}; the server must be read-only`,
+        `${method} returned ${response.status}; the Deck surface must refuse writes`,
       );
     }
+    assertEqual(
+      await get(`${sealed}/index.js`).then((r) => r.text()),
+      before,
+      'the bytes after four refused writes',
+    );
   });
 
   await checks.run('L12', 'a missing file is a coded JSON error', async () => {

@@ -218,9 +218,34 @@ that the files those pins name actually exist.
   hash, plus the tree hash
 - version-less → `no-store`, always
 - range or tag → **one** hop, short TTL
-- writes → refused; the server is read-only
+- writes → refused **on the Deck surface**: no request may change what a
+  later request returns
 - errors → coded JSON, and a permanent error is cached differently from a
   transient one
+
+### The gate is on the surface, not on the process
+
+This law used to read "the server is read-only", which is a claim no real
+deployment can honour and which would have forbidden the most important
+consumer from existing. A Boxel realm server must accept writes — that is
+what a realm *is*. Even the reference server writes: `deck serve` runs the
+watcher, which publishes a Version on every save, and can run the rebase
+daemon in the same process, which rewrites proposal trees.
+
+What the law constrains is the **door**. Writes arrive by another route
+entirely — the filesystem, the CLI, the host application's own write API —
+and distribution follows. Two consequences that are otherwise puzzling fall
+straight out of it:
+
+- a work-in-progress claim is a file under `.deck/claims/` rather than a
+  `POST` (§6 of `deck-at-rest.md`)
+- the offer queue is reported by an endpoint that can only *plan* the
+  re-merges; applying them is a separate tool
+
+The distinction earns its place because it is checkable. "Is this process
+read-only?" has no answer. "Does a `PUT` to a Deck URL get refused, and does
+`GET` return the same bytes afterwards?" has one, and it is what
+`deck conform --http` asks.
 
 ---
 
@@ -228,7 +253,8 @@ that the files those pins name actually exist.
 
 How bytes are stored. Whether packs are kept or rebuilt. Whether objects are
 compressed. What the tree object looks like on disk. Which parser reads a
-module. What a depot's cooldown policy is set to.
+module. What a depot's cooldown policy is set to. **Whether the process that
+serves also writes** — see L12.
 
 Those are implementation choices, and the two that were most prescriptive in
 the old spec are precisely the two that measurement overturned. If a choice
