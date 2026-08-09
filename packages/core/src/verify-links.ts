@@ -3,11 +3,11 @@ import { join } from 'node:path';
 import semver from 'semver';
 import {
   IMPORT_MAP_PATH,
-  packagesFromPack,
   parseDependencies,
   parsePackages,
   treePathFromMapValue,
 } from './import-map.ts';
+import { packagesFromPack } from './import-map-pack.ts';
 import { parseDependencyValue } from './lock.ts';
 import { readStoreMeta, readStoredFile, readStoredPack } from './store.ts';
 import { readEnvelope, verifyEnvelope } from './signature.ts';

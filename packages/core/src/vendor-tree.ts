@@ -17,7 +17,7 @@ import {
 } from './vendor-npm.ts';
 import { isCommonJsModule } from './es-lexer.ts';
 import { listStorePackages, readStoredPack } from './store.ts';
-import { packagesFromPack } from './import-map.ts';
+import { packagesFromPack } from './import-map-pack.ts';
 
 // Transitive vendoring.
 //

@@ -9,7 +9,7 @@ import {
 import { join } from 'node:path';
 import semver from 'semver';
 import { unpack } from './pack.ts';
-import { packagesFromPack } from './import-map.ts';
+import { packagesFromPack } from './import-map-pack.ts';
 import {
   collectGarbage,
   readTreeFile,
