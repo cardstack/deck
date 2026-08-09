@@ -180,5 +180,6 @@ packaging — real, but it does not block Boxel from starting.
 | — | Browser-safe Core surface, lint-enforced | **done** (`deck/core-boundary`) |
 | — | Resolver takes the importer | **done** |
 | W1 | `extends` | **done** — core, server, conformance, `examples/remix` |
-| W2 | absolute-reference classifier | next |
-| W3–W10 | | not started |
+| W2 | absolute-reference classifier | **done** — `@deck/core/classify`, conformance L11 |
+| W3 | provenance block | next |
+| W4–W10 | | not started |
