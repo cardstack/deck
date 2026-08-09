@@ -60,6 +60,47 @@ module.exports = {
         ],
       },
     },
+    {
+      // Compat stays out of the serve path.
+      //
+      // Normalising npm's shapes — dual `exports`, browser vs module vs
+      // main, CJS interop — is intake work. It belongs to vendoring, the
+      // CLI and Tools, where it runs once and reports what it lost. The
+      // server does one job: live tree, `@exact`, tags, digests, maps,
+      // Timeline.
+      //
+      // The rule exists because the pressure to relax it is constant and
+      // sounds reasonable every single time: one package almost works, so
+      // the server learns one more shape. That is how a forever compat
+      // layer grows, and Embroider spent eight years carrying one. A
+      // behaviour that genuinely needs best effort is a vendor flag with an
+      // explicit lossy report, never a quiet branch in serve.
+      //
+      // `@deck/core/npm` is deliberately absent from this list: `depot.ts`
+      // reads the cooldown POLICY from it, which is depot configuration
+      // rather than package normalisation. It lives in npm.ts for
+      // historical reasons and would read better extracted — tidying, not a
+      // boundary violation.
+      files: ['packages/server/src/**/*.ts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              {
+                group: [
+                  '@deck/core/vendor',
+                  '@deck/core/vendor-*',
+                  '@deck/core/derive',
+                ],
+                message:
+                  'Compat and derivation are intake work, not serve work — put it in vendor/CLI/Tools (docs/deck-embroider-lessons.md §3).',
+              },
+            ],
+          },
+        ],
+      },
+    },
   ],
   ignorePatterns: ['node_modules/', 'reference/'],
 };
