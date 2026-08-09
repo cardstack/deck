@@ -1,6 +1,6 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { DEFAULT_IGNORE } from '@deck/core/tree-hash';
+import { DEFAULT_IGNORE } from '@cardstack/deck/tree-hash';
 
 // Tier 2 of the live-tree design (docs/deck-live-autopublish.md): seal-grained
 // history UNDER the auto-publish loop. Tier 1 — the content-addressed store —

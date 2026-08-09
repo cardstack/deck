@@ -1,10 +1,10 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { packFromDir } from '@deck/core/pack';
-import { publishToStore } from '@deck/core/store';
-import { createDeckServer } from '@deck/server/server';
-import { storeDirFor } from '@deck/server/depot';
+import { packFromDir } from '@cardstack/deck/pack';
+import { publishToStore } from '@cardstack/deck/store';
+import { createDeckServer } from '@cardstack/deck-server/server';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 import { runAtRestChecks } from './at-rest.ts';
 import { runHttpChecks, type HttpTarget } from './over-http.ts';
 import { summarize, type ConformanceReport } from './laws.ts';

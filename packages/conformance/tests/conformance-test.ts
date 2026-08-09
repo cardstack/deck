@@ -3,7 +3,7 @@ const { module, test } = QUnit;
 import { runConformance } from '../src/run.ts';
 import { LAWS, type LawId } from '../src/laws.ts';
 import { FIXTURE_TREE_HASH, fixtureFiles } from '../src/fixture.ts';
-import { hashBytes, treeHashFromEntries } from '@deck/core/tree-hash';
+import { hashBytes, treeHashFromEntries } from '@cardstack/deck/tree-hash';
 
 // The suite that measures implementations is itself measured here: if this
 // package can pass while the reference implementation is broken, it is not

@@ -2,7 +2,7 @@
 
 ## Nothing is published yet
 
-`@deck/cli` is not on npm, and there is no plan to put it there until this
+`@cardstack/deck-cli` is not on npm, and there is no plan to put it there until this
 has been thoroughly tested.
 
 **Do not run `npx deck`.** There is a package called `deck` on the public
@@ -58,11 +58,11 @@ ln -s "$PWD/packages/cli/bin/deck.js" ~/.local/bin/deck
 **3 — pnpm's global link**, if you would rather pnpm own the linkage:
 
 ```bash
-pnpm --filter @deck/cli link --global
+pnpm --filter @cardstack/deck-cli link --global
 ```
 
 Undo either with `rm ~/.local/bin/deck` or
-`pnpm --filter @deck/cli unlink --global`.
+`pnpm --filter @cardstack/deck-cli unlink --global`.
 
 Whichever you pick, the rest of the docs write `deck`; substitute
 `node packages/cli/bin/deck.js` if you chose the first.
@@ -121,7 +121,7 @@ immutable version.
 | What you see | What it means |
 | --- | --- |
 | `Unknown file extension ".ts"` | Node is older than 22 |
-| `Cannot find package '@deck/core'` | `pnpm install` has not run, or you are running a copy of `packages/cli` from outside the workspace |
+| `Cannot find package '@cardstack/deck'` | `pnpm install` has not run, or you are running a copy of `packages/cli` from outside the workspace |
 | `EADDRINUSE` from `deck serve` | the port is taken. `deck hello` walks forward up to ten ports on its own; `serve` does not, because a server you asked to be on 8788 should not quietly be somewhere else |
 | `deck: --realm is now --depot` | an old flag. It still works and will keep working; the message is a note, not a failure |
 | history reports Versions only | `jj` is not on PATH, or `DECK_HISTORYD_URL` points at nothing. The live loop is unaffected |

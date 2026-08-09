@@ -1,12 +1,13 @@
 {
-  "name": "@deck/hub",
+  "name": "@cardstack/deck-hub",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": { "start": "node hub.mjs" },
   "dependencies": {
-    "@deck/core": "workspace:*",
-    "@deck/history": "workspace:*",
-    "@deck/server": "workspace:*"
+    "@cardstack/deck": "workspace:*",
+    "@cardstack/deck-history": "workspace:*",
+    "@cardstack/deck-server": "workspace:*",
+    "@cardstack/deck-tools": "workspace:*"
   }
 }

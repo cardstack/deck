@@ -11,8 +11,12 @@ import {
   formatTreeHash,
   hashBytes,
   treeHashFromDir,
-} from '@deck/core/tree-hash';
-import { packFromDir, peekPacklist, unpack } from '@deck/core/pack';
+} from '@cardstack/deck/tree-hash';
+import { pack as packFiles, packFromDir, peekPacklist, unpack } from '@cardstack/deck/pack';
+import { readTreeFromDir } from '@cardstack/deck/tree';
+import { IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
+import { carryHermetic } from '@cardstack/deck-tools/pack-hermetic';
+import type { PackProvenance } from '@cardstack/deck/packlist';
 import { defineCommand, type Command } from '../command.ts';
 import { fail } from '../support.ts';
 
@@ -38,10 +42,22 @@ const pack = defineCommand({
   summary: 'create <basename>.pack.zip from a directory',
   usage: [
     'pack <dir> [--output <file>] [--created-by <who>] [--source <depot>]',
+    'pack <dir> --hermetic --source-base <url> [--version <v>]',
   ],
   detail: `A pack is a standard zip any tool can open, plus a packlist that
 records the tree hash and every file's own hash. It is transport, not
-identity: unpacking it anywhere reproduces the same tree hash (L2).`,
+identity: unpacking it anywhere reproduces the same tree hash (L2).
+
+Default mode is bare: the tree's own files and nothing else, which assumes
+the recipient reaches the same dependencies the source did. --hermetic
+fetches every declared dependency's module graph into _vendor/ and rewrites
+the map to resolve inside, so the pack assumes nothing but a runtime. It
+refuses rather than half-carrying: a reference the walker will not follow
+stops the pack, because a live CDN URL inside a "hermetic" archive is the
+one failure this mode exists to prevent.
+
+Either way the packlist says which mode it is, what came along
+(provenance.carried) and what did not (provenance.pruned).`,
   async run(argv) {
     let { values, positionals } = parseArgs({
       args: argv,
@@ -50,23 +66,57 @@ identity: unpacking it anywhere reproduces the same tree hash (L2).`,
         output: { type: 'string' },
         'created-by': { type: 'string' },
         source: { type: 'string' },
+        hermetic: { type: 'boolean', default: false },
+        'source-base': { type: 'string' },
+        version: { type: 'string' },
       },
     });
     let [dir] = positionals;
-    if (!dir) fail('usage: deck pack <dir> [--output <file>]');
-    let provenance: Record<string, string> = {};
+    if (!dir) fail('usage: deck pack <dir> [--output <file>] [--hermetic]');
+    let provenance: PackProvenance = {};
     if (values['created-by']) provenance.createdBy = values['created-by'];
     if (values.source) provenance.sourceDepot = values.source;
-    let bytes = await packFromDir(
-      resolve(dir),
-      Object.keys(provenance).length > 0 ? provenance : undefined,
-    );
+    if (values['source-base']) provenance.sourceBase = values['source-base'];
+    if (values.version) provenance.version = values.version;
+
+    let bytes: Buffer;
+    let carried = 0;
+    if (values.hermetic) {
+      let files = [...(await readTreeFromDir(resolve(dir)))].map(
+        ([path, buffer]) => ({ path, bytes: buffer }),
+      );
+      let map = files.find((file) => file.path === IMPORT_MAP_PATH);
+      if (!map) {
+        fail(
+          `${dir} has no ${IMPORT_MAP_PATH}, so there is no decklist saying what to carry`,
+        );
+      }
+      let imports = JSON.parse(map!.bytes.toString('utf8'))?.imports ?? {};
+      let result = await carryHermetic({
+        files,
+        imports,
+        sourceBase: provenance.sourceBase,
+      });
+      carried = result.provenance.carried?.length ?? 0;
+      bytes = packFiles(result.files, { ...provenance, ...result.provenance });
+    } else {
+      // The mode is recorded even when nothing else is. A pack is always in
+      // one, and a reader who has to infer it from the absence of carried
+      // bytes is guessing at the one thing intake most needs told.
+      bytes = await packFromDir(resolve(dir), { ...provenance, mode: 'bare' });
+    }
+
     let output = values.output ?? `${basename(resolve(dir))}.pack.zip`;
     await writeFile(output, bytes);
     let packlist = peekPacklist(bytes);
     console.log(
       `${output}: ${packlist.entries.length} files, treeHash ${packlist.treeHash.hash}`,
     );
+    if (values.hermetic) {
+      console.log(
+        `  hermetic — ${carried} dependenc${carried === 1 ? 'y' : 'ies'} carried inside; the pack assumes only a runtime`,
+      );
+    }
   },
 });
 

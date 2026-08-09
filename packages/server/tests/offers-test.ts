@@ -5,12 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import type { DeckServer } from '../src/server.ts';
-import { forkDeck } from '@deck/core/fork';
-import { packFromDir } from '@deck/core/pack';
-import { publishToStore } from '@deck/core/store';
+import { forkDeck } from '@cardstack/deck/fork';
+import { packFromDir } from '@cardstack/deck/pack';
+import { publishToStore } from '@cardstack/deck/store';
 import { createDeckServer } from '../src/server.ts';
 import { storeDirFor, type DepotMount } from '../src/depot.ts';
-import { rebasePass, startRebaseDaemon } from '../src/rebase-daemon.ts';
 
 let root: string;
 let depotDir: string;
@@ -316,68 +315,11 @@ module('offers, rebase, and try-by-URL', function (hooks) {
       'the reviewer is told why, rather than shown the un-swapped app',
     );
   });
-
-  test('the daemon rebases what merges and leaves conflicts alone', async function (assert) {
-    await forkPalette();
-    // The proposal changes one file…
-    await writeFile(
-      join(depotDir, 'you', 'palette', 'palette.js'),
-      "export const colors = ['a', 'b', 'c', 'd'];\n",
-    );
-    // …upstream changes a different one and releases.
-    await writeFile(
-      join(depotDir, 'acme', 'palette', 'notes.md'),
-      'one\nTWO\nthree\n',
-    );
-    await writeDeck(
-      'acme/palette',
-      {
-        'palette.js': "export const colors = ['red', 'teal'];\n",
-        'notes.md': 'one\nTWO\nthree\n',
-      },
-      {
-        deck: {
-          packages: {
-            palette: { version: '1.1.0', entry: '$DECK/palette.js' },
-          },
-        },
-      },
-    );
-    await publish('acme/palette', '1.1.0');
-
-    let behind = await rebasePass({ depot, dryRun: true });
-    assert.strictEqual(behind.outcomes[0].state, 'rebased');
-    assert.false(behind.outcomes[0].applied, 'a dry run writes nothing');
-
-    let daemon = startRebaseDaemon({ depot, intervalMs: 60_000 });
-    let pass = await daemon.pass();
-    daemon.close();
-    assert.strictEqual(pass.rebased, 1);
-    assert.strictEqual(pass.conflicted, 0);
-    assert.strictEqual(
-      (
-        await readFile(join(depotDir, 'you', 'palette', 'notes.md'))
-      ).toString(),
-      'one\nTWO\nthree\n',
-      "the proposal absorbed upstream's change without the contributor doing anything",
-    );
-    assert.strictEqual(
-      (
-        await readFile(join(depotDir, 'you', 'palette', 'palette.js'))
-      ).toString(),
-      "export const colors = ['a', 'b', 'c', 'd'];\n",
-      'and kept its own',
-    );
-
-    let settled = await rebasePass({ depot, dryRun: true });
-    assert.strictEqual(
-      settled.outcomes[0].state,
-      'current',
-      'the loop converges — a second pass has nothing to do',
-    );
-  });
-
-  test('a conflicted proposal is reported, never written', async function (assert) {
+  // The endpoint's own report of a conflict. The daemon is what leaves the
+  // conflicted tree alone (see `@cardstack/deck-tools`); this asserts the
+  // half the server owns — that a survey names the conflicting file rather
+  // than hiding the proposal.
+  test('a conflicted proposal is reported by the endpoint, and nothing is written', async function (assert) {
     await forkPalette();
     await writeFile(
       join(depotDir, 'you', 'palette', 'notes.md'),
@@ -399,20 +341,15 @@ module('offers, rebase, and try-by-URL', function (hooks) {
     );
     await publish('acme/palette', '1.1.0');
 
-    let pass = await rebasePass({ depot });
-    assert.strictEqual(pass.conflicted, 1);
-    assert.strictEqual(pass.rebased, 0);
-    assert.deepEqual(pass.outcomes[0].conflicts, ['notes.md']);
+    let body = await (await fetch(`${origin}/site/_offers`)).json();
+    assert.strictEqual(body.meta.conflicted, 1);
+    assert.deepEqual(body.data[0].attributes.conflicts, ['notes.md']);
     assert.strictEqual(
       (
         await readFile(join(depotDir, 'you', 'palette', 'notes.md'))
       ).toString(),
       'one\nMINE\nthree\n',
-      'a machine never damages a contributor\'s work',
+      'surveying the queue does not touch a working tree',
     );
-
-    let body = await (await fetch(`${origin}/site/_offers`)).json();
-    assert.strictEqual(body.meta.conflicted, 1);
-    assert.deepEqual(body.data[0].attributes.conflicts, ['notes.md']);
   });
 });

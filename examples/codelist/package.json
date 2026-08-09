@@ -1,5 +1,5 @@
 {
-  "name": "@deck/example-codelist",
+  "name": "@cardstack/deck-example-codelist",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
     "demo": "node demo.mjs"
   },
   "dependencies": {
-    "@deck/core": "workspace:*",
-    "@deck/server": "workspace:*"
+    "@cardstack/deck": "workspace:*",
+    "@cardstack/deck-server": "workspace:*"
   }
 }

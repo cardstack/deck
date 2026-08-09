@@ -1,0 +1,13 @@
+{
+  "imports": {
+    "notes/app": "/site/catalog/notes-app@1.0.0/app.js",
+    "notes/list": "/site/catalog/notes-app@1.0.0/list.js",
+    "notes/item": "/site/catalog/notes-app@1.0.0/item.js",
+    "notes/theme": "/site/catalog/notes-app@1.0.0/theme.js"
+  },
+  "deck": {
+    "packages": {
+      "notes-app": { "version": "1.0.0", "entry": "$DECK/app.js" }
+    }
+  }
+}

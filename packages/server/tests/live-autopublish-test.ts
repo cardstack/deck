@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import type { DeckServer } from '../src/server.ts';
-import { unpack } from '@deck/core/pack';
-import { readStoreMeta, releaseVersion } from '@deck/core/store';
+import { unpack } from '@cardstack/deck/pack';
+import { readStoreMeta, releaseVersion } from '@cardstack/deck/store';
 import { createDeckServer } from '../src/server.ts';
 import {
   storeDirFor,

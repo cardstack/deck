@@ -1,9 +1,7 @@
-import { parsePolicy, POLICY_FILE, type CooldownPolicy } from '@deck/core/npm';
 import { watch, type FSWatcher } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { discoverDecks, type DeckRef } from '@deck/core/deck-scan';
-import type { HistoryBackend } from '@deck/history/backend';
+import { discoverDecks, type DeckRef } from '@cardstack/deck/deck-scan';
+import type { HistoryBackend } from '@cardstack/deck-history/backend';
 import {
   watchAndPublish,
   type WatchController,
@@ -153,17 +151,4 @@ export function watchDepot(options: WatchDepotOptions): DepotWatchController {
     },
     rescan,
   };
-}
-
-// The depot's cooldown policy, if it declares one. Absent means the default.
-export async function readDepotPolicy(
-  depotDir: string,
-): Promise<Partial<CooldownPolicy>> {
-  try {
-    return parsePolicy(
-      await readFile(join(depotDir, DECK_DIR, POLICY_FILE), 'utf8'),
-    );
-  } catch {
-    return {};
-  }
 }

@@ -19,9 +19,7 @@ import {
   candidateEntries,
   commonSubtree,
   probeEntries,
-  resolveRelative,
   vendorFromNpmSource,
-  walkSourceGraph,
 } from '../src/vendor-npm.ts';
 import { createHash } from 'node:crypto';
 
@@ -197,91 +195,6 @@ module('npm carriage', () => {
 });
 
 module('vendor: source mode', () => {
-  test('resolves relative specifiers the way node would', (assert) => {
-    let files = new Map<string, Buffer>([
-      ['src/index.js', Buffer.from('')],
-      ['src/math/Vector3.js', Buffer.from('')],
-      ['src/util/index.js', Buffer.from('')],
-    ]);
-    assert.strictEqual(
-      resolveRelative('src/index.js', './math/Vector3.js', files),
-      'src/math/Vector3.js',
-    );
-    assert.strictEqual(
-      resolveRelative('src/index.js', './math/Vector3', files),
-      'src/math/Vector3.js',
-      'extensionless resolves',
-    );
-    assert.strictEqual(
-      resolveRelative('src/index.js', './util', files),
-      'src/util/index.js',
-      'directory resolves to its index',
-    );
-    assert.strictEqual(
-      resolveRelative('src/index.js', './nope.js', files),
-      undefined,
-    );
-  });
-
-  test('walks a module graph and reports what it could not follow', (assert) => {
-    let pkg = fakePackage({
-      'src/index.js': `import { a } from './a.js';\nexport * from './b.js';\nimport 'node:fs';\nimport x from 'lodash';\n`,
-      'src/a.js': `import './deep/c.js';\nexport const a = 1;\n`,
-      'src/b.js': `export const b = 2;\n`,
-      'src/deep/c.js': `export const c = 3;\n`,
-      'src/orphan.js': `export const never = 0;\n`,
-    });
-    let graph = walkSourceGraph(pkg.files, 'src/index.js');
-    assert.deepEqual(graph.modules, [
-      'src/a.js',
-      'src/b.js',
-      'src/deep/c.js',
-      'src/index.js',
-    ]);
-    assert.notOk(
-      graph.modules.includes('src/orphan.js'),
-      'unreachable files are not vendored',
-    );
-    assert.deepEqual(graph.externals, ['lodash', 'node:fs']);
-    assert.deepEqual(graph.unresolved, []);
-  });
-
-  test('multi-line and re-export forms are followed', (assert) => {
-    let pkg = fakePackage({
-      'src/index.js': `import {\n  One,\n  Two\n} from '../lib/pair.js';\nexport { Three } from './three.js';\n`,
-      'lib/pair.js': `export const One = 1, Two = 2;\n`,
-      'src/three.js': `export const Three = 3;\n`,
-    });
-    let graph = walkSourceGraph(pkg.files, 'src/index.js');
-    assert.deepEqual(graph.modules, [
-      'lib/pair.js',
-      'src/index.js',
-      'src/three.js',
-    ]);
-  });
-
-  // Both of these are real: leaflet documents inheritance in prose that
-  // ended in a `from "…"`, and standardized-audio-context documents import
-  // syntax inside a block comment.
-  test('an import example inside a comment is not a dependency', (assert) => {
-    let pkg = fakePackage({
-      'src/index.js': `/*\n * import defaultImport from './path';\n */\n// import { x } from 'ghost';\nimport { real } from './real.js';\n`,
-      'src/real.js': 'export const real = 1;\n',
-    });
-    let graph = walkSourceGraph(pkg.files, 'src/index.js');
-    assert.deepEqual(graph.modules, ['src/index.js', 'src/real.js']);
-    assert.deepEqual(graph.externals, [], 'the commented "ghost" is ignored');
-    assert.deepEqual(graph.unresolved, [], 'the commented "./path" is ignored');
-  });
-
-  test('prose that merely contains the word from is not an import', (assert) => {
-    let pkg = fakePackage({
-      'src/index.js':
-        'export var Marker = Layer.extend({\n  // Option inherited from "Interactive layer"\n  icon: 1,\n});\n',
-    });
-    assert.deepEqual(walkSourceGraph(pkg.files, 'src/index.js').externals, []);
-  });
-
   test('probing separates a tree from a bundle', (assert) => {
     let tree = fakePackage(
       {

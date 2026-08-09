@@ -15,7 +15,7 @@ Companions: `deck-depot-and-realm-backport.md` (depot vocabulary),
 
 | Layer | Example | What it is |
 | --- | --- | --- |
-| **App** | `@deck/hub` | Shared, forkable frontend. Read / run / browse / start live *inside* it as routes (or sub-apps), not as hostnames. |
+| **App** | `@cardstack/deck-hub` | Shared, forkable frontend. Read / run / browse / start live *inside* it as routes (or sub-apps), not as hostnames. |
 | **Host** | `cloud.deck.land` | Where a Deck **server** answers HTTP. |
 
 **Hub is not a hostname role.** Do not use `hub.deck.land` for sync, API, or

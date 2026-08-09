@@ -2,12 +2,12 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import semver from 'semver';
 import {
-  packagesFromPack,
   parseDependencies,
   parsePackages,
   treePathFromMapValue,
   IMPORT_MAP_PATH,
 } from './import-map.ts';
+import { packagesFromPack } from './import-map-pack.ts';
 import { readStoreMeta, readStoredPack } from './store.ts';
 import { readZipEntry } from './canonical-zip.ts';
 

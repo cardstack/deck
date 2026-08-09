@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { minify, type MinifyOptions } from 'terser';
-import { pack, unpack } from './pack.ts';
-import { parsePackages } from './import-map.ts';
+import { pack, unpack } from '@cardstack/deck/pack';
+import { parsePackages } from '@cardstack/deck/import-map';
 
 // Workstream A — minify as a DERIVED SEALED TREE.
 //

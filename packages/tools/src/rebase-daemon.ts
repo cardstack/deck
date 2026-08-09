@@ -1,12 +1,16 @@
+import { applyRebase } from '@cardstack/deck/offer';
 import {
-  applyRebase,
-  discoverOffers,
-  planRebase,
+  outcomeOf,
+  planOffers,
+  surveyOffers,
+  tally,
+  type OfferSurveyOptions,
   type Offer,
+  type RebaseOutcome,
+  type RebasePassResult,
   type RebasePlan,
   type RebaseState,
-} from '@deck/core/offer';
-import type { DepotMount } from './depot.ts';
+} from '@cardstack/deck-server/offer-survey';
 
 // The rebase daemon.
 //
@@ -25,78 +29,39 @@ import type { DepotMount } from './depot.ts';
 //     damaged by a machine
 //   - a clean merge that changes nothing writes nothing either, so the loop
 //     converges instead of publishing itself forever
+//
+// It is a tool rather than part of the server because of what it does: it
+// moves trees. The server plans (`@cardstack/deck-server/offer-survey`) and
+// reports; this applies. Running the daemon in the same process as the
+// server is fine and normal — the separation is about which module can
+// write, not about which host it runs on.
 
-export interface RebaseOutcome {
-  offer: string;
-  upstream: string;
-  state: RebaseState;
-  upstreamVersion?: string;
-  conflicts: string[];
-  detail?: string;
-  // True when this pass actually moved the proposal's tree.
-  applied: boolean;
-}
-
-export interface RebasePassResult {
-  outcomes: RebaseOutcome[];
-  rebased: number;
-  conflicted: number;
-}
-
-export interface RebaseDaemonOptions {
-  depot: DepotMount;
-  // Which upstream state proposals chase. Default: the release if there is
-  // one, else the freshest seal.
-  onto?: string;
+export interface RebaseDaemonOptions extends OfferSurveyOptions {
   // Report only — the CI/read-only shape.
   dryRun?: boolean;
   intervalMs?: number;
   onPass?: (result: RebasePassResult) => void;
-  onError?: (error: unknown) => void;
 }
 
 export async function rebasePass(
   options: Omit<RebaseDaemonOptions, 'intervalMs' | 'onPass'>,
 ): Promise<RebasePassResult> {
-  let { depot, onto, dryRun } = options;
+  if (options.dryRun) {
+    return surveyOffers(options);
+  }
   let outcomes: RebaseOutcome[] = [];
-  for (let offer of await discoverOffers(depot.dir)) {
-    let plan: RebasePlan;
-    try {
-      plan = await planRebase({
-        depotDir: depot.dir,
-        storeDir: depot.storeDir,
-        offer,
-        onto,
-      });
-    } catch (error) {
-      options.onError?.(error);
-      continue;
-    }
+  for (let plan of await planOffers(options)) {
     let applied = false;
-    if (plan.state === 'rebased' && !dryRun) {
+    if (plan.state === 'rebased') {
       try {
         applied = (await applyRebase(plan)).changed;
       } catch (error) {
         options.onError?.(error);
       }
     }
-    outcomes.push({
-      offer: offer.name,
-      upstream: plan.upstream,
-      state: plan.state,
-      upstreamVersion: plan.upstreamVersion,
-      conflicts: plan.conflicts,
-      detail: plan.detail,
-      applied,
-    });
+    outcomes.push(outcomeOf(plan, applied));
   }
-  return {
-    outcomes,
-    rebased: outcomes.filter((outcome) => outcome.applied).length,
-    conflicted: outcomes.filter((outcome) => outcome.state === 'conflicted')
-      .length,
-  };
+  return tally(outcomes);
 }
 
 export interface RebaseDaemon {
@@ -142,4 +107,4 @@ export function startRebaseDaemon(
   };
 }
 
-export type { Offer, RebasePlan, RebaseState };
+export type { Offer, RebaseOutcome, RebasePassResult, RebasePlan, RebaseState };

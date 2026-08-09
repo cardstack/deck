@@ -23,6 +23,7 @@ await import('./browse-test.ts');
 await import('./history-test.ts');
 await import('./inject-importmap-test.ts');
 await import('./offers-test.ts');
+await import('./inherit-serve-test.ts');
 await import('./delivery-test.ts');
 await import('./http2-test.ts');
 

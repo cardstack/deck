@@ -16,18 +16,18 @@ import { join } from 'node:path';
 import { resolveTlsMaterials, type TlsOption } from './tls.ts';
 import { ActivityIndex } from './activity.ts';
 import { DECKBOOK_PATHS, loadDeckbookHtml } from './deckbook.ts';
-import { readZipEntry } from '@deck/core/canonical-zip';
+import { readZipEntry } from '@cardstack/deck/canonical-zip';
 import {
   parsePackages,
   type PackageMapEntry,
   treePathFromMapValue,
   IMPORT_MAP_PATH,
   MOUNT_SEPARATOR,
-} from '@deck/core/import-map';
-import { peekPacklist } from '@deck/core/pack';
-import type { Packlist } from '@deck/core/packlist';
-import { readTree, readTreeFile } from '@deck/core/object-store';
-import { readEnvelope, summarizeEnvelope } from '@deck/core/signature';
+} from '@cardstack/deck/import-map';
+import { peekPacklist } from '@cardstack/deck/pack';
+import type { Packlist } from '@cardstack/deck/packlist';
+import { readTree, readTreeFile } from '@cardstack/deck/object-store';
+import { readEnvelope, summarizeEnvelope } from '@cardstack/deck/signature';
 import { negotiateBody } from './compression.ts';
 import {
   documentEntries,
@@ -42,13 +42,18 @@ import {
   readStoredFile,
   readStoreMeta,
   resolveVersionSpec,
-} from '@deck/core/store';
-import { resolveDependencies, resolveScopes } from '@deck/core/lock';
-import { isValidTreePath, treeHashFromDir } from '@deck/core/tree-hash';
+} from '@cardstack/deck/store';
+import { resolveDependencies, resolveScopes } from '@cardstack/deck/lock';
+import {
+  parseLink,
+  resolveInheritance,
+  type DecklistLink,
+} from '@cardstack/deck/inherit';
+import { isValidTreePath, treeHashFromDir } from '@cardstack/deck/tree-hash';
 import {
   isValidHistoryPath,
   isValidRevisionId,
-} from '@deck/history/backend';
+} from '@cardstack/deck-history/backend';
 import {
   bytesToPreview,
   listingFromLiveDir,
@@ -65,7 +70,7 @@ import {
   type LiveChangeEvent,
 } from './live-events.ts';
 import { injectImportMap } from './inject-importmap.ts';
-import { rebasePass } from './rebase-daemon.ts';
+import { surveyOffers } from './offer-survey.ts';
 import { discoverDecks, type DepotMount } from './depot.ts';
 
 // The minimal Deck server: READ-ONLY serving of depots laid out on disk.
@@ -539,8 +544,31 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     }
   }
 
+  // Loading a parent named by `deck.extends`.
+  //
+  // A parent is always an exact version (L4), so it is always a sealed pack
+  // in this depot's store — never a live tree, which could move underneath
+  // the children inheriting from it.
+  function parentLoader(depot: DepotMount) {
+    return async (parent: string): Promise<DecklistLink | undefined> => {
+      let at = parent.lastIndexOf('@');
+      if (at <= 0) {
+        return undefined;
+      }
+      let pack = await loadPack(
+        depot,
+        parent.slice(0, at),
+        parent.slice(at + 1),
+      );
+      let bytes = await pack?.read(IMPORT_MAP_PATH);
+      return bytes ? parseLink(bytes.toString('utf8')) : undefined;
+    };
+  }
+
   // The `imports` a document should carry: whatever the deck's own map
-  // declares. `deck lock` is what puts resolved pins there.
+  // declares, plus whatever it inherits. `deck lock` is what puts resolved
+  // pins there; `deck.extends` is what lets a deck state only its
+  // differences from a published parent.
   async function liveImports(
     depot: DepotMount,
     treePath: string,
@@ -552,22 +580,42 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     if (segments.length < 3) {
       return { imports: {}, scopes: {} };
     }
+    let text: string;
     try {
-      let text = await readFile(
+      text = await readFile(
         join(depot.dir, segments[0], segments[1], IMPORT_MAP_PATH),
         'utf8',
       );
-      let parsed = JSON.parse(text);
+    } catch {
+      return { imports: {}, scopes: {} };
+    }
+    // An unreadable map still means "no map", as it always did. A map that
+    // names a parent it cannot reach does NOT — that is a broken deck, and
+    // serving it with two hundred entries missing would surface as unrelated
+    // import errors on the page (L11).
+    return flattenLink(text, depot);
+  }
+
+  async function flattenLink(
+    text: string,
+    depot: DepotMount,
+  ): Promise<{
+    imports: Record<string, string>;
+    scopes: Record<string, Record<string, string>>;
+  }> {
+    let link = parseLink(text);
+    if (!link.extends) {
+      // The overwhelmingly common case, and it must cost nothing: no store
+      // reads, no promises, the same object shape as before.
       return {
-        imports: (parsed.imports ?? {}) as Record<string, string>,
-        scopes: (parsed.scopes ?? {}) as Record<
+        imports: (link.imports ?? {}) as Record<string, string>,
+        scopes: (link.scopes ?? {}) as Record<
           string,
           Record<string, string>
         >,
       };
-    } catch {
-      return { imports: {}, scopes: {} };
     }
+    return resolveInheritance({ start: link, load: parentLoader(depot) });
   }
 
   // TRY-BY-URL.
@@ -1269,10 +1317,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       }
       // Read-only: the daemon writes, this only reports. A maintainer wants
       // the three that stopped merging, not the hundred that are fine.
-      let { outcomes, rebased, conflicted } = await rebasePass({
-        depot,
-        dryRun: true,
-      });
+      let { outcomes, rebased, conflicted } = await surveyOffers({ depot });
       respondJson(
         req,
         res,
@@ -1946,14 +1991,12 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       // that need them most — the sealed ones.
       let scopes: Record<string, Record<string, string>> = {};
       try {
-        let parsed = sealedMap
-          ? (JSON.parse(sealedMap.toString('utf8')) as {
-              imports?: Record<string, string>;
-              scopes?: Record<string, Record<string, string>>;
-            })
-          : {};
-        imports = parsed.imports ?? {};
-        scopes = parsed.scopes ?? {};
+        // A sealed deck may inherit too, and its parent is sealed by
+        // definition, so the flattened result is as immutable as the deck
+        // itself.
+        ({ imports, scopes } = sealedMap
+          ? await flattenLink(sealedMap.toString('utf8'), depot)
+          : { imports: {}, scopes: {} });
       } catch {
         imports = {};
       }

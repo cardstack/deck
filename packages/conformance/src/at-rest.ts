@@ -1,8 +1,8 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { hashBytes, treeHashFromDir, treeHashFromEntries } from '@deck/core/tree-hash';
-import { pack, packFromDir, unpack } from '@deck/core/pack';
+import { hashBytes, treeHashFromDir, treeHashFromEntries } from '@cardstack/deck/tree-hash';
+import { pack, packFromDir, unpack } from '@cardstack/deck/pack';
 import {
   publishToStore,
   readStoredFile,
@@ -10,8 +10,8 @@ import {
   readStoreMeta,
   releaseVersion,
   resolveVersionSpec,
-} from '@deck/core/store';
-import { walkSourceGraph } from '@deck/core/vendor-npm';
+} from '@cardstack/deck/store';
+import { walkSourceGraph } from '@cardstack/deck/source-graph';
 import {
   appendSignature,
   generateKeyPair,
@@ -21,15 +21,27 @@ import {
   signTreeHash,
   verifyEnvelope,
   verifySignature,
-} from '@deck/core/signature';
-import { parseDependencyValue } from '@deck/core/lock';
-import { verifyLinks } from '@deck/core/verify-links';
+} from '@cardstack/deck/signature';
+import { parseDependencyValue } from '@cardstack/deck/lock';
+import { flattenInheritance, isExactParent } from '@cardstack/deck/inherit';
+import { classifyReference } from '@cardstack/deck/classify';
+import {
+  moduleSpecifiers,
+  unanalyzableDynamicImports,
+} from '@cardstack/deck/es-lexer';
+import {
+  createPacklist,
+  parsePacklist,
+  serializePacklist,
+} from '@cardstack/deck/packlist';
+import { resolveSpecifier } from '@cardstack/deck/resolve';
+import { verifyLinks } from '@cardstack/deck/verify-links';
 import {
   deriveMinified,
   derivedPack,
   terserVersion,
   verifyDerivation,
-} from '@deck/core/derive';
+} from '@cardstack/deck-tools/derive';
 import {
   FIXTURE_PACKAGE,
   FIXTURE_PUBLISHER,
@@ -41,7 +53,7 @@ import {
 import { assert, assertEqual, Checks, type CheckResult } from './laws.ts';
 
 // At-rest conformance: the laws that are about bytes and state, checkable
-// without a server. These call @deck/core directly today; an implementation
+// without a server. These call @cardstack/deck directly today; an implementation
 // in another language runs the equivalent through its own entry points and
 // must reach the same answers — the FIXTURE_TREE_HASH is what makes that
 // comparison meaningful rather than self-referential.
@@ -275,6 +287,193 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
         'live',
         'a bare deck name means live',
       );
+    });
+
+    // ---- L7 inheritance (`extends`) ---------------------------------------
+    //
+    // Two implementations must agree on these four answers or a remix
+    // published against one server resolves differently on another — and an
+    // inherited decklist that is not portable is not a decklist.
+    await checks.run('L7', 'a child inherits what it does not mention', () => {
+      let flat = flattenInheritance([
+        { imports: { a: '/p/a.js', b: '/p/b.js' } },
+        { imports: { b: '/c/b.js' } },
+      ]);
+      assertEqual(flat.imports.a, '/p/a.js', 'inherited');
+      assertEqual(flat.imports.b, '/c/b.js', 'overridden');
+    });
+
+    await checks.run('L7', 'null removes an inherited entry', () => {
+      let flat = flattenInheritance([
+        { imports: { a: '/p/a.js', drop: '/p/drop.js' } },
+        { imports: { drop: null } },
+      ]);
+      assert(!('drop' in flat.imports), 'a removed entry is absent, not blank');
+      assertEqual(
+        resolveSpecifier({
+          specifier: 'drop',
+          fromUrl: '/c/app.js',
+          imports: flat.imports,
+          scopes: flat.scopes,
+        }),
+        undefined,
+        'and therefore unresolvable',
+      );
+    });
+
+    // The dedupe corollary. An override that stopped at the top level would
+    // leave a vendored package importing the parent's copy — two copies of
+    // one library in one document.
+    await checks.run(
+      'L7',
+      'an override reaches inside an inherited scope',
+      () => {
+        let flat = flattenInheritance([
+          {
+            imports: { lib: '/p/lib@1.js' },
+            scopes: { '/p/widget@2/': { lib: '/p/lib@1.js' } },
+          },
+          { imports: { lib: '/c/lib@2.js' } },
+        ]);
+        assertEqual(
+          resolveSpecifier({
+            specifier: 'lib',
+            fromUrl: '/p/widget@2/w.js',
+            imports: flat.imports,
+            scopes: flat.scopes,
+          }),
+          '/c/lib@2.js',
+          'the scoped entry follows the override',
+        );
+      },
+    );
+
+    await checks.run(
+      'L7',
+      'a scope the child declares outranks that rebind',
+      () => {
+        let flat = flattenInheritance([
+          { imports: { lib: '/p/lib@1.js' } },
+          {
+            imports: { lib: '/c/lib@2.js' },
+            scopes: { '/p/pinned@1/': { lib: '/p/lib@1.js' } },
+          },
+        ]);
+        assertEqual(
+          resolveSpecifier({
+            specifier: 'lib',
+            fromUrl: '/p/pinned@1/x.js',
+            imports: flat.imports,
+            scopes: flat.scopes,
+          }),
+          '/p/lib@1.js',
+          'a dependency may keep a version the child does not use',
+        );
+      },
+    );
+
+    // L4 is the only reason inheriting from a parent is safe at all.
+    await checks.run('L4', 'a parent is named as an exact version', () => {
+      assert(isExactParent('acme/blog@1.2.3'), 'exact');
+      assert(!isExactParent('acme/blog@latest'), 'a tag is refused');
+      assert(!isExactParent('acme/blog@^1.2.3'), 'a range is refused');
+    });
+
+    // ---- L11 re-homing is enumerated, never guessed -----------------------
+    //
+    // Moving a tree means deciding, for every URL-shaped string in it,
+    // whether to touch it. Implementations that answer by pattern-matching
+    // corrupt data the first time a value merely LOOKS like a reference, and
+    // the damage is silent. These two checks are the contract that makes
+    // that impossible.
+    await checks.run('L11', 'data is never rewritten, whatever it matches', () => {
+      let imports = { '@base/': 'https://cardstack.example/base/' };
+      // Both of these match a rule. Neither is a reference.
+      for (let value of [
+        'https://cardstack.example/base/looks-like-a-module',
+        'https://images.example/icon.png',
+      ]) {
+        assertEqual(
+          classifyReference({ value, role: 'opaque', imports }).action,
+          'leave',
+          `opaque ${value}`,
+        );
+      }
+    });
+
+    await checks.run('L11', 'only a declared dependency rebinds', () => {
+      let imports = { '@base/': 'https://cardstack.example/base/' };
+      assertEqual(
+        classifyReference({
+          value: 'https://cardstack.example/base/string',
+          role: 'reference',
+          imports,
+        }).action,
+        'rebind',
+        'declared',
+      );
+      // Absolute, a genuine reference, and not in the decklist: it survives
+      // untouched, because rewriting it would point it at nothing.
+      assertEqual(
+        classifyReference({
+          value: 'https://elsewhere.example/card.json',
+          role: 'reference',
+          imports,
+        }).action,
+        'leave',
+        'undeclared',
+      );
+    });
+
+    // A pack states what it assumed about its recipient. An implementation
+    // that reads a mode it does not know as "the ordinary one" would produce
+    // a confidently wrong intake — the artifact would look carried when part
+    // of it was pruned under rules this build cannot honour.
+    await checks.run('L11', 'an unrecognised pack mode is refused', () => {
+      let packlist = createPacklist(
+        fixtureFiles().map((f) => ({
+          path: f.path,
+          size: f.bytes.length,
+          sha256: hashBytes(f.bytes),
+        })),
+        { mode: 'bare' },
+      );
+      let raw = JSON.parse(serializePacklist(packlist).toString('utf8'));
+      raw.provenance.mode = 'negotiated';
+      let refused = false;
+      try {
+        parsePacklist(Buffer.from(JSON.stringify(raw)));
+      } catch {
+        refused = true;
+      }
+      assert(refused, 'an unknown mode was accepted');
+    });
+
+    // An import the graph cannot see makes two of Deck's promises false at
+    // once — the preload closure claims to name every URL a page requests,
+    // and L6 says a sealed deck reaches nothing at runtime. An
+    // implementation that skips these edges reports a shorter graph and a
+    // clean bill of health for a tree that will fetch from anywhere.
+    await checks.run('L6', 'a computed dynamic import is not silently dropped', () => {
+      assertEqual(
+        unanalyzableDynamicImports("await import(whichever);\n").length,
+        1,
+        'import(expr)',
+      );
+      assertEqual(
+        unanalyzableDynamicImports('await import(`./l/${x}.js`);\n').length,
+        1,
+        'template',
+      );
+    });
+
+    // Worse than dropping: inventing. A specifier that is only the START of
+    // an expression is not an edge, and recording it puts a module in the
+    // graph that does not exist while the real one stays invisible.
+    await checks.run('L6', 'a partial specifier is not recorded as an edge', () => {
+      let source = "await import('./locales/' + lang);\n";
+      assertEqual(moduleSpecifiers(source).length, 0, 'no phantom edge');
+      assertEqual(unanalyzableDynamicImports(source).length, 1, 'counted instead');
     });
 
     // ---- L8 provenance ---------------------------------------------------

@@ -11,10 +11,10 @@
 import { writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { IMPORT_MAP_PATH } from '@deck/core/import-map';
-import { lockDeck } from '@deck/core/lock';
-import { packFromDir } from '@deck/core/pack';
-import { publishToStore } from '@deck/core/store';
+import { IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
+import { lockDeck } from '@cardstack/deck/lock';
+import { packFromDir } from '@cardstack/deck/pack';
+import { publishToStore } from '@cardstack/deck/store';
 
 const here = dirname(fileURLToPath(import.meta.url));
 

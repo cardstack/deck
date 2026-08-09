@@ -44,6 +44,18 @@ export interface FoundSpecifier {
 
 export interface ModuleFacts {
   specifiers: FoundSpecifier[];
+  /**
+   * Byte offsets of `import(` calls whose argument is not a string literal.
+   *
+   * An edge the graph cannot see. Deck's preload closure claims to name
+   * every URL a page will request, and L6 says a sealed deck reaches
+   * nothing at runtime; one computed specifier makes both false without
+   * making either look false. Embroider reached the same place from the
+   * other direction — its macros refuse a non-literal argument outright
+   * rather than guessing, and modern Embroider dropped ember-auto-import's
+   * dynamic-import plugin instead of keeping a best-effort path.
+   */
+  unanalyzableDynamicImports: number[];
   // Any `import`/`export` declaration at all, including `export const x`.
   hasEsmSyntax: boolean;
   // `require(…)`, `module.exports`, `exports.foo`.
@@ -329,6 +341,7 @@ function readDeclarationSpecifier(
 export function lexModule(source: string): ModuleFacts {
   let cursor: Cursor = { source, index: 0, lastToken: '' };
   let specifiers: FoundSpecifier[] = [];
+  let unanalyzable: number[] = [];
   let hasEsmSyntax = false;
   let hasCommonJs = false;
 
@@ -395,11 +408,44 @@ export function lexModule(source: string): ModuleFacts {
           after.index++;
           skipTrivia(after);
           let quote = source[after.index];
-          if (quote === '"' || quote === "'") {
-            let found = readString(after);
-            if (found) {
-              specifiers.push({ ...found, kind: 'dynamic-import' });
-            }
+          let literal =
+            quote === '"' || quote === "'" ? readString(after) : undefined;
+          // A string is only the WHOLE argument if the call ends there.
+          //
+          // `import('./locales/' + lang)` opens with a quote and is not a
+          // literal import at all. Recording `./locales/` would be worse
+          // than recording nothing: the graph gains an edge to a module
+          // that does not exist, the preload closure fetches it, and the
+          // import the code actually performs still goes somewhere the
+          // graph never saw. A phantom edge and a missing edge out of one
+          // mistake.
+          //
+          // A comma is fine — those are import attributes, as in
+          // `import('./x.json', { with: { type: 'json' } })`.
+          let whole = false;
+          if (literal) {
+            let tail = { ...after };
+            skipTrivia(tail);
+            let punctuation = source[tail.index];
+            whole = punctuation === ')' || punctuation === ',';
+          }
+          if (literal && whole) {
+            specifiers.push({ ...literal, kind: 'dynamic-import' });
+          } else {
+            // `import(expr)` — an edge the graph cannot see.
+            //
+            // Recording it matters more than it looks. Everything Deck
+            // promises about a sealed tree assumes the graph is knowable
+            // from the bytes: the preload closure claims to name every URL
+            // the page will ask for, and L6 says a sealed deck reaches
+            // nothing at runtime. One computed specifier makes both claims
+            // false, and quietly — the closure is still advertised, merely
+            // short, and the module fetches from wherever the expression
+            // happens to evaluate.
+            //
+            // So it is not skipped. It is counted, and something upstream
+            // is given the chance to refuse.
+            unanalyzable.push(start);
           }
           cursor.lastToken = word;
           continue;
@@ -503,7 +549,7 @@ export function lexModule(source: string): ModuleFacts {
     cursor.index++;
   }
 
-  return { specifiers, hasEsmSyntax, hasCommonJs };
+  return { specifiers, unanalyzableDynamicImports: unanalyzable, hasEsmSyntax, hasCommonJs };
 }
 
 // The two questions the rest of the system actually asks.
@@ -515,4 +561,14 @@ export function moduleSpecifiers(source: string): string[] {
 export function isCommonJsModule(source: string): boolean {
   let facts = lexModule(source);
   return facts.hasCommonJs && !facts.hasEsmSyntax;
+}
+
+/**
+ * Offsets of `import()` calls this module cannot resolve statically.
+ *
+ * Empty means the module's edges are all knowable, which is the
+ * precondition for every graph claim Deck makes about it.
+ */
+export function unanalyzableDynamicImports(source: string): number[] {
+  return lexModule(source).unanalyzableDynamicImports;
 }

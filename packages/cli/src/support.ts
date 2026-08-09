@@ -1,7 +1,7 @@
 // Things every command needs and no command should own.
 
 import { basename, resolve } from 'node:path';
-import { storeDirFor } from '@deck/server/depot';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 
 export function fail(message: string): never {
   console.error(`error: ${message}`);

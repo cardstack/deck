@@ -1,7 +1,7 @@
 # Fork a language — two dialects, one evaluator
 
 ```bash
-pnpm --filter @deck/example-fork-a-language demo
+pnpm --filter @cardstack/deck-example-fork-a-language demo
 # open http://localhost:8792/
 ```
 

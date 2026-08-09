@@ -31,20 +31,20 @@
 //     7  the daemon rebases the clean one and touches nothing else
 //     8  a reviewer runs the app against any of it with `?with=`
 //
-//   pnpm --filter @deck/example-contribute-to-codelist demo
+//   pnpm --filter @cardstack/deck-example-contribute-to-codelist demo
 //   open http://localhost:8794/
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { forkDeck } from '@deck/core/fork';
-import { IMPORT_MAP_PATH } from '@deck/core/import-map';
-import { lockDeck } from '@deck/core/lock';
-import { pack } from '@deck/core/pack';
-import { discoverOffers } from '@deck/core/offer';
-import { publishToStore } from '@deck/core/store';
-import { readTreeFromDir } from '@deck/core/tree';
-import { rebasePass } from '@deck/server/rebase-daemon';
-import { storeDirFor } from '@deck/server/depot';
+import { forkDeck } from '@cardstack/deck/fork';
+import { IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
+import { lockDeck } from '@cardstack/deck/lock';
+import { pack } from '@cardstack/deck/pack';
+import { discoverOffers } from '@cardstack/deck/offer';
+import { publishToStore } from '@cardstack/deck/store';
+import { readTreeFromDir } from '@cardstack/deck/tree';
+import { rebasePass } from '@cardstack/deck-tools/rebase-daemon';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
 import { demoBuildMode, rmKeepingNotes } from '../shared/reset.mjs';
 import { publishShared } from '../shared/publish.mjs';

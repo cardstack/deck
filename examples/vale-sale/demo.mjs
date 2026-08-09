@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // VALE sample sale — one live branch, Timeline seals, no releases.
 //
-//   pnpm --filter @deck/example-vale-sale demo
+//   pnpm --filter @cardstack/deck-example-vale-sale demo
 //   open the printed /site/vale/sale/index.html
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

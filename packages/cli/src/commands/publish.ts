@@ -8,7 +8,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
-import { readZipEntry } from '@deck/core/canonical-zip';
+import { readZipEntry } from '@cardstack/deck/canonical-zip';
 import {
   collectStoreGarbage,
   inspectStore,
@@ -19,15 +19,15 @@ import {
   readStoreMeta,
   releaseVersion,
   setDistTag,
-} from '@deck/core/store';
+} from '@cardstack/deck/store';
 import {
   derivationFromMap,
   deriveMinified,
   derivedPack,
   terserVersion,
   verifyDerivation,
-} from '@deck/core/derive';
-import { readEnvelope, verifyEnvelope } from '@deck/core/signature';
+} from '@cardstack/deck-tools/derive';
+import { readEnvelope, verifyEnvelope } from '@cardstack/deck/signature';
 import { defineCommand, type Command } from '../command.ts';
 import { depotAt, fail } from '../support.ts';
 

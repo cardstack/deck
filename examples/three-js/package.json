@@ -1,12 +1,13 @@
 {
-  "name": "@deck/example-three-js",
+  "name": "@cardstack/deck-example-three-js",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": { "demo": "node demo.mjs" },
   "dependencies": {
-    "@deck/core": "workspace:*",
-    "@deck/history": "workspace:*",
-    "@deck/server": "workspace:*"
+    "@cardstack/deck": "workspace:*",
+    "@cardstack/deck-history": "workspace:*",
+    "@cardstack/deck-server": "workspace:*",
+    "@cardstack/deck-tools": "workspace:*"
   }
 }

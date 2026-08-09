@@ -5,14 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import type { DeckServer } from '../src/server.ts';
-import { peekPacklist } from '@deck/core/pack';
-import { readStoreMeta, readStoredPack } from '@deck/core/store';
+import { peekPacklist } from '@cardstack/deck/pack';
+import { readStoreMeta, readStoredPack } from '@cardstack/deck/store';
 import type {
   HistoryBackend,
   HistoryEntry,
   RestorePlan,
-} from '@deck/history/backend';
-import { JjCliHistory, jjVersion } from '@deck/history/jj-cli';
+} from '@cardstack/deck-history/backend';
+import { JjCliHistory, jjVersion } from '@cardstack/deck-history/jj-cli';
 import { createDeckServer } from '../src/server.ts';
 import {
   storeDirFor,
@@ -453,7 +453,7 @@ if (!version) {
     });
 
     test('restore is an ordinary edit: the tree moves, history only grows', async function (assert) {
-      let { applyRestore } = await import('@deck/history/backend');
+      let { applyRestore } = await import('@cardstack/deck-history/backend');
       let seals = await history.list(depotDir);
       let first = seals.at(-1)!.changeId;
       let firstBytes = (await history.fileAt(

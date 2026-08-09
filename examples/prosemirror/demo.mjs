@@ -31,21 +31,21 @@
 // What is missing between (2) and (3) is a build: `rebuild-v1`, still a
 // proposal. This demo is the honest measurement of the gap.
 //
-//   pnpm --filter @deck/example-prosemirror demo
+//   pnpm --filter @cardstack/deck-example-prosemirror demo
 //   open http://localhost:8798/
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pack, unpack } from '@deck/core/pack';
-import { hashBytes } from '@deck/core/tree-hash';
-import { publishToStore, inspectStore, readStoredPack } from '@deck/core/store';
+import { pack, unpack } from '@cardstack/deck/pack';
+import { hashBytes } from '@cardstack/deck/tree-hash';
+import { publishToStore, inspectStore, readStoredPack } from '@cardstack/deck/store';
 import {
   deckNameForNpm,
   probeEntries,
   vendorFromNpmSource,
-} from '@deck/core/vendor-npm';
-import { fetchNpmPackage } from '@deck/core/npm';
-import { locateSourceMap } from '@deck/core/vendor-map';
+} from '@cardstack/deck-tools/vendor-npm';
+import { fetchNpmPackage } from '@cardstack/deck-tools/npm';
+import { locateSourceMap } from '@cardstack/deck-tools/vendor-map';
 import {
   createDemoServer,
   demoOrigin,
@@ -53,7 +53,7 @@ import {
   openDemoDepot,
   serveLive,
 } from '../shared/depot.mjs';
-import { storeDirFor } from '@deck/server/depot';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 import { demoBuildMode, resetDemoDepot } from '../shared/reset.mjs';
 

@@ -19,8 +19,8 @@
 
 import { access, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { readStoreMeta } from '@deck/core/store';
-import { storeDirFor } from '@deck/server/depot';
+import { readStoreMeta } from '@cardstack/deck/store';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 
 /** True only when the operator asked for a destructive reseed. */
 export function wantDemoReset() {

@@ -22,22 +22,22 @@
 // a `^1.0.0` range never matched a prerelease in the first place, so nothing
 // downstream moved when they were created and nothing moved when they lost.
 //
-//   pnpm --filter @deck/example-variations demo
-//   CHOOSE=c pnpm --filter @deck/example-variations demo   # pick another
+//   pnpm --filter @cardstack/deck-example-variations demo
+//   CHOOSE=c pnpm --filter @cardstack/deck-example-variations demo   # pick another
 //   open http://localhost:8796/
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { IMPORT_MAP_PATH } from '@deck/core/import-map';
-import { lockDeck } from '@deck/core/lock';
-import { pack } from '@deck/core/pack';
+import { IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
+import { lockDeck } from '@cardstack/deck/lock';
+import { pack } from '@cardstack/deck/pack';
 import {
   publishToStore,
   readStoreMeta,
   readStoredPack,
   releaseVersion,
-} from '@deck/core/store';
-import { readTreeFromDir } from '@deck/core/tree';
+} from '@cardstack/deck/store';
+import { readTreeFromDir } from '@cardstack/deck/tree';
 import {
   createDemoServer,
   demoOrigin,
@@ -45,7 +45,7 @@ import {
   openDemoDepot,
   serveLive,
 } from '../shared/depot.mjs';
-import { storeDirFor } from '@deck/server/depot';
+import { storeDirFor } from '@cardstack/deck-server/depot';
 import { publishShared } from '../shared/publish.mjs';
 import {
   demoBuildMode,

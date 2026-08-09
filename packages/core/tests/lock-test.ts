@@ -12,6 +12,7 @@ import {
   resolveDependencies,
   resolveScopes,
 } from '../src/lock.ts';
+import { resolveSpecifier } from '../src/resolve.ts';
 
 let depotDir: string;
 let storeDir: string;
@@ -428,6 +429,97 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
         },
       ],
       "the widget's own specifier resolves inside the widget's URL prefix",
+    );
+  });
+
+  // W10's first proof, and P1's acceptance test for the Boxel backport.
+  //
+  // `~/boxel-workspaces` holds three@0.160.0 and three@0.169.0, live, in
+  // different cards. A flat prefix map — all `VirtualNetwork.resolveImport`
+  // can express today — cannot serve both under one specifier, because it is
+  // never told who is importing. Scopes can, and this is the whole mechanism
+  // in one test: one specifier, two versions, chosen by the importer's URL,
+  // with no query string and no second document.
+  test('two versions of one library are live at once, chosen by the importer', async function (assert) {
+    await publishToStore(
+      storeDir,
+      'me/widget',
+      '1.0.0',
+      pack([
+        {
+          path: 'importmap.json',
+          bytes: Buffer.from(
+            JSON.stringify({
+              deck: {
+                packages: { widget: { version: '1.0.0', entry: '$DECK/w.js' } },
+                // The widget was built against 1.x and stays there.
+                dependencies: { 'acme/confetti': '^1.0.0' },
+              },
+            }),
+          ),
+        },
+        { path: 'w.js', bytes: Buffer.from("import 'acme/confetti';\n") },
+      ]),
+      { tag: 'latest' },
+    );
+    // The app is on 2.x, and also uses the widget.
+    let dependencies = { 'me/widget': '^1.0.0', 'acme/confetti': '^2.0.0' };
+    await writeAppMap(dependencies);
+    let resolutions = await resolveDependencies({
+      depotDir,
+      depotName: 'demo',
+      storeDir,
+      dependencies,
+    });
+    let imports = Object.fromEntries(
+      resolutions.flatMap((r) =>
+        r.version
+          ? [
+              [
+                `${r.publisher}/${r.package}`,
+                `/demo/${r.publisher}/${r.package}@${r.version}/`,
+              ],
+            ]
+          : [],
+      ),
+    );
+    let scopes = Object.fromEntries(
+      (
+        await resolveScopes({ depotName: 'demo', storeDir, roots: resolutions })
+      ).map((s) => [s.scope, s.imports]),
+    );
+
+    assert.strictEqual(
+      imports['acme/confetti'],
+      '/demo/acme/confetti@2.0.0/',
+      'the app gets 2.0.0 at the top level',
+    );
+    assert.strictEqual(
+      scopes['/demo/me/widget@1.0.0/']['acme/confetti'],
+      '/demo/acme/confetti@1.2.0/confetti.js',
+      'and the widget keeps 1.2.0 inside its own prefix',
+    );
+
+    // The resolver is what has to agree, not only the map. Same specifier,
+    // two answers, and the only thing that differs is who asked.
+    assert.strictEqual(
+      resolveSpecifier({
+        specifier: 'acme/confetti',
+        fromUrl: 'https://depot.test/demo/me/app/app.js',
+        imports,
+        scopes,
+      }),
+      '/demo/acme/confetti@2.0.0/',
+    );
+    assert.strictEqual(
+      resolveSpecifier({
+        specifier: 'acme/confetti',
+        fromUrl: 'https://depot.test/demo/me/widget@1.0.0/w.js',
+        imports,
+        scopes,
+      }),
+      '/demo/acme/confetti@1.2.0/confetti.js',
+      'two live versions, one document, distinguished only by the importer',
     );
   });
 

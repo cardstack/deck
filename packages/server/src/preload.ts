@@ -1,5 +1,11 @@
 import { posix } from 'node:path';
-import { moduleSpecifiers } from '@deck/core/es-lexer';
+import { moduleSpecifiers } from '@cardstack/deck/es-lexer';
+import { resolveSpecifier } from '@cardstack/deck/resolve';
+
+// Re-exported because it used to live here. The resolution algorithm is not
+// a preload detail — it is the contract any host with its own module loader
+// has to implement — so it moved to the browser-safe half of Core.
+export { resolveSpecifier };
 
 // Workstream C — closure preload.
 //
@@ -57,45 +63,6 @@ export function formatDeckUrl(url: DeckUrl): string {
   return `/${url.depot}/${url.publisher}/${url.pkg}${at}/${url.path}`;
 }
 
-// The import-map resolution a browser performs: an exact key wins; failing
-// that the longest key ending in `/` that prefixes the specifier, with the
-// remainder appended. Scopes are consulted first, longest prefix first.
-export function resolveSpecifier(options: {
-  specifier: string;
-  fromUrl: string;
-  imports: Record<string, string>;
-  scopes: Record<string, Record<string, string>>;
-}): string | undefined {
-  let { specifier, fromUrl, imports, scopes } = options;
-  let applicable = Object.keys(scopes)
-    .filter((prefix) => fromUrl.startsWith(prefix))
-    .sort((a, b) => b.length - a.length);
-  for (let prefix of applicable) {
-    let hit = lookup(specifier, scopes[prefix]);
-    if (hit) {
-      return hit;
-    }
-  }
-  return lookup(specifier, imports);
-}
-
-function lookup(
-  specifier: string,
-  table: Record<string, string>,
-): string | undefined {
-  if (table[specifier]) {
-    return table[specifier];
-  }
-  let best: string | undefined;
-  for (let key of Object.keys(table)) {
-    if (key.endsWith('/') && specifier.startsWith(key)) {
-      if (best === undefined || key.length > best.length) {
-        best = key;
-      }
-    }
-  }
-  return best ? table[best] + specifier.slice(best.length) : undefined;
-}
 
 const MODULE_SCRIPT =
   /<script([^>]*\btype\s*=\s*["']module["'][^>]*)>([\s\S]*?)<\/script\s*>/gi;

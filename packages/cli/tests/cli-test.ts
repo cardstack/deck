@@ -6,10 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { treeHashFromDir } from '@deck/core/tree-hash';
-import { readStoreMeta, readStoredPack } from '@deck/core/store';
-import { storeDirFor } from '@deck/server/depot';
-import { jjVersion } from '@deck/history/jj-cli';
+import { treeHashFromDir } from '@cardstack/deck/tree-hash';
+import { readStoreMeta, readStoredPack } from '@cardstack/deck/store';
+import { storeDirFor } from '@cardstack/deck-server/depot';
+import { jjVersion } from '@cardstack/deck-history/jj-cli';
 import { GROUPS } from '../src/command.ts';
 import { COMMANDS, commandsIn } from '../src/registry.ts';
 

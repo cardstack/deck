@@ -1,8 +1,8 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { peekPacklist } from '@deck/core/pack';
-import { PACKLIST_PATH, type Packlist } from '@deck/core/packlist';
-import { isValidTreePath } from '@deck/core/tree-hash';
+import { peekPacklist } from '@cardstack/deck/pack';
+import { PACKLIST_PATH, type Packlist } from '@cardstack/deck/packlist';
+import { isValidTreePath } from '@cardstack/deck/tree-hash';
 
 // Directory listings for the Deck browser: sealed packs (from packlist)
 // and live working trees (from the filesystem). Same JSON shape either way.

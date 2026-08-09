@@ -106,7 +106,7 @@ has a specifier after `from`. Fixed, with the case pinned in
 
 ```bash
 pnpm install
-pnpm --filter @deck/example-codelist demo
+pnpm --filter @cardstack/deck-example-codelist demo
 ```
 
 Or all of them, behind one console:

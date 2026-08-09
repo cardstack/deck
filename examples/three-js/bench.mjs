@@ -27,10 +27,10 @@ import { Agent, request as httpRequest } from 'node:http';
 import { connect } from 'node:http2';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { unpack } from '@deck/core/pack';
-import { readStoredPack, readStoreMeta } from '@deck/core/store';
-import { storeDirFor } from '@deck/server/depot';
-import { createDeckServer } from '@deck/server/server';
+import { unpack } from '@cardstack/deck/pack';
+import { readStoredPack, readStoreMeta } from '@cardstack/deck/store';
+import { storeDirFor } from '@cardstack/deck-server/depot';
+import { createDeckServer } from '@cardstack/deck-server/server';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const depotDir = join(here, 'depot');
@@ -46,7 +46,7 @@ let meta = await readStoreMeta(storeDir, DECK);
 let version = meta?.tags?.latest;
 if (!version) {
   console.error(
-    'nothing to measure: run `pnpm --filter @deck/example-three-js demo` once first,\n' +
+    'nothing to measure: run `pnpm --filter @cardstack/deck-example-three-js demo` once first,\n' +
       'so the store has a vendored three.js to serve.',
   );
   process.exit(1);

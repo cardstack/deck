@@ -1,5 +1,5 @@
 {
-  "name": "@deck/example-vale-sale",
+  "name": "@cardstack/deck-example-vale-sale",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "steps": "node steps.mjs"
   },
   "dependencies": {
-    "@deck/history": "workspace:*",
-    "@deck/server": "workspace:*"
+    "@cardstack/deck-history": "workspace:*",
+    "@cardstack/deck-server": "workspace:*"
   }
 }

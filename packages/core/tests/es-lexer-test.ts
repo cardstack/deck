@@ -4,6 +4,7 @@ import {
   isCommonJsModule,
   lexModule,
   moduleSpecifiers,
+  unanalyzableDynamicImports,
 } from '../src/es-lexer.ts';
 
 module('the ES module lexer', () => {
@@ -215,5 +216,74 @@ module('the ES module lexer', () => {
   test('module.exportsSomething is not module.exports', (assert) => {
     assert.false(isCommonJsModule('export const a = 1;\nmodule.exportsAll();\n'));
     assert.true(isCommonJsModule('module . exports = 1;\n'), 'trivia is allowed');
+  });
+});
+
+// Embroider's lesson, applied: an edge the graph cannot see must be
+// COUNTED, not skipped. Every claim Deck makes about a sealed tree — the
+// preload closure names every URL, L6 says it reaches nothing at runtime —
+// is false in the presence of one computed specifier, and false quietly.
+module('es-lexer: dynamic imports the graph cannot see', function () {
+  test('a literal dynamic import is an ordinary edge', function (assert) {
+    let facts = lexModule("const m = await import('./late.js');\n");
+    assert.deepEqual(
+      facts.specifiers.map((s) => [s.kind, s.value]),
+      [['dynamic-import', './late.js']],
+    );
+    assert.deepEqual(facts.unanalyzableDynamicImports, []);
+  });
+
+  test('a computed dynamic import is recorded, not dropped', function (assert) {
+    let source = "const m = await import(name);\n";
+    let facts = lexModule(source);
+    assert.deepEqual(facts.specifiers, [], 'no specifier can be claimed');
+    assert.strictEqual(facts.unanalyzableDynamicImports.length, 1);
+    assert.strictEqual(
+      source.slice(facts.unanalyzableDynamicImports[0]).startsWith('import('),
+      true,
+      'the offset points at the offending call',
+    );
+  });
+
+  // The pattern the ecosystem asks for most, and the one Embroider stopped
+  // supporting rather than half-supporting: a prefix plus a variable.
+  test('a template or concatenated specifier is unanalyzable too', function (assert) {
+    assert.strictEqual(
+      unanalyzableDynamicImports("import('./locales/' + lang);\n").length,
+      1,
+    );
+    assert.strictEqual(
+      unanalyzableDynamicImports('import(`./locales/${lang}.js`);\n').length,
+      1,
+    );
+  });
+
+  test('several in one module are all counted', function (assert) {
+    assert.strictEqual(
+      unanalyzableDynamicImports('import(a); import(b); import(c);\n').length,
+      3,
+    );
+  });
+
+  // The lexer's whole reason for existing: text that merely looks like code
+  // must not register.
+  test('an import( inside a comment or string is not an edge', function (assert) {
+    assert.deepEqual(
+      unanalyzableDynamicImports("// import(whatever)\nconst s = 'import(x)';\n"),
+      [],
+    );
+  });
+});
+
+module('es-lexer: import attributes stay analyzable', function () {
+  test('a literal with attributes is still an ordinary edge', function (assert) {
+    let facts = lexModule(
+      "const d = await import('./data.json', { with: { type: 'json' } });\n",
+    );
+    assert.deepEqual(
+      facts.specifiers.map((s) => s.value),
+      ['./data.json'],
+    );
+    assert.deepEqual(facts.unanalyzableDynamicImports, []);
   });
 });

@@ -7,14 +7,14 @@
 // content addressing has already collapsed them to one stored tree.
 
 import { parseArgs } from 'node:util';
-import { readStoreMeta } from '@deck/core/store';
-import { createKey, listKeys, resolveKey } from '@deck/core/keyring';
+import { readStoreMeta } from '@cardstack/deck/store';
+import { createKey, listKeys, resolveKey } from '@cardstack/deck/keyring';
 import {
   appendSignature,
   readEnvelope,
   signTreeHash,
   verifyEnvelope,
-} from '@deck/core/signature';
+} from '@cardstack/deck/signature';
 import { defineCommand, type Command } from '../command.ts';
 import { depotAt, fail } from '../support.ts';
 

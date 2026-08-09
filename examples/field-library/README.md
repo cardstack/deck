@@ -1,7 +1,7 @@
 # A field library — edit a field, and the edit is a Version
 
 ```bash
-pnpm --filter @deck/example-field-library demo
+pnpm --filter @cardstack/deck-example-field-library demo
 # open http://localhost:8793/
 ```
 

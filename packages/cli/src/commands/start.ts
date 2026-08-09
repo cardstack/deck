@@ -10,15 +10,15 @@
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { createDeckServer } from '@deck/server/server';
+import { createDeckServer } from '@cardstack/deck-server/server';
 import {
   discoverDecks,
   storeDirFor,
   watchDepot,
   type DepotMount,
-} from '@deck/server/depot';
-import { startRebaseDaemon } from '@deck/server/rebase-daemon';
-import { createHistory, isValidHistoryKind } from '@deck/history/create';
+} from '@cardstack/deck-server/depot';
+import { startRebaseDaemon } from '@cardstack/deck-tools/rebase-daemon';
+import { createHistory, isValidHistoryKind } from '@cardstack/deck-history/create';
 import { defineCommand, type Command } from '../command.ts';
 import { DEFAULT_PORT, fail, listenNear } from '../support.ts';
 

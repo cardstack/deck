@@ -1,8 +1,10 @@
-import { readZipEntry } from './canonical-zip.ts';
-
 // The import map is a tree file (importmap.json at the root) — the deck's
 // manifest. The vendor key is `deck`; `boxel` is honored for content
 // authored in Boxel realms. Same shape, one namespace per ecosystem.
+//
+// Part of the browser-safe surface (see `resolve.ts`): no `node:` import
+// here, or in anything this file reaches. Reading a manifest out of a pack
+// needs a zip reader, so that lives in `import-map-pack.ts`.
 
 export const IMPORT_MAP_PATH = 'importmap.json';
 export const MOUNT_SEPARATOR = '.pack.zip!/';
@@ -56,13 +58,6 @@ export function parseDependencies(
   } catch {
     return undefined;
   }
-}
-
-export function packagesFromPack(
-  packBytes: Buffer,
-): Record<string, PackageMapEntry> | undefined {
-  let raw = readZipEntry(packBytes, IMPORT_MAP_PATH);
-  return raw ? parsePackages(raw.toString('utf8')) : undefined;
 }
 
 // The token for "the root of this deck's own tree".
