@@ -13,9 +13,44 @@ Internal numbering from our planning docs is kept in parentheses so you can matc
 | **R1–R5** | Suggested release / phase order |
 | **Deck Core** | Protocol library: identity, packs, store, merge, serve grammar, optional timeline — not the Deck Hub app |
 
-Companions (optional deep dives):  
-`deck-boxel-monorepo-change-register.md`, `deck-boxel-backport-plan.md`, `deck-depot-and-realm-backport.md`, `deck-work-plan-for-backport.md`,
-`deck-boxel-backport-changelist-mockup.md` (stacked PR walkthrough with author-facing examples; sample decklist + `.gts` under `docs/artifacts/`).
+**Two living docs for execution** (everything else is appendix):
+
+| Where | Doc | Role |
+| --- | --- | --- |
+| **Deck repo** | [`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md) | Protocol questions closed *here* so Boxel PRs are wiring |
+| **Boxel work** | [`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md) | Stacked PRs, blast radius, agent prompts |
+
+Appendix (why / deep dives): `deck-boxel-monorepo-change-register.md`, `deck-boxel-backport-plan.md`, `deck-depot-and-realm-backport.md`, `deck-core-backport-split.md`. Sample decklist + `.gts` under `docs/artifacts/`.
+
+---
+
+## How we execute (campaign, not the benefit list)
+
+The K1–K14 table is the destination. The **campaign** is shorter and stricter:
+
+1. **Deck-side gate before Boxel PR 0.** `extends`, classifier, provenance, bare/hermetic packs, lean Core cone, and `deck conform` against a foreign URL — settled in the Deck work plan. Monorepo PRs must stay “call this / mount that,” not reopen design.
+2. **Prove the decklist in product early.** After importer-aware resolve, ship a **thin** install / remix / use against a fixture LibSpec — before Timeline, before Matrix, before catalog authority theater.
+3. **Slice the Timeline hinge.** Steps on one write path → restore API → one host restore surface → agent claims → CLI 3-way. Refuse Timeline PRs that reimplement merge/store in realm-server.
+4. **Three tracks, different merge bars.**
+
+| Track | Owns | May lag |
+| --- | --- | --- |
+| **A — Map** | Resolver, decklist, thin verbs, LibSpec fixtures | Matrix, packs polish |
+| **B — Tape** | Timeline / Steps / Versions, restore, CLI merge | Catalog CDN |
+| **C — Carriage** | Classifier wiring, packs, GitHub share/gather interim | Base realm |
+
+5. **Program gates** (falsifiable — not fourteen local Done whens):
+   - Monorepo PRs are wiring, not design debates.
+   - Algorithms imported from `@cardstack/deck`, not forked.
+   - `deck conform` against a deck-enabled realm URL is green.
+   - **Author gate:** remix of a multi-file package does not duplicate unchanged files.
+
+**Demote / do not staff on the critical path:** negotiated prune; full Matrix submission (use GitHub share/gather + Base-Version until A+B are real); review-tools product (K13); minify gold-plating (K9); bulk vendor corpus and “catalog on CDN” as blockers for Map/Tape.
+
+**Spines if you cut hard:**
+
+- **Product:** resolver → thin decklist verbs → Timeline restore  
+- **Infra:** resolver → Timeline write path → CLI 3-way  
 
 ---
 
@@ -53,6 +88,32 @@ Phase 5 is therefore not “optional history if someone wants undo.” It is **T
 
 ---
 
+## An app is a decklist (import map)
+
+This is easy to understate and expensive to miss.
+
+In Deck terms, a running **app is not a folder of copied dependencies**. It is
+a **decklist** — an import map (plus optional `scopes` and `extends`) that
+says which **RRI / Version** answers each bare name. The cards and modules
+you author sit in the live tree; everything else is a pin.
+
+| Verb | What actually changes |
+| --- | --- |
+| **Use** | Create an instance whose `adoptsFrom` is an exact versioned RRI |
+| **Install** | Add pins to *my* decklist (manage upgrades later) |
+| **Remix** | `extends` a parent Version + override only what I change — **not** a tree copy |
+| **Upgrade** | Repoint a pin / parent and re-resolve |
+
+So K5 and K8 are not four product features and a performance tip. They are
+consequences of “the app *is* the map.” If Boxel keeps teaching remix as
+copy-the-package, we have not backported the model — only some plumbing.
+
+Authors still write normal imports (`three`, `@cardstack/base/card-api`).
+The decklist is where versions and coexistence live. See the sample in
+`docs/artifacts/backport-remix-decklist.json` and PR 1 in the changelist.
+
+---
+
 ## What we are trying to buy (the benefits)
 
 | # | Benefit in plain English |
@@ -61,10 +122,10 @@ Phase 5 is therefore not “optional history if someone wants undo.” It is **T
 | **K2** | Immutable, cacheable module URLs (CDN-grade caching when pinned to an exact version) |
 | **K3** | Our own unpkg-style vendoring of third-party libs, with policy, browsable as catalog specs |
 | **K4** | One checkpoint/milestone story; sync uses **3-way merge** instead of “pick local or remote” |
-| **K5** | Honest catalog verbs: install / upgrade / remix / use (not one blunt “copy”) |
+| **K5** | Honest catalog verbs on a **decklist**: install / upgrade / remix / use (the app *is* the map) |
 | **K6** | Catalog is the authority; GitHub is a read-only mirror (plus a safe intake path when needed) |
 | **K7** | Submit / review / vote across realms (not “open a GitHub PR” as the product workflow) |
-| **K8** | Remix **without** copying the whole tree — override only what you change |
+| **K8** | Remix = decklist `extends` + overrides — **without** copying the whole tree |
 | **K9** | Published releases can be minified and gzipped (safe because exact versions never change) |
 | **K10** | Versioned realm infra that can replace the github + npm + esm.sh combo for card apps/libs |
 | **K11** | Base realm (card-api, etc.) distributed via Deck import maps instead of a special snowflake |
@@ -96,179 +157,160 @@ Boxel keeps the word **realm**. “Depot” is Deck-standalone vocabulary; a dec
 
 ## Order of operations
 
-Order and dependencies matter more than calendar guesses. With AI-assisted
-implementation, wiring goes much faster than classical estimates; what still
-sets the pace is **review risk**, **blast radius** (especially base realm),
-and a few design gaps (negotiated packs, full Matrix submission). Below,
-phases are labeled by shape — small / parallelizable / hinge — not by weeks.
+Order and dependencies matter more than calendar guesses. What sets the pace
+is **review risk**, **blast radius** (especially base realm), and refusing
+to reopen protocol design inside Boxel PRs. Phases below are the **campaign
+order** — not “list every K benefit once.”
 
-### Phase 0 — Drop Core into the monorepo
+### Phase −1 — Deck work plan complete (gate)
 
-**Add:** `packages/deck` (tight Core only).  
-**Do not add:** Deck Hub, Deck examples, Deck’s teaching CLI as a dependency of Boxel.
-
-**Gate:** we can run Deck’s conformance suite against a URL once the realm speaks enough of the protocol (`deck conform`).
-
-**Benefits yet:** none for end users — this is the dependency cone.
+Before any Boxel drop: `extends`, classifier, provenance, bare/hermetic,
+lean Core, foreign `deck conform`, scopes proof — see
+[`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md). If a
+Boxel PR needs a design debate, the work returns here.
 
 ---
 
-### Phase 1 — Resolver that knows who is importing (**R1a / P1**)
+### Phase 0 — Lean Core into the monorepo
 
-**Change in:** `runtime-common` (virtual network / loader). Small PR; should not change behavior for today’s single-version maps.
+**Add:** `packages/deck` — protocol + serve grammar + history helpers +
+conform surface. Browser entry for host / `runtime-common`; `/node` for
+realm-server.
 
-**What we add:** resolution with importer context, longest-prefix matching, import-map **scopes** shape.
+**Do not add:** Hub, examples, teaching CLI, npm vendor pipeline, minify
+derive, rebase-daemon (Tools until a customer PR needs them).
+
+**Gate:** install/build green; host graph pulls no `node:fs`; no realm
+behavior change.
+
+---
+
+### Phase 1 — Resolver that knows who is importing (**Track A**)
+
+**Change in:** `runtime-common` (virtual network / loader).
+
+**What we add:** importer context, longest-prefix, import-map **scopes**.
 
 | Benefit unlocked | Why |
 | --- | --- |
-| **K8** Remix without copying | Acceptance test for this phase: one card on library A@new, another path still on A@old, both live |
-| Path to **K5**, **K3**, **K11** | Those all need scoped resolution |
+| **K8** Remix without copying | One card on A@new, another path on A@old, both live |
+| Path to **K5**, **K3**, **K11** | All need scoped resolution |
 
-**Shape:** small, low risk. **Do this first.**
+**Shape:** small. **First monorepo behavior PR.**
 
 ---
 
-### Phase 2 — Safer publish + shared URL classifier (**P4**, publish stage 1)
+### Phase 1b — Thin decklist verbs (**Track A**, early product win)
 
-**Change in:** `realm-server` publish handler; import classifier from `packages/deck` (do not fork the logic into `runtime-common`).
+**Change in:** `runtime-common` decklist helpers; minimal host actions;
+**fixture** LibSpec (not full catalog redesign).
 
-**What we add:** correct treatment of absolute URLs when copying/publishing (dependency vs asset vs rebind). Big standalone win even before “full Deck history.”
+**What we add:** install / remix / use (upgrade can be stubby) that mutate
+the app **decklist** — `extends` + pins — and do **not** full-copy trees.
 
 | Benefit unlocked | Why |
 | --- | --- |
-| Early half of **K14** / publish hygiene | Intake and publish stop guessing what an HTTPS string means |
-| Faster, safer realm publish | Less fan-out / clearer rewrites |
+| Early **K5** + author-visible **K8** | Proves “app = decklist” in the product, not only in unit tests |
 
-**Shape:** small; can overlap Phase 1.
+**Shape:** small–medium. **Do this before staffing Timeline.** Full catalog
+polish and package-page affordances can trail (old “Phase 8 verbs”).
 
 ---
 
-### Phase 3 — Our own library CDN (**R1b / K3**, mostly outside monorepo)
+### Phase 2 — Classifier on publish (**Track C**, parallel OK)
 
-**Change in:** hosted Deck (or equivalent), vendor pipeline, catalog **content** (LibSpec). Light `realm-server` serve wiring as needed.
-
-**What we add:** third-party JS ingested under our policy, addressed like first-class packages, browsable in catalog.
+**Change in:** `realm-server` publish handler; **import**
+`@cardstack/deck/classify` (do not fork).
 
 | Benefit unlocked | Why |
 | --- | --- |
-| **K3** Vendoring + LibSpec | The unpkg/esm.sh replacement for libs we care about |
-| Most of **K2** for those packages | Exact versions → cacheable |
+| Publish hygiene / **K14** prep | leave / rebind / rewrite; assets never become pins |
 
-**Shape:** parallel track outside the monorepo (ops + catalog content), light Boxel wiring.
+**Shape:** small; parallel with Phase 1 / 1b. Not on the product spine.
 
 ---
 
-### Phase 4 — Distribute the catalog via Deck (**R2**)
+### Phase 3 — Vendoring / catalog CDN (**Track C**, *optional early*)
 
-**Change in:** how catalog (and later other read-only realms) are published/served — Cloudflare or similar, HTTP/2, gzip. Not “rewrite every realm” yet.
+Ops + catalog content for third-party libs and fast catalog modules (**K3**,
+catalog **K2**/**K9**). Useful, but **must not block** Track A or B. Staff
+when someone owns the corpus; do not serialize Map/Tape behind it.
+
+---
+
+### Phase 5 — Timeline hinge (**Track B**) — *sliced*, not one epic
+
+Do **not** ship editable realms as Versions-only and call K1 done.
+Do **not** land write path + host UI + claims + CLI sync in one PR.
+
+| Slice | Ship | Explicit non-goal |
+| --- | --- | --- |
+| **5a** | Steps on *one* write path (definition saves or batched writes) via Deck façade | No host restore UI |
+| **5b** | List/restore HTTP through normal `Realm.write` | No agent claims UX |
+| **5c** | One host history list + restore | No CLI rewrite |
+| **5d** | Agent writes → same Step path + claims; activity read if cheap | No 3-way sync |
+| **5e** | CLI checkpoints + `mergeTrees` 3-way (**K4**) | No minify / CDN |
+
+Each slice: wire Core; **refuse** reimplementing merge/store in realm-server.
+Gate with integration tests and, when the realm speaks enough HTTP,
+`deck conform`.
 
 | Benefit unlocked | Why |
 | --- | --- |
-| Catalog-side **K2** / **K9** | Fast, cacheable catalog modules |
-| Prep for **K6** | Catalog starts behaving like an authoritative store |
-
-**Shape:** mostly outside + small wiring.  
-**Defer base realm (K11)** until after history/restore exists.
+| **K1** | Steps for edits; Versions when you publish a cut |
+| **K4** (5e) | Real common ancestor for sync |
+| Foundation for **K12** / **K13** | Claims and review read the same tape |
 
 ---
 
-### Phase 5 — Timeline on the realm write path (**R3 / P2**) — the hinge
+### Phase 6 — Base realm via Deck (**K11**)
 
-**Change in:** `runtime-common` realm writes; `realm-server` history backend; **`boxel-cli`** checkpoint/sync (**K4** in the same effort); host surfaces that restore/list Steps.
-
-**What we add (product intent):**
-
-1. **UI saves** → settle into a **Step** on the realm Timeline (debounced the way Deck’s live loop already does).  
-2. **Agent writes** (definition files and instance updates alike) → same path: settled batches become **Steps**, with **claims** marking the path under edit.  
-3. **Publish / milestone / “make this the cut others pin”** → a **Version** in the store (may record which Step it was cut from).  
-4. CLI sync uses a real common ancestor (Version or Step) for **3-way merge**, not prefer-local theater.
-
-Do **not** ship editable realms as Versions-only and call K1 done. Versions-only is a valid mode for some read-only catalog mounts; working realms need the tape.
-
-| Benefit unlocked | Why |
-| --- | --- |
-| **K1** Timeline for UI + agent edits; Versions for publish | Steps on the write path; Versions when you cut a release |
-| **K4** Unified checkpoint + 3-way sync | Needs that merge base; don’t build sync twice |
-| Foundation for **K12** / **K13** | Activity and review tools read Steps, claims, and Versions together |
-
-**Shape:** the hinge — largest monorepo change, highest integration risk. Schedule as one epic; earlier phases stay small on purpose so this PR is “wire Core,” not “invent versioning.”
+**Highest blast radius** — every realm depends on base. Only after **5c**
+(restore works) so a bad base Version is recoverable.
 
 ---
 
-### Phase 6 — Base realm via Deck (**R3.5 / K11**)
+### Phase 7 — Serve cache classes + activity (**K2**, **K12**; **K9** demoted)
 
-**Change in:** `runtime-common` / `host` mappings; how base (`card-api`, etc.) is published and resolved.
-
-| Benefit unlocked | Why |
-| --- | --- |
-| **K11** Base realm as Deck packages | Common fields/modules via import map + exact versions |
-
-**Shape:** not huge in code, **highest blast radius** — every realm depends on base. Only after restore (Phase 5) so a bad base Version is recoverable.
+Exact Version → immutable cache; live → no-store (**K2**). Agent activity in
+preview (**K12**) when 5d data exists. **Minify/gzip derivatives (K9)** only
+after cache classes are trusted — easy to gold-plate; not a spine item.
 
 ---
 
-### Phase 7 — Deck serve rules on the realm server (**R4 / P3**)
+### Phase 8 — Catalog authority + collaboration (**K6**, then **K7**)
 
-**Change in:** `realm-server` handlers and cache policy; wire activity; minify/derive pipeline as needed.
+GitHub as **mirror** (**K6**); share/gather + Base-Version remains the
+**interim** inter-realm truck. Full Matrix submission / retire GH-PR-as-
+product (**K7**) **after** Tracks A+B are real — do not staff Matrix early.
 
-**What we add:** exact version → immutable caching; live → no-store; optional compressed derived artifacts; read path for agent activity in preview.
-
-| Benefit unlocked | Why |
-| --- | --- |
-| **K2** (fully) | Cache classes correct for versioned vs live |
-| **K9** Minified + gzipped releases | Safe because bytes at `@exact` never change |
-| **K12** Live agent monitoring in preview | Activity protocol read path + existing preview |
-| Data for **K13** | Versions/steps/claims available to build review UI on |
-
-**Shape:** medium wiring across serve path, derive/minify, and host preview.
+Catalog verb *polish* (pretty package pages, upgrade UX) lands here if not
+finished in Phase 1b.
 
 ---
 
-### Phase 8 — Catalog as the product registry (**R5**)
+### Phase 9 — Packs + review tools (**K14**, **K13**)
 
-**Change in:** mostly **catalog realm content** + small `realm-server` jobs; retire GitHub-PR-as-submission where Deck/Matrix replaces it.
-
-**What we add:**
-
-- Catalog verbs in the product (**K5**): install / upgrade / remix / use  
-- GitHub as **mirror** of authority, not the source of truth (**K6**)  
-- Inter-realm submission / review — Matrix identity, room, and message as the “message of intent”; realm ACL for who may offer / accept; Deck Pack attached when the tip isn’t public (**K7**)  
-- Human “share/gather” against GitHub remains an interim for teams that already live there  
-
-| Benefit unlocked | Why |
-| --- | --- |
-| **K5**, **K6**, **K7** | Authority + workflow move into realms |
-| **K10** becomes believable | Catalog + versions + cache + verbs cover the old stack |
-
-**Shape:** heavy on catalog **content** and process (mirror policy, Matrix submission), light on new monorepo surface area.
+Bare/hermetic packs with provenance (**K14**). Negotiated prune stays
+undesigned. Review tools (**K13**) are content after Steps exist — trail,
+don’t block.
 
 ---
 
-### Phase 9 — Review tools and packs (**K13**, **K14**)
-
-**Change in:** realm/catalog **content** for review UX (**K13**); `realm-server` download/publish as Deck Pack (**K14**).
-
-| Benefit unlocked | Why |
-| --- | --- |
-| **K13** | Interesting diff/review over Versions, offers, claims — can trail Phase 5+ |
-| **K14** | `bare` pack ≈ today’s download with provenance; `hermetic` pack carries dependency bytes; **negotiated** prune across trust boundaries is still a design problem — don’t block earlier phases on it |
-
-**Shape:** K13 is content/UI once Phase 5 data exists; K14 bare/hermetic is wiring — negotiated prune waits on design.
-
----
-
-## Dependency picture (simple)
+## Dependency picture (campaign)
 
 ```text
-Phase 1  resolver          →  remix without copy (K8)
-Phase 2  classifier        →  safer publish / pack intake
-Phase 3  vendoring         →  own unpkg (K3)
-Phase 4  catalog on Deck   →  fast catalog modules
-Phase 5  Timeline + Versions + CLI → Steps for UI/agent edits (K1), 3-way sync (K4)  ← hinge
-Phase 6  base via Deck     →  K11
-Phase 7  serve + activity  →  K2, K9, K12
-Phase 8  catalog product   →  K5, K6, K7  (→ K10 as outcome)
-Phase 9  review + packs    →  K13, K14
+−1  Deck work plan gates     →  Boxel PRs stay wiring
+ 0  lean Core drop
+ 1  resolver                 →  K8
+1b  thin decklist verbs      →  early K5 (product spine)     ← prove the model
+ 2  classifier on publish    →  parallel (Track C)
+ 3  vendor / CDN             →  optional; must not block A/B
+ 5a–5e  Timeline slices      →  K1, then K4                  ← hinge, sliced
+ 6  base via Deck            →  K11 (after restore)
+ 7  cache (+ activity)       →  K2, K12; K9 later
+ 8  mirror; Matrix later     →  K6, then K7
+ 9  packs; review trails     →  K14, K13
 ```
 
 ---
@@ -281,21 +323,26 @@ Phase 9  review + packs    →  K13, K14
 | Deck example demos | Teaching artifacts |
 | Full prune-negotiation protocol | Undesigned; ship bare/hermetic first |
 | Treating GitHub as the registry | Opposite of K6 |
+| Matrix submission as day-one work | Interim = share/gather + Base-Version |
+| Fat Core (vendor-npm, minify, rebase-daemon) | Tools until a PR needs them |
 
-Collaboration across private realms: **Matrix** (identity + room + message of intent), with optional **Deck Pack** attachment; realm ACL for offer/rebase. Until that ships, GitHub share/gather-style intake is an interim truck — not the long-term authority.
+Collaboration across private realms long-term: **Matrix** (identity + room +
+message of intent) + optional Deck Pack; realm ACL for offer/rebase. Until
+Tracks A+B ship, GitHub share/gather is the truck — not the authority.
 
 ---
 
 ## Practical “start Monday” checklist
 
-1. Clean Boxel `main` branch / fork.  
-2. Add tight **`packages/deck`** (Core only).  
-3. Land **Phase 1** resolver PR; prove **remix without copying (K8)**.  
-4. In parallel: classifier/publish (Phase 2) and vendoring host (Phase 3).  
-5. Only then staff the **Phase 5** epic (Timeline/Steps on UI + agent writes, Versions on publish, CLI 3-way).  
-6. Base realm (Phase 6) after Step restore works.  
-7. Catalog product + mirror + submission (Phase 8) when Timeline/Versions and serve path exist.  
-8. Packs and review tools (Phase 9) without blocking earlier user-visible wins.
+1. Confirm Deck work-plan gates (Phase −1) — do not open Boxel design debates.
+2. Clean Boxel `main`; add **lean** `packages/deck` (Phase 0).
+3. Phase 1 resolver; author gate: **remix without copying**.
+4. Phase **1b** thin install/remix/use on a fixture — **before** Timeline.
+5. Parallel (optional owners): classifier publish (2), vendor corpus (3).
+6. Staff Timeline as **5a → 5e** slices with restore before base realm.
+7. Base realm (6) only after Step restore works.
+8. Mirror / share-gather (8); Matrix retirement of GH submission last.
+9. Packs + review tools (9) without blocking Map/Tape wins.
 
 ---
 
@@ -303,22 +350,26 @@ Collaboration across private realms: **Matrix** (identity + room + message of in
 
 | Phase | Main Boxel touchpoints | Benefits | Shape |
 | --- | --- | --- | --- |
-| 0 Drop Core | `packages/deck` | — | dependency drop |
-| 1 Resolver | `runtime-common` | K8 | small — first |
-| 2 Classifier / publish | `realm-server` | publish / K14 prep | small — parallel OK |
-| 3 Vendoring | outside + catalog content | K3, early K2 | parallel outside track |
-| 4 Catalog distribute | host/serve ops | catalog K2/K9 | ops + light wiring |
-| 5 Timeline + Versions + CLI | `runtime-common`, `realm-server`, `boxel-cli`, host restore | **K1, K4** | **hinge — Steps for UI/agent; Versions for publish** |
+| −1 Deck gates | Deck repo work plan | — | **hard gate** |
+| 0 Lean Core | `packages/deck` | — | dependency drop |
+| 1 Resolver | `runtime-common` | K8 | small — first behavior |
+| **1b Thin verbs** | host + helpers + fixture | **early K5** | **product spine** |
+| 2 Classifier | `realm-server` | publish / K14 prep | parallel OK |
+| 3 Vendor/CDN | outside + content | K3, catalog K2 | optional early |
+| **5a–5e Tape** | realm write, HTTP, host, claims, CLI | **K1, K4** | **hinge — sliced** |
 | 6 Base realm | `runtime-common`, `host` | K11 | highest blast radius |
-| 7 Serve + activity | `realm-server`, `host` | K2, K9, K12 | medium wiring |
-| 8 Catalog product | content + `realm-server` | K5, K6, K7 | content + process |
-| 9 Review + packs | content + `realm-server` | K13, K14 | trails Phase 5+ |
+| 7 Cache + activity | `realm-server`, `host` | K2, K12 (K9 later) | medium |
+| 8 Mirror; Matrix later | content + jobs | K6, then K7 | process |
+| 9 Packs; review trails | content + `realm-server` | K14, K13 | after tape |
 
-For a commit-by-commit walkthrough of *which files change and what to do
-there*, see `deck-boxel-backport-changelist-mockup.md`.
+Commit-level Touch / Do / Don’t: `deck-boxel-backport-changelist-mockup.md`.
 
 ---
 
 ## One-sentence summary for stakeholders
 
-We add a small Deck Core package to Boxel, first teach the loader to resolve libraries in context (so remix stops copying), then put a **Timeline of Steps** behind UI and agent edits (with **Versions** when we publish), so restore and 3-way sync work, then serve and cache those versions properly, and finally make the catalog the authoritative registry—with GitHub and Matrix as collaboration channels, not the source of truth.
+We finish protocol decisions in Deck, drop a lean Core into Boxel, treat an
+**app as a decklist**, prove remix/install without copying **before** we
+attach a Timeline of Steps (Versions on publish), then serve/cache correctly
+and move registry authority into the catalog — with GitHub share/gather as
+interim collaboration and Matrix later, never as the source of truth.

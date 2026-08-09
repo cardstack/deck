@@ -1,5 +1,11 @@
 # Bringing Deck into Boxel — proposed PR series
 
+**Living doc for Boxel wiring** (paired with
+[`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md) in the Deck
+repo — protocol questions close there first). Product context:
+[`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md)
+(**How we execute**, **An app is a decklist**).
+
 This is a story of the work, told as stacked pull requests. It was written
 after walking today’s Boxel tree (`runtime-common`, `realm-server`, `host`)
 and standalone `boxel-cli`. Read it to feel **blast radius**, to brief an
@@ -10,7 +16,13 @@ It is a design of the work — not a measured diff. The `+ / −` counts under
 each commit are order-of-magnitude guesses after reading the real files;
 they tell you *where the mass is*, not what to put in a spreadsheet.
 
-Companion for product context: [`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md).
+**Campaign order beats numeric order.** Do not blindly merge 0→14. Prefer:
+
+- **Product spine:** PR 1 → **PR 1b** (thin verbs) → PR 4c (host restore)
+- **Infra spine:** PR 1 → PR 4a (Steps on write) → PR 5 (CLI 3-way)
+
+Timeline is **sliced** (4a–4d + PR 5), not one epic. Vendoring, minify,
+Matrix, and review tools are **off the critical path**.
 
 Sample artifacts you can open beside this doc:
 
@@ -62,35 +74,43 @@ a **Touch** list with dry-run diffs (blast radius), then **Do** / **Don’t** /
 ## The stack at a glance
 
 ```text
- 0  Drop Deck Core into packages/deck
- 1  Resolver knows the importer          →  remix without copying (K8)
- 2  Classify URLs on publish             →  safe publish / pack prep
- 3  Serve vendored packages              →  own unpkg (K3)
- 4  Timeline on every realm write        →  Steps for UI + agents (K1)   ← hinge
- 5  CLI sync becomes three-way merge     →  (K4)
- 6  Cache headers for Version vs live    →  (K2)
- 7  Minified published Releases          →  (K9)
- 8  Base realm via Deck                  →  (K11)
- 9  Agent activity in preview            →  (K12)
-10  Realm download as Deck Pack + intake →  (K14)
-11  Catalog mirrors to GitHub            →  (K6)
-12  Install / upgrade / remix / use      →  (K5)
-13  Matrix submission, retire GH PRs     →  (K7)
-14  Review tools over protocol data      →  (K13)
+−1  Deck work-plan gates (extends, classify, packs, lean Core, conform)
+ 0  Lean Core into packages/deck
+ 1  Resolver knows the importer          →  app = decklist; remix without copy (K8)
+1b  Thin install / remix / use (fixture) →  early K5          ← product spine
+ 2  Classify URLs on publish             →  Track C; parallel OK
+ 3  Serve vendored packages              →  K3; optional early (must not block)
+4a  Steps on one write path              →  K1 start          ← hinge slices
+4b  Timeline HTTP + restore through write
+4c  Host: list / restore Steps
+4d  Agent writes → Steps + claims
+ 5  CLI sync becomes three-way merge     →  K4
+ 6  Cache headers for Version vs live    →  K2
+ 7  Minified published Releases          →  K9; demoted (after cache trusted)
+ 8  Base realm via Deck                  →  K11; after 4c restore
+ 9  Agent activity in preview            →  K12
+10  Realm download as Deck Pack + intake →  K14
+11  Catalog mirrors to GitHub            →  K6; share/gather interim
+12  Catalog verb polish                  →  rest of K5 (1b already proved model)
+13  Matrix submission, retire GH PRs     →  K7; after A+B real
+14  Review tools over protocol data      →  K13; trails tape
 ```
 
-**K10** (replace github + npm + esm.sh) is the destination of the whole stack,
-not a separate ticket. If you only ship three PRs: **1 → 4 → 5**.
+**K10** is the destination of the whole stack, not a separate ticket.
+
+**Cut hard?** Product: **1 → 1b → 4c**. Infra: **1 → 4a → 5**.
 
 ---
 
-## PR 0 — Drop Deck Core
+## PR 0 — Lean Deck Core
 
 **Why.** Boxel should not reimplement tree identity, three-way merge, or pack
-format inside `runtime-common`. Those algorithms already exist. This PR only
-makes them importable: a tight Core package with a browser-safe entry for the
-host and a Node entry for the realm server. No Hub, no demos, no Deck CLI —
-those stay out of the monorepo on purpose.
+format inside `runtime-common`. Those algorithms already exist — and the
+**decisions** around them are closed in
+[`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md). This PR
+only makes a **lean** Core importable: browser-safe entry for the host and a
+Node entry for the realm server. No Hub, demos, teaching CLI, npm vendor
+pipeline, minify derive, or rebase-daemon.
 
 **Unlocks.** Nothing user-facing yet. Everything later depends on this cone.
 
@@ -104,20 +124,24 @@ import { resolveSpecifier } from '@cardstack/deck';
 import { mergeTrees, publishToStore } from '@cardstack/deck/node';
 ```
 
-**Depends on.** A clean Boxel `main`.
+**Depends on.** Clean Boxel `main` **and** Deck work-plan gates (Phase −1):
+`extends`, classifier, provenance, bare/hermetic, lean trim, foreign
+`deck conform`, scopes proof. If review would reopen those, stop and fix
+Deck — do not “design in the monorepo PR.”
 
 ### Commit — Add `@cardstack/deck` to the workspace
 
-**Story.** Copy or workspace-link Deck Core into `packages/deck`. Export two
-surfaces and wire the three consumers. Do not call any Deck API from Boxel
-yet — if behavior changes in this PR, something went wrong. The whole point
-is a boring dependency drop that later PRs can lean on.
+**Story.** Copy or workspace-link the **lean** Core into `packages/deck`.
+Export two surfaces and wire the three consumers. Do not call any Deck API
+from Boxel yet — if behavior changes in this PR, something went wrong. Prefer
+the trimmed cone (~protocol + serve helpers + history + conform), not the
+whole teaching repo.
 
 **Touch.**
 
 ```
 packages/deck/package.json                              +80 / -0
-packages/deck/src/**  (vendored Core)                   +~12000 / -0
+packages/deck/src/**  (lean Core)                       +~8–10k / -0
 pnpm-workspace.yaml                                     +1 / -0
 packages/realm-server/package.json                      +2 / -0
 packages/runtime-common/package.json                    +2 / -0
@@ -128,8 +152,8 @@ packages/host/package.json                              +2 / -0
 the browser entry, from `realm-server` on `/node`. Add one trivial unit import
 that proves the host graph does not pull `node:fs`.
 
-**Don’t.** Bring Hub, examples, or Deck’s teaching CLI. “Helpfully” start
-rewriting the resolver in the same PR.
+**Don’t.** Bring Hub, examples, teaching CLI, `vendor-npm`, minify/`derive`,
+or rebase-daemon. “Helpfully” start rewriting the resolver in the same PR.
 
 **Done when.** `pnpm` install and build succeed; no realm behavior change.
 
@@ -137,14 +161,21 @@ rewriting the resolver in the same PR.
 
 ## PR 1 — Resolver that knows who is importing
 
-**Why.** Today `VirtualNetwork.resolveImport` walks import-map prefixes and
-ignores *who asked*. That means a realm cannot honestly hold two majors of
-the same library at once. Remix therefore copies whole trees — the only way
-to get a private `three`. Deck’s answer is importer-aware resolution plus
-import-map **scopes**, keyed by the importer’s RRI prefix. Remix becomes
-“write a decklist,” not “duplicate 180 files.”
+**Why.** This PR is where Boxel has to internalize a Deck thesis that is
+easy to miss: **an app is a decklist** — an import map of pins (RRI /
+Version), not a private copy of every dependency. Today
+`VirtualNetwork.resolveImport` walks import-map prefixes and ignores *who
+asked*. A realm cannot honestly hold two majors of the same library at
+once, so remix copies whole trees — the only way to get a private `three`.
+Deck’s answer is importer-aware resolution plus import-map **scopes**,
+keyed by the importer’s RRI prefix. Remix becomes “write a decklist”
+(`extends` + overrides), not “duplicate 180 files.” Install / upgrade /
+use (PR 12 / K5) are the same object with different verbs. If we ship
+scopes plumbing but keep teaching “remix = copy package,” we have not
+shipped the model.
 
-**Unlocks.** **K8** — remix without copying. Also the door to K5 / K3 / K11.
+**Unlocks.** **K8** coexistence (author gate). Door to **PR 1b** (early K5),
+K3 / K11, and the “app = decklist” product story.
 
 **Authors see.** A decklist spoken in RRI, and card code that still looks
 like normal GTS:
@@ -231,20 +262,32 @@ packages/host/tests/… or realm-server/tests/…         +120 / -0
 **Do.** Assert both graphs; make the failure message name which importer
 got which Version RRI.
 
-**Don’t.** Ship remix UI in this commit.
+**Don’t.** Ship host catalog verbs here — that is **PR 1b**.
 
-**Done when.** That fixture is green in CI.
+**Done when.** That fixture is green in CI. This is the program **author
+gate** for K8 (coexistence). Product remix UI is the next PR.
 
-### Commit — Remix writes a map, not a tree
+---
 
-**Story.** Find today’s remix / “make a copy” path in host. Change it so
-Remix against `@catalog/chris/gallery-board@2.1.0/` writes a decklist
-(`extends` + optional overrides/scopes), not a full tree copy. The realm’s
-file listing *is* the changeset. First edit to an overridden module may
-copy-on-write that single file (L12: you cannot write through into the
-parent catalog realm).
+## PR 1b — Thin decklist verbs (early product win)
+
+**Why.** If “app = decklist” is the thesis, authors must see it **before**
+Timeline, Matrix, or catalog-authority theater. Install / remix / use
+(upgrade may be stubby) mutate the app’s import map — `extends` + pins —
+and must not full-copy trees. A fixture LibSpec is enough; pretty catalog
+pages wait for PR 12 polish.
+
+**Unlocks.** Early **K5** + author-visible **K8**. Product spine checkpoint.
 
 **Authors see.**
+
+```text
+Fixture LibSpec → @catalog/lib/three@0.169.0
+────────────────────────────────────────────
+  [ Use ]      create instance, pin exact
+  [ Install ]  add pin to my decklist
+  [ Remix ]    extends + override (no full copy)
+```
 
 ```text
 Catalog → @catalog/chris/gallery-board@2.1.0 → [Remix]
@@ -253,24 +296,55 @@ Catalog → @catalog/chris/gallery-board@2.1.0 → [Remix]
   after:   write a decklist; listing shows only what you changed
 ```
 
+**Depends on.** PR 1. Does **not** depend on Timeline (PR 4*) or Matrix.
+
+### Commit — Map helpers
+
+**Story.** Four operations on maps — use / install / remix / upgrade —
+calling Deck `extends` + resolve. No new resolver. Upgrade may return
+“not implemented” if that keeps the PR small; install + remix + use must
+be real.
+
 **Touch.**
 
 ```
-packages/host/app/… (remix command / service)         +80 / -40
-packages/host/app/services/realm.ts                   +20 / -5
+packages/runtime-common/decklist-adopt.ts (new)       +150 / -0
+packages/runtime-common/tests/…                       +80 / -0
 ```
 
-**Do.** Align product copy with “map, not copy.” Wire helpers through
-`RealmService` without inventing a second resolver.
+**Done when.** Install pins a versioned RRI; remix writes `extends` without
+duplicating unchanged files.
 
-**Don’t.** Quietly keep full-copy as a fallback “just in case.”
+### Commit — Host actions + fixture Spec
 
-**Done when.** Remix of a multi-file package does not duplicate unchanged
-files; one edit materializes one path.
+**Story.** Find today’s remix / “make a copy” path in host. Change it so
+Remix writes a decklist (`extends` + overrides/scopes), not a full tree
+copy. Wire Install / Use with honest names. Seed one fixture LibSpec so
+authors can click through without a full catalog redesign. First edit to
+an overridden module may copy-on-write that single file (L12: no
+write-through into the parent catalog realm).
+
+**Touch.**
+
+```
+packages/host/app/…catalog-adopt… / remix             +200 / -50
+packages/host/app/services/realm.ts                   +20 / -5
+# fixture realm content                               +80 / -0
+```
+
+**Do.** Align product copy with “map, not copy.” Kill full-copy fallback.
+
+**Don’t.** Wait for GitHub mirror, Matrix, or Timeline. Build the full
+review product. Quietly keep full-copy “just in case.”
+
+**Done when.** Author can install and remix from the fixture without a
+tree duplicate; adoptsFrom / decklist show versioned RRIs.
 
 ---
 
 ## PR 2 — Honest URLs on publish
+
+**Track C — parallel OK; not on the product spine.**
 
 **Why.** Publish today can treat every absolute URL as something to rewrite.
 Image CDNs get mangled into broken pins; real module deps get missed.
@@ -357,6 +431,9 @@ packages/postgres/migrations/….ts (additive only)        +40 / -0
 
 ## PR 3 — Serve vendored packages
 
+**Track C — optional early. Must not block PR 1b or Timeline slices.**
+
+
 **Why.** Third-party libraries should be first-class, policy-gated addresses
 in our world — not forever-links to esm.sh. The crawl and corpus migration
 can live on a hosted Deck outside the monorepo. Boxel still needs a **serve
@@ -439,63 +516,30 @@ is the versioned package RRI. No new card type — `spec.gts` already carries
 
 ---
 
-## PR 4 — Timeline on the write path ← hinge
+## PR 4a — Steps on one write path ← hinge start
 
-**Why.** Editable realms need a tape of what happened while people and agents
-worked — not only named releases. Every settled UI save and every agent write
-batch (especially definition files) should become a **Step** on a **Timeline**.
-When someone means “this is the cut others pin,” that becomes a **Version**.
-Claims (“I am working here”) stay separate: intent, not history. Without this
-PR, restore, 3-way sync, activity correlation, and review tools have nothing
-honest to stand on. Versions-only is fine for some read-only catalog mounts;
-it is **not** the product default for working realms.
+**Track B.** First Timeline slice. Wire Core; do **not** reimplement
+merge/store in realm-server.
 
-**Unlocks.** **K1**. Data plane for **K4**, **K12**, **K13**.
+**Why.** Editable realms need a tape. This slice only: after a successful
+write batch, record a **Step** (debounced). No host UI, no claims UX, no
+CLI. Versions-only remains OK for some read-only catalog mounts — not for
+working realms once this lands.
 
-**Authors see.** History in the host (CLI follows in PR 5):
+**Unlocks.** Start of **K1**. Data plane for later slices.
 
-```text
-History: Timeline                          @workspace/acme/gallery/
+**Authors see.** Nothing in host yet — engineers see Steps in store/tests.
 
-  Step  ·  14:32  ·  you@boxel.ai           UI · blog-post
-  Step  ·  14:28  ·  agent:vale             definition · scene
-  Step  ·  14:21  ·  agent:vale             (claim was on scene)
-  Step  ·  13:05  ·  you@boxel.ai           BlogPost/opening-night.json
-  ───
-  Version  @workspace/acme/gallery@0.4.0-dev.12    published from Step 14:21
-  Version  @workspace/acme/gallery@0.3.0           milestone “opening night”
-```
-
-```text
-[ Restore Step 13:05 ]
-
-  live tree ← that Step
-  Versions @0.4.0-dev.12 and @0.3.0 unchanged
-  index + isolated preview follow the restored files
-```
-
-```json
-{
-  "actor": "vale",
-  "at": "@workspace/acme/gallery/scene",
-  "text": "denser lighting on the hero mesh",
-  "until": "2026-08-09T19:00:00.000Z"
-}
-```
-
-**Depends on.** PR 0. Pairing with PR 1 is nice if agents remix while this lands.
+**Depends on.** PR 0. Pairing with PR 1 / 1b is nice; not required.
 
 ### Commit — History façade + surgical write hooks
 
-**Story.** Create `realm-history.ts` as the façade: `recordStep`, `listSteps`,
-`restoreStep`, `publishVersion`, implemented via `@cardstack/deck/node`. In
-`realm.ts`, after a successful `_batchWriteUnlocked` and after delete paths,
-call `recordStep` with actor metadata when present (Matrix id / agent id).
-Debounce the way Deck’s live loop does (~500ms quiet) so formatters don’t
-create three Steps for one save. Reuse existing notify / broadcast channels
-so subscribers learn a Step id was cut — do not invent a parallel bus. Stay
-inside `withWriteLock` semantics. This file is ~7.5k lines: **surgical
-hooks only**, no drive-by cleanup.
+**Story.** Create `realm-history.ts` as the façade: `recordStep`,
+`listSteps`, `restoreStep`, `publishVersion`, via `@cardstack/deck/node`.
+In `realm.ts`, after successful `_batchWriteUnlocked` and delete paths,
+call `recordStep` with actor metadata when present. Debounce (~500ms
+quiet). Reuse notify / broadcast — no parallel bus. Stay inside
+`withWriteLock`. Surgical hooks only in the large `realm.ts`.
 
 **Touch.**
 
@@ -508,20 +552,28 @@ packages/runtime-common/index.ts                      +10 / -0
 **Do.** Same hook for UI instance writes and agent definition writes.
 Document the debounce constant.
 
-**Don’t.** Reformat `realm.ts`. Treat a claim refresh as a Step. Bypass the
-index when restore arrives next.
+**Don’t.** Reformat `realm.ts`. Treat a claim refresh as a Step. Ship host
+restore UI (that is **4c**).
 
 **Done when.** Two writes produce Timeline entries; the façade can restore
-even if HTTP is the next commit.
+in unit tests even if HTTP is the next PR.
+
+---
+
+## PR 4b — Timeline HTTP + restore through write
+
+**Why.** Realm-server needs list Steps / Versions, file-at-Step, and
+restore **through** normal `Realm.write` so indexing follows. Attach jj or
+historyd per **editable** realm; Versions-only mounts OK for RO catalog.
+
+**Unlocks.** Remote restore API for host and CLI.
+
+**Depends on.** PR 4a.
 
 ### Commit — Server Timeline + history HTTP
 
-**Story.** Realm-server has no `realm-history*` module today — you are
-inventing it. Attach jj or historyd per **editable** realm; allow
-Versions-only mounts for read-only catalog mirrors. HTTP must list Steps,
-list Versions, fetch file-at-Step, and restore **through** normal
-`Realm.write` so indexing follows. Optionally bridge
-`realm-file-changes-listener` so file-change events can carry step ids.
+**Story.** Invent `realm-history*` on the server. HTTP list/restore. Optionally
+bridge `realm-file-changes-listener` so events can carry step ids.
 
 **Touch.**
 
@@ -536,16 +588,27 @@ packages/realm-server/tests/realm-history-*.ts (new)  +250 / -0
 **Do.** Restore always goes through the write path.
 
 **Don’t.** Point the server at standalone CLI `.boxel-history` git repos.
+Build host UI here.
 
 **Done when.** HTTP round-trip: write → list Steps → restore → indexed card
 matches the earlier Step.
 
-### Commit — Host: list and restore Steps
+---
 
-**Story.** Extend `RealmService` with list/restore against the new endpoints.
-Minimal UI: a history list and a restore confirmation. Vocabulary is Step /
-Version / Timeline — never “jj” or “seal” in chrome. Show that agent turns
-and UI edits share one tape.
+## PR 4c — Host: list and restore Steps
+
+**Why.** Authors need one history list and restore confirmation. Vocabulary
+is Step / Version / Timeline — never “jj” or “seal” in chrome. This is the
+**product-spine** end of Tape (with 1b on Map).
+
+**Unlocks.** User-visible **K1** restore.
+
+**Depends on.** PR 4b.
+
+### Commit — Host history UI
+
+**Story.** Extend `RealmService` with list/restore. Minimal UI. Show that
+agent turns and UI edits will share one tape (claims UI is **4d**).
 
 **Touch.**
 
@@ -556,15 +619,15 @@ packages/host/app/components/…-history… (new)         +150 / -0
 
 **Do.** Link a Step row to the path RRI when you have it.
 
-**Don’t.** Build the full review product here (PR 14).
+**Don’t.** Build the full review product (PR 14). Rewrite CLI (PR 5).
 
 **Done when.** A user can restore a Step from host with correct labels.
 
 ### Commit — Gate test
 
-**Story.** Integration test that is the CI gate for this whole PR: write A,
-write B, restore to A’s Step; assert index and rendered card follow. Include
-one path that looks like an agent batch write (actor header or meta).
+**Story.** Integration test: write A, write B, restore to A’s Step; assert
+index and rendered card follow. Include one agent-batch-shaped write
+(actor header or meta).
 
 **Touch.**
 
@@ -572,18 +635,54 @@ one path that looks like an agent batch write (actor header or meta).
 packages/realm-server/tests/…                         +120 / -0
 ```
 
-**Done when.** That test owns the merge button for PR 4.
+**Done when.** That test owns the merge button for the 4a–4c stack.
+
+---
+
+## PR 4d — Agent writes → Steps + claims
+
+**Why.** Agent definition/instance writes must hit the same Step path.
+Claims (“I am working here”) are intent, not history — separate from Steps.
+Cheap activity read path can land here if small; preview chrome may wait
+for PR 9.
+
+**Unlocks.** Honest agent audit trail; foundation for **K12**.
+
+**Depends on.** PR 4a (4b helpful).
+
+### Commit — Claims + agent batch Steps
+
+**Story.** Settled agent write batches → Steps with actor metadata. Claim
+file layout / refresh must **not** create Steps. Document the distinction
+in code comments reviewers will see.
+
+**Touch.**
+
+```
+packages/runtime-common/realm.ts                      +40 / -10
+packages/realm-server/…claims…                        +80 / -0
+packages/realm-server/tests/…                         +80 / -0
+```
+
+**Do.** One test: claim refresh does not add a Step; agent write batch does.
+
+**Don’t.** Build the full preview activity UI (PR 9) unless trivial.
+Ship CLI sync here (PR 5).
+
+**Done when.** Agent batch → Step; claim ≠ Step; restore still green.
 
 ---
 
 ## PR 5 — CLI checkpoints and 3-way sync
+
+**Timeline slice 5e / Track B.** Infra spine end: **1 → 4a → 5**.
 
 **Why.** Standalone `boxel-cli` still thinks in git checkpoints and
 `--prefer-local` / `--prefer-remote` as the main story. Once realms have
 Steps and Versions, sync can finally merge with a **real common ancestor**
 via Deck’s `mergeTrees`. prefer-* becomes the fallback when the merge
 reports conflicts — not the everyday path. This is a parallel-repo PR that
-depends on PR 4’s APIs; it is not the monorepo `@cardstack/boxel-cli`
+depends on PR **4b** APIs; it is not the monorepo `@cardstack/boxel-cli`
 package (different command set).
 
 **Unlocks.** **K4**.
@@ -610,7 +709,7 @@ before                                    after
 .git inside .boxel-history                realm Steps / Versions
 ```
 
-**Depends on.** PR 4.
+**Depends on.** PR 4b (4c nice for humans testing the same realm).
 
 ### Commit — Checkpoints speak Timeline
 
@@ -710,7 +809,7 @@ curl -sI \
 
 Decklists keep pinning RRIs; HTTP just finally tells the truth about them.
 
-**Depends on.** PR 4 (so exact Version URLs exist).
+**Depends on.** PR 4a (so exact Version URLs exist).
 
 ### Commit — L12 cache classes on the serve path
 
@@ -750,6 +849,10 @@ repeat without evidence.
 ---
 
 ## PR 7 — Minified releases
+
+**Demoted.** Ship only after PR 6 cache classes are trusted. Easy to
+gold-plate; not on either spine.
+
 
 **Why.** Because exact Versions never change, minify and gzip are safe and
 worth it. Live must stay readable source for authors and agents.
@@ -791,6 +894,9 @@ packages/realm-server/tests/…                         +80 / -0
 
 ## PR 8 — Base realm via Deck
 
+**Highest blast radius. Only after PR 4c restore works.**
+
+
 **Why.** `https://cardstack.com/base/` is a special snowflake. Base should
 be a pinned Deck Version like everything else — while authors keep writing
 `@cardstack/base/card-api` so identify/unresolve don’t explode. The code
@@ -820,7 +926,7 @@ bytes come from:        @cardstack/base@1.12.0/card-api
 legacy forever:         https://cardstack.com/base/…  → VN read map
 ```
 
-**Depends on.** PR 4.
+**Depends on.** PR 4c (and PR 1 for scoped resolve).
 
 ### Commit — Repoint constants and host mapping
 
@@ -901,7 +1007,7 @@ GET /workspace/acme/gallery/_activity
 }
 ```
 
-**Depends on.** PR 4 helpful for correlating with Steps.
+**Depends on.** PR 4d helpful for correlating with Steps.
 
 ### Commit — `GET /_activity`
 
@@ -974,7 +1080,7 @@ curl -OJ 'https://app.boxel.ai/_download-realm?realm=https://app.boxel.ai/worksp
 
 Hermetic: same idea, dependency bytes inside — opens on an air-gapped laptop.
 
-**Depends on.** PR 2 (classifier); PR 4 (writes/Steps on intake).
+**Depends on.** PR 2 (classifier); PR 4a (writes/Steps on intake).
 
 ### Commit — Download writes a bare Deck Pack
 
@@ -1070,7 +1176,7 @@ boxel gather ./workspace/acme/gallery \
   --into live
 ```
 
-**Depends on.** PR 4.
+**Depends on.** PR 4a.
 
 ### Commit — Mirror export job
 
@@ -1130,89 +1236,47 @@ paths.
 
 ---
 
-## PR 12 — Four catalog verbs
+## PR 12 — Catalog verb polish
 
-**Why.** “Remix” has been doing too many jobs. Install, upgrade, remix, and
-use are different promises on the same map machinery. Authors should see
-four honest actions; the decklist should show versioned RRIs afterward.
+**Not the first product win — that was PR 1b.** This PR finishes **K5** in
+the real catalog: upgrade UX, package-page affordances, copy polish. If 1b
+already taught “map not copy,” this is content + chrome, not a second
+resolver project.
 
-**Unlocks.** **K5** (remix-without-copy already shipped in PR 1).
+**Why.** Fixture LibSpec proved the model; authors still need honest verbs
+on every Spec page and a real Upgrade path.
 
-**Authors see.**
+**Unlocks.** Rest of **K5**.
 
-```text
-@catalog/lib/three@0.169.0
-────────────────────────────────────────────
-  [ Use ]      create instance, pin exact latest now
-  [ Install ]  add to my app decklist, manage upgrades
-  [ Remix ]    extends + override (no full copy)
-  [ Upgrade ]  repoint parent, re-resolve
-```
+**Authors see.** Same four buttons as 1b, everywhere in catalog, with
+Upgrade that re-resolves.
 
-```json
-// after Install
-{
-  "imports": {
-    "three": "@catalog/lib/three@0.169.0/build/three.module.js"
-  }
-}
-```
+**Depends on.** PR 1b.
 
-```json
-// after Use — exact pin in adoptsFrom (versioned RRI)
-{
-  "data": {
-    "meta": {
-      "adoptsFrom": {
-        "module": "@catalog/chris/gym-board@2.1.3/gym-shift-board",
-        "name": "GymShiftBoard"
-      }
-    }
-  }
-}
-```
+### Commit — Upgrade + catalog affordances
 
-**Depends on.** PR 1.
-
-### Commit — Map helpers
-
-**Story.** Four operations on maps — use / install / remix / upgrade —
-calling Deck `extends` + resolve. No new resolver.
+**Story.** Complete upgrade re-resolve; wire Spec pages in catalog content.
+Keep huge content dumps out of the monorepo PR if you can. Do not
+reintroduce full-copy remix.
 
 **Touch.**
 
 ```
-packages/runtime-common/decklist-adopt.ts (new)       +150 / -0
-packages/runtime-common/tests/…                       +80 / -0
+packages/runtime-common/decklist-adopt.ts             +40 / -10
+packages/host/app/…catalog-adopt…                     +120 / -30
+# catalog content                                     +400 / -100
 ```
 
-**Done when.** Install pins a versioned RRI; upgrade re-resolves.
-
-### Commit — Host commands
-
-**Story.** Wire catalog UI actions with honest names. Don’t call everything
-“remix.”
-
-**Touch.**
-
-```
-packages/host/app/…catalog-adopt…                     +250 / -50
-```
-
-**Done when.** Four verbs visible and distinct; remix doesn’t full-copy.
-
-### Commit — Catalog content
-
-**Story.** Affordances on package Specs in the catalog realm. Keep huge
-content dumps out of the monorepo PR if you can.
-
-**Touch.** Catalog content · roughly `+400 / -100`.
-
-**Done when.** A package page offers Use / Install / Remix / Upgrade.
+**Done when.** A real package page offers Use / Install / Remix / Upgrade;
+upgrade re-resolves; remix still does not full-copy.
 
 ---
 
 ## PR 13 — Inter-realm submission over Matrix
+
+**Demoted off the critical path.** Until Tracks A+B are real, GitHub
+share/gather + Base-Version (PR 11) is the interim truck. Staff Matrix
+retirement of GH-PR-as-product only after 1b + 4c.
 
 **Why.** Review across realms should be Matrix identity + room + message of
 intent (and a Deck Pack when the tip isn’t public), with realm ACL on who
@@ -1244,7 +1308,7 @@ vale  proposed  @workspace/vale/gallery@0.4.0-dev.3/
 @field roomId = contains(StringField);
 ```
 
-**Depends on.** PR 4; PR 11 for mirror-only GitHub.
+**Depends on.** PR 4c; PR 11 for mirror-only GitHub; **after** 1b.
 
 ### Commit — ACL for offer and accept
 
@@ -1296,6 +1360,8 @@ references in server.
 
 ## PR 14 — Review tools on protocol data
 
+**Trails the tape.** Content/UI after Steps exist — do not staff early.
+
 **Why.** Once Steps, Versions, claims, and offers are real, review UI is
 mostly catalog/host content — not a new forge in realm-server. Build cards
 that compare an offer RRI to its upstream RRI, surface claims, and deep-link
@@ -1321,7 +1387,7 @@ curl -s 'https://app.boxel.ai/workspace/vale/gallery/@0.4.0-dev.3?meta' \
   | jq -r '.data.attributes.treeHash'
 ```
 
-**Depends on.** PR 4; PR 9 for claims.
+**Depends on.** PR 4c; PR 4d / PR 9 for claims.
 
 ### Commit — Review / patch cards
 
@@ -1345,12 +1411,19 @@ packages/realm-server (only if a GET is missing)      +50 / -0
 
 ## Using this as an agent prompt
 
-1. Pick **one commit** — not a whole multi-commit PR unless it is tiny.  
-2. Paste the commit’s **Story**, **Touch**, **Do**, **Don’t**, and **Done when**.  
-3. Include the parent PR’s **Authors see** (and the RRI primer if names are
+1. Respect **campaign order** (see top): do not start Timeline before PR 1b
+   unless you are on the infra spine on purpose.  
+2. Pick **one commit** — not a whole multi-commit PR unless it is tiny.
+   Timeline: one of **4a / 4b / 4c / 4d**, not “all of PR 4.”  
+3. Paste the commit’s **Story**, **Touch**, **Do**, **Don’t**, and **Done when**.  
+4. Include the parent PR’s **Authors see** (and the RRI primer if names are
    involved) so the agent optimizes for the user-visible outcome.  
-4. Point at `docs/artifacts/` when implementing PR 1.  
-5. Prove **Done when** before starting the next commit.
+5. Point at `docs/artifacts/` when implementing PR 1 / 1b.  
+6. If the task needs a protocol design debate, stop and open the Deck
+   [`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md) — do
+   not invent answers in the Boxel PR.  
+7. Prove **Done when** (and program gates: wiring-only, import not fork,
+   author remix-without-copy) before the next commit.
 
 ---
 
@@ -1358,18 +1431,19 @@ packages/realm-server (only if a GET is missing)      +50 / -0
 
 | PR | Scale | Where the mass is |
 | --- | --- | --- |
-| 0 | S | Dependency wiring |
-| 1 | M | Virtual network + loader + remix |
-| 2 | M | Publish handler |
-| 3 | S–M | Serve handlers; corpus outside |
-| **4** | **L** | **Write path + history stack** |
+| 0 | S | Lean dependency wiring |
+| 1 | M | Virtual network + loader + coexistence fixture |
+| **1b** | **M** | **Thin verbs + host remix-as-map** (product spine) |
+| 2 | M | Publish handler (parallel) |
+| 3 | S–M | Serve handlers; corpus outside (optional early) |
+| **4a–4d** | **L sliced** | **Write path → HTTP → host → claims** |
 | 5 | L | CLI rewrite (standalone repo) |
 | 6 | S | Headers + tests |
-| 7 | S–M | Derive pipeline |
-| 8 | S code / **XL blast** | Base pin — every realm |
+| 7 | S–M | Derive pipeline (demoted) |
+| 8 | S code / **XL blast** | Base pin — after 4c |
 | 9 | S | Activity + preview |
 | 10 | L | Intake dominates download |
-| 11 | M | Mirror job + GH narrow |
-| 12 | M | Host + catalog content |
-| 13 | M | Content + ACL; deletes GH PR path |
-| 14 | L content | Review product surface |
+| 11 | M | Mirror job + GH share/gather interim |
+| 12 | S–M | Catalog verb polish (after 1b) |
+| 13 | M | Matrix; after A+B (demoted) |
+| 14 | L content | Review product — trails tape |

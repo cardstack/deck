@@ -1,8 +1,21 @@
 # Work plan: make the backport a one-way port
 
-**Status: PLAN** (2026-08-09). Branch: `deck/backport-ready`. The deck-repo counterpart to
-[`deck-boxel-monorepo-change-register.md`](deck-boxel-monorepo-change-register.md),
-which lists what changes inside `cardstack/boxel`.
+**Status: LIVING DOC (Deck side)** (2026-08-09). Branch: `deck/backport-ready`.
+
+This is the **Deck-repo living doc** for the backport: protocol questions
+close **here** so Boxel PRs stay wiring. Paired with:
+
+| Doc | Role |
+| --- | --- |
+| [`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md) | Campaign order, tracks, program gates |
+| [`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md) | Boxel stacked PRs (product spine **1 → 1b → 4c**) |
+
+Appendix: [`deck-boxel-monorepo-change-register.md`](deck-boxel-monorepo-change-register.md)
+(file-level Boxel touch list).
+
+**Gate to Boxel PR 0:** W1–W10 (and lean Core) done — see §4 Status. If a
+Boxel review reopens an `extends` / classify / pack question, the fix lands
+in this repo first.
 
 ---
 
@@ -361,3 +374,17 @@ packaging — real, but it does not block Boxel from starting.
 | W9 | L12 amendment | **done** — law reworded, conformance now re-reads the bytes after the refusals; the serve path also cannot reach `applyRebase` (W7) |
 | W10 | two proofs | **done** — scopes proof as a test (found and fixed a silent wrong-version bug in `resolveSpecifier`); streaming spike settled, one pass, ~8 MB held at the cap |
 | — | Embroider §3 and §4 | **applied** (see §1a) |
+
+---
+
+## 5. After the gate — Boxel campaign (pointer only)
+
+Do **not** expand this file into a second PR novel. Boxel execution lives in
+the changelist + team brief. Short reminder:
+
+1. Lean Core drop (no Hub / vendor-npm / minify / rebase-daemon).  
+2. Resolver → **thin decklist verbs (1b)** before Timeline.  
+3. Timeline as slices (write → HTTP restore → host → claims → CLI).  
+4. Vendoring, minify, Matrix submission, review tools: off the critical path.  
+5. Program gates: wiring-only PRs, import-not-fork, `deck conform`, author
+   remix-without-copy.

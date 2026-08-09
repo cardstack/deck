@@ -1,12 +1,15 @@
 # Monorepo change register — what Boxel must change, per benefit
 
-**Status: REGISTER** (2026-08-09). The companion to
-[`deck-boxel-backport-plan.md`](deck-boxel-backport-plan.md), which argues the
-*why* and the phasing. This document is the *what*: for each of the fourteen
-benefits, the concrete changes inside `cardstack/boxel`.
+**Status: REGISTER** (2026-08-09) — **appendix** (file-level *what*). Execution
+order lives in [`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md)
+(**How we execute**) and
+[`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md)
+(product spine **1 → 1b → 4c**; Timeline sliced). Deck-side gates:
+[`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md).
 
-Also see [`deck-core-backport-split.md`](deck-core-backport-split.md) (what
-arrives as a package), [`deck-publish-as-a-pointer.md`](deck-publish-as-a-pointer.md),
+Companion for *why*: [`deck-boxel-backport-plan.md`](deck-boxel-backport-plan.md).
+Also see [`deck-core-backport-split.md`](deck-core-backport-split.md),
+[`deck-publish-as-a-pointer.md`](deck-publish-as-a-pointer.md),
 [`deck-realm-download-as-pack.md`](deck-realm-download-as-pack.md),
 [`deck-catalog-cdn-delivery.md`](deck-catalog-cdn-delivery.md).
 
