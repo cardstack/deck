@@ -75,6 +75,20 @@ Two rules make this work:
 
 Copy the directory and you copy the live files, the Versions and the Timeline.
 
+**A depot is close to a monorepo**: many packages in one directory, one
+history, one thing to clone, and a change that crosses several packages is
+one change. Four differences are worth knowing.
+
+- Each deck has its own version line. A monorepo usually versions everything
+  together, or needs a tool so that it does not have to.
+- The directory layout *is* the URL space. A consumer imports one module from
+  one deck, and no build step extracts it first.
+- The publisher segment lets two people hold the same package name in one
+  depot. That is a fork inside the repository, and it costs nothing until the
+  bytes differ.
+- There is no workspace file and no link step. A deck names another deck by
+  address, and `deck lock` turns the range into a pin.
+
 ---
 
 ## 3. The store
@@ -184,7 +198,56 @@ the file to ask the agent to stop. See `docs/deck-activity-protocol.md`.
 
 ---
 
-## 7. For a realm server
+## 7. Not decided: revocation, warning, incident
+
+**This is the largest hole in the at-rest half. It is written here so that
+nobody implements around it by accident.**
+
+A signature over a tree hash lets a person say "I stand behind these exact
+bytes". That much is built, and it is what makes the valuable thing possible:
+you can let a deck run against sensitive data because somebody you trust
+signed the bytes that will run — not a name that could point somewhere else
+tomorrow.
+
+A signing system is not finished when it can say yes. It must also say **no,
+after the fact**:
+
+- **Revocation.** The signer withdraws the signature. The bytes did not
+  change and cannot change, so the withdrawal must be a separate statement
+  about the same tree hash.
+- **Warning.** Weaker than a revocation. The bytes still work, and there is
+  something you should know before you run them.
+- **Incident.** A statement by somebody who is not the signer: a report that
+  these bytes did something they should not have done.
+
+Three decisions already constrain the answer:
+
+1. **There is no unpublish** (L4). A Version cannot be altered or removed, so
+   the only way to say it is bad is to say so *about* it. That is the same
+   shape as an endorsement, and it is the correct shape.
+2. **A statement is addressed to the tree hash** (L9), so a revocation
+   reaches every publisher that holds those bytes, exactly as an endorsement
+   does (L10). A revocation that named a package would miss every fork.
+3. **Fail closed** (L11). An unknown answer is not a safe answer. This is the
+   hard part: "I could not read the revocation list" must not quietly mean
+   "not revoked", and it must also not stop a depot that is offline by
+   design.
+
+Open questions. None is answered here:
+
+- Who may revoke? Only the signer, or also a named authority?
+- How does a reader learn of a revocation? A list beside the tree, a feed, or
+  a statement it must go and look for?
+- What is the freshness rule, given point 3?
+- Does a revocation travel between depots? That part is in motion, and
+  section 3.5 of `deck-in-motion.md` says it is not built.
+
+Until this is settled, treat a signature as a positive statement only. Do not
+build anything that depends on taking one back.
+
+---
+
+## 8. For a realm server
 
 The parts of this that transfer, and the order to read them:
 

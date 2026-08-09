@@ -462,19 +462,21 @@ const ANY_SYSTEM = [
 //     suite passes against it — not when it looks similar.
 // ─────────────────────────────────────────────────────────────────────────
 
+// Each law carries which half it governs. Eleven of the twelve are at rest,
+// which is the clearest statement of where this system is finished.
 const LAWS = [
-  ['L1', 'Identity', 'Identity is <code>tree-hash-v1</code> over the logical file tree, and nothing else enters it. Not zip framing, not compression, not the order bytes landed on disk, not the version anybody attached. Paths are Unicode NFC. Two trees with the same files hash the same on every implementation, forever.'],
-  ['L2', 'Round trip', 'Packing and unpacking is lossless and byte-exact: <code>pack(unpack(P)) === P</code> for a canonical pack, and the treeHash survives the trip.'],
-  ['L3', 'Pointer', 'Versions and dist-tags name treeHashes. Naming a state copies no bytes.'],
-  ['L4', 'Immutability', 'A published exact version never changes, and re-publishing one is refused. There is no unpublish. The only way to say a version is bad is to say so <i>about</i> it.'],
-  ['L5', 'Volatility', 'A deck has exactly three kinds of address and they are different URLs: no version segment is the working tree (<code>no-store</code>), <code>@&lt;exact&gt;</code> is one sealed state (<code>immutable</code>), and a range or tag is a name that costs one short hop. Ranges never match prereleases.'],
-  ['L6', 'Hermeticity', 'A sealed deck resolves every specifier it contains — inside itself, or to a dependency it declares. Nothing reaches the live web at runtime. A deck that would need a CDN to work is refused rather than warned about.'],
-  ['L7', 'Resolution', 'Exact before range, tags before ranges, and the same answer on every implementation given the same store.'],
-  ['L8', 'Provenance', 'Where bytes came from travels with them, per version, and cannot be edited away by a later publish.'],
-  ['L9', 'Endorsement', 'Signatures are about a <b>tree hash</b>, not about a package or a version — so a fork holding the same bytes reads the same endorsements.'],
-  ['L10', 'Inheritance', 'A fork inherits what was true of the bytes, because the statements were addressed to the bytes.'],
-  ['L11', 'Fail closed', 'An unknown answer is not a safe answer. Unverifiable provenance, an unparsable publish time, a specifier that cannot be resolved: refuse, do not warn and continue.'],
-  ['L12', 'Serving', 'The distribution surface is read-only — <code>GET</code> and <code>HEAD</code>. Every write goes through a tool that arranges state on disk; distribution follows. This is why declared activity is read from files rather than posted to an endpoint.'],
+  ['L1', 'rest', 'Identity', 'Identity is <code>tree-hash-v1</code> over the logical file tree, and nothing else enters it. Not zip framing, not compression, not the order bytes landed on disk, not the version anybody attached. Paths are Unicode NFC. Two trees with the same files hash the same on every implementation, forever.'],
+  ['L2', 'rest', 'Round trip', 'Packing and unpacking is lossless and byte-exact: <code>pack(unpack(P)) === P</code> for a canonical pack, and the treeHash survives the trip.'],
+  ['L3', 'rest', 'Pointer', 'Versions and dist-tags name treeHashes. Naming a state copies no bytes.'],
+  ['L4', 'rest', 'Immutability', 'A published exact version never changes, and re-publishing one is refused. There is no unpublish. The only way to say a version is bad is to say so <i>about</i> it.'],
+  ['L5', 'rest', 'Volatility', 'A deck has exactly three kinds of address and they are different URLs: no version segment is the working tree (<code>no-store</code>), <code>@&lt;exact&gt;</code> is one sealed state (<code>immutable</code>), and a range or tag is a name that costs one short hop. Ranges never match prereleases.'],
+  ['L6', 'rest', 'Hermeticity', 'A sealed deck resolves every specifier it contains — inside itself, or to a dependency it declares. Nothing reaches the live web at runtime. A deck that would need a CDN to work is refused rather than warned about.'],
+  ['L7', 'rest', 'Resolution', 'Exact before range, tags before ranges, and the same answer on every implementation given the same store.'],
+  ['L8', 'rest', 'Provenance', 'Where bytes came from travels with them, per version, and cannot be edited away by a later publish.'],
+  ['L9', 'rest', 'Endorsement', 'Signatures are about a <b>tree hash</b>, not about a package or a version — so a fork holding the same bytes reads the same endorsements.'],
+  ['L10', 'rest', 'Carry-over', 'A statement is addressed to a tree hash, so it applies wherever those exact bytes appear. Nothing is derived from a parent: the statement did not move, the content turned up in a second place.'],
+  ['L11', 'both', 'Fail closed', 'An unknown answer is not a safe answer. Unverifiable provenance, an unparsable publish time, a specifier that cannot be resolved: refuse, do not warn and continue.'],
+  ['L12', 'rest', 'Serving', 'The distribution surface is read-only — <code>GET</code> and <code>HEAD</code>. Every write goes through a tool that arranges state on disk; distribution follows. This is why declared activity is read from files rather than posted to an endpoint.'],
 ];
 
 const PROTOCOL = `
@@ -495,9 +497,88 @@ the same sense that a tarball and a digest are formats. The store layout, the
 command-line tool and the watcher are <b>implementation</b>, and the laws say
 so: nothing requires a server to store anything the way this one does.</p>
 
-<p>Deck does have one part that needs two servers: an offer, and an
-endorsement addressed by tree hash. Those are the beginning of federation.
-They are not finished, and this page does not count them.</p>
+<h3>At rest, and in motion</h3>
+
+<p>Deck has two halves, and they are not equally finished. To read them as
+one thing makes the settled half look provisional and the unsettled half look
+decided.</p>
+
+<p><b>At rest</b> is what a byte, a tree and a Version <i>are</i>. The answer
+does not change with time, with who asks, or with what anybody intends to do
+next. This half is settled: the twelve laws state it, the conformance suite
+examines it, and you can write a second implementation of it today.</p>
+
+<p><b>In motion</b> is what people and agents do to each other's work: they
+propose, review, merge, declare and comment. The answers change by the
+minute, and more than one party is involved. This half is not settled.</p>
+
+<p>The question that divides them: <b>does the answer change if nobody does
+anything?</b> A tree hash does not. A proposal does — it becomes old, it is
+rebased, and somebody accepts it or abandons it.</p>
+
+<table class="stack">
+<thead><tr><th></th><th>at rest — settled</th><th>in motion — not settled</th></tr></thead>
+<tbody>
+<tr><td>identity</td><td class="says">tree hash, packlist, object</td><td class="says">—</td></tr>
+<tr><td>naming</td><td class="says">Version, dist-tag, range</td><td class="says">—</td></tr>
+<tr><td>distribution</td><td class="says">the address grammar, the cache rules</td><td class="says">—</td></tr>
+<tr><td>time</td><td class="says">Step, Timeline</td><td class="says">the live loop that makes them</td></tr>
+<tr><td>provenance</td><td class="says">where bytes came from, and when</td><td class="says">—</td></tr>
+<tr><td>trust</td><td class="says">an endorsement of a tree hash</td><td class="says">whose endorsements you accept</td></tr>
+<tr><td>change</td><td class="says">—</td><td class="says">offer, rebase, conflict</td></tr>
+<tr><td>intent</td><td class="says">—</td><td class="says">claim</td></tr>
+<tr><td>talk</td><td class="says">—</td><td class="says">note, reply</td></tr>
+<tr><td>presence</td><td class="says">—</td><td class="says">activity</td></tr>
+<tr><td>testing</td><td class="says">the run record, over a tree hash</td><td class="says">running the suite, and who signs the result</td></tr>
+</tbody></table>
+
+<p>Two entries sit on the side that surprises people, and both split the same
+way: the record is at rest, the act that produced it is in motion.</p>
+
+<p><b>A Step is at rest.</b> It is one immutable capture with an address, and
+it reads the same in a year. The watcher that makes Steps is in motion; the
+Steps are not.</p>
+
+<p><b>A signature is at rest. Signing is in motion.</b> The signature is a
+durable fact: this key stood behind these exact bytes. Because it is over a
+tree hash, it follows the bytes into any fork. How anybody decided to sign is
+a different question with several good answers — an agent reviews the
+change, a person reviews it, a group votes, somebody stakes something they
+can lose, or a catalog accepts the change and the signature is what the
+acceptance leaves behind. Deck defines none of those, and it should not.</p>
+
+<p>This is what makes a signature worth having: you can let a deck run
+against sensitive data because somebody you trust signed <i>the bytes that
+will run</i>, and not a name that could point somewhere else tomorrow.</p>
+
+<p><b>And it is unfinished.</b> A signing system that can only say yes is
+half a system. Revocation, warning and incident — three ways of saying "no"
+after the fact — are not built. They belong at rest, they must be statements
+<i>about</i> a tree hash because there is no unpublish (L4), and the
+freshness rule is hard because failing closed (L11) must not turn an
+unreachable list into a refusal to run. Do not build anything that depends on
+taking a signature back. See <code>docs/deck-at-rest.md</code> §7.</p>
+
+<p><b>The at-rest half is closed.</b> Do not add to it without a strong
+reason: an artifact stored today must still verify under a reader written
+next year. If a new idea can be expressed as data at an address, it belongs
+in motion. That is how claims were built — files at a known path, read by an
+ordinary <code>GET</code>, and no change to identity, naming or serving.</p>
+
+<p>The in-motion half is where the unfinished work is. Notes are written but
+not read back. Signing can say yes and cannot yet say no. Automated testing
+is designed and not built — a suite is a deck, a run is one suite Version
+against one tree hash, you run it locally, and the result is a statement
+signed by a person rather than a mark issued by a service. Two runs of one
+pair that disagree is the useful signal, because it means the suite is not
+hermetic, and a service that runs the pair once cannot notice. See
+<code>docs/deck-testing.md</code>.</p>
+
+<p>And one gap contains the others. The in-motion half has one large gap. Nothing here defines how a depot
+offers a change to a depot on <i>another machine</i>, or how a review travels
+between them. Until that exists, Deck in motion is a set of local
+conventions with a good data model, and Deck at rest is the part another
+implementation can join. See <code>docs/deck-in-motion.md</code>.</p>
 
 <h3>The shape of an address</h3>
 <pre class="term"><code>/&lt;depot&gt;/&lt;publisher&gt;/&lt;package&gt;[@&lt;spec&gt;]/&lt;path&gt;
@@ -513,9 +594,10 @@ caching — see L5.</p>
 stricter Deck, it is a different system that will not interoperate.</p>
 <table class="laws stack"><tbody>
 ${LAWS.map(
-  ([id, name, text]) =>
+  ([id, half, name, text]) =>
     `<tr><td><b class="s-seal">${id}</b></td>` +
-    `<td><b>${esc(name)}</b></td><td class="dim">${text}</td></tr>`,
+    `<td><b>${esc(name)}</b><br><span class="dim">${half === 'both' ? 'both' : 'at rest'}</span></td>` +
+    `<td class="says">${text}</td></tr>`,
 ).join('')}
 </tbody></table>
 
@@ -551,9 +633,9 @@ and a server MUST NOT report a capability it does not have (L11).</p>
 <h3>The executable contract</h3>
 <p>Prose can be read two ways; a hash cannot. <code>packages/conformance</code>
 holds one check per law plus a golden fixture with a published hash, and it is
-the definition of agreement. It also examines a broken
-implementation is caught, so a suite that passes everything is itself a
-failure.</p>
+the definition of agreement. It also runs against an implementation that is
+broken on purpose, and fails if that one passes — a suite that approves
+everything approves nothing.</p>
 <pre class="term"><code>node packages/cli/bin/deck.js conform ./your-depot</code></pre>
 `;
 
@@ -602,6 +684,21 @@ const BOOK = [
                                          a Version, immutable forever
        /site/_history/&lt;changeId&gt;/acme/palette/palette.js
                                          any Step it was ever in</code></pre>
+<p><b>A depot is close to a monorepo.</b> Many packages in one directory, one
+     history, one place to clone, and a change that crosses several of them is one
+     change. The differences are worth knowing:</p>
+     <ul>
+     <li>Each deck in a depot has its own <b>version line</b>. A monorepo usually
+     either versions everything together or needs a tool to avoid it.</li>
+     <li>The directory layout <b>is</b> the URL space, so a consumer can import
+     one module from one deck without a build step that extracts it.</li>
+     <li>The <b>publisher</b> segment means two people can hold the same package
+     name in one depot. That is a fork inside the repository, and it costs
+     nothing until the bytes differ.</li>
+     <li>There is no workspace file and no link step. A deck depends on another
+     deck by address, and <code>deck lock</code> turns the range into a pin.</li>
+     </ul>
+
      <p><b>The publisher segment is the fork boundary.</b>
      <code>acme/palette</code> and <code>you/palette</code> are different decks
      with different version lines in one depot, and an undiverged fork costs no
@@ -820,6 +917,10 @@ const STATUS = [
   ['signatures on tree hashes', 'built', 'tested'],
   ['minified derived Versions, and compression', 'built', 'reproducible: verify-derivation re-runs it and compares hashes'],
   ['cross-depot dependency pins', 'not built', 'lock refuses them rather than guessing'],
+  ['notes and replies on a tree hash', 'not built', 'deck note writes them; /track does not read them'],
+  ['revocation, warning, incident', 'not built', 'a signature can say yes and cannot yet say no — deck-at-rest.md §7'],
+  ['test runs as signed statements', 'not built', 'designed in deck-testing.md'],
+  ['anything between two servers', 'not built', 'offers and reviews stay inside one depot'],
 ];
 
 // ---------------------------------------------------------------------------

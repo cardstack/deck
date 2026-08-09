@@ -386,19 +386,58 @@ function mapRows(table, indent = false) {
  * about that deck — the eleven ProseMirror `src/` decks publish no entry —
  * rather than a failure of the strip.
  */
+/**
+ * Every page in one deck, by full path.
+ *
+ * `?meta` and not `/_browse`: `/_browse` lists ONE directory, and a page can
+ * be three directories down. A deck whose only page was `demo/pages/index.html`
+ * read as "nothing here to run", which is the exact wrong answer.
+ */
+const pagesCache = new Map();
+function pagesOf(deck) {
+  if (!pagesCache.has(deck)) {
+    pagesCache.set(
+      deck,
+      getJson(`${deck}?meta`)
+        .then((body) =>
+          (body.data.attributes.files ?? []).filter((path) => /\.html?$/.test(path)),
+        )
+        .catch(() => []),
+    );
+  }
+  return pagesCache.get(deck);
+}
+
 async function resolveRunnable(at) {
   if (/\.html?$/.test(at)) return { at };
   let parts = at.replace(/^\//, '').split('/');
-  let [depot, publisher, pkgAndSpec] = parts;
-  if (!depot || !publisher || !pkgAndSpec) return { at };
+  let [depot, publisher, pkgAndSpec, ...rest] = parts;
+  if (!depot) return { at };
+
+  // ABOVE A DECK — a depot, or a publisher. Everything runnable underneath is
+  // a candidate, and there is usually more than one, so this never picks.
+  if (!publisher || !pkgAndSpec) {
+    let prefix = `/${parts.join('/')}`;
+    let under = (await inventory()).filter(
+      (item) => item.at === prefix || item.at.startsWith(`${prefix}/`),
+    );
+    if (!under.length) {
+      return { why: `Nothing under ${prefix} is a page, so there is nothing to run.` };
+    }
+    if (under.length === 1) return { at: under[0].at, instead: at };
+    return {
+      why: `${under.length} pages under ${prefix}.`,
+      choices: under.map((item) => ({
+        at: item.at,
+        label: item.at.slice(prefix.length + 1),
+        note: item.deck,
+      })),
+    };
+  }
+
   let deck = `/${depot}/${publisher}/${pkgAndSpec}`;
-  let pages = await getJson(`/_browse${deck}`)
-    .then((body) =>
-      (body.data.attributes.entries ?? [])
-        .filter((entry) => /\.html?$/.test(entry.name))
-        .map((entry) => entry.path),
-    )
-    .catch(() => []);
+  let within = rest.join('/');
+  let pages = await pagesOf(deck);
   if (!pages.length) {
     return {
       why:
@@ -408,13 +447,63 @@ async function resolveRunnable(at) {
         `can be pointed at.`,
     };
   }
-  // index.html when there is one, because that is what a directory means.
-  let page = pages.find((path) => /(^|\/)index\.html?$/.test(path)) ?? pages[0];
-  return { at: `${deck}/${page}`, instead: at };
+
+  // DOWN BEFORE UP. The address is the most specific thing the reader has
+  // said, so a page inside it answers them better than the deck's front door
+  // does. Only when nothing is below does this climb.
+  let below = within ? pages.filter((path) => path.startsWith(`${within}/`)) : pages;
+  let candidates = below.length ? below : pages;
+  let downward = below.length > 0;
+
+  if (candidates.length === 1) return { at: `${deck}/${candidates[0]}`, instead: at };
+
+  // An `index.html` at exactly the level asked for is not one of several
+  // choices, it is the answer — that is what a directory index means, and
+  // offering it beside its own children asks a question nobody has.
+  let index = within ? `${within}/index.html` : 'index.html';
+  if (candidates.includes(index)) return { at: `${deck}/${index}`, instead: at };
+
+  return {
+    why: downward
+      ? `${candidates.length} pages inside this path.`
+      : `Nothing at this path is a page. ${pkgAndSpec} has ${candidates.length} elsewhere.`,
+    choices: candidates.map((path) => ({
+      at: `${deck}/${path}`,
+      label: path,
+      note: downward ? 'inside this path' : `elsewhere in ${pkgAndSpec}`,
+    })),
+  };
 }
 
 async function viewOne(input) {
   let resolved = await resolveRunnable(input);
+
+  // SEVERAL ANSWERS IS NOT NO ANSWER.
+  //
+  // Picking one for you is wrong when the pick is not obvious: a demo with
+  // four pages has four right answers, and silently loading the first teaches
+  // the reader that this lens shows something arbitrary. Listing them costs
+  // one click and keeps the address honest.
+  if (resolved.choices) {
+    subject.trail = addressTrail(input);
+    subject.fact = '';
+    return (
+      `<main><div class="pick">` +
+      `<p><b>Choose what to run.</b> ${esc(resolved.why)}</p>` +
+      `<ul class="plain">` +
+      resolved.choices
+        .map(
+          (choice) =>
+            `<li><a href="?at=${esc(choice.at)}" data-at="${esc(choice.at)}">` +
+            `${esc(choice.label)}</a> <span class="dim">${esc(choice.note)}</span></li>`,
+        )
+        .join('') +
+      `</ul>` +
+      `<p class="dim"><a href="/browse?at=${esc(input)}">Read this path in /browse</a> ` +
+      `instead.</p></div></main>`
+    );
+  }
+
   if (!resolved.at) {
     subject.trail = addressTrail(input);
     subject.fact = '';

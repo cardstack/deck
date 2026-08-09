@@ -174,20 +174,25 @@ Integrity says the bytes did not change. Endorsement says who stands behind
 them. They are different claims and only one of them travels with a pack
 through a mirror or a cache.
 
-## L10 · Inheritance
+## L10 · Carry-over
 
 > Same treeHash ⇒ same bytes ⇒ same endorsements.
 
-A fork inherits every attestation about the bytes it did not change, and
-loses exactly the ones about bytes it did. Nothing in the name-based world
-can do this.
+A statement is addressed to a tree hash, so it applies wherever those exact
+bytes appear, under any publisher. A fork keeps every attestation about the
+bytes it did not change, and loses exactly the ones about bytes it did.
+Nothing in the name-based world can do this.
 
 Note what this means for `deck fork`, which records its base in its own
 import map: that record is a byte, so the fork is a different tree and
-inherits **nothing**. That is the right posture — an endorsement should not
-transfer to something announcing a different lineage. Inheritance is for two
-publishers holding *genuinely identical* bytes, which is the case content
+carries **nothing** over. That is the right posture — an endorsement should
+not transfer to something announcing a different lineage. Carry-over is for
+two publishers holding *genuinely identical* bytes, which is the case content
 addressing already collapses to one stored tree.
+
+The name matters. This was called "inheritance", which describes the wrong
+mechanism: nothing here is derived from a parent. The statement never moved.
+It was addressed to content, and the content turned up in a second place.
 
 ## L11 · Fail closed
 

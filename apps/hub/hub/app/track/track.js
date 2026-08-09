@@ -593,11 +593,65 @@ function controls(all, kinds) {
  * from history once they are rows in a list sorted by time, which is exactly
  * where they get lost.
  */
+/**
+ * SETTING ASIDE IS A READING STATE, NOT A RESOLUTION.
+ *
+ * A conflict that has sat there for a week is still a conflict, and a band
+ * that cannot be quietened is a band that gets ignored — the same outcome as
+ * dismissing it, reached by wearing the reader down instead.
+ *
+ * Two rules keep this honest:
+ *
+ *   · It is LOCAL. Nothing is written to the depot and nobody else's Hub
+ *     changes. Setting a conflict aside must never resemble resolving one.
+ *   · It comes BACK. The count stays on screen, one click restores
+ *     everything, and anything that actually changes — a proposal that gets
+ *     rebased, a conflict that reappears under a new change id — has a
+ *     different id and returns on its own.
+ */
+const SET_ASIDE_KEY = 'deck.track.aside';
+
+function setAside() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(SET_ASIDE_KEY) ?? '[]'));
+  } catch {
+    return new Set();
+  }
+}
+
+/** What identifies one attention item across reloads. */
+const asideId = (row) =>
+  `${row.kind}:${row.depot}/${row.publisher}/${row.pkg}:${row.id ?? row.what}`;
+
 function attention(rows) {
   let needs = rows.filter((row) => ATTENTION.includes(row.kind));
   if (!needs.length) return '';
+  let aside = setAside();
+  let showing = needs.filter((row) => !aside.has(asideId(row)));
+  let hidden = needs.length - showing.length;
+  // The bar prints even when everything is set aside. The promise is that
+  // nothing disappears, and a band that vanishes completely has broken it
+  // whatever the storage says.
+  let bar = hidden
+    ? `<div class="attention-bar"><span class="dim">${hidden} set aside</span>` +
+      `<button data-role="restore-aside">show ${hidden === 1 ? 'it' : 'them'}</button></div>`
+    : '';
+  if (!showing.length) return bar;
   return (
-    `<ul class="feed attention">` + needs.map(entry).join('') + `</ul>`
+    bar +
+    `<ul class="feed attention">` +
+    showing
+      .map((row) =>
+        // The control sits inside the row it acts on, at the end, so it reads
+        // as an action on that item and not as another link out of it.
+        entry(row).replace(
+          /<\/li>$/,
+          `<button class="aside" data-role="aside" data-aside="${esc(asideId(row))}" ` +
+            `title="set aside on this machine — it is not resolved">set aside</button></li>`,
+        ),
+      )
+      .join('') +
+    `</ul>`
   );
 }
 
@@ -904,6 +958,20 @@ app.addEventListener('click', (event) => {
   if (event.target.closest('[data-role="noise"]')) return toggleNoise();
   if (event.target.closest('[data-role="grouped"]')) {
     return go({ group: grouped() ? '0' : undefined });
+  }
+
+  // Setting aside and restoring both change only what this browser shows, so
+  // they re-render and touch nothing else.
+  let aside = event.target.closest('[data-role="aside"]');
+  if (aside) {
+    let ids = setAside();
+    ids.add(aside.dataset.aside);
+    localStorage.setItem(SET_ASIDE_KEY, JSON.stringify([...ids]));
+    return render();
+  }
+  if (event.target.closest('[data-role="restore-aside"]')) {
+    localStorage.removeItem(SET_ASIDE_KEY);
+    return render();
   }
   let link = event.target.closest('a[data-at]');
   if (!link || event.metaKey || event.ctrlKey || event.shiftKey) return;

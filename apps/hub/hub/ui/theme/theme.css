@@ -729,3 +729,30 @@ td.indent { padding-left: 2ch; }
   }
   .prose table.stack tbody td:first-child { white-space: normal; }
 }
+
+/* ── the runnable chooser ────────────────────────────────────────────────
+   /run shows this when an address has several pages under it. It is a list
+   of addresses, so it is set like every other list of addresses here — no
+   panel, no box, structure from alignment. */
+.pick { padding: calc(var(--row) * .5em) 0; max-width: 80ch; }
+.pick ul.plain { list-style: none; padding: 0; margin: calc(var(--row) * .4em) 0; }
+.pick li { padding: calc(var(--row) * .2em) 0; }
+.pick li a { color: var(--a-package); }
+.pick li .dim { padding-left: 1.5ch; }
+
+/* The set-aside control and its way back. Both are quiet: the band already
+   has the reader's attention, and a loud dismiss button competes with the
+   thing it is dismissing. */
+.attention-bar {
+  display: flex; align-items: baseline; gap: 1.5ch;
+  padding: calc(var(--row) * .3em) 0;
+}
+.attention-bar button, button.aside {
+  font: inherit; background: none; color: var(--dim);
+  border: 1px solid var(--line); border-radius: 2px;
+  padding: 0 1ch; cursor: pointer;
+}
+.attention-bar button:hover, button.aside:hover {
+  color: var(--fg); border-color: var(--dim);
+}
+button.aside { margin-left: 1.5ch; align-self: center; }
