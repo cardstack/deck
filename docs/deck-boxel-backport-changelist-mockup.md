@@ -16,6 +16,10 @@ It is a design of the work — not a measured diff. The `+ / −` counts under
 each commit are order-of-magnitude guesses after reading the real files;
 they tell you *where the mass is*, not what to put in a spreadsheet.
 
+**This doc owns the numbering.** PR 0–14 below are the only identifiers;
+the team brief groups them and does not number anything of its own. If you
+see a "Phase 5" anywhere, it is stale.
+
 **Campaign order beats numeric order.** Do not blindly merge 0→14. Prefer:
 
 - **Product spine:** PR 1 → **PR 3** (versioned addresses) → **PR 1b** (thin
@@ -175,7 +179,7 @@ import { resolveSpecifier } from '@cardstack/deck';
 import { mergeTrees, publishToStore } from '@cardstack/deck/node';
 ```
 
-**Depends on.** Clean Boxel `main` **and** Deck work-plan gates (Phase −1):
+**Depends on.** Clean Boxel `main` **and** the Deck work-plan gates:
 `extends`, classifier, provenance, bare/hermetic, lean trim, foreign
 `deck conform`, scopes proof. If review would reopen those, stop and fix
 Deck — do not “design in the monorepo PR.”
@@ -768,7 +772,7 @@ Ship CLI sync here (PR 5).
 
 ## PR 5 — CLI checkpoints and 3-way sync
 
-**Timeline slice 5e / Track B.** Infra spine end: **1 → 4a → 5**.
+**The last Timeline slice / Track B.** Infra spine end: **1 → 4a → 5**.
 
 **Why.** Standalone `boxel-cli` still thinks in git checkpoints and
 `--prefer-local` / `--prefer-remote` as the main story. Once realms have

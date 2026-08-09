@@ -10,7 +10,7 @@ Internal numbering from our planning docs is kept in parentheses so you can matc
 | --- | --- |
 | **K1–K14** | The fourteen product benefits we want from Deck in Boxel |
 | **P1–P4** | Four technical prerequisites that unlock most of those benefits |
-| **R1–R5** | Suggested release / phase order |
+| **PR 0–14** | The stack in [`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md). **The only numbering.** This doc groups those PRs; it does not number anything itself. |
 | **Deck Core** | Protocol library: identity, packs, store, merge, serve grammar, optional timeline — not the Deck Hub app |
 
 **Two living docs for execution** (everything else is appendix):
@@ -84,7 +84,7 @@ UI edit or agent write  →  live tree changes  →  Step (Timeline)
 - Restoring a Step does **not** rewrite published Versions.  
 - Agent **claims** (intent) and **touch/activity** (observed heat) are separate from Steps — see K12; don’t conflate “working here” with “captured a Step.”
 
-Phase 5 is therefore not “optional history if someone wants undo.” It is **Timeline + Steps for interactive and agent edits**, with Versions as the publish layer on top. Catalog read-only mirrors may stay Versions-only; personal and team working realms should ship with Timeline.
+The Timeline hinge is therefore not “optional history if someone wants undo.” It is **Timeline + Steps for interactive and agent edits**, with Versions as the publish layer on top. Catalog read-only mirrors may stay Versions-only; personal and team working realms should ship with Timeline.
 
 ---
 
@@ -123,7 +123,7 @@ adds the aliases, the swap is a rewrite of decklist values — one
 `importmap.json` per deck, using the classifier we already need for publish.
 Deck's `extends` accepts both forms today, so nothing there has to change.
 
-The cost of the ruling is one sequencing change: **Phase 3 moves onto the
+The cost of the ruling is one sequencing change: **PR 3 moves onto the
 spine**, because a pin needs a servable `@version` address to point at.
 
 ---
@@ -173,19 +173,19 @@ Boxel keeps the word **realm**. “Depot” is Deck-standalone vocabulary; a dec
 
 Order and dependencies matter more than calendar guesses. What sets the pace
 is **review risk**, **blast radius** (especially base realm), and refusing
-to reopen protocol design inside Boxel PRs. Phases below are the **campaign
+to reopen protocol design inside Boxel PRs. Sections below are the **campaign
 order** — not “list every K benefit once.”
 
-### Phase −1 — Deck work plan complete (gate)
+### Deck work plan complete — the gate before PR 0
 
-Before any Boxel drop: `extends`, classifier, provenance, bare/hermetic,
+Before PR 0: `extends`, classifier, provenance, bare/hermetic,
 lean Core, foreign `deck conform`, scopes proof — see
 [`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md). If a
 Boxel PR needs a design debate, the work returns here.
 
 ---
 
-### Phase 0 — Lean Core into the monorepo
+### Lean Core into the monorepo — PR 0
 
 **Add:** `packages/deck` — protocol + serve grammar + history helpers +
 conform surface. Browser entry for host / `runtime-common`; `/node` for
@@ -199,7 +199,7 @@ behavior change.
 
 ---
 
-### Phase 1 — Resolver that knows who is importing (**Track A**)
+### Resolver that knows who is importing — PR 1 (**Track A**)
 
 **Change in:** `runtime-common` (virtual network / loader).
 
@@ -214,7 +214,7 @@ behavior change.
 
 ---
 
-### Phase 1b — Thin decklist verbs (**Track A**, early product win)
+### Thin decklist verbs — PR 1b (**Track A**, early product win)
 
 **Change in:** `runtime-common` decklist helpers; minimal host actions;
 **fixture** LibSpec (not full catalog redesign).
@@ -227,11 +227,11 @@ the app **decklist** — `extends` + pins — and do **not** full-copy trees.
 | Early **K5** + author-visible **K8** | Proves “app = decklist” in the product, not only in unit tests |
 
 **Shape:** small–medium. **Do this before staffing Timeline.** Full catalog
-polish and package-page affordances can trail (old “Phase 8 verbs”).
+polish and package-page affordances can trail (PR 12 verb polish).
 
 ---
 
-### Phase 2 — Classifier on publish (**Track C**, parallel OK)
+### Classifier on publish — PR 2 (**Track C**, parallel OK)
 
 **Change in:** `realm-server` publish handler; **import**
 `@cardstack/deck/classify` (do not fork).
@@ -240,15 +240,15 @@ polish and package-page affordances can trail (old “Phase 8 verbs”).
 | --- | --- |
 | Publish hygiene / **K14** prep | leave / rebind / rewrite; assets never become pins |
 
-**Shape:** small; parallel with Phase 1 / 1b. Not on the product spine.
+**Shape:** small; parallel with PR 1 / 1b. Not on the product spine.
 
 ---
 
-### Phase 3 — Versioned serve addresses (**on the spine**)
+### Versioned serve addresses — PR 3 (**on the spine**)
 
 **Was "optional early"; the URL-first naming ruling moved it.** The realm
 server has to answer `…/three@0.169.0/…` before anything can pin a version,
-so Phase 1b has nothing to install from until this lands. The serve door is
+so PR 1b has nothing to install from until this lands. The serve door is
 small — a read-only handler plus a thin registry gate.
 
 What stays optional is the **corpus**: the npm crawl and bulk vendoring for
@@ -258,18 +258,18 @@ staff the corpus when someone owns it.
 
 ---
 
-### Phase 5 — Timeline hinge (**Track B**) — *sliced*, not one epic
+### Timeline hinge — PRs 4a–4d, then 5 (**Track B**) — *sliced*, not one epic
 
 Do **not** ship editable realms as Versions-only and call K1 done.
 Do **not** land write path + host UI + claims + CLI sync in one PR.
 
 | Slice | Ship | Explicit non-goal |
 | --- | --- | --- |
-| **5a** | Steps on *one* write path (definition saves or batched writes) via Deck façade | No host restore UI |
-| **5b** | List/restore HTTP through normal `Realm.write` | No agent claims UX |
-| **5c** | One host history list + restore | No CLI rewrite |
-| **5d** | Agent writes → same Step path + claims; activity read if cheap | No 3-way sync |
-| **5e** | CLI checkpoints + `mergeTrees` 3-way (**K4**) | No minify / CDN |
+| **4a** | Steps on *one* write path (definition saves or batched writes) via Deck façade | No host restore UI |
+| **4b** | List/restore HTTP through normal `Realm.write` | No agent claims UX |
+| **4c** | One host history list + restore | No CLI rewrite |
+| **4d** | Agent writes → same Step path + claims; activity read if cheap | No 3-way sync |
+| **5** | CLI checkpoints + `mergeTrees` 3-way (**K4**) | No minify / CDN |
 
 Each slice: wire Core; **refuse** reimplementing merge/store in realm-server.
 Gate with integration tests and, when the realm speaks enough HTTP,
@@ -278,38 +278,38 @@ Gate with integration tests and, when the realm speaks enough HTTP,
 | Benefit unlocked | Why |
 | --- | --- |
 | **K1** | Steps for edits; Versions when you publish a cut |
-| **K4** (5e) | Real common ancestor for sync |
+| **K4** (PR 5) | Real common ancestor for sync |
 | Foundation for **K12** / **K13** | Claims and review read the same tape |
 
 ---
 
-### Phase 6 — Base realm via Deck (**K11**)
+### Base realm via Deck — PR 8 (**K11**)
 
-**Highest blast radius** — every realm depends on base. Only after **5c**
+**Highest blast radius** — every realm depends on base. Only after **PR 4c**
 (restore works) so a bad base Version is recoverable.
 
 ---
 
-### Phase 7 — Serve cache classes + activity (**K2**, **K12**; **K9** demoted)
+### Cache classes, then activity — PRs 6 and 9 (**K2**, **K12**; PR 7 / **K9** demoted)
 
 Exact Version → immutable cache; live → no-store (**K2**). Agent activity in
-preview (**K12**) when 5d data exists. **Minify/gzip derivatives (K9)** only
+preview (**K12**) when PR 4d data exists. **Minify/gzip derivatives (K9)** only
 after cache classes are trusted — easy to gold-plate; not a spine item.
 
 ---
 
-### Phase 8 — Catalog authority + collaboration (**K6**, then **K7**)
+### Catalog authority and collaboration — PR 11, then 13 (**K6**, then **K7**)
 
 GitHub as **mirror** (**K6**); share/gather + Base-Version remains the
 **interim** inter-realm truck. Full Matrix submission / retire GH-PR-as-
 product (**K7**) **after** Tracks A+B are real — do not staff Matrix early.
 
 Catalog verb *polish* (pretty package pages, upgrade UX) lands here if not
-finished in Phase 1b.
+finished in PR 1b.
 
 ---
 
-### Phase 9 — Packs + review tools (**K14**, **K13**)
+### Packs and review tools — PRs 10 and 14 (**K14**, **K13**)
 
 Bare/hermetic packs with provenance (**K14**). Negotiated prune stays
 undesigned. Review tools (**K13**) are content after Steps exist — trail,
@@ -327,11 +327,11 @@ don’t block.
  2  classifier on publish    →  parallel (Track C)
  3  versioned serve door     →  spine: a pin needs an address  ← prereq for 1b
  3′ vendor corpus / CDN      →  optional; must not block A/B
- 5a–5e  Timeline slices      →  K1, then K4                  ← hinge, sliced
- 6  base via Deck            →  K11 (after restore)
- 7  cache (+ activity)       →  K2, K12; K9 later
- 8  mirror; Matrix later     →  K6, then K7
- 9  packs; review trails     →  K14, K13
+4a–4d, 5  Timeline slices    →  K1, then K4                  ← hinge, sliced
+ 8  base via Deck            →  K11 (after PR 4c restore)
+ 6  cache, then 9 activity   →  K2, K12; PR 7 / K9 later
+11  mirror; 13 Matrix later  →  K6, then K7
+10  packs; 14 review trails  →  K14, K13
 ```
 
 ---
@@ -355,35 +355,35 @@ Tracks A+B ship, GitHub share/gather is the truck — not the authority.
 
 ## Practical “start Monday” checklist
 
-1. Confirm Deck work-plan gates (Phase −1) — do not open Boxel design debates.
-2. Clean Boxel `main`; add **lean** `packages/deck` (Phase 0).
-3. Phase 1 resolver; author gate: **remix without copying**.
-4. Phase **3** serve door — versioned addresses, so a pin has a target.
-5. Phase **1b** thin install/remix/use on a fixture — **before** Timeline.
+1. Confirm the Deck work-plan gates — do not open Boxel design debates.
+2. Clean Boxel `main`; add **lean** `packages/deck` (PR 0).
+3. PR 1 resolver; author gate: **remix without copying**.
+4. PR **3** serve door — versioned addresses, so a pin has a target.
+5. PR **1b** thin install/remix/use on a fixture — **before** Timeline.
 6. Parallel (optional owners): classifier publish (2), vendor corpus (3′).
-7. Staff Timeline as **5a → 5e** slices with restore before base realm.
-8. Base realm (6) only after Step restore works.
-9. Mirror / share-gather (8); Matrix retirement of GH submission last.
-10. Packs + review tools (9) without blocking Map/Tape wins.
+7. Staff Timeline as **4a → 4d → 5** slices with restore before base realm.
+8. Base realm (PR 8) only after Step restore works.
+9. Mirror / share-gather (PR 11); Matrix retirement of GH submission last (PR 13).
+10. Packs (PR 10) + review tools (PR 14) without blocking Map/Tape wins.
 
 ---
 
-## Phase cheat sheet
+## Cheat sheet
 
-| Phase | Main Boxel touchpoints | Benefits | Shape |
+| PR | Main Boxel touchpoints | Benefits | Shape |
 | --- | --- | --- | --- |
-| −1 Deck gates | Deck repo work plan | — | **hard gate** |
+| — Deck gates | Deck repo work plan | — | **hard gate** |
 | 0 Lean Core | `packages/deck` | — | dependency drop |
 | 1 Resolver | `runtime-common` | K8 | small — first behavior |
 | **1b Thin verbs** | host + helpers + fixture | **early K5** | **product spine** |
 | 2 Classifier | `realm-server` | publish / K14 prep | parallel OK |
 | **3 Serve door** | `realm-server` | **address space** | **spine — prereq for 1b** |
 | 3′ Vendor corpus | outside + content | K3, catalog K2 | optional early |
-| **5a–5e Tape** | realm write, HTTP, host, claims, CLI | **K1, K4** | **hinge — sliced** |
-| 6 Base realm | `runtime-common`, `host` | K11 | highest blast radius |
-| 7 Cache + activity | `realm-server`, `host` | K2, K12 (K9 later) | medium |
-| 8 Mirror; Matrix later | content + jobs | K6, then K7 | process |
-| 9 Packs; review trails | content + `realm-server` | K14, K13 | after tape |
+| **4a–4d, 5 Tape** | realm write, HTTP, host, claims, CLI | **K1, K4** | **hinge — sliced** |
+| 8 Base realm | `runtime-common`, `host` | K11 | highest blast radius |
+| 6 Cache, 9 activity | `realm-server`, `host` | K2, K12 (K9 later) | medium |
+| 11 Mirror; 13 Matrix later | content + jobs | K6, then K7 | process |
+| 10 Packs; 14 review trails | content + `realm-server` | K14, K13 | after tape |
 
 Commit-level Touch / Do / Don’t: `deck-boxel-backport-changelist-mockup.md`.
 
