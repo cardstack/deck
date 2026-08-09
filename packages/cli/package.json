@@ -17,6 +17,7 @@
   "dependencies": {
     "@cardstack/deck": "workspace:*",
     "@cardstack/deck-server": "workspace:*",
+    "@cardstack/deck-tools": "workspace:*",
     "@cardstack/deck-history": "workspace:*",
     "@cardstack/deck-conformance": "workspace:*"
   },

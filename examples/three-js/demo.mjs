@@ -28,8 +28,8 @@ import { fileURLToPath } from 'node:url';
 import { pack, unpack } from '@cardstack/deck/pack';
 import { hashBytes } from '@cardstack/deck/tree-hash';
 import { inspectStore, publishToStore } from '@cardstack/deck/store';
-import { probeEntries, vendorFromNpmSource } from '@cardstack/deck/vendor-npm';
-import { fetchNpmPackage } from '@cardstack/deck/npm';
+import { probeEntries, vendorFromNpmSource } from '@cardstack/deck-tools/vendor-npm';
+import { fetchNpmPackage } from '@cardstack/deck-tools/npm';
 import {
   createDemoServer,
   demoOrigin,

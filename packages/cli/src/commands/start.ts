@@ -17,7 +17,7 @@ import {
   watchDepot,
   type DepotMount,
 } from '@cardstack/deck-server/depot';
-import { startRebaseDaemon } from '@cardstack/deck-server/rebase-daemon';
+import { startRebaseDaemon } from '@cardstack/deck-tools/rebase-daemon';
 import { createHistory, isValidHistoryKind } from '@cardstack/deck-history/create';
 import { defineCommand, type Command } from '../command.ts';
 import { DEFAULT_PORT, fail, listenNear } from '../support.ts';

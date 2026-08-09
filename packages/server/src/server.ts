@@ -70,7 +70,7 @@ import {
   type LiveChangeEvent,
 } from './live-events.ts';
 import { injectImportMap } from './inject-importmap.ts';
-import { rebasePass } from './rebase-daemon.ts';
+import { surveyOffers } from './offer-survey.ts';
 import { discoverDecks, type DepotMount } from './depot.ts';
 
 // The minimal Deck server: READ-ONLY serving of depots laid out on disk.
@@ -1317,10 +1317,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       }
       // Read-only: the daemon writes, this only reports. A maintainer wants
       // the three that stopped merging, not the hundred that are fine.
-      let { outcomes, rebased, conflicted } = await rebasePass({
-        depot,
-        dryRun: true,
-      });
+      let { outcomes, rebased, conflicted } = await surveyOffers({ depot });
       respondJson(
         req,
         res,

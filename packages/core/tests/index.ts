@@ -30,14 +30,12 @@ await import('./provenance-test.ts');
 await import('./pack-mode-test.ts');
 await import('./entries-test.ts');
 await import('./vendor-test.ts');
-await import('./vendor-npm-test.ts');
-await import('./vendor-map-test.ts');
+await import('./source-graph-test.ts');
 await import('./lock-test.ts');
 await import('./fork-test.ts');
 await import('./merge-test.ts');
 await import('./offer-test.ts');
 await import('./signature-test.ts');
 await import('./verify-links-test.ts');
-await import('./derive-test.ts');
 
 QUnit.start();

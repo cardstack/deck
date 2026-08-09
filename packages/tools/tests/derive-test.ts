@@ -1,7 +1,7 @@
 import QUnit from 'qunit';
 const { module, test } = QUnit;
-import { pack, unpack } from '../src/pack.ts';
-import { packagesFromPack } from '../src/import-map-pack.ts';
+import { pack, unpack } from '@cardstack/deck/pack';
+import { packagesFromPack } from '@cardstack/deck/import-map-pack';
 import {
   canonicalOptions,
   derivationFromMap,

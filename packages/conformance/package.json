@@ -21,7 +21,8 @@
   },
   "dependencies": {
     "@cardstack/deck": "workspace:*",
-    "@cardstack/deck-server": "workspace:*"
+    "@cardstack/deck-server": "workspace:*",
+    "@cardstack/deck-tools": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

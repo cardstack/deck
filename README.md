@@ -353,10 +353,15 @@ multi-package design, and
 
 ## Status
 
-**The reference implementation is built and tested** — 297 tests green
-(185 core, 19 history, 76 server, 4 conformance, 13 CLI), lint and
-typecheck clean, and `deck conform` reports 49 passed / 0 failed / 3 not
+**The reference implementation is built and tested** — 374 tests green
+(200 core, 22 history, 83 server, 49 tools, 7 conformance, 13 CLI), lint and
+typecheck clean, and `deck conform` reports 59 passed / 0 failed / 3 not
 applicable.
+
+The packages layer strictly: **core ← server ← tools ← cli**. Core is the
+one that moves into the Boxel monorepo, so it is a leaf — eslint refuses an
+import from Core to any of the others, and refuses one from the server up
+into Tools.
 
 - **`packages/core`** — `tree-hash-v1` (shasum-compatible manifest,
   UTF-8 byte-order sort), `canonical-zip-v1` (hand-rolled
@@ -381,8 +386,17 @@ applicable.
   `!/` mounts; `/<depot>/_history/<changeId>/<path>`; import-map
   injection for HTML; coded JSON errors, negative-cached by how
   permanent the miss is; HEAD; writes refused. Plus `/_packages`, `/_browse`,
-  `/<depot>/_offers`, the `?with=` trial override, the **rebase daemon**,
-  and an SSE change bus at `/_live/events` with a drop-in HMR client.
+  `/<depot>/_offers` (which **surveys** the offer queue — planning only; the
+  serve path holds no module that can write a proposal's tree), the `?with=`
+  trial override, and an SSE change bus at `/_live/events` with a drop-in
+  HMR client.
+- **`packages/tools`** — the work that operates on a depot rather than
+  serving one, kept out of Core so the backport carries none of it: npm
+  carriage (tarball fetch, integrity, git-blob identity, GitHub tree
+  verification), source-mode and map-mode **vendoring**, the transitive
+  vendor planner, the depot **cooldown policy**, minified **derivation**
+  (the only reason anything here wants terser), and the **rebase daemon** —
+  the half of the offer queue that writes.
 - **`packages/cli`** — 27 commands in eight groups, one module per group
   (see [CLI.md](CLI.md)): **start** `hello serve` · **seal** `hash pack
   unpack list verify` · **publish** `publish tag release prune store derive

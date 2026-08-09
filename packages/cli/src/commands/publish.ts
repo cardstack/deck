@@ -26,7 +26,7 @@ import {
   derivedPack,
   terserVersion,
   verifyDerivation,
-} from '@cardstack/deck/derive';
+} from '@cardstack/deck-tools/derive';
 import { readEnvelope, verifyEnvelope } from '@cardstack/deck/signature';
 import { defineCommand, type Command } from '../command.ts';
 import { depotAt, fail } from '../support.ts';

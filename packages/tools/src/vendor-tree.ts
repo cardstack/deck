@@ -12,12 +12,12 @@ import {
 import {
   probeEntries,
   vendorFromNpmSource,
-  walkSourceGraph,
   type VendoredFrom,
 } from './vendor-npm.ts';
-import { isCommonJsModule } from './es-lexer.ts';
-import { listStorePackages, readStoredPack } from './store.ts';
-import { packagesFromPack } from './import-map-pack.ts';
+import { walkSourceGraph } from '@cardstack/deck/source-graph';
+import { isCommonJsModule } from '@cardstack/deck/es-lexer';
+import { listStorePackages, readStoredPack } from '@cardstack/deck/store';
+import { packagesFromPack } from '@cardstack/deck/import-map-pack';
 
 // Transitive vendoring.
 //
@@ -177,7 +177,7 @@ export interface VendorTreePlan {
 // is NOT usable is a file that speaks CommonJS, because no import map can
 // make `require` exist in a browser. The tokenizer answers this, so
 // `module.exports` in a comment or a string does not count.
-export { isCommonJsModule as looksCommonJs } from './es-lexer.ts';
+export { isCommonJsModule as looksCommonJs } from '@cardstack/deck/es-lexer';
 
 async function resolveVersion(options: {
   name: string;

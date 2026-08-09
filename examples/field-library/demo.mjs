@@ -36,7 +36,7 @@ import { pack } from '@cardstack/deck/pack';
 import { inspectStore, publishToStore, readStoredPack } from '@cardstack/deck/store';
 import { peekPacklist } from '@cardstack/deck/pack';
 import { readTreeFromDir } from '@cardstack/deck/tree';
-import { vendorFromNpmSource } from '@cardstack/deck/vendor-npm';
+import { vendorFromNpmSource } from '@cardstack/deck-tools/vendor-npm';
 import { storeDirFor } from '@cardstack/deck-server/depot';
 import { localFetch } from '@cardstack/deck-server/tls';
 import {

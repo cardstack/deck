@@ -11,7 +11,7 @@ import {
   releaseVersion,
   resolveVersionSpec,
 } from '@cardstack/deck/store';
-import { walkSourceGraph } from '@cardstack/deck/vendor-npm';
+import { walkSourceGraph } from '@cardstack/deck/source-graph';
 import {
   appendSignature,
   generateKeyPair,
@@ -41,7 +41,7 @@ import {
   derivedPack,
   terserVersion,
   verifyDerivation,
-} from '@cardstack/deck/derive';
+} from '@cardstack/deck-tools/derive';
 import {
   FIXTURE_PACKAGE,
   FIXTURE_PUBLISHER,

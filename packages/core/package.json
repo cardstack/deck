@@ -16,18 +16,14 @@
     "./canonical-zip": "./src/canonical-zip.ts",
     "./packlist": "./src/packlist.ts",
     "./pack": "./src/pack.ts",
-    "./derive": "./src/derive.ts",
     "./store": "./src/store.ts",
     "./object-store": "./src/object-store.ts",
     "./signature": "./src/signature.ts",
     "./keyring": "./src/keyring.ts",
     "./import-map": "./src/import-map.ts",
     "./vendor": "./src/vendor.ts",
+    "./source-graph": "./src/source-graph.ts",
     "./es-lexer": "./src/es-lexer.ts",
-    "./vendor-npm": "./src/vendor-npm.ts",
-    "./vendor-map": "./src/vendor-map.ts",
-    "./vendor-tree": "./src/vendor-tree.ts",
-    "./npm": "./src/npm.ts",
     "./lock": "./src/lock.ts",
     "./verify-links": "./src/verify-links.ts",
     "./fork": "./src/fork.ts",
@@ -54,7 +50,6 @@
     "typescript": "catalog:"
   },
   "dependencies": {
-    "semver": "catalog:",
-    "terser": "^5.49.2"
+    "semver": "catalog:"
   }
 }

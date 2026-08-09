@@ -43,9 +43,9 @@ import {
   deckNameForNpm,
   probeEntries,
   vendorFromNpmSource,
-} from '@cardstack/deck/vendor-npm';
-import { fetchNpmPackage } from '@cardstack/deck/npm';
-import { locateSourceMap } from '@cardstack/deck/vendor-map';
+} from '@cardstack/deck-tools/vendor-npm';
+import { fetchNpmPackage } from '@cardstack/deck-tools/npm';
+import { locateSourceMap } from '@cardstack/deck-tools/vendor-map';
 import {
   createDemoServer,
   demoOrigin,

@@ -1,5 +1,5 @@
 import { posix } from 'node:path';
-import { isValidTreePath } from './tree-hash.ts';
+import { isValidTreePath } from '@cardstack/deck/tree-hash';
 import {
   fetchNpmPackage,
   fetchPublishTimes,

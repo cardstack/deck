@@ -77,11 +77,11 @@ module.exports = {
       // behaviour that genuinely needs best effort is a vendor flag with an
       // explicit lossy report, never a quiet branch in serve.
       //
-      // `@cardstack/deck/npm` is deliberately absent from this list: `depot.ts`
-      // reads the cooldown POLICY from it, which is depot configuration
-      // rather than package normalisation. It lives in npm.ts for
-      // historical reasons and would read better extracted — tidying, not a
-      // boundary violation.
+      // The layering the ban now rests on is `core ← server ← tools`. Tools
+      // sits ABOVE the server: the rebase daemon operates a mounted depot,
+      // and `depot-policy.ts` reads a depot's cooldown file. So a server
+      // module reaching for `@cardstack/deck-tools` is not merely a compat
+      // leak, it is a cycle — which is why one pattern covers both.
       files: ['packages/server/src/**/*.ts'],
       rules: {
         'no-restricted-imports': [
@@ -89,13 +89,37 @@ module.exports = {
           {
             patterns: [
               {
-                group: [
-                  '@cardstack/deck/vendor',
-                  '@cardstack/deck/vendor-*',
-                  '@cardstack/deck/derive',
-                ],
+                group: ['@cardstack/deck-tools', '@cardstack/deck-tools/*'],
                 message:
-                  'Compat and derivation are intake work, not serve work — put it in vendor/CLI/Tools (docs/deck-embroider-lessons.md §3).',
+                  'Tools runs ABOVE the server (core ← server ← tools). Vendoring, npm carriage and derivation are intake work, not serve work (docs/deck-embroider-lessons.md §3).',
+              },
+              {
+                group: ['@cardstack/deck/vendor', '@cardstack/deck/vendor-*'],
+                message:
+                  'Byte carriage is intake work, not serve work — put it in vendor/CLI/Tools (docs/deck-embroider-lessons.md §3).',
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      // Core is the half that gets backported, so it stays a leaf.
+      //
+      // Everything above it — the server, Tools, the CLI — is this repo's
+      // reference implementation, and Boxel brings its own. An edge from
+      // Core to any of them would drag a package Boxel is not taking into
+      // the cone of the one it is.
+      files: ['packages/core/src/**/*.ts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              {
+                group: ['@cardstack/deck-*', '@cardstack/deck-*/*'],
+                message:
+                  'Core is a leaf: it is the package that moves into the Boxel monorepo, so it cannot depend on the reference server, Tools or the CLI.',
               },
             ],
           },

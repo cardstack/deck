@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { forkDeck } from '@cardstack/deck/fork';
 import { lockDeck, parseDependencyValue } from '@cardstack/deck/lock';
-import { rebasePass } from '@cardstack/deck-server/rebase-daemon';
+import { rebasePass } from '@cardstack/deck-tools/rebase-daemon';
 import { defineCommand, type Command } from '../command.ts';
 import { depotAt, fail } from '../support.ts';
 

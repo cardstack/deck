@@ -33,7 +33,7 @@ import { publishToStore } from '@cardstack/deck/store';
 import { readTreeFromDir } from '@cardstack/deck/tree';
 import { treeHashFromDir } from '@cardstack/deck/tree-hash';
 import { storeDirFor, watchDepot } from '@cardstack/deck-server/depot';
-import { rebasePass } from '@cardstack/deck-server/rebase-daemon';
+import { rebasePass } from '@cardstack/deck-tools/rebase-daemon';
 import {
   createDemoServer,
   demoOrigin,

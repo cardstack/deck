@@ -43,7 +43,7 @@ import { pack } from '@cardstack/deck/pack';
 import { discoverOffers } from '@cardstack/deck/offer';
 import { publishToStore } from '@cardstack/deck/store';
 import { readTreeFromDir } from '@cardstack/deck/tree';
-import { rebasePass } from '@cardstack/deck-server/rebase-daemon';
+import { rebasePass } from '@cardstack/deck-tools/rebase-daemon';
 import { storeDirFor } from '@cardstack/deck-server/depot';
 import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
 import { demoBuildMode, rmKeepingNotes } from '../shared/reset.mjs';

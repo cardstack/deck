@@ -587,11 +587,11 @@ The backport is "just wiring" when:
 
 - [x] `…/resolve` has zero `node:` imports, enforced by CI
 - [x] the resolver takes the importer, so scopes are expressible
-- [ ] every function Boxel needs is reachable from a documented entry — no
+- [x] every function Boxel needs is reachable from a documented entry — no
       reaching into internals
 - [x] two entries split by runtime rather than 25 by module —
       `@cardstack/deck` (browser-safe) and `@cardstack/deck/node`
-- [ ] conformance runnable against a *foreign* implementation over HTTP, so
+- [x] conformance runnable against a *foreign* implementation over HTTP, so
       it can gate the realm server in CI
 - [x] ~~types shipped~~ — **not needed, and struck deliberately.**
       `@cardstack/runtime-common` ships raw `.ts` with no build, no
@@ -608,7 +608,53 @@ The backport is "just wiring" when:
       own `.d.ts` into the vendored tree. Different mechanism, different
       workstream (K3).
 
-### 7.6 What stays irreducibly monorepo
+### 7.6 The lean trim: what Core is *not*
+
+Splitting by runtime answered "which entry?". It did not answer "which
+package?", and Core was still carrying five modules the realm server has no
+use for: npm carriage, source-mode and map-mode vendoring, the transitive
+vendor planner, and minified derivation. Vendoring runs outside the monorepo
+in Release 1b, so none of it belongs in the first Boxel drop.
+
+They now live in **`@cardstack/deck-tools`**, along with the **rebase
+daemon** (moved down from the server) and the depot **cooldown policy**. The
+layering is `core ← server ← tools ← cli`, and both edges that matter are
+lint rules, negative-tested:
+
+| Rule | Files | Refuses |
+| --- | --- | --- |
+| Core is a leaf | `packages/core/src/**` | `@cardstack/deck-*` — anything above it |
+| Serve stays serve | `packages/server/src/**` | `@cardstack/deck-tools*`, `@cardstack/deck/vendor*` |
+
+What Boxel gains from this, concretely:
+
+- **Core's only runtime dependency is `semver`.** `terser` left with
+  `derive`, and it was Core's second.
+- **26 modules, not 30**, and `packages/core/src` now contains no `fetch`
+  at all. Every network call in the repo sits above the Core line.
+- **The dependency review shrinks to what Boxel actually runs.** Reviewing
+  "does Cardstack want npm tarball ingestion in the monorepo?" is a real
+  question, and this defers it to the release that actually asks it.
+
+Two things surfaced that were misfiled rather than merely misplaced:
+
+**`walkSourceGraph` was in `vendor-npm.ts`, and it is how L6 is checked.**
+The conformance suite reaches for it to assert "a sealed deck resolves
+everything it contains" — a law, not a vendoring step. The walker knows
+nothing about npm, takes no network, and is a pure function of a file map.
+It is now `packages/core/src/source-graph.ts`, which is where the law that
+depends on it can see it.
+
+**The server imported the module that writes proposals.** `/…/_offers`
+reported the queue by calling `rebasePass({ dryRun: true })` — correct
+behaviour, guarded by a flag, in a serve path that had `applyRebase` in its
+import graph. The planning half is now `offer-survey.ts` in the server and
+the applying half is the daemon in Tools, which builds on those same plans.
+Read-only serving became a property of what the module can reach instead of
+a boolean a caller has to remember. That is W9 arriving early, and it is the
+shape L12 should have had from the start.
+
+### 7.7 What stays irreducibly monorepo
 
 Core shrinks this; it cannot remove it:
 

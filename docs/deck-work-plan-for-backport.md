@@ -131,6 +131,35 @@ invisible and this one should fail loudly.)
 **Why.** Vendoring runs outside the monorepo in Release 1b, so none of it is
 in the first Boxel drop. Smaller cone, smaller review.
 
+**Done.** `@cardstack/deck-tools` holds `npm`, `vendor-npm`, `vendor-map`,
+`vendor-tree`, `derive`, the depot cooldown policy and the rebase daemon.
+Core is down to 26 modules from 30, its only runtime dependency is `semver`
+(`terser` left with `derive`), and `packages/core/src` now contains no
+`fetch`. The layering `core ← server ← tools ← cli` is two lint rules, both
+negative-tested. Full suite **374 pass / 0 fail** against a 373 baseline —
+the extra test is a new one, see below.
+
+Two findings the move surfaced, both written up in
+[`deck-boxel-backport-plan.md`](deck-boxel-backport-plan.md) §7.6:
+
+- **`walkSourceGraph` was in the wrong package.** Conformance calls it to
+  check L6 — "a sealed deck resolves everything it contains" — and it knows
+  nothing about npm. It is now `core/src/source-graph.ts`.
+- **The server imported the module that writes proposals.** `/…/_offers`
+  called `rebasePass({ dryRun: true })`, so `applyRebase` was in the serve
+  path's import graph, held back by a flag. Planning is now
+  `server/src/offer-survey.ts` and applying is the daemon in Tools, built on
+  the same plans. Read-only became structural rather than conditional —
+  which is W9, arriving here instead.
+
+**No regression, checked rather than assumed.** Every baseline test is
+accounted for: core 247 → 200 (52 moved out, 5 in from the graph split),
+tools 0 → 49, server 84 → 83 (2 daemon tests to Tools, 1 new endpoint test
+for the survey). Both new lint rules were verified by injecting a violation.
+The `contribute-to-codelist` demo was rebuilt end to end (`RESET=1`) so the
+daemon's real write path ran — dry run, apply, convergence, conflict left
+untouched — and every package specifier in every demo was re-resolved.
+
 ### W8 — naming, in one pass
 
 **What.** Decide the published name, then rename everything at once.
@@ -228,8 +257,8 @@ packaging — real, but it does not block Boxel from starting.
 | W4 | pack modes `bare` / `hermetic` | **decision layer done** — `planPack`; byte carriage reuses `vendor.ts`, not yet wired |
 | W5 | foreign conformance | **done** — `--export` + at-rest excluded from foreign runs |
 | W6 | entries | **done** — `@cardstack/deck` (browser) + `/node`. `.d.ts` struck: Boxel consumes TS source (see W6 note). |
-| W7 | lean trim | not started |
+| W7 | lean trim | **done** — `@cardstack/deck-tools`; Core 26 modules, `semver` only |
 | W8 | naming → `@cardstack/deck` | **done** |
-| W9 | L12 amendment | not started |
+| W9 | L12 amendment | **partly done in code** — the serve path can no longer reach `applyRebase` (W7). The wording in `deck-laws.md` still says process, not surface. |
 | W10 | two proofs | scopes proof partly covered by `examples/remix` |
 | — | Embroider §3 and §4 | **applied** (see §1a) |

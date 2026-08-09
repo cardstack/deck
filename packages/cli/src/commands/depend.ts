@@ -18,11 +18,12 @@ import {
   deckNameForNpm,
   probeEntries,
   vendorFromNpmSource,
-} from '@cardstack/deck/vendor-npm';
-import { fetchNpmPackage, verifyAgainstGithubTree } from '@cardstack/deck/npm';
-import { mapVendorImportMap, vendorFromSourceMap } from '@cardstack/deck/vendor-map';
-import { planVendorTree, vendorUnitImportMap } from '@cardstack/deck/vendor-tree';
-import { discoverDecks, readDepotPolicy } from '@cardstack/deck-server/depot';
+} from '@cardstack/deck-tools/vendor-npm';
+import { fetchNpmPackage, verifyAgainstGithubTree } from '@cardstack/deck-tools/npm';
+import { mapVendorImportMap, vendorFromSourceMap } from '@cardstack/deck-tools/vendor-map';
+import { planVendorTree, vendorUnitImportMap } from '@cardstack/deck-tools/vendor-tree';
+import { discoverDecks } from '@cardstack/deck-server/depot';
+import { readDepotPolicy } from '@cardstack/deck-tools/depot-policy';
 import { defineCommand, type Command } from '../command.ts';
 import { cooldownOverride, depotAt, fail } from '../support.ts';
 

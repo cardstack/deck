@@ -10,7 +10,7 @@
     "./live-events": "./src/live-events.ts",
     "./depot": "./src/depot.ts",
     "./inject-importmap": "./src/inject-importmap.ts",
-    "./rebase-daemon": "./src/rebase-daemon.ts",
+    "./offer-survey": "./src/offer-survey.ts",
     "./compression": "./src/compression.ts",
     "./preload": "./src/preload.ts",
     "./tls": "./src/tls.ts",

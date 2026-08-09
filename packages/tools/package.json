@@ -1,0 +1,39 @@
+{
+  "name": "@cardstack/deck-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deck tools: npm carriage, vendoring, minified derivation, the rebase daemon — work that runs against a depot, never inside serve",
+  "exports": {
+    "./npm": "./src/npm.ts",
+    "./vendor-npm": "./src/vendor-npm.ts",
+    "./vendor-map": "./src/vendor-map.ts",
+    "./vendor-tree": "./src/vendor-tree.ts",
+    "./derive": "./src/derive.ts",
+    "./rebase-daemon": "./src/rebase-daemon.ts",
+    "./depot-policy": "./src/depot-policy.ts"
+  },
+  "scripts": {
+    "test": "node tests/index.ts",
+    "lint": "pnpm run lint:js && pnpm run lint:types",
+    "lint:js": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "lint:types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cardstack/deck": "workspace:*",
+    "@cardstack/deck-server": "workspace:*",
+    "semver": "catalog:",
+    "terser": "^5.49.2"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/qunit": "catalog:",
+    "@types/semver": "catalog:",
+    "@typescript-eslint/eslint-plugin": "catalog:",
+    "@typescript-eslint/parser": "catalog:",
+    "eslint": "catalog:",
+    "qunit": "catalog:",
+    "typescript": "catalog:"
+  }
+}
