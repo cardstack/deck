@@ -1,0 +1,23 @@
+{
+  "imports": {
+    "ui/nav/": "/hub/ui/nav/",
+    "ui/nav": "/hub/ui/nav/nav.js",
+    "ui/activity/": "/hub/ui/activity/",
+    "ui/activity": "/hub/ui/activity/activity.js",
+    "highlight-js/": "/hub/lib/highlight-js@11.11.1-esm.412fd1a8/",
+    "highlight-js": "/hub/lib/highlight-js@11.11.1-esm.412fd1a8/lib/core.js"
+  },
+  "deck": {
+    "packages": {
+      "start": {
+        "version": "0.1.0",
+        "entry": "$DECK/start.js"
+      }
+    },
+    "dependencies": {
+      "ui/nav": "live",
+      "ui/activity": "live",
+      "highlight-js": "lib/highlight-js@esm"
+    }
+  }
+}

@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
+import type { DeckServer } from '../src/server.ts';
 import { forkDeck } from '@deck/core/fork';
 import { packFromDir } from '@deck/core/pack';
 import { publishToStore } from '@deck/core/store';
@@ -15,7 +15,7 @@ import { rebasePass, startRebaseDaemon } from '../src/rebase-daemon.ts';
 let root: string;
 let depotDir: string;
 let depot: DepotMount;
-let server: Server;
+let server: DeckServer;
 let origin: string;
 
 const APP_HTML = `<!doctype html>
@@ -190,6 +190,57 @@ module('offers, rebase, and try-by-URL', function (hooks) {
     assert.strictEqual(
       map.imports['acme/palette'],
       '/site/acme/palette@1.1.0/palette.js',
+    );
+  });
+
+  // Two overrides in one trial, where one of them declares a RANGE over the
+  // other. Resolving the substitute's own scopes is what makes a trial work
+  // at all (the substitute brings its dependencies with it), but a range is a
+  // question and the query string already answered it: a version the caller
+  // named has to win inside those scopes too, or the page renders the very
+  // version the reviewer was trying to avoid and says nothing.
+  test('a named override beats a range inside a substitute’s own scope', async function (assert) {
+    // palette 1.1.0 exists and is `latest`, so `^1.0.0` resolves to it.
+    await writeDeck(
+      'acme/palette',
+      { 'palette.js': "export const colors = ['NEW'];\n" },
+      {
+        deck: {
+          packages: {
+            palette: { version: '1.1.0', entry: '$DECK/palette.js' },
+          },
+        },
+      },
+    );
+    await publish('acme/palette', '1.1.0');
+    // A composition deck that asks for the palette by range, not by pin.
+    await writeDeck(
+      'acme/gallery',
+      { 'gallery.js': "export const gallery = 1;\n" },
+      {
+        deck: {
+          packages: {
+            gallery: { version: '1.0.0', entry: '$DECK/gallery.js' },
+          },
+          dependencies: { 'acme/palette': '^1.0.0' },
+        },
+        imports: {
+          'acme/palette': '/site/acme/palette@1.0.0/palette.js',
+          'acme/palette/': '/site/acme/palette@1.0.0/',
+        },
+      },
+    );
+    await publish('acme/gallery', '1.0.0');
+
+    let trial = await fetch(
+      `${origin}/site/you/app/index.html` +
+        '?with=acme/gallery@1.0.0&with=acme/palette@1.0.0',
+    );
+    let map = JSON.parse((await trial.text()).match(/importmap">([^<]*)/)![1]);
+    assert.strictEqual(
+      map.scopes['/site/acme/gallery@1.0.0/']['acme/palette'],
+      '/site/acme/palette@1.0.0/palette.js',
+      'the gallery scope holds the version the caller asked for, not latest',
     );
   });
 

@@ -5,8 +5,16 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
+import {
+  createSecureServer as createHttp2SecureServer,
+  type Http2SecureServer,
+  type Http2ServerRequest,
+  type Http2ServerResponse,
+} from 'node:http2';
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { resolveTlsMaterials, type TlsOption } from './tls.ts';
+import { ActivityIndex } from './activity.ts';
 import { DECKBOOK_PATHS, loadDeckbookHtml } from './deckbook.ts';
 import { readZipEntry } from '@deck/core/canonical-zip';
 import {
@@ -35,8 +43,8 @@ import {
   readStoreMeta,
   resolveVersionSpec,
 } from '@deck/core/store';
-import { resolveDependencies } from '@deck/core/lock';
-import { isValidTreePath } from '@deck/core/tree-hash';
+import { resolveDependencies, resolveScopes } from '@deck/core/lock';
+import { isValidTreePath, treeHashFromDir } from '@deck/core/tree-hash';
 import {
   isValidHistoryPath,
   isValidRevisionId,
@@ -117,6 +125,10 @@ const OFFERS_PATH = new RegExp(`^/(?<depot>${SEGMENT})/_offers/?$`);
 const SIGNATURES_PATH = new RegExp(
   `^/(?<depot>${SEGMENT})/_trees/(?<treeHash>[0-9a-f]{64})/signatures/?$`,
 );
+// One door for "where are agents working". See docs/deck-activity-protocol.md
+// and the note at the top of activity.ts for why this is protocol rather than
+// something the Hub computes for itself.
+const ACTIVITY_PATH = /^\/_activity\/?$/;
 const LIVE_EVENTS_PATH = '/_live/events';
 const LIVE_HMR_PATH = '/_live/hmr.js';
 const BROWSER_PATHS = new Set(['/', '/_browser', '/_browser/']);
@@ -179,15 +191,25 @@ export interface DeckServerOptions {
   depots: DepotMount[];
   // Optional fallthrough for anything that is not a Deck route (demo
   // pages, health checks). Without it, non-routes 404.
+  // Typed against the Node HTTP compat shapes — `allowHTTP1` h2 requests
+  // duck-type the same `writeHead` / `end` surface at runtime.
   fallback?: (req: IncomingMessage, res: ServerResponse) => void;
   // In-process bus for live-tree change notifications (SSE). Created
   // automatically when omitted; pass one in to share with watchers.
   liveBus?: LiveBus;
+  // When true (or when cert/key materials are passed), listen with
+  // `http2.createSecureServer({ allowHTTP1: true })` so browsers get
+  // HTTP/2 multiplexing for many-module pages. `true` mints/loads a
+  // localhost leaf via `resolveTlsMaterials` (see `./tls.ts`). Omit for
+  // plain HTTP/1.1 — what the unit tests use.
+  tls?: TlsOption;
 }
 
-export interface DeckServer extends Server {
+export type DeckServer = (Server | Http2SecureServer) & {
   liveBus: LiveBus;
-}
+  // 'https' always means HTTP/2 is offered (HTTP/1.1 still accepted).
+  protocol: 'http' | 'https';
+};
 
 // Resolve a possibly-mounted path against a pack: `a/b.js` reads directly;
 // `vendor/x.pack.zip!/inner.js` opens the nested pack (depth-capped).
@@ -221,6 +243,10 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   let { depots, fallback } = options;
   let liveBus = options.liveBus ?? createLiveBus();
   let byName = new Map(depots.map((depot) => [depot.name, depot]));
+  // The activity index reads the same depots the router serves, so "who is
+  // working here" can never be answered about a depot this server does not
+  // actually hold.
+  let activity = new ActivityIndex(depots);
   // Stored packs are immutable (published versions never change), so this
   // cache never invalidates; the cap only bounds memory.
   let packCache = new Map<string, CachedPack>();
@@ -632,14 +658,26 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     return rebound;
   }
 
+  interface OverrideResolution {
+    imports: Record<string, string>;
+    // The substitute's OWN scopes. Rebinding cannot produce these: it
+    // rewrites values under the original deck's URL prefix, and a document
+    // that swaps `app/gallery@1.0.0` for `app/gallery@1.1.0-try.c` has no
+    // scope covering the new prefix at all — so the substitute's own bare
+    // specifiers go unresolved and the trial renders nothing. Resolving them
+    // from what the substitute declares also covers the case where it
+    // depends on something the original never did.
+    scopes: Record<string, Record<string, string>>;
+  }
+
   async function overrideImports(
     url: URL,
     depot: DepotMount,
     current: Record<string, string> = {},
-  ): Promise<Record<string, string>> {
+  ): Promise<OverrideResolution> {
     let overrides = parseOverrides(url, depot);
     if (overrides.length === 0) {
-      return {};
+      return { imports: {}, scopes: {} };
     }
     let resolutions = await resolveDependencies({
       depotDir: depot.dir,
@@ -671,7 +709,23 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         }
       }
     }
-    return imports;
+    let scopes = Object.fromEntries(
+      (
+        await resolveScopes({
+          depotName: depot.name,
+          storeDir: depot.storeDir,
+          roots: resolutions,
+        })
+      ).map(({ scope, imports: table }) => [scope, table]),
+    );
+    // A version the caller NAMED beats one derived from what a substitute
+    // declares. `?with=app/gallery@1.0.0&with=ui/card@1.0.0` asks for two
+    // exact things; without this, the gallery's own scope re-resolves its
+    // `ui/card: ^1.0.0` range against the store and quietly reinstates
+    // whatever `latest` points at — so the trial disagrees with itself and
+    // renders the version the caller was trying to avoid. A range in a
+    // substitute is a question; the query string already answered it.
+    return { imports, scopes: rebindScopes(scopes, imports) };
   }
 
   async function readLiveBytes(
@@ -696,12 +750,20 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> {
+    let url = new URL(req.url ?? '/', 'http://localhost');
+    let pathname = decodeURIComponent(url.pathname);
+
+    // The read-only gate. This server answers GET and HEAD and nothing else,
+    // and that is not a limitation to work around — it is what makes an
+    // address a promise. Every change to what a depot holds goes through the
+    // CLI or the watcher, INCLUDING claims: `deck claim` writes the record
+    // and this server reads it, so presence arrives by the same road as
+    // everything else and there is no write endpoint to secure.
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       respondError(req, res, 405, 'method-not-allowed', `${req.method}`);
       return;
     }
-    let url = new URL(req.url ?? '/', 'http://localhost');
-    let pathname = decodeURIComponent(url.pathname);
+
     let search = url.search;
 
     // `/` is the store browser — unless the embedder mounted something there.
@@ -797,6 +859,18 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       return;
     }
 
+    // ── /_activity ────────────────────────────────────────────────────
+    //
+    // Two channels, never blended: `score`/`last` is what actually changed
+    // here (observed), `claims` is what an agent SAID it is working on
+    // (declared, with a TTL). A claim deliberately does not move the score —
+    // otherwise "how much work landed here" becomes something an agent can
+    // inflate by announcing itself.
+    if (ACTIVITY_PATH.test(pathname)) {
+      respondJson(req, res, await activity.report(url.searchParams), 'no-store');
+      return;
+    }
+
     if (PACKAGES_INDEX.test(pathname)) {
       let data = [];
       for (let depot of depots) {
@@ -834,9 +908,24 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               versions: Object.fromEntries(
                 Object.entries(meta?.versions ?? {}).map(([version, r]) => [
                   version,
-                  { treeHash: r.treeHash, ...(r.file ? { file: r.file } : {}) },
+                  {
+                    treeHash: r.treeHash,
+                    ...(r.file ? { file: r.file } : {}),
+                    // Two clocks, both optional, never folded into one field:
+                    // when this store took the version, and when the registry
+                    // published what it took. A client sorting by the wrong
+                    // one gets a defensible but different answer, so it has
+                    // to choose rather than be chosen for.
+                    ...(r.publishedAt ? { publishedAt: r.publishedAt } : {}),
+                    ...(r.upstreamPublishedAt
+                      ? { upstreamPublishedAt: r.upstreamPublishedAt }
+                      : {}),
+                  },
                 ]),
               ),
+              // `<registry>:<name>` when anything here was vendored. Says
+              // whether the times above have an upstream to be about.
+              upstream: meta?.upstream,
               distTags: meta?.tags ?? {},
             };
           }),
@@ -902,9 +991,24 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               versions: Object.fromEntries(
                 Object.entries(meta?.versions ?? {}).map(([version, r]) => [
                   version,
-                  { treeHash: r.treeHash, ...(r.file ? { file: r.file } : {}) },
+                  {
+                    treeHash: r.treeHash,
+                    ...(r.file ? { file: r.file } : {}),
+                    // Two clocks, both optional, never folded into one field:
+                    // when this store took the version, and when the registry
+                    // published what it took. A client sorting by the wrong
+                    // one gets a defensible but different answer, so it has
+                    // to choose rather than be chosen for.
+                    ...(r.publishedAt ? { publishedAt: r.publishedAt } : {}),
+                    ...(r.upstreamPublishedAt
+                      ? { upstreamPublishedAt: r.upstreamPublishedAt }
+                      : {}),
+                  },
                 ]),
               ),
+              // `<registry>:<name>` when anything here was vendored. Says
+              // whether the times above have an upstream to be about.
+              upstream: meta?.upstream,
               distTags: meta?.tags ?? {},
             },
           },
@@ -1212,7 +1316,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           res,
           404,
           'no-history',
-          `depot ${depot.name} has no history backend attached (tier 1: versions are the history)`,
+          `depot ${depot.name} has no Timeline — no history backend is attached, so its Versions are its history`,
         );
         return;
       }
@@ -1299,6 +1403,25 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         );
         return;
       }
+      // Live trees redirect a deck directory to its index.html. History must
+      // do the same: `/_history/<id>/app/form` without that hop is served as
+      // application/octet-stream (no extension), and the browser downloads a
+      // file named `form` instead of framing the page.
+      let leaf = rest.split('/').pop() ?? '';
+      if (!leaf.includes('.')) {
+        let index = `${rest}/index.html`;
+        if (isValidHistoryPath(index)) {
+          let indexBytes = await backend.fileAt(depot.dir, revision, index);
+          if (indexBytes !== undefined) {
+            respond(req, res, 302, {
+              location: `/${depot.name}/_history/${revision}/${index}${search}`,
+              'cache-control': IMMUTABLE_CACHE,
+              'access-control-allow-origin': '*',
+            });
+            return;
+          }
+        }
+      }
       let bytes = await backend.fileAt(depot.dir, revision, rest);
       if (bytes === undefined) {
         respondError(
@@ -1309,6 +1432,71 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           `${rest} is not in seal ${revision} of ${depot.name}`,
         );
         return;
+      }
+      // A STEP HAS TO BE RUNNABLE, OR IT IS ONLY READABLE.
+      //
+      // This served the bytes and injected nothing, so framing a page from
+      // three steps ago produced a document whose every import 404'd — a
+      // blank iframe, the exact failure this codebase spent a morning
+      // removing. Stepping back through a timeline is only a time dimension
+      // if the thing you step to still runs.
+      //
+      // The map comes from THAT step, not from the working tree, which is
+      // the more correct reading anyway: a page from three steps ago should
+      // resolve with the pins it had three steps ago. Taking today's pins
+      // would silently show you a hybrid that never existed.
+      let injected = false;
+      if (rest.endsWith('.html')) {
+        let segments = rest.split('/');
+        if (segments.length >= 3) {
+          let mapPath = `${segments[0]}/${segments[1]}/${IMPORT_MAP_PATH}`;
+          let mapBytes = await backend.fileAt(depot.dir, revision, mapPath);
+          if (mapBytes) {
+            try {
+              let parsed = JSON.parse(mapBytes.toString('utf8'));
+              // AND ITS LIVE PINS RESOLVE INSIDE THE STEP.
+              //
+              // `deck lock` writes a versionless target for a dependency
+              // declared `live` — `/hub/ui/nav/nav.js`. Left alone, a page
+              // from three steps ago would load its own old bytes wired to
+              // TODAY's dependencies: a hybrid that never ran, presented as
+              // history. Worse than not offering the step at all.
+              //
+              // A step is a whole-depot snapshot, so every live pin has a
+              // state inside it. Rewriting only the versionless targets is
+              // exact — an `@1.4.0` pin is immutable and already means the
+              // same bytes at any point on the timeline.
+              let intoStep = (target: string) =>
+                target.startsWith(`/${depot.name}/`) &&
+                !target.includes('@') &&
+                !target.startsWith(`/${depot.name}/_history/`)
+                  ? `/${depot.name}/_history/${revision}/${target.slice(
+                      depot.name.length + 2,
+                    )}`
+                  : target;
+              let atStep = (table: Record<string, string>) =>
+                Object.fromEntries(
+                  Object.entries(table ?? {}).map(([key, value]) => [
+                    key,
+                    intoStep(value),
+                  ]),
+                );
+              ({ bytes, injected } = injectImportMap(
+                bytes,
+                atStep(parsed.imports ?? {}),
+                Object.fromEntries(
+                  Object.entries(
+                    (parsed.scopes ?? {}) as Record<string, Record<string, string>>,
+                  ).map(([scope, table]) => [intoStep(scope), atStep(table)]),
+                ),
+              ));
+            } catch {
+              // A step whose import map does not parse is a step that was
+              // saved mid-edit. Serve the page as it was — unresolved and
+              // honest — rather than refusing to show it at all.
+            }
+          }
+        }
       }
       // A sealed state never changes — the same caching promise an exact
       // version gets, for a state that was never published at all.
@@ -1322,6 +1510,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           'repr-digest': reprDigest(bytes),
           'x-deck-seal': revision,
           'x-deck-depot': depot.name,
+          ...(injected ? { 'x-deck-importmap': 'injected' } : {}),
           'access-control-allow-origin': '*',
         },
         bytes,
@@ -1363,6 +1552,71 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     let rest = rawRest?.replace(/^\/+/, '').replace(/\/+$/, '') ?? '';
     if (rest !== '' && (!isValidTreePath(rest) || isHiddenPath(rest))) {
       respondError(req, res, 404, 'file-not-found', 'invalid path', 'no-store');
+      return;
+    }
+
+    // LIVE ?meta — same shape as a sealed package-meta, built by walking the
+    // working tree. Without this, "compare this -dev.N to live" could only
+    // shrug: the digests exist (tree-hash-v1), the UI just had no way to ask
+    // for them. no-store: the answer moves with every save.
+    if (url.searchParams.has('meta')) {
+      let segments = rest === '' ? [] : rest.split('/');
+      if (segments.length !== 2) {
+        respondError(
+          req,
+          res,
+          404,
+          'no-manifest',
+          'live ?meta is for a package root (publisher/package)',
+          'no-store',
+        );
+        return;
+      }
+      let [publisher, pkg] = segments;
+      let name = `${publisher}/${pkg}`;
+      let dir = join(depot.dir, publisher, pkg);
+      let info = await stat(dir).catch(() => undefined);
+      if (!info?.isDirectory()) {
+        respondError(
+          req,
+          res,
+          404,
+          'package-not-found',
+          `no live tree for ${depot.name}/${name}`,
+          'no-store',
+        );
+        return;
+      }
+      let hashed = await treeHashFromDir(dir);
+      respondJson(
+        req,
+        res,
+        {
+          data: {
+            type: 'package-meta',
+            id: `${depot.name}/${name}@live`,
+            attributes: {
+              depot: depot.name,
+              publisher,
+              name: pkg,
+              version: 'live',
+              treeHash: hashed.treeHash,
+              entry: null,
+              exports: {},
+              baseApi: null,
+              sealChangeId: null,
+              signatures: [],
+              files: hashed.entries.map((entry) => entry.path),
+              tree: hashed.entries.map((entry) => ({
+                path: entry.path,
+                sha256: entry.sha256,
+              })),
+            },
+          },
+        },
+        'no-store',
+        { 'x-deck-tree-hash': hashed.treeHash },
+      );
       return;
     }
     let found = rest === '' ? undefined : await readLiveBytes(depot, rest);
@@ -1407,12 +1661,12 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     let trying: string[] = [];
     if (found.path.endsWith('.html')) {
       let live = await liveImports(depot, found.path);
-      let overrides = await overrideImports(url, depot, live.imports);
-      trying = Object.keys(overrides).sort();
+      let override = await overrideImports(url, depot, live.imports);
+      trying = Object.keys(override.imports).sort();
       ({ bytes, injected } = injectImportMap(
         bytes,
-        { ...live.imports, ...overrides },
-        rebindScopes(live.scopes, overrides),
+        { ...live.imports, ...override.imports },
+        { ...rebindScopes(live.scopes, override.imports), ...override.scopes },
       ));
     }
     // The whole point: every save is visible on the next request.
@@ -1612,7 +1866,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               exports,
               baseApi: mapEntry?.baseApi ?? null,
               // Which seal this version was cut from, when the pack was
-              // sealed by a tier-2 watcher — the link from a published
+              // sealed by a watcher with a Timeline — the link from a published
               // version back into `/<depot>/_history/<changeId>`.
               sealChangeId: packlist.provenance?.sealChangeId ?? null,
               // L9/L10: who endorsed these BYTES. Public keys are not
@@ -1623,6 +1877,23 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
                 await readEnvelope(depot.storeDir, pack.treeHash),
               ),
               files: packlist.entries.map((entry) => entry.path),
+              // The same entries with their digests, which is what a
+              // COMPARISON needs and a path list cannot give. Two versions'
+              // path lists answer "added" and "removed"; only the digests
+              // answer "changed", and answering it any other way means
+              // walking the tree one directory per request or fetching two
+              // whole packs to look at their manifests.
+              //
+              // It is the packlist verbatim, so it costs nothing to produce
+              // and inherits the pack's own guarantee: identical sha256
+              // means identical bytes, which is how a fork that touched one
+              // file out of 375 can be shown to have touched one file out
+              // of 375 rather than asserted to have.
+              tree: packlist.entries.map((entry) => ({
+                path: entry.path,
+                size: entry.size,
+                sha256: entry.sha256,
+              })),
             },
           },
         },
@@ -1686,12 +1957,15 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       } catch {
         imports = {};
       }
-      let overrides = await overrideImports(url, depot, imports);
-      trying = Object.keys(overrides).sort();
+      let override = await overrideImports(url, depot, imports);
+      trying = Object.keys(override.imports).sort();
       // From the SAME seal — a sealed document and its map move together —
       // unless the caller is deliberately trying something else.
-      let resolved = { ...imports, ...overrides };
-      let resolvedScopes = rebindScopes(scopes, overrides);
+      let resolved = { ...imports, ...override.imports };
+      let resolvedScopes = {
+        ...rebindScopes(scopes, override.imports),
+        ...override.scopes,
+      };
       ({ bytes, injected } = injectImportMap(bytes, resolved, resolvedScopes));
       // The closure is advertised only for a SEALED document. A trial has
       // substituted dependencies, so its graph is not the one the seal
@@ -1743,7 +2017,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     );
   }
 
-  let server = createServer((req, res) => {
+  let onRequest = (req: IncomingMessage, res: ServerResponse) => {
     handle(req, res).catch((error: unknown) => {
       if (res.headersSent) {
         res.destroy();
@@ -1758,7 +2032,28 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         'no-store',
       );
     });
-  }) as DeckServer;
+  };
+
+  let tls = resolveTlsMaterials(options.tls);
+  let server = (
+    tls
+      ? createHttp2SecureServer(
+          {
+            cert: tls.cert,
+            key: tls.key,
+            // Browsers that cannot negotiate h2 still load the page.
+            allowHTTP1: true,
+          },
+          // Compat listener: Http2ServerRequest/Response satisfy the
+          // IncomingMessage/ServerResponse methods we actually call.
+          onRequest as unknown as (
+            req: Http2ServerRequest,
+            res: Http2ServerResponse,
+          ) => void,
+        )
+      : createServer(onRequest)
+  ) as DeckServer;
   server.liveBus = liveBus;
+  server.protocol = tls ? 'https' : 'http';
   return server;
 }

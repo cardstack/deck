@@ -8,7 +8,7 @@
 
 Status (updated 2026-08-07): this spec covers the FULL protocol. The
 **at-rest subset is BUILT AND TESTED** — stack L0–L5, branches
-`deck/01`–`deck/05`; current description in `deck-at-rest-protocol.md`.
+`deck/01`–`deck/05`; current description in `deck-at-rest.md`.
 **Deferred by Chris's at-rest descope ruling**: the migration gate
 (§2 steps 5–9), fleet migrations, security verbs (§6), the shim/AppDef
 manifest layer (§4a), capability tiers, promotion, catalog intake.
@@ -16,7 +16,7 @@ One built-time change supersedes the text below: **the package
 manifest is `importmap.json` (`boxel.packages[<name>]`), not a root
 `package.json`** — see `deck-multi-package-design.md`; multi-package
 realms with free file placement are supported.
-Companion docs: `deck-publishing-skill.md` (the AI playbook), `deck-software-lifecycle.md` (the lifecycle narrative), `deck-at-rest-protocol.md` (what is built).
+Companion docs: `deck-publishing-skill.md` (the AI playbook), `deck-software-lifecycle.md` (the lifecycle narrative), `deck-at-rest.md` (what is built).
 Repository of record for decisions: `ctse/bpm-architecture` realm on realms-staging.
 
 ## 0. Scope and stance

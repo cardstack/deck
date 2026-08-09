@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
+import type { DeckServer } from '../src/server.ts';
 import { peekPacklist } from '@deck/core/pack';
 import { readStoreMeta, readStoredPack } from '@deck/core/store';
 import type {
@@ -84,7 +84,7 @@ class StubHistory implements HistoryBackend {
 module('history routes: serving states that were never published', function (
   hooks,
 ) {
-  let server: Server;
+  let server: DeckServer;
   let origin: string;
   let storeDir: string;
 
@@ -208,7 +208,7 @@ module('history routes: serving states that were never published', function (
     );
   });
 
-  test('the capability block tells a client which tier it is talking to', async function (assert) {
+  test('the capability block tells a client what history it is talking to', async function (assert) {
     let body = await (await fetch(`${origin}/_packages`)).json();
     assert.deepEqual(body.meta.history, {
       tier: 2,
@@ -222,7 +222,7 @@ module('history routes: serving states that were never published', function (
 });
 
 module('history routes: a server without a backend', function (hooks) {
-  let server: Server;
+  let server: DeckServer;
   let origin: string;
   let storeDir: string;
 
@@ -242,12 +242,15 @@ module('history routes: a server without a backend', function (hooks) {
     await rm(storeDir, { recursive: true, force: true });
   });
 
-  test('tier 1 says so plainly rather than pretending to have seals', async function (assert) {
+  test('a depot with no Timeline says so plainly rather than pretending to have one', async function (assert) {
     let response = await fetch(`${origin}/demo/_history`);
     assert.strictEqual(response.status, 404);
     let error = (await response.json()).errors[0];
     assert.strictEqual(error.code, 'no-history');
-    assert.true(/tier 1/.test(error.detail), error.detail);
+    // The wording is the vocabulary ruling's: a depot has a Timeline, or it
+    // has Versions only. Never "tier".
+    assert.true(/no Timeline/.test(error.detail), error.detail);
+    assert.false(/tier/i.test(error.detail), error.detail);
 
     let body = await (await fetch(`${origin}/_packages`)).json();
     assert.strictEqual(body.meta.history.tier, 1);
@@ -257,7 +260,7 @@ module('history routes: a server without a backend', function (hooks) {
 });
 
 // The real integration: watcher + jj + server. Skipped without a jj, exactly
-// as tier 2 itself degrades.
+// as the Timeline itself degrades.
 let version = await jjVersion();
 
 if (!version) {
@@ -272,7 +275,7 @@ if (!version) {
     let depotDir: string;
     let deckDir: string;
     let storeDir: string;
-    let server: Server;
+    let server: DeckServer;
     let origin: string;
     let history: JjCliHistory;
     let controller: DepotWatchController;

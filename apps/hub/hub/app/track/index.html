@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>track — Deck Hub</title>
+
+    <!--
+      The typeface is a deck. `/hub/type/commit-mono@5.3.0/` is an ordinary
+      address in an ordinary depot, pinned to an exact version, served from
+      this machine. Not Google Fonts, not a CDN: L6 says a sealed deck reaches
+      nothing at runtime, and a webfont request is a third party learning
+      every reader's IP and holding the power to change the bytes.
+
+      The deck declares NO ENTRY, because nothing imports a woff2. It is
+      addressable and deliberately not importable — the same shape the
+      ProseMirror `src/` decks have, for the same reason.
+    -->
+    <link rel="stylesheet" href="/hub/type/commit-mono@5.3.0/font.css" />
+
+    <!--
+      TERMINAL LOOK, NOT TERMINAL EMULATION.
+      ══════════════════════════════════════
+      The Hub looks like a terminal because of what it is, not as a theme. Its
+      write channel in v1 is a copyable CLI command, its addresses are paths,
+      its content is source, and its whole argument is that the bytes you read
+      are the bytes that run.
+
+      It borrows the two things that actually make a terminal legible:
+
+        THE GRID     every measurement is in `ch` and whole rows. Columns line
+                     up down the page because they sit on one lattice, which
+                     is why `ls` reads well and a web table usually does not.
+        THE PALETTE  colour means something or is not used. Green added, red
+                     removed, amber moving, and neutral grey for everything
+                     else — including all body text.
+
+      And none of the costume: no blinking cursor, no fake prompt that accepts
+      no input, no typing animation, no ASCII art, no scanlines. Anything that
+      looks interactive IS interactive. A tool whose whole value is not lying
+      should not open by lying about being a shell.
+
+      FROM commitmono.com, whose restraint is the point:
+        · sections are NUMBERED and the current one is inverse, which is what
+          makes 1–4 a navigation model instead of an undiscoverable shortcut
+        · almost no rules and no boxes — structure comes from alignment
+        · keys are shown as keycaps, in a legend that stays on screen
+        · one typeface at one size doing every job
+
+      Where the web is simply better, the web wins: filtering 374 files as you
+      type, a header that stays put while you scroll, a path that hyperlinks
+      to the bytes it names. Those are real needs here, so they are built
+      rather than refused for looking insufficiently `ls`-like.
+
+      ROUGH BUILD otherwise — the information is right, the layout is not
+      designed yet.
+    -->
+    <link rel="stylesheet" href="/hub/ui/theme/theme.css" />
+  </head>
+  <body>
+    <deck-nav app="track"></deck-nav>
+    <deck-subject></deck-subject>
+    <div id="app" class="dim">loading…</div>
+    <deck-keys></deck-keys>
+    <script type="module" src="/_live/hmr.js"></script>
+    <script type="module" src="./track.js"></script>
+  </body>
+</html>

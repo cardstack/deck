@@ -74,6 +74,26 @@ export interface StoreVersionRecord {
   // the store-wide object and tree directories, and the pack is rebuilt on
   // demand. Both shapes are read; only the second is written.
   file?: string;
+  // WHEN, so a list of versions can be a timeline.
+  //
+  // Two different instants, and conflating them would be the bug. `publishedAt`
+  // is when this version entered THIS store — the local event, true of every
+  // version however it got here. `upstreamPublishedAt` is when the registry
+  // published the thing we vendored, which is the only one of the two that
+  // says anything about the software itself: three.js r150 was published by
+  // npm long before anyone here vendored it, and a list sorted by our clock
+  // would put a two-year-old library above one released last week purely
+  // because of the order someone happened to run the commands in.
+  //
+  // Both are recorded because both get asked for. "What did we take on, and
+  // when" is upstream; "what changed on this machine" is local.
+  //
+  // Absent means unknown, and stays absent: a record written before this
+  // field existed has no honest time to backfill, and inventing one — the
+  // file's mtime, the moment it was first read — would make an at-rest store
+  // report a different history depending on when you asked it.
+  publishedAt?: string;
+  upstreamPublishedAt?: string;
 }
 
 export interface StoreMeta {
@@ -246,12 +266,34 @@ function assertManifestAgreement(
 // This is a backstop, deliberately. It is the last line rather than the
 // answer, because it can only refuse at the moment of collision — the name
 // derivation is where the information was lost.
-function upstreamOf(packBytes: Buffer, name: string): string | undefined {
+//
+// The pack is also where the upstream's own publish time is, recorded at
+// vendor time by the cooldown check. Reading it here rather than passing it
+// down means it cannot drift from the provenance it came with: one pack, one
+// answer, and a re-publish of the same bytes reports the same instant.
+function upstreamOf(
+  packBytes: Buffer,
+  name: string,
+): { coordinate: string; publishedAt?: string } | undefined {
   let entry = packagesFromPack(packBytes)?.[mapKeyFor(name)] as
-    | { vendoredFrom?: { registry?: string; name?: string } }
+    | {
+        vendoredFrom?: {
+          registry?: string;
+          name?: string;
+          publishedAt?: string;
+        };
+      }
     | undefined;
   let from = entry?.vendoredFrom;
-  return from?.name ? `${from.registry ?? 'npm'}:${from.name}` : undefined;
+  if (!from?.name) {
+    return undefined;
+  }
+  return {
+    coordinate: `${from.registry ?? 'npm'}:${from.name}`,
+    ...(typeof from.publishedAt === 'string'
+      ? { publishedAt: from.publishedAt }
+      : {}),
+  };
 }
 
 function assertUpstreamAgreement(
@@ -276,7 +318,9 @@ export async function publishToStore(
   name: string,
   version: string,
   packBytes: Buffer,
-  options: { tag?: string } = {},
+  // `now` is injectable so a test can publish a known history rather than
+  // whatever the clock said while it ran.
+  options: { tag?: string; now?: Date } = {},
 ): Promise<StoreVersionRecord> {
   if (!isValidPackageName(name)) {
     throw new Error(`invalid package name: ${JSON.stringify(name)}`);
@@ -300,21 +344,29 @@ export async function publishToStore(
     throw new Error(`version already published: ${name}@${version}`);
   }
   let upstream = upstreamOf(packBytes, name);
-  assertUpstreamAgreement(meta, name, version, upstream);
+  assertUpstreamAgreement(meta, name, version, upstream?.coordinate);
   // Content-addressed per file, store-wide: only the objects this tree
   // introduces are written, so a one-file edit costs one object and a
   // re-publish of already-stored content costs nothing.
   await mkdir(packageDir(storeDir, name), { recursive: true });
   await storePack(storeDir, packBytes);
-  meta.versions[version] = { treeHash, storage: 'blobs-v1' };
+  let record: StoreVersionRecord = {
+    treeHash,
+    storage: 'blobs-v1',
+    publishedAt: (options.now ?? new Date()).toISOString(),
+    ...(upstream?.publishedAt
+      ? { upstreamPublishedAt: upstream.publishedAt }
+      : {}),
+  };
+  meta.versions[version] = record;
   if (upstream) {
-    meta.upstream = upstream;
+    meta.upstream = upstream.coordinate;
   }
   if (tag) {
     meta.tags[tag] = version;
   }
   await writeStoreMeta(storeDir, meta);
-  return { treeHash };
+  return record;
 }
 
 // THE no-copies version update: name an EXISTING sealed state (found via a
@@ -326,7 +378,7 @@ export async function releaseVersion(
   name: string,
   version: string,
   from: { tag?: string; version?: string },
-  options: { tag?: string } = {},
+  options: { tag?: string; now?: Date } = {},
 ): Promise<StoreVersionRecord> {
   if (semver.valid(version) !== version) {
     throw new Error(`not an exact canonical semver version: ${version}`);
@@ -365,12 +417,20 @@ export async function releaseVersion(
     );
   }
   assertManifestAgreement(name, version, packBytes);
-  meta.versions[version] = { ...record };
+  // The content is the source's; the RELEASE is a new event. `publishedAt` is
+  // now — someone decided, today, that these bytes are 1.2.0 — while
+  // `upstreamPublishedAt` is carried across unchanged, because the upstream
+  // did not publish anything and saying it did would be a fabrication.
+  let released: StoreVersionRecord = {
+    ...record,
+    publishedAt: (options.now ?? new Date()).toISOString(),
+  };
+  meta.versions[version] = released;
   if (tag) {
     meta.tags[tag] = version;
   }
   await writeStoreMeta(storeDir, meta);
-  return { ...record };
+  return { ...released };
 }
 
 export async function setDistTag(
@@ -690,7 +750,17 @@ export async function migrateStore(
         });
         continue;
       }
-      meta.versions[version] = { treeHash: record.treeHash, storage: 'blobs-v1' };
+      // Rebuild the record rather than spreading, so a legacy `file` is
+      // genuinely dropped — but carry the times, which are facts about the
+      // release and not about how its bytes happen to be stored.
+      meta.versions[version] = {
+        treeHash: record.treeHash,
+        storage: 'blobs-v1',
+        ...(record.publishedAt ? { publishedAt: record.publishedAt } : {}),
+        ...(record.upstreamPublishedAt
+          ? { upstreamPublishedAt: record.upstreamPublishedAt }
+          : {}),
+      };
       changed = true;
       result.migrated.push({ name: meta.name, version, treeHash: record.treeHash });
       if (removeArchives) {

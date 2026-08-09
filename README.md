@@ -1,17 +1,41 @@
 # Deck
 
+**Deck is version management without the commit, package management
+without the install, and delivery without the deploy.**
+
+One thing makes all three true: there is only one kind of object here — a
+file, named by the hash of its own bytes, reachable at a URL. A tree is a
+list of those names. A Version, a Step, a dependency, a fork and a release
+are all pointers to trees. Commit, install and deploy all do the same job:
+they move a copy to a second place that names things differently. Here
+there is no second place.
+
+| | |
+| --- | --- |
+| A commit, a save, a snapshot are just | the hash of the tree, taken when you stopped typing. |
+| A version, a tag, a release, a staging environment are just | pointers to one of those hashes. Moving a pointer copies nothing. |
+| An import, an install, a lockfile, `node_modules` are just | an address in an import map, written into a file you can read. |
+| A branch, a fork, a pull request are just | the same package under your own publisher, with the tree you started from recorded. That record is the whole difference between a copy and a proposal. |
+| A code review, a preview environment are just | the page loaded with `?with=` pointing somewhere else, for one request. |
+| A merge is just | three trees: yours, theirs, and the one you both started from. |
+| A revert, a rollback, a checkout are just | reading a different address. Nothing on disk changes. |
+| A build, a bundle, a deploy, a CDN are just | absent — except the bundle, which is another version derived from the first, at its own address. |
+
+None of those is really a mechanism. They exist because three systems each
+keep their own address space, and something has to translate between them.
+With one address space, committing, installing and deploying are not three
+things you do to code — they are three names for pointing at it.
+
 ```bash
-npx deck hello        # (from this repo: node packages/cli/bin/deck.js hello)
+node packages/cli/bin/deck.js hello
 ```
 
 That scaffolds a working app, serves it live, and prints the URL. Edit
 a file, reload, see it. That is the whole loop.
 
-**No npm. No GitHub. No deploy. No PR.** Instant feedback. Ship any
-version, share any milestone, revert anytime, use any ESM library from
-the web, keep the whole web platform, never lose work, reuse and
-combine what you built before, and fork an experiment with no
-consequences.
+Nothing here is published to npm yet, and **`npx deck` is somebody else's
+package** — install from this repo. [INSTALL.md](INSTALL.md) covers the
+three ways; [CLI.md](CLI.md) is the CLI's own readme.
 
 ## The layout is the address
 
@@ -89,7 +113,7 @@ How each promise is kept:
 | never lose work | every settled save auto-publishes an immutable version, and every save is sealed |
 | revert anytime | `deck restore <depot> <changeId>` — replayed forward, never rewinding |
 | ship any version | `deck release … --from dev` — names a sealed state, copies nothing |
-| share any milestone | `deck pack <deck>` → one `.pack.zip` any zip tool opens |
+| share any milestone | `deck pack <deck>` → one Deck Pack (`.pack.zip`) any zip tool opens |
 | use any library | `deck vendor https://esm.sh/three@0.160.0 …` — pulled in for good, hermetic |
 | fork freely | `deck fork` — your own publisher scope; theirs is untouched |
 | stability where you need it | `deck lock` — ranges in the tree, exact pins in the map |
@@ -203,18 +227,37 @@ pnpm demo
 # open http://localhost:8789/
 ```
 
-[`examples/hub`](examples/hub/) starts every example at once — each in its own
-process, its own depot, its own store — and serves one console: the Deckbook,
-and for each demo its explanation, its live app, and the transcript it actually
-printed while building its store. See [examples/](examples/) to run one on its
-own.
+[`examples/hub`](examples/hub/) starts all seven examples at once — each in its
+own process, its own depot, its own store — and serves one console: the
+Deckbook, and for each demo its explanation, its live app, and the transcript
+it actually printed while building its store. See [examples/](examples/) to run
+one on its own.
+
+Two of them are about the act of writing software with agents rather than about
+a kind of software: [two-agents](examples/two-agents/) — concurrent editing, a
+clean merge, and a conflict resolved deterministically from a published policy —
+and [variations](examples/variations/) — three agent answers at three layers,
+one promoted, two kept.
+
+## The CLI
+
+[INSTALL.md](INSTALL.md) — prerequisites, three ways to install it, and how
+to verify the install actually works.
+
+[CLI.md](CLI.md) — the CLI's readme: the eight command groups, the loop you
+will actually run, and what each refusal is protecting.
+
+`deck help` prints the command map; `deck help <command>` explains any one
+of them in full.
 
 ## Deckbook
 
 Open [deckbook.html](deckbook.html) (or `http://localhost:<port>/deckbook.html`
 on a running server) for a teaching tour of the protocol against what this
 reference implementation actually runs — vocabulary, address space, live loop,
-store/packs, history tiers, vendor, fork/lock/offers, HTTP + CLI maps, and use cases.
+store/packs, Versions and the Timeline, vendor, fork/lock/offers, HTTP + CLI
+maps, four
+use cases worked end to end at the command line, and honest status.
 
 ## Documents
 
@@ -224,8 +267,21 @@ Design set in [docs/](docs/) — start with:
   each one checkable, each one checked by `deck conform`. Everything else
   here is commentary, design history, or a record of how something was
   measured. An implementation implements Deck by passing the suite.
-- [deck-at-rest-protocol.md](docs/deck-at-rest-protocol.md) — the
-  protocol: state model, endpoints, serving rules, vocabulary.
+- [deck-at-rest.md](docs/deck-at-rest.md) — what a depot looks like on
+  disk: layout, store, addresses, and what the Timeline adds. The earlier
+  ratified version is kept unedited at
+  [reference/at-rest-protocol-v2.md](reference/at-rest-protocol-v2.md).
+- [deck-in-motion.md](docs/deck-in-motion.md) — the other half: offers,
+  claims, notes, signing and testing, each labelled by how finished it is.
+  The at-rest half is settled; this one is not, and the file says which
+  parts are which.
+- [deck-testing.md](docs/deck-testing.md) — a test suite is a deck, a run
+  is one suite Version against one tree hash, you run it locally, and the
+  result is a statement signed by a person. Designed, not built.
+- [deck-step-version-vocabulary.md](docs/deck-step-version-vocabulary.md)
+  — Version, Step and Timeline, and the words they replaced.
+- [deck-hub-typography.md](docs/deck-hub-typography.md) — the type
+  system for the documentation pages.
 - [deck-cas-v2-spec.md](docs/deck-cas-v2-spec.md) — next CAS work:
   blob store (pack as transport), verified dependency links, and
   signatures on treeHash.
@@ -245,6 +301,16 @@ Design set in [docs/](docs/) — start with:
 - [deck-depot-and-realm-backport.md](docs/deck-depot-and-realm-backport.md)
   — standalone Deck says **depot** (a place), not realm; publishers sit
   inside; Boxel realm is placement-free and may become deck-enabled.
+- [deck-land-hostnames.md](docs/deck-land-hostnames.md) — **`deck.land`**
+  map: apex / `local` / **`cloud`** (hosted sync server) / `cdn`; hub is
+  the app, not a hostname.
+- [deck-activity-protocol.md](docs/deck-activity-protocol.md) — **proposed.**
+  **`GET /_activity`** replaces `/_heat`: one agent-activity door (EWMA
+  trie + optional `story=1` run/code/commentary) for gutters and the
+  watch canvas. ([old heat note](docs/deck-heat-protocol.md) points here.)
+- [deck-step-version-vocabulary.md](docs/deck-step-version-vocabulary.md)
+  — **ruled.** UI: **Version** / **Step** / **Timeline**; imports:
+  **Import** / **Pin** / **Entry** / **Leaf** / **Closure**.
 - [deck-pack-equivalence.md](docs/deck-pack-equivalence.md) — deck ⇄
   pack: four homes, treeHash identity, carriage modes, round-trip
   laws, `!/` mounts, canonical-zip-v1. All opens ruled.
@@ -271,8 +337,10 @@ Design set in [docs/](docs/) — start with:
   the Boxel realm server and CLI already built, and classified by who
   supplies each answer: backport, federation, protocol, or operations.
 - [deck-cardpack-requirements.md](docs/deck-cardpack-requirements.md)
-  — requirements recovered from the cardpack v0.2 implementation
-  (preserved verbatim in [reference/cardpack-v0.2](reference/cardpack-v0.2)).
+  — requirements recovered from the v0.2 implementation of what is now
+  called a **Deck Pack** (preserved verbatim in
+  [reference/cardpack-v0.2](reference/cardpack-v0.2)). `cardpack` is the
+  v0.2 name; the file form has been `.pack.zip` since v0.3.
 - [deck-unpkg-comparison.md](docs/deck-unpkg-comparison.md) and
   [deck-esmsh-comparison.md](docs/deck-esmsh-comparison.md) —
   production lessons from unpkg and esm.sh, and what was adopted.
@@ -283,8 +351,10 @@ multi-package design, and the GitHub mirror analysis.
 
 ## Status
 
-**The reference implementation is built and tested** — 151 tests green
-(69 core, 19 history, 55 server, 8 CLI), lint and typecheck clean.
+**The reference implementation is built and tested** — 297 tests green
+(185 core, 19 history, 76 server, 4 conformance, 13 CLI), lint and
+typecheck clean, and `deck conform` reports 49 passed / 0 failed / 3 not
+applicable.
 
 - **`packages/core`** — `tree-hash-v1` (shasum-compatible manifest,
   UTF-8 byte-order sort), `canonical-zip-v1` (hand-rolled
@@ -297,23 +367,31 @@ multi-package design, and the GitHub mirror analysis.
   **three-way merge** (line-level for text, key-level for JSON), and
   **offers** — a fork with a recorded base, planned and rebased as a pure
   function.
-- **`packages/history`** — tier-2 seals behind one contract, with two
+- **`packages/history`** — the Timeline behind one contract, with two
   backends: the jj CLI and historyd (jj-lib over localhost HTTP,
   ~5-6x faster per call). A missing jj or a dead daemon degrades to
-  tier 1 with a printed reason. Restores replay forward as ordinary
+  Versions only, with a printed reason. Restores replay forward as ordinary
   writes, so history only ever grows.
 - **`packages/server`** — read-only zero-framework serving of depots:
   version-less = the working tree (`no-store`); exact = immutable +
   Content-Digest; range/tag = one 302 hop; bare/alias = 301; `?meta`
   (including which seal a version was cut from); `?format=pack`;
   `!/` mounts; `/<depot>/_history/<changeId>/<path>`; import-map
-  injection for HTML; coded JSON errors with two negative-cache
-  tiers; HEAD; writes refused. Plus `/_packages`, `/_browse`,
+  injection for HTML; coded JSON errors, negative-cached by how
+  permanent the miss is; HEAD; writes refused. Plus `/_packages`, `/_browse`,
   `/<depot>/_offers`, the `?with=` trial override, the **rebase daemon**,
   and an SSE change bus at `/_live/events` with a drop-in HMR client.
-- **`packages/cli`** — `deck hello | hash | pack | unpack | list |
-  verify | publish | tag | release | lock | fork | vendor | prune |
-  history | restore | offers | rebase | serve`.
+- **`packages/cli`** — 27 commands in eight groups, one module per group
+  (see [CLI.md](CLI.md)): **start** `hello serve` · **seal** `hash pack
+  unpack list verify` · **publish** `publish tag release prune store derive
+  verify-derivation` · **depend** `vendor vendor-tree lock verify-links` ·
+  **propose** `fork offers rebase` · **endorse** `keygen sign verify-sig` ·
+  **recall** `history restore` · **prove** `conform`. Each command carries
+  its own usage and explanation, and every help screen is rendered from the
+  same records the dispatcher looks up.
+- **`packages/conformance`** — the executable contract: the twelve laws as
+  checks that run, against the reference server or against any
+  implementation black-box over HTTP.
 
 Run everything: `pnpm install && pnpm test && pnpm lint`.
 

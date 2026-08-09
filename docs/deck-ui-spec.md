@@ -188,8 +188,8 @@ nothing points at them; adopting copies nothing. *(all four)*
 **R8 — Live means live.** The UI updates without refresh when the filesystem
 changes; sealed views never change under the user. *(W1 primary)*
 
-**R9 — Degraded capability is stated, never faked.** No jj → say tier 1 and
-how to get tier 2; a backend that cannot enumerate → say so, never show an
+**R9 — Degraded capability is stated, never faked.** No jj → say Versions
+only and how to get a Timeline; a backend that cannot enumerate → say so, never show an
 empty tree. *(all four)*
 
 **R10 — Data decks are first-class, not code decks with JSON in them.** A
@@ -602,7 +602,7 @@ design that is secretly single-workload.
 6. **The share test (all).** Can any state on screen be handed to a colleague
    as a URL that reproduces it?
 7. **The honesty test (all).** Does a release say it copied nothing? Does a
-   restore say it is undoable? Does a missing jj say tier 1 rather than showing
+   restore say it is undoable? Does a missing jj say Versions only rather than showing
    an empty history?
 
 A design that passes 1–4 is serving all four workloads. 5–7 are the protocol's

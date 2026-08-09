@@ -1,0 +1,9 @@
+{
+  "kind": "update",
+  "actor": "vale",
+  "at": "2026-08-09T06:22:37.373Z",
+  "about": {
+    "at": "vale/sale"
+  },
+  "text": "Sample sale landing is live under vale/sale — type + ui decks vendored, no release milestones."
+}

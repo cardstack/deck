@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Deck protocol CLI: hash, pack, unpack, verify, publish, tag, serve",
+  "description": "Deck protocol CLI: start, seal, publish, depend, propose, endorse, recall, prove",
   "bin": {
     "deck": "./bin/deck.js"
   },

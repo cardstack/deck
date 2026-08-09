@@ -1,0 +1,17 @@
+{
+  "imports": {
+    "std/tokens/": "/site/std/tokens@1.0.0/",
+    "std/tokens": "/site/std/tokens@1.0.0/index.js"
+  },
+  "deck": {
+    "packages": {
+      "card": {
+        "version": "1.0.0",
+        "entry": "$DECK/card.js"
+      }
+    },
+    "dependencies": {
+      "std/tokens": "^1.0.0"
+    }
+  }
+}

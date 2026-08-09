@@ -292,10 +292,16 @@ export async function resolveScopes(options: {
     let scope = `/${depotName}/${job.deck}@${job.version}/`;
     for (let [specifier, declared] of Object.entries(dependencies)) {
       let { target, spec } = parseDependencyValue(declared);
-      if (!target) {
-        continue; // a range against itself; nothing to scope
-      }
-      let child = parseKey(target, depotName);
+      // Without an alias the KEY is the deck name — the same default
+      // `resolveDependencies` applies one function up. Treating an
+      // un-aliased dependency as "nothing to scope" was wrong, and quietly
+      // so: a deck that depends on another deck by its own name
+      // (`"std/tokens": "^1.0.0"`, the ordinary spelling) got no scope at
+      // all, so its bare specifiers went unresolved in the browser on every
+      // page that imported it indirectly. Only the aliased shape — a
+      // vendored library — happened to work, which is why the demos that
+      // vendor found nothing wrong.
+      let child = parseKey(target ?? specifier, depotName);
       if (!child) {
         continue;
       }

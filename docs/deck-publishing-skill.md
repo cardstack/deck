@@ -8,7 +8,7 @@
 
 Status (updated 2026-08-07): the at-rest endpoints this skill uses
 (publish, dist-tags, versioned serving) are BUILT — see
-`deck-at-rest-protocol.md`. The migration steps (3, 5, 7) describe
+`deck-at-rest.md`. The migration steps (3, 5, 7) describe
 DEFERRED gate features; today a breaking publish is not blocked, so
 the honesty rules below carry the full weight. As built, the
 manifest is `importmap.json` (`boxel.packages[<name>].version`), not

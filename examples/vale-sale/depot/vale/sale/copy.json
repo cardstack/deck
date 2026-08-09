@@ -1,0 +1,12 @@
+{
+  "brand": "VALE",
+  "event": "Sample Sale",
+  "hours": {
+    "sat": "11–7",
+    "sun": "12–5"
+  },
+  "address": "418 Binder Street · 3rd floor",
+  "buzz": "VALE",
+  "policy": "final sale",
+  "sizes": "sample 4–8"
+}

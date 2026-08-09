@@ -1,0 +1,12 @@
+{
+  "name": "@deck/example-variations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "demo": "node demo.mjs" },
+  "dependencies": {
+    "@deck/core": "workspace:*",
+    "@deck/history": "workspace:*",
+    "@deck/server": "workspace:*"
+  }
+}

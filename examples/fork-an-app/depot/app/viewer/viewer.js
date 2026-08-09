@@ -5,7 +5,7 @@
 // treats them as two unrelated modules — because they are. Two decks, two
 // treeHashes, no collision.
 
-import { installPillStyles, legend, pill } from 'ui/pills';
+import { installPillStyles, pill } from 'ui/pills';
 
 const build = await (await fetch('./build.json')).json();
 
@@ -15,7 +15,8 @@ installPillStyles();
 // Reduce it to the thing a person recognises: org/repo.
 const repoId = (url) =>
   (url ?? '').replace(/^.*github\.com[:/]/, '').replace(/\.git$/, '') || null;
-const { depot, entry, changed, modules, store, upstream, fork, provenance } = build;
+const { depot, entry, changed, modules, store, upstream, fork, provenance, topojson, atlas } =
+  build;
 
 const urlFor = (side) => `/${depot}/${side.deck}@${side.version}/${entry}`;
 const cssFor = (side) => `/${depot}/${side.deck}@${side.version}/dist/leaflet.css`;
@@ -29,38 +30,68 @@ for (let side of [upstream, fork]) {
   document.head.append(link);
 }
 
+// The data and the converter, from this depot. `feature()` turns TopoJSON
+// into the GeoJSON Leaflet understands; the atlas deck's own loader fetches
+// the bytes. Both are exact-version URLs, so both are immutable.
+const { feature } = await import(
+  `/${depot}/${topojson.deck}@${topojson.version}/src/index.js`
+);
+const { countries } = await import(
+  `/${depot}/${atlas.deck}@${atlas.version}/index.js`
+);
+const topology = await countries();
+const all = feature(topology, topology.objects.countries);
+
+// Web Mercator has a seam at ±180°, and a polygon whose ring crosses it is
+// drawn as a slab spanning the whole map. Splitting rings at the antimeridian
+// is real cartography and none of Deck's business, so the handful of features
+// that wrap are dropped and the page says so. `filter` is not a style — the
+// claim that upstream and the fork differ only by Path.js survives it.
+const spans = (coords, seen = []) => {
+  if (typeof coords[0] === 'number') {
+    seen.push(coords[0]);
+  } else {
+    for (let part of coords) spans(part, seen);
+  }
+  return seen;
+};
+const wraps = (f) => {
+  let lons = spans(f.geometry.coordinates);
+  return Math.max(...lons) - Math.min(...lons) > 180;
+};
+const dropped = all.features.filter(wraps).map((f) => f.properties?.name ?? '?');
+const world = { ...all, features: all.features.filter((f) => !wraps(f)) };
+
+// Leaflet reads the container's size once, at `L.map()`, and sizes its SVG
+// viewBox from it. Two things here can make that size wrong: the page's own
+// stylesheet is injected below (so `.map { height: 19rem }` may not have
+// applied yet), and this page is embedded in a resizable frame by the demo
+// hub. Getting it wrong is silent — the map builds, the controls render, and
+// the vector layers land in a 0×0 viewBox. So each map watches its own box
+// and re-measures.
 let app = document.querySelector('#app');
 app.classList.remove('loading');
 app.innerHTML = `
   <header>
+    <div class="crumb">deck · example · W3</div>
     <h1>Take all of it. Change the one thing you disagree with.</h1>
-    <p class="lede">
-      Leaflet publishes real per-file ESM, so vendoring it keeps the module
-      boundary intact — and “change one file” means changing one file, not
-      patching a bundle or maintaining a downstream build. Below is
-      <strong>upstream</strong> and <strong>a fork that differs by exactly
-      one file</strong>, running side by side in one document.
-      <br />
-      Look at the zoom controls.
-    </p>
-    <div class="namekey">
-      ${legend()}
-      <p class="namenote">
-        This page names the same library three ways, and they mean different
-        things. ${pill('npm', `${provenance.name}@${provenance.version}`)} is the
-        artifact that was fetched and hashed;
-        ${repoId(provenance.repo) ? `${pill('github', repoId(provenance.repo))} is where the code is written;` : ''}
-        ${pill('deck', `lib/leaflet@${upstream.version}`)} is where this depot
-        serves it from. “85 modules” is a fact about the first; “2 objects” is
-        a fact about the third.
-      </p>
-    </div>
+    <p class="lede">Look at Greenland, then at Africa.</p>
   </header>
 
   <section class="maps">
     ${[
-      { side: upstream, kind: 'upstream', title: 'as published', sub: 'vendored from npm, unmodified' },
-      { side: fork, kind: 'fork', title: 'my fork', sub: `changed ${changed}` },
+      {
+        side: upstream,
+        kind: 'upstream',
+        title: 'as published — Web Mercator',
+        sub: 'vendored from npm, unmodified',
+      },
+      {
+        side: fork,
+        kind: 'fork',
+        title: 'my fork — Gall–Peters',
+        sub: `changed ${changed.length} files — projection, palette, chrome`,
+      },
     ]
       .map(
         ({ side, kind, title, sub }) => `
@@ -72,6 +103,11 @@ app.innerHTML = `
         <h2>${title}</h2>
         <p class="sub"><code>${sub}</code></p>
         <div class="map" id="map-${kind}"></div>
+        <p class="cost">${
+          kind === 'fork'
+            ? `<b>${store.forkCost} objects</b> out of ${modules} modules — the ${changed.length} files it edited, plus the manifest that records where it came from`
+            : `<b>${modules} modules</b> vendored from npm source, unmodified`
+        }</p>
         <p class="hash" title="tree-hash-v1">${side.hash.slice(0, 32)}…</p>
       </article>`,
       )
@@ -80,25 +116,29 @@ app.innerHTML = `
 
   <section class="facts">
     <div class="fact">
-      <b>${store.objects}</b>
-      <span>objects in the store for two ${modules}-module packages.
-      Two full copies would be ${store.wouldBe}. The fork cost
-      <strong>${store.objects - modules}</strong> —
-      the other ${modules - 1} are the same bytes, so they are stored once.</span>
+      <b>${store.shared}</b>
+      <span>of ${modules} files are byte-identical between the two, so they are
+      stored once. The whole store is ${store.objects} objects for four decks.</span>
     </div>
     <div class="fact">
       <b>0</b>
-      <span>requests to the live web. No tile server: both maps draw vector
-      layers, and even the stylesheet is served from the deck. A deck that
-      would need a CDN at runtime is not sealed, and Deck refuses to seal
-      it (L6).</span>
+      <span>requests to the live web. Every country is an SVG path drawn from
+      ${(atlas.bytes / 1024).toFixed(0)} KB of TopoJSON in
+      ${pill('deck', `${atlas.deck}@${atlas.version}`)}, converted by
+      ${pill('deck', `${topojson.deck}@${topojson.version}`)}. Even the
+      stylesheet is served from the deck (L6).
+      <br /><small>${dropped.length} feature${dropped.length === 1 ? '' : 's'} that
+      cross the antimeridian are filtered out (${dropped.join(', ')}) — a
+      Mercator seam, not a Deck one.</small></span>
     </div>
     <div class="fact prov">
       <b>✓</b>
       <span>
-        provenance survives the fork — it is still Leaflet and still says so:<br />
-        ${pill('npm', `${provenance.name}@${provenance.version}`)}
-        ${repoId(provenance.repo) ? pill('github', provenance.commit ? `${repoId(provenance.repo)}@${provenance.commit}` : repoId(provenance.repo)) : ''}
+        provenance survives the fork. Three names for one library, and they
+        mean different things:<br />
+        ${pill('npm', `${provenance.name}@${provenance.version}`)} the artifact that was hashed
+        ${repoId(provenance.repo) ? `<br />${pill('github', provenance.commit ? `${repoId(provenance.repo)}@${provenance.commit}` : repoId(provenance.repo))} where the code is written` : ''}
+        <br />${pill('deck', `lib/leaflet@${upstream.version}`)} where this depot serves it from
         <br /><code class="integrity">${provenance.integrity ?? 'no integrity published'}</code>
       </span>
     </div>
@@ -107,52 +147,46 @@ app.innerHTML = `
   <section class="reading">
     <h3>What just happened</h3>
     <ol>
-      <li><strong>Vendored from source, not from a CDN.</strong> ${modules}
-      modules, nothing pointing outside the package. The tree npm published
-      is the tree being served.</li>
-      <li><strong>The fork is one file different.</strong> Same
-      <code>${entry}</code>, same everything else. Because the boundary
-      survived vendoring, the edit is an ordinary edit.</li>
-      <li><strong>It copied almost nothing.</strong> Content addressing is
-      per file and store-wide, so an undiverged file is one object however
-      many decks point at it.</li>
-      <li><strong>Both are addressable forever.</strong> Different trees,
+      <li><strong>The fork is ${changed.length} files different, and one of
+      them is maths.</strong> The right-hand map is drawn in
+      <strong>Gall–Peters</strong> — cylindrical equal-area — because
+      <code>Projection.SphericalMercator.js</code> was rewritten to project
+      it: <code>y</code> goes as <code>sin(φ)</code> instead of
+      <code>log(tan(…))</code>, so Greenland collapses to its true size and
+      the tropics stretch. Leaflet ships EPSG:3857, EPSG:4326, EPSG:3395 and
+      Simple; Gall–Peters is not among them, so there is no option, no plugin
+      hook and no config file that produces this map.
+      <br />
+      The amber is the counter-example, kept deliberately: it is
+      <code>Path.js</code>'s default style, which you <em>could</em> have
+      passed as an argument. Both are one-file edits here, which is the
+      point — the useful question is never “is it configurable” but “is the
+      module boundary still there”.</li>
+      <li><strong>Both are addressable for ever.</strong> Different trees,
       different hashes, neither able to be mistaken for the other — and
       upstream did not have to agree to any of it.</li>
     </ol>
   </section>
 `;
 
-// Mount the maps. Same code for both sides; only the URL differs.
-const SHAPE = [
-  [51.53, -0.14],
-  [51.52, -0.08],
-  [51.5, -0.07],
-  [51.49, -0.13],
-];
+const VIEW = [20, 0];
+const ZOOM = 1;
 
-// Leaflet reads the container's size once, at `L.map()`, and sizes its SVG
-// viewBox from it. Two things here can make that size wrong: the page's own
-// stylesheet is injected below (so `.map { height: 19rem }` may not have
-// applied yet), and this page is embedded in a resizable frame by the demo
-// hub. Getting it wrong is silent — the map builds, the controls render, and
-// the vector layers land in a 0×0 viewBox. So each map watches its own box
-// and re-measures.
 function mount(kind, side, L) {
   let container = document.getElementById(`map-${kind}`);
   let map = L.map(container, {
-    center: [51.51, -0.105],
-    zoom: 12,
+    center: VIEW,
+    zoom: ZOOM,
     attributionControl: false,
+    worldCopyJump: false,
   });
-  // Vector layers only — the map never asks the network for a tile.
-  L.polygon(SHAPE, { color: kind === 'fork' ? '#b45309' : '#0c9d7c', weight: 2 }).addTo(map);
-  L.circleMarker([51.51, -0.105], { radius: 7, color: '#0069f9' })
-    .addTo(map)
-    .bindPopup(`${side.deck}@${side.version}`);
+  // NO STYLE ARGUMENT. That is the whole point of this page: every country
+  // is drawn with whatever `src/layer/vector/Path.js` says the defaults are,
+  // so upstream and the fork differ by a file rather than by an argument.
+  L.geoJSON(world).addTo(map).bindPopup(`${side.deck}@${side.version}`);
   new ResizeObserver(() => {
     map.invalidateSize({ animate: false });
-    map.setView([51.51, -0.105], 12, { animate: false });
+    map.setView(VIEW, ZOOM, { animate: false });
   }).observe(container);
   return map;
 }
@@ -188,15 +222,21 @@ style.textContent = `
   .fork .dot { border-color:var(--fork); }
   .map-card h2 { font-size:1rem; margin:0 0 .2rem; }
   .sub { color:var(--dim); margin:0 0 .8rem; font-size:.85rem; }
-  .map { height:19rem; border-radius:7px; overflow:hidden; background:#eef1f5; border:1px solid var(--line); }
+  .map { height:22rem; border-radius:7px; overflow:hidden; background:#eef1f5; border:1px solid var(--line); }
+  .leaflet-container { background:#eef1f5; }
   .hash { color:#b7b7bd; font:.7rem ui-monospace, monospace; margin:.5rem 0 0; }
+  .crumb{font:600 11px/1 var(--sans,ui-sans-serif);letter-spacing:.11em;text-transform:uppercase;color:#8b8b93}
+  .cost{margin:.5rem 0 .2rem;font-size:.8rem;color:#54525f}
+  .cost b{color:#272330;font-variant-numeric:tabular-nums}
 
   /* Make the forked glyphs unmissable. */
   .leaflet-control-zoom a { font-size:1.05rem; }
 
   .facts { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit,minmax(16rem,1fr)); margin-top:1.25rem; }
   .fact { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:1rem 1.1rem; display:flex; gap:.9rem; }
-  .fact b { font-size:1.7rem; line-height:1.1; color:var(--up); flex:none; }
+  /* Direct child only. The pills put their own <b> around a version, and a
+     descendant selector here rendered those at 1.7rem inside every fact. */
+  .fact > b { font-size:1.7rem; line-height:1.1; color:var(--up); flex:none; }
   .fact span { color:var(--dim); font-size:.85rem; }
   .fact strong { color:var(--ink); }
   .fact.prov code { display:inline-block; color:var(--dim); word-break:break-all; }

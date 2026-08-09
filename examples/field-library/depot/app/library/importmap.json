@@ -13,6 +13,7 @@
       "fields/handle": "^1.0.0",
       "fields/meeting-slot": "^1.0.0",
       "fields/swatch": "^1.0.0",
+      "ship-by": "you/ship-by@^1.0.0",
       "ui/pills": "^1.0.0"
     }
   },
@@ -30,7 +31,9 @@
     "fields/swatch/": "/site/fields/swatch@1.0.0/",
     "fields/swatch": "/site/fields/swatch@1.0.0/index.js",
     "ui/pills/": "/site/ui/pills@1.0.0/",
-    "ui/pills": "/site/ui/pills@1.0.0/pills.js"
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js",
+    "ship-by/": "/site/you/ship-by@1.0.0/",
+    "ship-by": "/site/you/ship-by@1.0.0/index.js"
   },
   "scopes": {
     "/site/fields/audit-stamp@1.0.0/": {
@@ -68,6 +71,12 @@
     "/site/fields/swatch@1.0.0/": {
       "chroma-js": "/site/lib/chroma-js@3.1.2/index.js",
       "chroma-js/": "/site/lib/chroma-js@3.1.2/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    },
+    "/site/you/ship-by@1.0.0/": {
+      "date-fns": "/site/lib/date-fns@4.1.0/index.js",
+      "date-fns/": "/site/lib/date-fns@4.1.0/",
       "zod": "/site/lib/zod@3.25.76/v3/index.js",
       "zod/": "/site/lib/zod@3.25.76/"
     }

@@ -1,0 +1,34 @@
+/* Catppuccin Mocha, as a Deck theme.
+ *
+ * A theme deck is nothing but custom properties. It sets no layout, no
+ * spacing and no type — those live in `ui/theme`, which every theme shares —
+ * so writing a new one means writing this file and nothing else.
+ *
+ * Two groups. The FIRST is the palette: eleven colours, named for what they
+ * are. The SECOND is the assignment: which of those the address grammar uses
+ * for each of its five segments. Splitting them means a theme can restyle the
+ * grammar without inventing colours, and can supply colours without opinions
+ * about the grammar.
+ *
+ * Upstream: catppuccin/catppuccin, Mocha flavour. Names kept so a reader can
+ * check this against the source.
+ */
+:root {
+  color-scheme: dark;
+
+  --bg: #1e1e2e;      /* base    */
+  --panel: #181825;   /* mantle  */
+  --fg: #cdd6f4;      /* text    */
+  --dim: #7f849c;     /* overlay1 */
+  --line: #313244;    /* surface0 */
+  --sel: #45475a;     /* surface1 */
+
+  --red: #f38ba8;
+  --green: #a6e3a1;
+  --amber: #f9e2af;   /* yellow  */
+  --blue: #89b4fa;
+  --violet: #cba6f7;  /* mauve   */
+  --cyan: #94e2d5;    /* teal    */
+  --pink: #f5c2e7;
+  --orange: #fab387;  /* peach   */
+}

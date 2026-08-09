@@ -1,0 +1,788 @@
+/* The Hub's STRUCTURE, as a deck.
+ *
+ * Four apps, one lattice. Not copied into each and not bundled — an ordinary
+ * deck at an ordinary address, linked by every app. Same claim `ui/nav`
+ * makes, and the reason both exist as decks rather than as files.
+ *
+ * There is NO PALETTE in here. Colour lives in a separate theme deck under
+ * `/hub/theme/<name>/`, which is nothing but custom properties, and the Hub
+ * swaps which one is linked. Splitting them is what makes a theme a thing
+ * somebody can write, seal, version and fork without touching a rule of
+ * layout — and it is why the theme format is CSS custom properties rather
+ * than JSON: a JSON palette needs a program to become styling, and custom
+ * properties ARE the styling, cascade and all, with nothing in between.
+ *
+ * A deck with NO ENTRY: nothing imports a stylesheet.
+ */
+
+:root {
+  /* The lattice. Change these two and the page re-rules itself. */
+  --row: 1.5;
+  --gut: 2ch;
+  /* Named once, so the prose system can reach for the mono without
+     restating the stack and drifting from it. */
+  --mono: 'Commit Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+/* ── COLOUR MEANS THE GRAMMAR ───────────────────────────────────────
+   A Deck address has five parts and the whole product rests on knowing
+   which is which:
+
+     /<depot>/<publisher>/<package>@<version>/<path>
+
+   So each part gets a hue and keeps it — in the path line, in listings,
+   in diff headers, in the raw link. Colour here is not decoration; it
+   is the URL grammar, taught by repetition, everywhere it appears. The
+   publisher gets the loudest one because it is the FORK BOUNDARY, which
+   is the segment people most often fail to notice is doing work.
+
+   Version is the exception: it is coloured by VOLATILITY rather than by
+   position, because "is this moving or frozen" outranks "this is the
+   version slot". Amber moves, green never will. */
+:root {
+  --a-depot: var(--cyan);
+  --a-publisher: var(--violet);
+  --a-package: var(--blue);
+  --a-live: var(--amber);
+  --a-sealed: var(--green);
+  --a-hash: var(--pink);
+  --a-seal: var(--orange);
+}
+.s-depot { color: var(--a-depot); }
+.s-publisher { color: var(--a-publisher); }
+.s-package { color: var(--a-package); font-weight: 600; }
+.s-version { color: var(--a-sealed); }
+.s-version[data-live] { color: var(--a-live); }
+.s-seal { color: var(--a-seal); }
+.s-path { color: var(--fg); }
+.s-hash { color: var(--a-hash); opacity: .85; }
+.s-base { color: var(--a-publisher); }
+.s-head { color: var(--a-package); }
+/* Directories read as containers and files as leaves, before you have
+   read either name. The trailing slash does some of this; weight and
+   hue do the rest, which is why `ls --color` has survived forty years. */
+a.s-dir { color: var(--a-package); font-weight: 600; }
+a.s-file { color: var(--fg); }
+.sep { color: var(--dim); opacity: .55; padding: 0 .15ch; }
+
+* { box-sizing: border-box; }
+::selection { background: var(--sel); }
+
+body {
+  margin: 0;
+  padding: 0 var(--gut) 6em;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: var(--row);
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: antialiased;
+}
+/* Colour is the affordance; the underline is reserved for hover. A page made
+   almost entirely of addresses is unreadable when every one of them is
+   underlined — the rules stack up into texture and stop meaning anything. */
+a { color: var(--fg); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 2px; }
+:focus-visible { outline: 1px solid var(--fg); outline-offset: 1px; }
+/* The UA stylesheet sets `font-family: monospace` on pre/code/kbd and
+   `font-family: <system>` on form controls, and both beat inheritance.
+   Without this the one typeface the page is built around stops applying
+   to the code — which is the only place it really had to. */
+pre, code, kbd, samp, input, select, button, textarea { font-family: inherit; }
+h1 {
+  font-size: 1em; font-weight: 400; color: var(--dim);
+  margin: 0 0 calc(var(--row) * 1em) 0;
+}
+.dim { color: var(--dim); }
+.ok { color: var(--green); }
+
+/* ── the path line ──────────────────────────────────────────────────
+   A breadcrumb set like a prompt. Every segment is a link that goes
+   where it says. No cursor: a blinking block would say "type here" to
+   a line that accepts no typing, and an ornament that lies about being
+   interactive is the exact failure this surface exists to avoid. */
+.prompt {
+  padding: calc(var(--row) * .4em) 0; white-space: nowrap;
+  overflow-x: auto; scrollbar-width: none;
+}
+.prompt-mark { color: var(--dim); }
+.prompt-mark::after { content: ' ❯'; }
+.prompt .sep { color: var(--dim); padding: 0 .2ch; }
+.prompt b { font-weight: 600; }
+
+/* ── the fact strip ─────────────────────────────────────────────── */
+.facts {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: .2em 2.5ch; padding: calc(var(--row) * .4em) 0;
+  margin-bottom: calc(var(--row) * .8em);
+}
+.facts > div { white-space: nowrap; }
+.facts b, .facts label, .filter b, th {
+  color: var(--dim); font-weight: 400; margin-right: .6ch;
+}
+/* ── CONTROLS LOOK LIKE CONTROLS ────────────────────────────────────
+   A terminal aesthetic is not a licence to remove affordances. An
+   underline is not a dropdown: nothing about it says "this opens", so
+   the most important control on the page ends up looking like a label.
+   These get a full border, a raised surface, a chevron, and hover and
+   focus states — the ordinary web signals for "you can operate this" —
+   and stay on the character grid while they do it. */
+select {
+  font: inherit; color: var(--fg); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 2px;
+  padding: 0 3ch 0 1ch; height: calc(var(--row) * 1.25em);
+  appearance: none; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 1.3ch top 55%, right 0.85ch top 55%;
+  background-size: .45ch .45ch, .45ch .45ch;
+  background-repeat: no-repeat;
+}
+select:hover { border-color: var(--dim); background-color: var(--sel); }
+select:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+input[type='search'], input:not([type]) {
+  font: inherit; color: var(--fg); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 2px;
+  padding: 0 1ch; height: calc(var(--row) * 1.25em);
+}
+input:hover { border-color: var(--dim); }
+input::placeholder { color: var(--dim); }
+input[type='search']::-webkit-search-cancel-button { filter: grayscale(1) opacity(.6); }
+
+/* Volatility is the control that makes this not a file browser, so it
+   is the loudest thing on the strip: amber for something that moves,
+   green for something frozen, cyan for a moment in history. */
+.vol select, .cmp select { font-weight: 600; }
+.vol[data-kind='live'] select { color: var(--a-live); border-color: var(--a-live); }
+.vol[data-kind='sealed'] select { color: var(--a-sealed); border-color: var(--a-sealed); }
+.vol[data-kind='seal'] select { color: var(--a-seal); border-color: var(--a-seal); }
+.cmp[data-on] select { color: var(--a-publisher); border-color: var(--a-publisher); }
+
+/* ── tables on the lattice ──────────────────────────────────────── */
+
+/* WIDE CONTENT SCROLLS INSIDE ITSELF; THE PAGE NEVER DOES.
+   ═══════════════════════════════════════════════════════
+   Cells are `nowrap` because they usually hold addresses, and an address
+   broken across two lines is worse than one you have to scroll to. The cost
+   is that a table is as wide as its widest address — which on a narrow
+   window makes the whole DOCUMENT scroll sideways. Then the nav slides off,
+   the key legend slides off, and every other section inherits a horizontal
+   scrollbar it did not ask for, to fit one long path in one row.
+
+   The scroll port is a WRAPPER, and it has to be. Two shortcuts look easier
+   and both are wrong:
+
+     `main { overflow-x: auto }`      — there is no such thing as scrolling
+                                        one axis. The spec computes the other
+                                        axis from `visible` to `auto`, so
+                                        `main` quietly becomes a nested
+                                        VERTICAL scroller too, and the page
+                                        scrolls to content that is no longer
+                                        where the page thinks it is. The
+                                        symptom is a blank screen.
+
+     `table { display: block }`       — makes the table its own scroll
+                                        container, which then becomes the
+                                        containing block for its own sticky
+                                        `th`. The headers stop sticking to
+                                        the viewport, which is the one thing
+                                        they exist for on a 374-file listing.
+
+   A wrapper has neither problem: it scrolls horizontally, it is not in the
+   table's sticky chain, and the table inside it keeps being a table. */
+.scrollx { max-width: 100%; overflow-x: auto; }
+
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 0 var(--gut) 0 0; white-space: nowrap; }
+th {
+  position: sticky; top: 0; background: var(--bg); z-index: 1;
+  text-transform: uppercase; letter-spacing: .12em; font-size: .82em;
+  border-bottom: 1px solid var(--line); padding-bottom: .2em;
+}
+td.num, th.num { text-align: right; }
+/* A sortable header has to look operable — cursor, hover, and a mark
+   that distinguishes "you can sort this" from "this is sorted". */
+th[data-role='sort'] { cursor: pointer; user-select: none; }
+th[data-role='sort']:hover { color: var(--fg); }
+th .sortmark { font-style: normal; padding-left: .6ch; opacity: .45; }
+th[data-role='sort']:hover .sortmark { opacity: 1; }
+th .sortmark:not(:empty) { display: inline-block; }
+tr[hidden] { display: none; }
+/* Keyboard selection is a filled bar with a bright left edge — visible
+   at a glance from anywhere on the page, which is the whole job when
+   the cursor is being driven by `j` and `k` rather than by a pointer. */
+tbody tr[data-here] { background: var(--sel); box-shadow: inset 3px 0 0 var(--a-package); }
+tbody tr:hover:not([data-here]) { background: var(--panel); }
+tbody td:first-child { padding-left: 3px; }
+/* The link fills its cell, so the click target is the row and not the glyphs
+   in it. Hitting a two-character filename should not require aim. */
+tbody td > a { display: block; }
+tbody td > a:hover { text-decoration: none; }
+.filter { margin-bottom: calc(var(--row) * .4em); }
+/* Related decks sit above the fold, not in a panel you have to look
+   for: on this server the fork of the thing you are reading is usually
+   the reason you came. */
+.siblings {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .2em 1.5ch;
+  padding: calc(var(--row) * .3em) 0;
+  border-bottom: 1px solid var(--line);
+}
+.siblings > b { color: var(--dim); font-weight: 400; }
+.siblings a { text-decoration: none; border-bottom: 1px solid var(--line); }
+.siblings a:hover { background: var(--sel); border-bottom-color: var(--a-publisher); }
+.siblings em { font-style: normal; font-size: .9em; margin-left: auto; }
+
+/* ── a blob ─────────────────────────────────────────────────────────
+   One <pre>, one span per line, numbers from a CSS counter. Measured at
+   53 ms for 10,000 lines, so no virtualization — the chunk boundary
+   sits well above the common case. */
+pre.blob { margin: 0; counter-reset: line; overflow-x: auto; }
+pre.blob .ln { display: block; white-space: pre; }
+pre.blob:not(.diff) .ln::before {
+  counter-increment: line; content: counter(line);
+  display: inline-block; width: 6ch; padding-right: var(--gut);
+  text-align: right; color: var(--dim);
+  position: sticky; left: 0; background: var(--bg);
+}
+pre.blob .ln:target { background: var(--sel); }
+
+/* ── syntax ─────────────────────────────────────────────────────────
+   Our own mapping of highlight.js classes onto the palette, rather than
+   one of the 250 themes it ships. The point of a neutral ground is that
+   code is mostly ungrammatical grey with a few things picked out; a
+   theme that colours nine token classes defeats it. */
+.hljs-comment, .hljs-quote { color: var(--dim); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal { color: var(--violet); }
+.hljs-type, .hljs-class .hljs-title, .hljs-title.class_ { color: var(--cyan); }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-char.escape_ { color: var(--green); }
+.hljs-number, .hljs-symbol { color: var(--orange); }
+.hljs-meta, .hljs-meta .hljs-keyword, .hljs-doctag { color: var(--pink); }
+.hljs-title, .hljs-title.function_, .hljs-section { color: var(--blue); }
+.hljs-name, .hljs-selector-id, .hljs-selector-class { color: var(--amber); }
+.hljs-attr, .hljs-attribute, .hljs-property { color: var(--cyan); }
+.hljs-params, .hljs-variable, .hljs-template-variable { color: var(--fg); }
+.hljs-built_in { color: var(--blue); }
+.hljs-operator, .hljs-punctuation { color: var(--dim); }
+.hljs-subst { color: var(--fg); }
+.hljs-bullet, .hljs-link { color: var(--amber); }
+.hljs-deletion { color: var(--red); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
+
+/* ── diff ───────────────────────────────────────────────────────────
+   Two gutters, because a diff has two line numberings and pretending
+   otherwise is how you lose track of which side you are reading. */
+.diffhead { padding: calc(var(--row) * .4em) 0; }
+pre.blob.diff .gut {
+  display: inline-block; width: 5ch; text-align: right;
+  padding-right: 1ch; color: var(--dim); font-style: normal;
+}
+pre.blob.diff .mk { display: inline-block; width: 2ch; font-weight: 600; }
+pre.blob.diff .ln[data-mark='+'] { background: color-mix(in srgb, var(--green) 16%, transparent); }
+pre.blob.diff .ln[data-mark='+'] .mk { color: var(--green); }
+pre.blob.diff .ln[data-mark='-'] { background: color-mix(in srgb, var(--red) 16%, transparent); }
+pre.blob.diff .ln[data-mark='-'] .mk { color: var(--red); }
+
+/* ── review: many files, cropped to what changed ──────────────────────
+   Word-level marking inside a changed line. A one-character change in a
+   long line is invisible when the whole line is red and the whole
+   replacement is green — you are told a line changed and left to find it.
+   Underline rather than a second background, so it stacks on the line
+   tint instead of fighting it. */
+pre.blob.diff u.w-add, pre.blob.diff u.w-del {
+  text-decoration: none; border-radius: 2px; padding: 0 1px;
+}
+pre.blob.diff u.w-add { background: color-mix(in srgb, var(--green) 34%, transparent); }
+pre.blob.diff u.w-del { background: color-mix(in srgb, var(--red) 34%, transparent); }
+
+/* The withheld run. It must not look like content — it is a control — so it
+   takes the dim treatment and a pointer, and says how much it is holding. */
+pre.blob.diff .ln.gap {
+  color: var(--dim); cursor: pointer;
+  background: color-mix(in srgb, var(--line) 30%, transparent);
+}
+pre.blob.diff .ln.gap:hover, pre.blob.diff .ln.gap:focus-visible {
+  color: var(--fg); background: var(--sel); outline: none;
+}
+pre.blob.diff .ln.gap .mk { color: var(--dim); }
+
+.review { margin: 0 0 calc(var(--row) * .8em) 0; border: 1px solid var(--line); }
+.review-head {
+  display: flex; align-items: baseline; gap: 1.5ch;
+  padding: calc(var(--row) * .3em) 1ch;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.review-head:hover, .review-head:focus-visible { background: var(--sel); outline: none; }
+.review-path { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+/* The heading is a link to the file, inside a header that folds. Underlining
+   only on hover keeps twelve stacked headings from reading as a wall of
+   links, while still saying "this one is clickable" at the moment you ask. */
+a.review-path { color: inherit; text-decoration: none; }
+a.review-path:hover, a.review-path:focus-visible {
+  color: var(--a-package); text-decoration: underline;
+}
+.review-count { white-space: nowrap; }
+.review-count .ok { color: var(--green); }
+.review-count .bad { color: var(--red); }
+.fold-mark { width: 2ch; color: var(--dim); }
+.review[data-open='0'] > pre { display: none; }
+.review[data-open='0'] .review-head { border-bottom: 0; }
+.review > pre.blob.diff { margin: 0; }
+
+table.treediff td.mark { width: 3ch; font-weight: 600; }
+table.treediff tr[data-status='added'] td.mark { color: var(--green); }
+table.treediff tr[data-status='removed'] td.mark { color: var(--red); }
+table.treediff tr[data-status='changed'] td.mark { color: var(--amber); }
+table.treediff td:nth-child(2) { width: 100%; white-space: normal; word-break: break-all; }
+
+/* ── notices ────────────────────────────────────────────────────────
+   No boxes. A left rule and the dim colour carry it, and the two
+   flavours of miss (UI spec §12) are told apart by the ONLY thing that
+   should differ — what they say and what colour says it. */
+.note {
+  border-left: 1px solid var(--line); padding-left: var(--gut);
+  color: var(--dim); margin: calc(var(--row) * .6em) 0; white-space: normal;
+}
+/* The other end of the one-prefix relationship: strip `?at=` and you
+   have the bytes. A link, not a sentence about a link. */
+.raw { margin: 0 0 calc(var(--row) * .4em) 0; }
+.raw a { color: var(--a-hash); }
+p { margin: calc(var(--row) * .3em) 0; }
+.err { border-left: 2px solid var(--red); padding-left: var(--gut); white-space: normal; }
+.err b { color: var(--red); font-weight: 600; }
+.err[data-permanence='transient'] { border-left-color: var(--amber); }
+.err[data-permanence='transient'] b { color: var(--amber); }
+
+::-webkit-scrollbar { width: 1ch; height: 1ch; }
+::-webkit-scrollbar-thumb { background: var(--line); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ── /run ───────────────────────────────────────────────────────────────── */
+
+/* The toggle. Two positions, one control, same place on every page — a
+   segmented pair rather than a switch, because both states are destinations
+   and neither is "off". */
+.lens { display: inline-flex; margin-bottom: calc(var(--row) * .6em); }
+.lens button {
+  font: inherit; cursor: pointer; padding: 0 2ch;
+  height: calc(var(--row) * 1.3em);
+  background: var(--panel); color: var(--dim);
+  border: 1px solid var(--line); border-radius: 0;
+}
+.lens button + button { border-left: 0; }
+.lens button:hover { color: var(--fg); }
+.lens button[aria-current] {
+  background: var(--a-package); color: var(--bg); border-color: var(--a-package);
+  font-weight: 600;
+}
+
+/* C5: a trial is `no-store` and is NOT the sealed representation. It must be
+   unmistakable and one control must leave it. */
+.trial {
+  display: flex; flex-wrap: wrap; gap: .2em 1.5ch; align-items: baseline;
+  padding: calc(var(--row) * .3em) var(--gut);
+  margin-bottom: calc(var(--row) * .5em);
+  border-left: 3px solid var(--amber); background: var(--panel);
+}
+.trial > b { color: var(--amber); text-transform: uppercase; letter-spacing: .1em; }
+.trial code { color: var(--fg); }
+.trial button {
+  font: inherit; cursor: pointer; background: none; color: var(--fg);
+  border: 1px solid var(--dim); border-radius: 0; padding: 0 1ch;
+}
+
+/* ── The stage ──────────────────────────────────────────────────────────
+   CodePen's arrangement, and for CodePen's reason: the running thing is
+   the subject, everything else is apparatus, and the person watching is
+   the only one who knows how much room each deserves right now.
+
+   The stage was a fixed 70vh box with the readout scrolling under it, which
+   meant a tall demo scrolled inside a short window while a table of eight
+   rows had the rest of the screen. Now the two share the viewport through a
+   splitter, the split is remembered, and the stage can take the lot.
+
+   Grid rather than flex: `--split` is a single number the drag handler
+   writes, and grid-template-rows reads it directly, so dragging costs one
+   custom-property write per frame and no layout thrash. */
+.runsplit {
+  display: grid;
+  /* PERCENT, NOT FR. `fr` is not a permitted unit inside calc(), so
+     `calc(var(--split) * 1fr)` is not merely wrong for one row — it
+     invalidates the entire track list, and every row silently falls back to
+     auto. The container has a definite height, so a percentage means the
+     same thing and does compute; the last row takes whatever is left. */
+  grid-template-rows:
+    auto
+    minmax(0, calc(var(--split, 62) * 1%))
+    auto
+    minmax(0, 1fr);
+  height: calc(100vh - var(--chrome, 9rem));
+  min-height: 22rem;
+}
+.runsplit[data-full='1'] {
+  grid-template-rows: auto minmax(0, 1fr) 0 0;
+}
+.runsplit[data-full='1'] .grip { display: none; }
+.runsplit[data-full='1'] .runsplit-under { display: none; }
+
+.stage {
+  width: 100%; height: 100%; min-height: 0;
+  border: 1px solid var(--line); background: var(--panel);
+}
+/* Centring rather than stretching, so the width presets read as a device
+   width and not as a differently-broken layout. */
+.stagewrap {
+  min-height: 0; display: flex; justify-content: center;
+  background: var(--panel);
+}
+.stagewrap .stage { max-width: var(--stagew, 100%); }
+
+.runsplit-under { overflow: auto; min-height: 0; padding-top: .4em; }
+
+/* The grip. A row of its own, so it never overlaps either pane. */
+.grip {
+  height: .9em; cursor: row-resize; position: relative;
+  display: flex; align-items: center; justify-content: center;
+}
+.grip::before {
+  content: ''; position: absolute; left: 0; right: 0; height: 1px;
+  background: var(--line);
+}
+.grip::after {
+  content: ''; position: relative; width: 4ch; height: 3px;
+  background: var(--line); border-radius: 2px;
+}
+.grip:hover::after, .grip[data-dragging]::after { background: var(--a-package); }
+/* While dragging, the pointer is over the iframe half the time and the
+   iframe would swallow the move events. */
+.runsplit[data-dragging] .stage { pointer-events: none; }
+
+h2.scope {
+  font-size: 1em; font-weight: 400; color: var(--dim);
+  margin: calc(var(--row) * 1em) 0 calc(var(--row) * .2em) 0;
+}
+td.indent { padding-left: 2ch; }
+
+/* The controls sit above the frame, never over it: an iframe is already a
+   compromise without the chrome eating a corner of the thing on show. */
+.stagebar {
+  display: flex; align-items: center; gap: 0;
+  border-bottom: 0;
+}
+.stagebar .grow { flex: 1; }
+.stagebar button, .popout {
+  font: inherit; cursor: pointer; padding: 0 1.5ch; color: var(--dim);
+  background: var(--panel); border: 1px solid var(--line); border-bottom: 0;
+  border-radius: 0; margin-left: -1px;
+}
+.stagebar button:hover, .popout:hover {
+  background: var(--a-package); color: var(--bg);
+  border-color: var(--a-package); text-decoration: none;
+}
+.stagebar button[aria-pressed='true'] {
+  color: var(--fg); border-color: var(--dim);
+}
+
+/* The theme picker rides in the nav, so every app has it. */
+.deck-nav-theme {
+  margin-right: 2ch; height: auto; padding: 0 2.5ch 0 1ch;
+  border-color: transparent; background-color: transparent; color: var(--dim);
+}
+.deck-nav-theme:hover { color: var(--fg); border-color: var(--line); }
+
+/* ── /track ─────────────────────────────────────────────────────────────── */
+
+
+/* ── the feed ───────────────────────────────────────────────────────────── */
+
+.controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4em 2.5ch;
+  margin-bottom: calc(var(--row) * .6em);
+}
+.sortbar label { color: var(--dim); margin-right: .6ch; }
+
+.feed { list-style: none; margin: 0; padding: 0; }
+
+/* RECENCY IS BRIGHTNESS. `--fresh` runs 1 → 0 over a day, and the entry fades
+   with it, so "something just happened" reads from across the room and stops
+   reading on its own schedule rather than when somebody dismisses it. The
+   floor is 0.55, not 0: old is quieter, never unreadable. */
+.entry {
+  display: grid;
+  grid-template-columns: 10ch 1fr auto;
+  gap: 0 var(--gut);
+  padding: calc(var(--row) * .25em) 0;
+  border-bottom: 1px solid var(--line);
+  opacity: calc(0.55 + 0.45 * var(--fresh, 0));
+}
+.entry:hover { background: var(--panel); opacity: 1; }
+.entry[data-here] { background: var(--sel); opacity: 1; box-shadow: inset 3px 0 0 var(--a-package); }
+.entry[hidden] { display: none; }
+
+.entry-when { color: var(--dim); text-align: right; white-space: nowrap; }
+.entry-head { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.entry-sub { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.entry-go { align-self: center; white-space: nowrap; color: var(--a-package); }
+
+/* The verb is the first thing read, so it is the only thing on the line with
+   weight — and its colour says which of the seven it is. */
+.verb { font-weight: 600; text-transform: uppercase; letter-spacing: .06em; font-size: .88em; }
+.verb i { font-style: normal; padding-right: .8ch; }
+.entry[data-kind='saved'] .verb { color: var(--a-seal); }
+.entry[data-kind='auto-saved'] .verb { color: var(--dim); }
+.entry[data-kind='published'] .verb { color: var(--a-sealed); }
+.entry[data-kind='released'] .verb { color: var(--amber); }
+.entry[data-kind='proposed'] .verb { color: var(--a-publisher); }
+.entry[data-kind='rebased'] .verb { color: var(--a-depot); }
+.entry[data-kind='conflicted'] .verb { color: var(--red); }
+
+/* One switch, not five facets. Pressed is filled: a toggle whose two states
+   differ only by a tint is a toggle you have to test to read. */
+.switch {
+  font: inherit; cursor: pointer; display: inline-flex; align-items: baseline; gap: .8ch;
+  padding: 0 1.5ch; height: calc(var(--row) * 1.3em);
+  background: var(--panel); color: var(--dim);
+  border: 1px solid var(--line); border-radius: 0;
+}
+.switch i { font-style: normal; width: 1ch; }
+.switch i::before { content: '○'; }
+.switch[aria-pressed] { background: var(--sel); color: var(--fg); border-color: var(--dim); }
+.switch[aria-pressed] i::before { content: '●'; color: var(--a-package); }
+.switch b { font-weight: 400; opacity: .7; }
+.switch:hover { color: var(--fg); }
+
+/* The attention band. Above the feed and outside it, because these are the
+   only entries waiting on a person rather than reporting to one. */
+.feed.attention {
+  border-left: 3px solid var(--amber);
+  padding-left: var(--gut);
+  margin-bottom: calc(var(--row) * .8em);
+}
+.feed.attention .entry { opacity: 1; border-bottom-color: transparent; }
+
+/* Added, edited, removed — the letter jj gave us, kept. */
+.how { display: inline-block; width: 1.6ch; font-weight: 600; }
+.how[data-how='A'] { color: var(--green); }
+.how[data-how='M'] { color: var(--amber); }
+.how[data-how='D'] { color: var(--red); }
+.how[data-how='R'] { color: var(--a-depot); }
+
+.entry[data-kind='added'] .verb { color: var(--green); }
+.entry[data-kind='edited'] .verb { color: var(--amber); }
+.entry[data-kind='removed'] .verb { color: var(--red); }
+.entry[data-kind='renamed'] .verb { color: var(--a-depot); }
+
+/* A refusal that is a routing decision rather than a failure: the publisher
+   accent, not the error red. Nothing went wrong — it opens elsewhere. */
+.notice {
+  border-left: 2px solid var(--a-publisher);
+  padding: calc(var(--row) * .3em) 1.5ch;
+  margin: calc(var(--row) * .5em) 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PROSE — the documentation type system
+   ═══════════════════════════════════════════════════════════════════════
+   Scoped to `.prose`, so it governs /start and the Deckbook and touches
+   nothing in the three lens apps. Those are instruments and their monospace
+   lattice is correct for what they do; this is for pages that are read.
+
+   Written down in full in docs/deck-hub-typography.md. The short version:
+   two faces with one rule for choosing between them, a 1.25 modular scale,
+   an 8px rhythm where the space above a heading is three times the space
+   below it, a 68ch measure on paragraphs only, and tables treated as a
+   first-class element rather than as prose in a grid.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.prose {
+  /* Two faces. The rule is not "code gets mono" — it is that anything a
+     reader could type into a terminal or a URL bar is mono. */
+  --face-prose: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+
+  /* A 1.25 modular scale on a 16px base. Leading runs inverse to size:
+     display text needs less, body text needs 1.65 or the eye loses the
+     line return. */
+  --t-title: 31px;
+  --t-h2: 25px;
+  --t-h3: 20px;
+  --t-body: 16px;
+  --t-small: 14px;
+  --t-micro: 12.5px;
+
+  /* One spacing unit, 8px, and every gap is a multiple of it. */
+  --s1: 8px;
+  --s2: 16px;
+  --s3: 24px;
+  --s4: 32px;
+  --s6: 48px;
+
+  /* 66 characters is the target; 68 is the practical cap. Paragraphs only —
+     tables and code are scanned in two dimensions and take the full column. */
+  --measure: 68ch;
+
+  font-family: var(--face-prose);
+  font-size: var(--t-body);
+  line-height: 1.65;
+  color: var(--fg);
+  /* No synthesised italics: the mono has no true italic and the slant the
+     browser fakes is ugly. A real face has one, so emphasis can mean
+     something visually. */
+  font-synthesis: none;
+}
+
+/* Anything that IS a byte keeps the mono, one step down — monospace at a
+   matched point size always reads larger, because the character widths are
+   uniform and the line is denser. */
+.prose code,
+.prose kbd,
+.prose pre,
+.prose samp { font-family: var(--mono, ui-monospace, monospace); font-size: var(--t-small); }
+
+.prose p { max-width: var(--measure); margin: 0 0 var(--s2); }
+.prose p:last-child { margin-bottom: 0; }
+
+/* PROXIMITY. A heading belongs to what comes after it, so the space above is
+   three times the space below. A heading sitting equidistant between two
+   blocks belongs to neither, and the reader has to work out which — the most
+   common failure in generated documentation. */
+.prose h1, .prose h2, .prose h3 {
+  font-family: var(--face-prose); color: var(--fg);
+  margin: 0; text-transform: none; letter-spacing: normal;
+}
+.prose h1 {
+  font-size: var(--t-title); line-height: 1.2; font-weight: 400;
+  max-width: 26ch; margin-bottom: var(--s3);
+}
+.prose h2 { font-size: var(--t-h2); line-height: 1.25; font-weight: 600; margin: var(--s6) 0 var(--s2); }
+.prose h3 { font-size: var(--t-h3); line-height: 1.3; font-weight: 600; margin: var(--s4) 0 var(--s1); }
+.prose h2:first-child, .prose h3:first-child { margin-top: 0; }
+
+.prose ul, .prose ol { max-width: var(--measure); margin: 0 0 var(--s2); padding-left: var(--s3); }
+
+/* TERM AND ANSWER. The left side is a run of words the reader already owns;
+   the right side is what each one turns out to be. They read as one sentence
+   per row, so the term is not a heading — it is the first half, and it gets
+   weight rather than a line of its own. Two columns where there is room,
+   because the repetition down the right-hand side IS the argument, and a
+   stacked list hides it. */
+.isjust { max-width: var(--measure); margin: 0 0 var(--s3); }
+.isjust dt {
+  font-weight: 600;
+  margin-top: var(--s2);
+}
+.isjust dt:first-child { margin-top: 0; }
+.isjust dd {
+  margin: 0;
+  color: var(--dim);
+}
+@media (min-width: 60rem) {
+  .isjust {
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 28ch) minmax(0, 46ch);
+    column-gap: var(--s3);
+    align-items: baseline;
+  }
+  .isjust dt, .isjust dd { margin-top: 0; padding: var(--s1) 0; }
+  .isjust dt { border-top: 1px solid var(--line, rgba(128,128,128,.2)); }
+  .isjust dd { border-top: 1px solid var(--line, rgba(128,128,128,.2)); }
+  .isjust dt:first-of-type, .isjust dt:first-of-type + dd { border-top: none; }
+}
+.prose li { margin-bottom: 4px; }
+
+/* Blocks get air on both sides — they are a change of mode, and running them
+   flush against a paragraph makes the reader parse where prose stopped. */
+.prose pre, .prose .scrollx, .prose figure { margin: var(--s3) 0; }
+
+/* Commands you are meant to copy. A tint and real padding, no border: the
+   background says "this is the machine talking" without drawing a box around
+   every second paragraph. */
+.prose pre {
+  background: var(--panel); padding: var(--s2) 1.5ch;
+  overflow-x: auto; line-height: 1.55;
+}
+.prose :not(pre) > code {
+  background: var(--panel); padding: 0 .4ch; border-radius: 2px;
+}
+
+/* ── tables you can scan ─────────────────────────────────────────────────
+   Horizontal rules only: alignment already separates the columns, and
+   vertical rules add ink without adding information. */
+.prose table { border-collapse: collapse; width: 100%; font-size: var(--t-small); }
+.prose th {
+  font-family: var(--face-prose);
+  font-size: var(--t-micro); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .08em;
+  color: var(--dim); text-align: left;
+  padding: 0 var(--s3) var(--s1) 0;
+  border-bottom: 1px solid var(--fg);
+  position: static; background: none;
+}
+.prose td {
+  padding: var(--s1) var(--s3) var(--s1) 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.prose tr:last-child td { border-bottom: none; }
+/* The first column is the key — what the reader scans down. Everything else
+   is what they read once they have found the row. */
+.prose tbody td:first-child { font-weight: 600; white-space: nowrap; }
+/* Prose cells wrap and get a measure of their own; identifier cells do not. */
+.prose td.says, .prose tbody td:last-child:not(:first-child) {
+  font-weight: 400; white-space: normal; max-width: 56ch;
+}
+.prose td.num, .prose th.num {
+  text-align: right; font-variant-numeric: tabular-nums;
+  font-family: var(--mono, ui-monospace, monospace);
+}
+/* A cell holding an address must not wrap, whatever else is true of it. */
+.prose td code { white-space: nowrap; }
+
+/* ── narrow ──────────────────────────────────────────────────────────────
+   Everything that breaks on a phone breaks the same way: it assumed
+   horizontal room. Three columns of prose is unreadable at 375px however it
+   scrolls, so a reference table becomes stacked blocks — the key on its own
+   line, the text beneath it. */
+@media (max-width: 40rem) {
+  .prose { --t-title: 25px; --t-h2: 20px; --t-h3: 17px; }
+  .prose p, .prose ul, .prose ol { max-width: none; }
+  .prose table.stack thead { display: none; }
+  .prose table.stack tr {
+    display: block; padding: var(--s1) 0; border-bottom: 1px solid var(--line);
+  }
+  .prose table.stack td {
+    display: block; padding: 0 0 4px; border: none;
+    white-space: normal !important; max-width: none;
+  }
+  .prose table.stack tbody td:first-child { white-space: normal; }
+}
+
+/* ── the runnable chooser ────────────────────────────────────────────────
+   /run shows this when an address has several pages under it. It is a list
+   of addresses, so it is set like every other list of addresses here — no
+   panel, no box, structure from alignment. */
+.pick { padding: calc(var(--row) * .5em) 0; max-width: 80ch; }
+.pick ul.plain { list-style: none; padding: 0; margin: calc(var(--row) * .4em) 0; }
+.pick li { padding: calc(var(--row) * .2em) 0; }
+.pick li a { color: var(--a-package); }
+.pick li .dim { padding-left: 1.5ch; }
+
+/* The set-aside control and its way back. Both are quiet: the band already
+   has the reader's attention, and a loud dismiss button competes with the
+   thing it is dismissing. */
+.attention-bar {
+  display: flex; align-items: baseline; gap: 1.5ch;
+  padding: calc(var(--row) * .3em) 0;
+}
+.attention-bar button, button.aside {
+  font: inherit; background: none; color: var(--dim);
+  border: 1px solid var(--line); border-radius: 2px;
+  padding: 0 1ch; cursor: pointer;
+}
+.attention-bar button:hover, button.aside:hover {
+  color: var(--fg); border-color: var(--dim);
+}
+button.aside { margin-left: 1.5ch; align-self: center; }

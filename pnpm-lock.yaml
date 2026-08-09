@@ -45,6 +45,18 @@ importers:
         specifier: 'catalog:'
         version: 3.9.6
 
+  apps/hub:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deck/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
   examples/codelist:
     dependencies:
       '@deck/core':
@@ -99,11 +111,86 @@ importers:
         specifier: workspace:*
         version: link:../../packages/server
 
+  examples/potluck:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deck/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
+  examples/prosemirror:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deck/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
   examples/shared:
     dependencies:
       '@deck/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@deck/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
+  examples/three-js:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deck/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
+  examples/two-agents:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deck/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
+  examples/vale-sale:
+    dependencies:
+      '@deck/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
+  examples/variations:
+    dependencies:
+      '@deck/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deck/history':
+        specifier: workspace:*
+        version: link:../../packages/history
+      '@deck/server':
+        specifier: workspace:*
+        version: link:../../packages/server
 
   packages/cli:
     dependencies:

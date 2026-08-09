@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VALE · Sample Sale</title>
+    <link rel="stylesheet" href="/site/vale/type/fonts.css" />
+    <link rel="stylesheet" href="./sale.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "vale/ui": "/site/vale/ui/index.js",
+          "vale/ui/": "/site/vale/ui/"
+        }
+      }
+    </script>
+    <script type="module" src="/_live/hmr.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#details">Skip to details</a>
+
+    <header class="hero">
+      <div class="hero-media" data-role="hero-media" aria-hidden="true">
+        <img src="./media/hero.jpg" alt="" width="1920" height="1080" />
+      </div>
+      <div class="hero-veil"></div>
+      <div class="hero-copy">
+        <p class="brand" data-reveal>VALE</p>
+        <h1 data-reveal>Sample Sale</h1>
+        <p class="lede" data-reveal>
+          One weekend. Past-season samples. When a size is gone, it is gone.
+        </p>
+        <p class="cta" data-reveal>
+          <a class="btn" href="#details">Get the address</a>
+        </p>
+      </div>
+    </header>
+
+    <main id="details">
+      <section class="when" data-reveal>
+        <h2>This weekend, only</h2>
+        <p>
+          Saturday 11–7 · Sunday 12–5 · Doors on the hour. Cash or card.
+          Bring patience for the fitting mirror.
+        </p>
+      </section>
+
+      <section class="look" data-reveal>
+        <figure>
+          <img src="./media/rack.jpg" alt="Sample garments on a steel rack" />
+        </figure>
+        <div>
+          <h2>What hits the rack</h2>
+          <p>
+            Overcoats, knits, and truncated runs that never made the lookbook.
+            Sample sizes lean 4–8. Everything is final sale.
+          </p>
+        </div>
+      </section>
+
+      <section class="fabric" data-reveal>
+        <div>
+          <h2>Built to be handled</h2>
+          <p>
+            Wool, dry cotton, and the odd chartreuse stitch that marks a
+            studio sample. Try it on. If it fits, it leaves with you today.
+          </p>
+        </div>
+        <figure>
+          <img src="./media/fabric.jpg" alt="Close-up of woven wool with a chartreuse stitch" />
+        </figure>
+      </section>
+
+      <section class="where" data-reveal>
+        <h2>Where</h2>
+        <p class="address">
+          418 Binder Street · 3rd floor<br />
+          Enter under the green lamp. Buzz <b>VALE</b>.
+        </p>
+        <p class="note">
+          No holds. No returns. Friends welcome if they can stand still
+          in a narrow loft.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <p>VALE · sample sale · live · no release</p>
+    </footer>
+
+    <script type="module" src="./sale.js"></script>
+  </body>
+</html>

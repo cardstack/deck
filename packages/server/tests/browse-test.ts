@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
+import type { DeckServer } from '../src/server.ts';
 import { pack } from '@deck/core/pack';
 import { publishToStore } from '@deck/core/store';
 import { createDeckServer } from '../src/server.ts';
@@ -14,7 +14,7 @@ let workDir: string;
 let storeDir: string;
 let depotDir: string;
 let liveDir: string;
-let server: Server;
+let server: DeckServer;
 let origin: string;
 
 module('deck browser API', function (hooks) {

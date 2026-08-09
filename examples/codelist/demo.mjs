@@ -13,15 +13,16 @@
 // and the after, both addressable, forever.
 //
 //   pnpm --filter @deck/example-codelist demo
-//   open http://localhost:8790/
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+//   open https://localhost:8790/
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mergeTrees } from '@deck/core/merge';
 import { pack } from '@deck/core/pack';
 import { publishToStore } from '@deck/core/store';
-import { createDeckServer } from '@deck/server/server';
 import { storeDirFor } from '@deck/server/depot';
+import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
+import { demoBuildMode } from '../shared/reset.mjs';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -102,8 +103,19 @@ async function seal(name, version, files, tag) {
 const codesIn = (files) => JSON.parse(files.get('currencies.json').toString('utf8'));
 const countIn = (files) => Object.keys(codesIn(files)).length;
 
-await rm(storeDir, { recursive: true, force: true });
+
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'std/currencies', version: '1.4.0' },
+  label: 'CODELIST',
+});
+if (buildMode === 'rebuild') {
+  await rm(storeDir, { recursive: true, force: true });
+  console.log('   RESET=1 — wiped .deck/store; Notes and Claims kept');
+}
 await mkdir(storeDir, { recursive: true });
+
+if (buildMode !== 'serve') {
 
 console.log('\n  CODELIST — the merge that is not a conflict\n');
 
@@ -192,18 +204,27 @@ await writeFile(
   JSON.stringify({ depot: DEPOT, states }, null, 2) + '\n',
 );
 
-let server = createDeckServer({
+} // end buildMode
+
+let server = createDemoServer({
   depots: [{ name: DEPOT, dir: depotDir, storeDir }],
   fallback: (req, res) => {
     res.writeHead(302, { location: `/${DEPOT}/app/viewer/index.html` });
     res.end();
   },
 });
-server.listen(PORT, () => {
-  console.log(`\n6) serving — every state above is an immutable URL\n`);
-  console.log(`      http://localhost:${PORT}/\n`);
-  for (let s of states) {
-    console.log(`      /${DEPOT}/${s.deck}@${s.version}/currencies.json`);
+server.listen(PORT, async () => {
+  console.log(`\n6) serving — every state above is an immutable URL (HTTPS + HTTP/2)\n`);
+  console.log(`      ${demoOrigin(PORT)}/\n`);
+  try {
+    let saved = JSON.parse(
+      await readFile(join(depotDir, 'app', 'viewer', 'states.json'), 'utf8'),
+    );
+    for (let s of saved.states ?? []) {
+      console.log(`      /${DEPOT}/${s.deck}@${s.version}/currencies.json`);
+    }
+  } catch {
+    console.log(`      /${DEPOT}/app/viewer/index.html`);
   }
   console.log(`\n   No login and no write endpoint anywhere in this demo. The`);
   console.log(`   merge happened at seal time; these are the before and after.\n`);

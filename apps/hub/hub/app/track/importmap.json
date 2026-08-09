@@ -1,0 +1,32 @@
+{
+  "deck": {
+    "packages": {
+      "track": {
+        "version": "0.1.0",
+        "entry": "$DECK/track.js"
+      }
+    },
+    "dependencies": {
+      "ui/nav": "live",
+      "@tanstack/table-core": "lib/tanstack-table-core@browser",
+      "@tanstack/query-core": "lib/tanstack-query-core@browser",
+      "ui/activity": "live"
+    }
+  },
+  "imports": {
+    "ui/nav/": "/hub/ui/nav/",
+    "ui/nav": "/hub/ui/nav/nav.js",
+    "@tanstack/table-core/": "/hub/lib/tanstack-table-core@9.1.1-browser.72f09cd7/",
+    "@tanstack/table-core": "/hub/lib/tanstack-table-core@9.1.1-browser.72f09cd7/dist/index.js",
+    "@tanstack/query-core/": "/hub/lib/tanstack-query-core@5.101.4-browser.ffd390ff/",
+    "@tanstack/query-core": "/hub/lib/tanstack-query-core@5.101.4-browser.ffd390ff/build/modern/index.js",
+    "ui/activity/": "/hub/ui/activity/",
+    "ui/activity": "/hub/ui/activity/activity.js"
+  },
+  "scopes": {
+    "/hub/lib/tanstack-table-core@9.1.1-browser.72f09cd7/": {
+      "@tanstack/store": "/hub/lib/tanstack-store@0.11.1/dist/index.js",
+      "@tanstack/store/": "/hub/lib/tanstack-store@0.11.1/"
+    }
+  }
+}

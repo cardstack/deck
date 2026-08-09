@@ -1,0 +1,7 @@
+{
+  "$comment": "Which files a reader may edit from the page, and where they live in the depot. Read by this example's demo.mjs and by apps/hub, so both harnesses start the same editor bridge over the same allow-list. A request names an id, never a path.",
+  "seed": "starter",
+  "files": {
+    "ship-by": "you/ship-by/index.js"
+  }
+}

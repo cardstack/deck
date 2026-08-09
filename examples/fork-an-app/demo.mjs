@@ -7,15 +7,22 @@
 // boundary intact, so "change one file" means changing one file — not
 // patching a 140 KB bundle or maintaining a downstream build.
 //
+// The map is real. Country borders come from world-atlas, converted from
+// TopoJSON to GeoJSON by topojson-client — a second npm package, also
+// vendored from source — and drawn as SVG vectors. There is no tile server,
+// so a demo that claims to reach nothing at runtime is drawing something
+// worth looking at rather than a rectangle.
+//
 // What this demonstrates, end to end:
 //
 //   L6  hermetic     nothing on the page reaches the live web at runtime.
-//                    No tile server: the maps draw vector layers, so the
-//                    only bytes involved are ones you sealed.
-//   L8  provenance   the vendored deck records registry, integrity, and
+//                    Not "no tiles because there is nothing to draw" — a
+//                    whole world map, from bytes you sealed.
+//   L8  provenance   every vendored deck records registry, integrity, and
 //                    the repo+commit npm declared, checkable blob by blob.
-//   L3  no copies    the fork changes ONE file out of 85. The store holds
-//                    one copy of the other 84 — printed below, measured,
+//                    The DATA deck records where the data came from too.
+//   L3  no copies    the fork changes TWO files out of 85. The store holds
+//                    one copy of the other 83 — printed below, measured,
 //                    not asserted.
 //   L1  identity     a different tree is a different treeHash, so the two
 //                    versions can be served side by side and neither can
@@ -23,14 +30,17 @@
 //
 //   pnpm --filter @deck/example-fork-an-app demo
 //   open http://localhost:8791/
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pack, unpack } from '@deck/core/pack';
+import { hashBytes } from '@deck/core/tree-hash';
 import { publishToStore, inspectStore } from '@deck/core/store';
 import { vendorFromNpmSource } from '@deck/core/vendor-npm';
-import { createDeckServer } from '@deck/server/server';
+import { fetchNpmPackage } from '@deck/core/npm';
 import { storeDirFor } from '@deck/server/depot';
+import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
+import { demoBuildMode } from '../shared/reset.mjs';
 import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -40,10 +50,27 @@ const depotDir = join(here, 'depot');
 const storeDir = storeDirFor(depotDir);
 const SPEC = 'leaflet@1.9.4';
 const VERSION = '1.9.4';
-const FORK_VERSION = '1.9.4-mine.0';
+// Filled in once the fork's tree is known — see the note where it is set.
+const TOPOJSON = 'topojson-client@3.1.0';
+const ATLAS = 'world-atlas@2.0.2';
+// 110m is the coarsest of the three world-atlas resolutions: 105 KB for every
+// country on earth. 50m is 739 KB and 10m is 3.5 MB, and neither tells you
+// anything more at this zoom.
+const ATLAS_FILE = 'countries-110m.json';
 
-await rm(storeDir, { recursive: true, force: true });
+
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'lib/leaflet', version: '1.9.4' },
+  label: 'FORK AN APP',
+});
+if (buildMode === 'rebuild') {
+  await rm(storeDir, { recursive: true, force: true });
+  console.log('   RESET=1 — wiped .deck/store; Notes and Claims kept');
+}
 await mkdir(storeDir, { recursive: true });
+
+if (buildMode !== 'serve') {
 
 console.log('\n  FORK AN APP — take all of it, change the part you disagree with\n');
 
@@ -106,25 +133,109 @@ console.log(`   sealed lib/leaflet@${VERSION} · ${upstreamHash.slice(0, 12)}…
 // is a real file with real behaviour — the point is that after vendoring,
 // changing it is an ordinary edit, because the module boundary survived.
 // ---------------------------------------------------------------------------
-const TARGET = 'src/control/Control.Zoom.js';
+// Two files, and the important one is a CODE change rather than a different
+// default.
+//
+//   Projection.SphericalMercator.js  the map's projection maths, replaced
+//                    with Gall–Peters. This is the fork that could not have
+//                    been a setting: Leaflet ships EPSG:3857, EPSG:4326,
+//                    EPSG:3395 and Simple, and Gall–Peters is not among them,
+//                    so there is no option, no plugin hook, and no config
+//                    file that produces this map. You change the function or
+//                    you do not get it.
+//
+//   Control.Zoom.js  the chrome, so the difference is legible even before
+//                    you notice the continents changed shape.
+//
+// Gall–Peters is cylindrical EQUAL-AREA with standard parallels at 45°:
+// y goes as sin(φ) rather than as log(tan(…)), so Greenland collapses to its
+// true size and the tropics stretch vertically. Nobody mistakes one for the
+// other. The inverse has to agree exactly or panning drifts — which is the
+// honest reason projections live in code and not in options.
+const CHANGES = {
+  'src/geo/projection/Projection.SphericalMercator.js': (text) =>
+    text
+      .replace(
+        /return new Point\(\s*this\.R \* latlng\.lng \* d,\s*this\.R \* Math\.log\(\(1 \+ sin\) \/ \(1 - sin\)\) \/ 2\);/,
+        `// Gall–Peters: cylindrical equal-area, standard parallels 45°.
+		// x is longitude scaled by cos45; y is sin(latitude) divided by it.
+		var k = Math.SQRT1_2;
+		return new Point(
+			this.R * latlng.lng * d * k,
+			this.R * sin / k);`,
+      )
+      .replace(
+        /\(2 \* Math\.atan\(Math\.exp\(point\.y \/ this\.R\)\) - \(Math\.PI \/ 2\)\) \* d,\s*point\.x \* d \/ this\.R\);/,
+        `Math.asin(Math.max(-1, Math.min(1, point.y * Math.SQRT1_2 / this.R))) * d,
+			point.x * d / (this.R * Math.SQRT1_2));`,
+      )
+      // Equal-area poles are finite, so the projected square that Mercator
+      // needs becomes a short, wide rectangle. Getting this wrong does not
+      // throw — the map just refuses to pan past a latitude nobody thought
+      // about.
+      .replace(
+        /var d = earthRadius \* Math\.PI;\s*return new Bounds\(\[-d, -d\], \[d, d\]\);/,
+        `var d = earthRadius * Math.PI * Math.SQRT1_2,
+		    y = earthRadius / Math.SQRT1_2;
+		return new Bounds([-d, -y], [d, y]);`,
+      )
+      // Mercator clamps at 85.05° because its poles are infinite. This
+      // projection's are not, so the clamp is what would now be wrong.
+      .replace(/MAX_LATITUDE:\s*85\.0511287798,/, 'MAX_LATITUDE: 90,'),
+  // A default, not maths — and worth having beside the projection precisely
+  // because the two are different KINDS of change. This one you could have
+  // passed as a style argument; the projection you could not. Forking gets
+  // you both, which is why the interesting question is never "is it
+  // configurable" but "is the boundary still there".
+  'src/layer/vector/Path.js': (text) =>
+    text
+      .replace(/color:\s*'#3388ff'/, "color: '#b45309'")
+      .replace(/weight:\s*3,/, 'weight: 1,')
+      .replace(/fillOpacity:\s*0\.2,/, 'fillOpacity: 0.5,'),
+  'src/control/Control.Zoom.js': (text) =>
+    text
+      .replace(/zoomInText:\s*'[^']*'/, "zoomInText: '＋'")
+      .replace(/zoomOutText:\s*'[^']*'/, "zoomOutText: '－'")
+      .replace(/zoomInTitle:\s*'[^']*'/, "zoomInTitle: 'Closer (my fork)'")
+      .replace(/zoomOutTitle:\s*'[^']*'/, "zoomOutTitle: 'Further (my fork)'"),
+};
+const TARGETS = Object.keys(CHANGES);
+const TARGET = TARGETS[0];
+
+// The version carries the edits it names.
+//
+// An exact version is served `immutable, 1y` (L12) because a published
+// version never changes (L4). A demo that edits its patches and re-runs
+// breaks exactly that: same `1.9.4-mine.0`, different bytes — and every
+// browser that saw the old one keeps showing it, mixing stale modules with
+// fresh ones into a page that is neither version. Diagnosing that costs an
+// hour and the bug is invisible from the server side, where the bytes are
+// right.
+//
+// The protocol's own answer is that a version is a NAME FOR A TREE, so if
+// the tree changes the name must change too. It is derived from the patches
+// rather than from the finished pack because the pack contains the manifest
+// that states the version, and that is a circle.
 let opened = unpack(upstream);
-let original = opened.files.get(TARGET);
-if (!original) {
-  throw new Error(`the demo expected ${TARGET} in the vendored tree`);
+let patchedFiles = new Map();
+for (let [path, patch] of Object.entries(CHANGES)) {
+  let original = opened.files.get(path);
+  if (!original) {
+    throw new Error(`the demo expected ${path} in the vendored tree`);
+  }
+  let next = patch(original.toString('utf8'));
+  if (next === original.toString('utf8')) {
+    throw new Error(`the demo failed to patch ${path} — upstream shape changed`);
+  }
+  patchedFiles.set(path, Buffer.from(next, 'utf8'));
 }
-let patched = original
-  .toString('utf8')
-  .replace(/zoomInText:\s*'[^']*'/, "zoomInText: '＋'")
-  .replace(/zoomOutText:\s*'[^']*'/, "zoomOutText: '－'")
-  .replace(/zoomInTitle:\s*'[^']*'/, "zoomInTitle: 'Closer (my fork)'")
-  .replace(/zoomOutTitle:\s*'[^']*'/, "zoomOutTitle: 'Further (my fork)'");
-if (patched === original.toString('utf8')) {
-  throw new Error(`the demo failed to patch ${TARGET} — upstream shape changed`);
-}
+const FORK_VERSION = `1.9.4-mine.${hashBytes(
+  Buffer.concat([...patchedFiles.entries()].flatMap(([path, bytes]) => [Buffer.from(path), bytes])),
+).slice(0, 8)}`;
 
 let forkFiles = [...opened.files.entries()].map(([path, bytes]) =>
-  path === TARGET
-    ? { path, bytes: Buffer.from(patched, 'utf8') }
+  patchedFiles.has(path)
+    ? { path, bytes: patchedFiles.get(path) }
     : path === 'importmap.json'
       ? {
           path,
@@ -141,7 +252,7 @@ let forkFiles = [...opened.files.entries()].map(([path, bytes]) =>
                       // recorded beside it, not instead of it.
                       vendoredFrom: vendored.vendoredFrom,
                       forkedFrom: { deck: 'lib/leaflet', version: VERSION, treeHash: upstreamHash },
-                      changed: [TARGET],
+                      changed: TARGETS,
                     },
                   },
                 },
@@ -157,7 +268,9 @@ let forkFiles = [...opened.files.entries()].map(([path, bytes]) =>
 let forkPack = pack(forkFiles);
 let forkHash = (await publishToStore(storeDir, 'me/leaflet', FORK_VERSION, forkPack, { tag: 'mine' })).treeHash;
 console.log(`\n2) forked → me/leaflet@${FORK_VERSION} · ${forkHash.slice(0, 12)}…`);
-console.log(`   changed ${TARGET}`);
+for (let path of TARGETS) {
+  console.log(`   changed ${path}`);
+}
 console.log(`   …and importmap.json, which now records the fork's lineage.`);
 console.log(`   That second edit is why the fork inherits no endorsements:`);
 console.log(`   it is a different tree because it ANNOUNCES a different`);
@@ -165,18 +278,146 @@ console.log(`   lineage, and a signature about upstream's bytes should not`);
 console.log(`   travel to something claiming to be someone else (L10).`);
 
 // ---------------------------------------------------------------------------
-// 3. What the fork cost. This is the number worth reading.
+// 3. The other two decks the map needs: a converter, and the data itself.
+//
+// topojson-client is CODE, vendored from npm source exactly like Leaflet was
+// — 13 modules, its own deck. world-atlas is DATA: a 105 KB TopoJSON of every
+// country, which is not a module graph at all and so is sealed as a deck with
+// a tiny loader beside it. Both record where they came from, because "what IS
+// this" has to be answerable for a shapefile as much as for a library (L8).
 // ---------------------------------------------------------------------------
-let report = await inspectStore(storeDir);
-let files = opened.files.size;
-console.log(`\n3) the store now holds two ${files}-file packages`);
-console.log(`   objects: ${report.objects}   (two full copies would be ${files * 2})`);
-console.log(`   bytes:   ${report.bytes.toLocaleString()}`);
-console.log(`   the fork cost ${report.objects - files} new object${report.objects - files === 1 ? '' : 's'} — the`);
-console.log(`   other ${files - 1} are the same bytes, so they are stored once.`);
+console.log(`\n3) the map's other two decks`);
+
+let topo = await vendorFromNpmSource({
+  spec: TOPOJSON,
+  entry: 'src/index.js',
+  policy: { minimumReleaseAge: 0 },
+});
+let topoPack = pack([
+  {
+    path: 'importmap.json',
+    bytes: Buffer.from(
+      JSON.stringify(
+        {
+          deck: {
+            packages: {
+              'topojson-client': {
+                version: topo.pkg.version,
+                entry: `$DECK/${topo.entryPath}`,
+                vendoredFrom: topo.vendoredFrom,
+              },
+            },
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    ),
+  },
+  ...topo.files,
+]);
+let topoHash = (
+  await publishToStore(storeDir, 'lib/topojson-client', topo.pkg.version, topoPack, {
+    tag: 'latest',
+  })
+).treeHash;
+console.log(
+  `   lib/topojson-client@${topo.pkg.version}  ${topo.modules.length} modules · ${topoHash.slice(0, 12)}…`,
+);
+console.log(`   entry ${topo.entryPath} — the declared entry probes as a BUNDLE, so`);
+console.log(`   the module tree is asked for by name. It is in the tarball either way.`);
+
+// The data. `fetchNpmPackage` is the same verified path the code took: same
+// registry, same integrity check, same tarball reader. A dataset is not a
+// special case, it is just a deck whose files are not modules.
+let atlas = await fetchNpmPackage({ spec: ATLAS });
+let atlasBytes = atlas.files.get(ATLAS_FILE);
+if (!atlasBytes) {
+  throw new Error(`the demo expected ${ATLAS_FILE} in the ${ATLAS} tarball`);
+}
+let atlasPack = pack([
+  {
+    path: 'importmap.json',
+    bytes: Buffer.from(
+      JSON.stringify(
+        {
+          deck: {
+            packages: {
+              'world-atlas': {
+                version: atlas.version,
+                entry: '$DECK/index.js',
+                vendoredFrom: {
+                  registry: 'https://registry.npmjs.org',
+                  name: atlas.name,
+                  version: atlas.version,
+                  integrity: atlas.integrity ?? null,
+                  file: ATLAS_FILE,
+                  // Natural Earth is the source of the shapes themselves, and
+                  // it is public domain. A data deck that recorded only the
+                  // npm package it arrived in would answer the wrong question.
+                  upstream: 'Natural Earth 110m cultural vectors, public domain',
+                },
+              },
+            },
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    ),
+  },
+  { path: ATLAS_FILE, bytes: atlasBytes },
+  {
+    path: 'index.js',
+    bytes: Buffer.from(
+      `// The data is JSON, so the module is four lines and a URL. Keeping the
+// loader beside the bytes means a consumer imports a deck rather than
+// hard-coding a path into somebody else's tree.
+export const source = import.meta.url;
+export async function countries() {
+  return (await fetch(new URL('./${ATLAS_FILE}', import.meta.url))).json();
+}
+`,
+      'utf8',
+    ),
+  },
+]);
+let atlasHash = (
+  await publishToStore(storeDir, 'data/world-atlas', atlas.version, atlasPack, {
+    tag: 'latest',
+  })
+).treeHash;
+console.log(
+  `   data/world-atlas@${atlas.version}  ${(atlasBytes.length / 1024).toFixed(0)} KB of TopoJSON · ${atlasHash.slice(0, 12)}…`,
+);
 
 // ---------------------------------------------------------------------------
-// 4. Serve both. The page mounts two maps from two different decks.
+// 4. What the fork cost. This is the number worth reading.
+// ---------------------------------------------------------------------------
+// Measured by comparing the two trees, not by subtracting store totals:
+// the store also holds topojson-client, the atlas, and ui/pills now, and
+// attributing those to the fork would be a flattering lie.
+let report = await inspectStore(storeDir);
+let files = opened.files.size;
+let forkOpened = unpack(forkPack);
+let shared = 0;
+for (let [path, bytes] of forkOpened.files) {
+  if (opened.files.get(path)?.equals(bytes)) {
+    shared++;
+  }
+}
+let cost = files - shared;
+console.log(`\n4) what the fork cost`);
+console.log(`   two ${files}-file copies of Leaflet, and ${shared} of those files are`);
+console.log(`   byte-identical — so the fork added ${cost} object${cost === 1 ? '' : 's'} to the store:`);
+console.log(`   the ${TARGETS.length} files it edited, plus the manifest that records its lineage.`);
+console.log(`   store total: ${report.objects} objects, ${report.bytes.toLocaleString()} bytes —`);
+console.log(`   for FOUR decks (two Leaflets, topojson-client, the atlas) plus ui/pills.`);
+
+// ---------------------------------------------------------------------------
+// 5. Serve both. The page mounts two maps from two different decks.
 // ---------------------------------------------------------------------------
 
 // The shared `ui/pills` deck, published into THIS depot's store from
@@ -202,11 +443,31 @@ await writeFile(
     {
       depot: DEPOT,
       entry: vendored.entryPath,
-      changed: TARGET,
+      changed: TARGETS,
       modules: opened.files.size - 1,
-      store: { objects: report.objects, bytes: report.bytes, wouldBe: files * 2 },
+      store: {
+        objects: report.objects,
+        bytes: report.bytes,
+        wouldBe: files * 2,
+        forkCost: cost,
+        shared,
+      },
       upstream: { deck: 'lib/leaflet', version: VERSION, hash: upstreamHash },
       fork: { deck: 'me/leaflet', version: FORK_VERSION, hash: forkHash },
+      topojson: {
+        deck: 'lib/topojson-client',
+        version: topo.pkg.version,
+        entry: topo.entryPath,
+        modules: topo.modules.length,
+        hash: topoHash,
+      },
+      atlas: {
+        deck: 'data/world-atlas',
+        version: atlas.version,
+        file: ATLAS_FILE,
+        bytes: atlasBytes.length,
+        hash: atlasHash,
+      },
       provenance: {
         registry: vendored.vendoredFrom.registry,
         name: vendored.vendoredFrom.name,
@@ -221,7 +482,17 @@ await writeFile(
   ) + '\n',
 );
 
-let server = createDeckServer({
+} // end buildMode
+
+// The URLs printed below come from the build record on disk, not from
+// variables in the build block above: those are block-scoped, and in serve
+// mode the block never runs. Reading them back also proves the file the page
+// will fetch says what the transcript said.
+let built = JSON.parse(
+  await readFile(join(depotDir, 'app', 'viewer', 'build.json'), 'utf8'),
+);
+
+let server = createDemoServer({
   depots: [{ name: DEPOT, dir: depotDir, storeDir }],
   fallback: (req, res) => {
     res.writeHead(302, { location: `/${DEPOT}/app/viewer/index.html` });
@@ -229,10 +500,13 @@ let server = createDeckServer({
   },
 });
 server.listen(PORT, () => {
-  console.log(`\n4) serving both versions side by side\n`);
-  console.log(`      http://localhost:${PORT}/\n`);
-  console.log(`      /${DEPOT}/lib/leaflet@${VERSION}/${vendored.entryPath}`);
-  console.log(`      /${DEPOT}/me/leaflet@${FORK_VERSION}/${vendored.entryPath}`);
-  console.log(`\n   Both maps draw vector layers only — no tile server, so`);
-  console.log(`   nothing on the page reaches the network at runtime.\n`);
+  console.log(`\n5) serving both versions side by side (HTTPS + HTTP/2)\n`);
+  console.log(`      ${demoOrigin(PORT)}/\n`);
+  console.log(`      /${DEPOT}/${built.upstream.deck}@${built.upstream.version}/${built.entry}`);
+  console.log(`      /${DEPOT}/${built.fork.deck}@${built.fork.version}/${built.entry}`);
+  console.log(`      /${DEPOT}/lib/topojson-client@${built.topojson.version}/${built.topojson.entry}`);
+  console.log(`      /${DEPOT}/data/world-atlas@${built.atlas.version}/${built.atlas.file}`);
+  console.log(`\n   Every country on both maps is an SVG path drawn from sealed`);
+  console.log(`   bytes. There is no tile server and no CDN: nothing on the page`);
+  console.log(`   reaches the network at runtime.\n`);
 });

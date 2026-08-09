@@ -8,6 +8,12 @@
   /* Boxel light surface tier — the same tokens the workspace chrome uses:
      one stage colour, white panels, hairline borders, a teal interactive,
      and shadows that stay under the content. */
+  /* CONTRAST IS MEASURED, NOT JUDGED BY EYE.
+     Every colour used for text meets WCAG AA (4.5:1) against both --bg and
+     --panel. Two did not and were darkened: --faint was 3.18 and --accent
+     was 3.22, which is the band that looks fine to whoever chose it and is
+     unreadable to a fair number of people who did not.
+     Measured with the ratios in docs/deck-hub-typography.md §6. */
   :root {
     --bg: #f7f8fa;
     --panel: #ffffff;
@@ -16,8 +22,8 @@
     --hairline: #eceef1;
     --text: #272330;
     --muted: #5a586a;
-    --faint: #8b8b93;
-    --accent: #0c9d7c;
+    --faint: #6f6f78;
+    --accent: #097a60;
     --accent-2: #0069f9;
     --warn: #b45309;
     --danger: #d92d20;
@@ -26,6 +32,14 @@
     --sans: "IBM Plex Serif", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     --ui: "IBM Plex Sans", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   }
+  /* The link back to /start. Set in the mono, in capitals, the same wordmark
+     treatment the Hub nav uses — one name, one face, wherever it appears. */
+  .up {
+    display: inline-block; margin-bottom: 1rem;
+    font-family: var(--mono); font-size: 0.78rem; font-weight: 700;
+    letter-spacing: 0.12em; color: var(--text); text-decoration: none;
+  }
+  .up:hover { color: var(--accent-2); text-decoration: none; }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
@@ -217,6 +231,40 @@
     display: block;
     margin: 0.35rem 0;
   }
+  /* Transcript: what the command actually printed, distinct from what you
+     type. Every one of these was captured from a real run. */
+  pre.out {
+    background: var(--panel-2);
+    border-style: dashed;
+    box-shadow: none;
+    color: var(--muted);
+    margin-top: -0.6rem;
+  }
+  pre.out b { color: var(--text); font-weight: 600; }
+  pre.out i { color: var(--accent); font-style: normal; }
+  .walk {
+    counter-reset: step;
+  }
+  .walk > h4 {
+    counter-increment: step;
+    margin: 1.5rem 0 0.4rem;
+    font-family: var(--ui);
+    font-size: 0.98rem;
+    font-weight: 600;
+  }
+  .walk > h4::before {
+    content: counter(step);
+    display: inline-grid;
+    place-items: center;
+    width: 1.45em;
+    height: 1.45em;
+    margin-right: 0.5rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.78em;
+    vertical-align: 0.1em;
+  }
   footer.book {
     margin-top: 3rem;
     padding-top: 1rem;
@@ -230,6 +278,9 @@
 <body>
 <div class="wrap">
 <nav class="toc" aria-label="Deckbook contents">
+  <!-- The way back. This page is reached from /start's contents rail, and a
+       document you can enter and not leave is a trap. -->
+  <a class="up" href="/start">← DECK · start</a>
   <h1><span>Deck</span>book</h1>
   <p class="blurb">Taught from the reference implementation — what runs, what it means, what to try next.</p>
   <ol>
@@ -239,14 +290,15 @@
     <li><a href="#volatility">4. Three volatilities</a></li>
     <li><a href="#loop">5. The live loop</a></li>
     <li><a href="#store">6. Store &amp; packs</a></li>
-    <li><a href="#history">7. History tiers</a></li>
+    <li><a href="#history">7. History: Versions, or a Timeline</a></li>
     <li><a href="#vendor">8. Safe vendor</a></li>
     <li><a href="#fork">9. Fork, lock, offers</a></li>
     <li><a href="#http">10. HTTP surface</a></li>
     <li><a href="#cli">11. CLI map</a></li>
-    <li><a href="#usecases">12. Use cases</a></li>
-    <li><a href="#try">13. Try it here</a></li>
-    <li><a href="#status">14. Honest status</a></li>
+    <li><a href="#usecases">12. Use cases, at the CLI</a></li>
+    <li><a href="#coding">13. Coding on Deck</a></li>
+    <li><a href="#try">14. Try it here</a></li>
+    <li><a href="#status">15. Honest status</a></li>
   </ol>
 </nav>
 
@@ -254,15 +306,23 @@
 <header class="hero">
   <h1>The <em>Deck</em>book</h1>
   <p>
-    Deck is a protocol for versioning, publishing, and serving ES modules
-    and JSON from plain state — a directory tree, an import map, seals, and
-    immutable version pointers. This book teaches the running reference
-    implementation: CLI, store, server, history, and the workflows they unlock.
+    <strong>Deck is version management without the commit, package management
+    without the install, and delivery without the deploy.</strong>
+  </p>
+  <p>
+    One thing makes all three true: there is only one kind of object here — a
+    file, named by the hash of its own bytes, reachable at a URL. A tree is a
+    list of those names. A Version, a Step, a dependency, a fork and a release
+    are all pointers to trees. Commit, install and deploy all do the same job:
+    they move a copy to a second place that names things differently. Here
+    there is no second place. This book teaches the running reference
+    implementation: the CLI, the store, the server, the Timeline, and the
+    workflows they open up.
   </p>
   <div class="badges">
     <span class="badge ok">Reference impl built</span>
-    <span class="badge ok">Tier‑1 store always on</span>
-    <span class="badge ok">Tier‑2 history optional</span>
+    <span class="badge ok">Versions always on</span>
+    <span class="badge ok">Timeline optional</span>
     <span class="badge dim">No framework required</span>
   </div>
 </header>
@@ -280,9 +340,9 @@
     <tbody>
       <tr><td>Instant feedback</td><td>Version-less URL → working tree, <code>Cache-Control: no-store</code></td></tr>
       <tr><td>Never lose work</td><td>Auto-publish <code>&lt;base&gt;-dev.N</code> + optional per-save seals</td></tr>
-      <tr><td>Revert anytime</td><td><code>deck unpack</code> a pack, or <code>deck restore &lt;changeId&gt;</code> (tier 2)</td></tr>
+      <tr><td>Revert anytime</td><td><code>deck unpack</code> a pack, or <code>deck restore &lt;changeId&gt;</code> (with a Timeline)</td></tr>
       <tr><td>Ship any version</td><td><code>deck release --from dev</code> — pointer, zero bytes copied</td></tr>
-      <tr><td>Share a milestone</td><td><code>deck pack</code> → <code>.pack.zip</code> (standard zip)</td></tr>
+      <tr><td>Share a milestone</td><td><code>deck pack</code> → a Deck Pack (<code>.pack.zip</code>, a standard zip)</td></tr>
       <tr><td>Use any library</td><td><code>deck vendor</code> hermetic CDN graph → your store</td></tr>
       <tr><td>Fork freely</td><td><code>deck fork</code> into your publisher scope</td></tr>
       <tr><td>Stability on demand</td><td><code>deck lock</code> turns ranges into exact pins</td></tr>
@@ -301,10 +361,10 @@
       <tr><td><strong>deck</strong></td><td>A package: <code>&lt;publisher&gt;/&lt;name&gt;</code> with an <code>importmap.json</code>.</td></tr>
       <tr><td><strong>decklist</strong></td><td>The manifest entry: versions, entry, exports, declared deps.</td></tr>
       <tr><td><strong>live tree</strong></td><td>Bytes on disk right now. Editing surface.</td></tr>
-      <tr><td><strong>sealed deck / version</strong></td><td>Immutable published state addressed by semver.</td></tr>
-      <tr><td><strong>pack</strong></td><td><code>.pack.zip</code> — faithful transport of a tree + packlist.</td></tr>
+      <tr><td><strong>Version</strong></td><td>A published tree that does not change. A semver number addresses it. (Was “sealed deck”.)</td></tr>
+      <tr><td><strong>Deck Pack</strong></td><td><code>.pack.zip</code> — one tree and its packlist in one file. Any zip tool opens it. (Was “cardpack”.)</td></tr>
       <tr><td><strong>treeHash</strong></td><td>Content identity of a whole tree (<code>tree-hash-v1</code>).</td></tr>
-      <tr><td><strong>seal / changeId</strong></td><td>Tier‑2 history checkpoint (jj / historyd).</td></tr>
+      <tr><td><strong>Step / changeId</strong></td><td>One capture of the working tree, one for each save. The Steps in order are the Timeline. Needs a history backend (jj / historyd).</td></tr>
       <tr><td><strong>offer</strong></td><td>A fork that records its upstream base — a proposal you can run.</td></tr>
     </tbody>
   </table>
@@ -324,7 +384,7 @@
        /site/acme/palette@1.1.0/palette.js
                                         sealed copy, immutable forever
        /site/_history/&lt;changeId&gt;/acme/palette/palette.js
-                                        any state it was ever in (tier 2)</code></pre>
+                                        any Step it was ever in</code></pre>
   <div class="callout">
     <strong>Publisher segment = fork boundary.</strong>
     <code>acme/palette</code> and <code>you/palette</code> are different
@@ -358,7 +418,7 @@
 # → debounce (~500ms quiet)
 # → treeHash unchanged? stop
 # → packFromDir → publish &lt;base&gt;-dev.N, tag:dev
-# → [tier 2] history backend seals the save too
+# → [with a Timeline] the save is recorded as a Step too
 
 deck release --depot ./work/site --publisher acme --name palette \
   --version 1.1.0 --from dev --tag latest</code></pre>
@@ -389,18 +449,20 @@ deck release --depot ./work/site --publisher acme --name palette \
 </section>
 
 <section id="history">
-  <h2>7. History tiers (be honest)</h2>
+  <h2>7. History: Versions, or a Timeline</h2>
+  <p>A depot has one of two answers, and the server reports which. These are
+  not numbered levels — each one has a name that says what you get.</p>
   <table>
-    <thead><tr><th>Tier</th><th>What you get</th><th>Status</th></tr></thead>
+    <thead><tr><th>Answer</th><th>What you get</th><th>Status</th></tr></thead>
     <tbody>
       <tr>
-        <td><strong>1 — store only</strong></td>
-        <td>Every settled save → immutable <code>-dev.N</code> pack. Restore by unpacking. No seals between publishes.</td>
+        <td><strong>Versions only</strong></td>
+        <td>Every settled save becomes an immutable <code>-dev.N</code> Version. The Versions are the history. Restore by unpacking one.</td>
         <td><span class="badge ok">Always on</span></td>
       </tr>
       <tr>
-        <td><strong>2 — jj / historyd</strong></td>
-        <td>Every save sealed; <code>/&lt;depot&gt;/_history/&lt;changeId&gt;/…</code>; <code>deck history</code> / <code>deck restore</code>; packlist can name <code>sealChangeId</code>.</td>
+        <td><strong>A Timeline</strong></td>
+        <td>Every save also becomes a Step at <code>/&lt;depot&gt;/_history/&lt;changeId&gt;/…</code>, with <code>deck history</code> and <code>deck restore</code>. A packlist can name the Step it was cut from.</td>
         <td><span class="badge ok">Implemented</span> when <code>--history auto|jj|historyd</code> attaches</td>
       </tr>
     </tbody>
@@ -408,7 +470,7 @@ deck release --depot ./work/site --publisher acme --name palette \
   <div class="callout warn">
     <strong>Capability is reported, not pretended.</strong>
     <code>GET /_packages</code> includes a history block (<code>tier</code>, <code>jj</code>, <code>historyd</code>).
-    Missing jj or a dead daemon degrades to tier 1 with a printed reason — the live/auto-publish loop keeps working.
+    Missing jj or a dead daemon leaves the depot with Versions only, and prints the reason — the live/auto-publish loop keeps working.
   </div>
 <pre><code>deck serve --root ./work --history auto
 deck history ./work/site
@@ -474,7 +536,7 @@ GET /site/_offers</code></pre>
       <tr><td><code>?meta</code></td><td>Machine-readable listing (incl. seal when present)</td></tr>
       <tr><td><code>?format=pack</code></td><td>Faithful stored pack bytes</td></tr>
       <tr><td><code>…/vendor.pack.zip!/inner.js</code></td><td>Mount into a nested pack (depth-capped)</td></tr>
-      <tr><td><code>GET /&lt;depot&gt;/_history</code></td><td>Seal log (tier 2)</td></tr>
+      <tr><td><code>GET /&lt;depot&gt;/_history</code></td><td>The Timeline, when a history backend is attached</td></tr>
       <tr><td><code>GET /&lt;depot&gt;/_history/&lt;id&gt;/…</code></td><td>File at any seal</td></tr>
       <tr><td><code>GET /_packages</code></td><td>Catalog + capability truth</td></tr>
       <tr><td><code>GET /_browse/…</code></td><td>Directory / file JSON for the store browser</td></tr>
@@ -487,57 +549,553 @@ GET /site/_offers</code></pre>
 
 <section id="cli">
   <h2>11. CLI map</h2>
-<pre><code>deck hello | hash | pack | unpack | list | verify
-deck publish | tag | release | vendor | prune
-deck serve [--history auto|jj|historyd|none] [--rebase]
-deck fork | lock | offers | rebase
-deck history | restore</code></pre>
+  <p>
+    Twenty-seven commands in eight groups, ordered the way the work happens.
+    <code>deck help</code> prints this map from the command records themselves;
+    <code>deck help &lt;command&gt;</code> explains any one of them in full.
+  </p>
+  <table>
+    <thead><tr><th>Group</th><th>What it is for</th><th>Commands</th></tr></thead>
+    <tbody>
+      <tr><td><strong>start</strong></td><td>stand a depot up and serve it live</td><td><code>hello</code> <code>serve</code></td></tr>
+      <tr><td><strong>seal</strong></td><td>a directory in, a verified pack out</td><td><code>hash</code> <code>pack</code> <code>unpack</code> <code>list</code> <code>verify</code></td></tr>
+      <tr><td><strong>publish</strong></td><td>name sealed states in a depot's store</td><td><code>publish</code> <code>tag</code> <code>release</code> <code>prune</code> <code>store</code> <code>derive</code> <code>verify-derivation</code></td></tr>
+      <tr><td><strong>depend</strong></td><td>what a deck uses, and which bytes answer to it</td><td><code>vendor</code> <code>vendor-tree</code> <code>lock</code> <code>verify-links</code></td></tr>
+      <tr><td><strong>propose</strong></td><td>change someone else's deck without a branch</td><td><code>fork</code> <code>offers</code> <code>rebase</code></td></tr>
+      <tr><td><strong>endorse</strong></td><td>who stands behind these bytes</td><td><code>keygen</code> <code>sign</code> <code>verify-sig</code></td></tr>
+      <tr><td><strong>recall</strong></td><td>every state the depot has been in</td><td><code>history</code> <code>restore</code></td></tr>
+      <tr><td><strong>prove</strong></td><td>the executable contract</td><td><code>conform</code></td></tr>
+    </tbody>
+  </table>
   <p>From this repo without a global install:</p>
 <pre><code>node packages/cli/bin/deck.js hello ./playground
 node packages/cli/bin/deck.js serve --root ./playground --history auto --rebase</code></pre>
+  <div class="callout warn">
+    <strong>Not on npm.</strong> <code>npx deck</code> would run an unrelated
+    package that already owns that name on the public registry. Install from
+    the repo — see <code>INSTALL.md</code>.
+  </div>
 </section>
 
 <section id="usecases">
-  <h2>12. Use cases the protocol earns</h2>
-  <p>From <code>docs/deck-use-cases.md</code> — shapes of work that <em>need</em> this, not merely benefit.</p>
-
-  <h3>Swarm-built internal tool</h3>
+  <h2>12. Use cases, at the command line</h2>
   <p>
-    Eight agents, eight decks under one app import map. Composition is continuous —
-    no integration branch. Quarantine a bad agent by pinning one dependency from
-    <code>live</code> to <code>^1.2.0</code>. Dial volatility per component.
+    From <code>docs/deck-use-cases.md</code> — shapes of work that <em>need</em>
+    this, not merely benefit. Below, each one is worked as a sequence of real
+    commands. Every transcript on this page was captured from an actual run
+    against this implementation; nothing is illustrative.
   </p>
 
-  <h3>Codelists &amp; reference data</h3>
+  <div class="callout">
+    <strong>One local depot. Libraries come from npm, vendored in.</strong>
+    There is no remote Deck in any of these. A Deck server runs on your
+    machine, owns your files, watches them, serves your app, and seals every
+    save. Third-party code is pulled from npm or a CDN <em>once</em>, sealed
+    into your own store, and served from your own server from then on. Nothing
+    your app loads at runtime comes from a host you do not control.
+  </div>
+
+  <h3>12.0 The setup all four share</h3>
   <p>
-    JSON merges as data (implemented). Amendments publish as <code>dev</code>;
-    ranges never see them. Forks keep absorbing upstream via rebase daemon —
-    your three private keys stay, and you stay current.
+    A depot is a directory of decks. Make two — a component and an app that
+    uses it — and serve the lot:
+  </p>
+<pre><code>work/tool/ui/table/        importmap.json  table.js
+work/tool/app/dashboard/   importmap.json  app.js  index.html</code></pre>
+<pre><code>deck serve --root ./work --history auto</code></pre>
+<pre class="out"><code>  tool: <i>history: jj 0.43.0 (seal-grained)</i>
+  watching tool/app/dashboard
+  watching tool/ui/table
+deck server on http://localhost:8788 (read-only)
+  browse: http://localhost:8788/  — depots, packages, versions
+  hmr:  http://localhost:8788/_live/hmr.js → SSE /_live/events
+  live: http://localhost:8788/tool/ui/table/ — auto-publishes @&lt;base&gt;-dev.N (tag: dev)
+  seals: http://localhost:8788/tool/_history — every save, published or not
+<b>auto-published tool/ui/table@0.1.0-dev.1 (d42dbe7c47d5) sealed pwwxoqtvxssy</b></code></pre>
+  <p>
+    That last line is the whole loop, and it happened without you asking. Now
+    edit <code>table.js</code> and save it — twice:
+  </p>
+<pre class="out"><code><b>auto-published tool/ui/table@0.1.0-dev.2 (9f4f2d43a2d2) sealed wtmrttzrvvwp</b>
+<b>auto-published tool/ui/table@0.1.0-dev.3 (b90501707b14) sealed zkzwlotsqyzm</b></code></pre>
+  <p>
+    Each save is debounced (~500ms of quiet), hashed, and — only if the tree
+    hash <em>changed</em> — published as an immutable version and sealed.
+    Touching a file publishes nothing. Two identifiers appear on every line
+    and they are different things: the <strong>tree hash</strong> is what the
+    bytes are, and the <strong>changeId</strong> is which save it was.
+  </p>
+<pre><code>deck history ./work/tool --limit 3</code></pre>
+<pre class="out"><code>zkzwlotsqyzm  2026-08-08T19:59:32-0400  save: ui/table/table.js
+              M ui/table/table.js
+wtmrttzrvvwp  2026-08-08T19:59:29-0400  save: ui/table/table.js
+              M ui/table/table.js
+pwwxoqtvxssy  2026-08-08T19:59:27-0400  save
+              A app/dashboard/app.js
+              A ui/table/table.js</code></pre>
+  <p>
+    Meanwhile the version-less URL is the working tree, and says so in a
+    header the browser is obliged to honour:
+  </p>
+<pre><code>curl -si http://localhost:8788/tool/ui/table/table.js</code></pre>
+<pre class="out"><code>HTTP/1.1 200 OK
+content-type: text/javascript; charset=utf-8
+<b>cache-control: no-store</b>
+repr-digest: sha-256=:LCVAhA3V5YjeY287uQSy1dLTffMDbV7pvtIxdhQlxNA=:
+x-deck-depot: tool</code></pre>
+  <div class="callout warn">
+    <strong>Without <code>jj</code></strong> the first line reads Versions only
+    instead, and everything else here still works. You keep every settled save
+    as an immutable version; what you lose is the saves <em>between</em>
+    publishes, and with them <code>deck history</code> and
+    <code>deck restore</code>.
+  </div>
+
+  <h3>12.1 The swarm-built internal tool</h3>
+  <p>
+    Eight agents, one component each, one human steering. The app composes
+    them through its import map, so the assembled thing exists continuously —
+    there is no integration step, because there was never a disintegration.
+  </p>
+  <div class="walk">
+    <h4>Declare what the app uses, at the volatility you want</h4>
+    <p>
+      The key is the import specifier your source already writes. The value is
+      how much churn you are opting into, chosen <em>per component</em>:
+    </p>
+<pre><code>{
+  "deck": {
+    "dependencies": {
+      "ui/table":       "live",      // you are editing this one
+      "ui/filter-bar":  "live",
+      "charts/revenue": "dev",       // freshest seal, someone else's
+      "charts/funnel":  "^1.2.0",    // chart 3 went bad — frozen
+      "data/warehouse": "^2.0.0"     // must not move under you
+    }
+  }
+}</code></pre>
+    <h4>Resolve the ranges into pins</h4>
+<pre><code>deck lock --depot ./work/tool --publisher app --name dashboard</code></pre>
+<pre class="out"><code>ui/table  live → /tool/ui/table/table.js
+nanoid  lib/nanoid@^5.0.0 → /tool/lib/nanoid@5.0.9/index.browser.js
+locked app/dashboard</code></pre>
+    <p>
+      The pins are written <em>into</em> <code>importmap.json</code>, so
+      <code>cat</code> is how you read the lock, the lock travels inside the
+      pack, and moving a dependency forward is an ordinary save that
+      auto-publishes and seals like any other.
+    </p>
+    <h4>Quarantine one agent without stopping the others</h4>
+    <p>
+      Chart 3 is producing nonsense. Change one line from <code>live</code> to
+      <code>^1.2.0</code> and re-lock. That panel freezes at its last good
+      release; the other seven keep moving under you. No branch, no revert, no
+      conversation.
+    </p>
+    <h4>Check the pins are not lying</h4>
+<pre><code>deck verify-links --depot ./work/tool --publisher app --name dashboard</code></pre>
+<pre class="out"><code>  ok  app/dashboard  3 link(s)
+1 deck(s) verified</code></pre>
+    <p>
+      Offline, on purpose. It checks that every pin resolves to what its
+      dependency record implies, that every pin has a record and every record
+      a pin, and that the files named actually exist. <code>deck lock
+      --check</code> runs the same gate and refuses to write — that is the CI
+      shape.
+    </p>
+  </div>
+
+  <h3>12.2 Codelists and reference data</h3>
+  <p>
+    A shared table of facts — currencies, tax rates, a model-and-pricing
+    registry — amended constantly by whoever noticed a fact was wrong. This is
+    the worst case for git+npm and the best case for Deck.
+  </p>
+  <div class="walk">
+    <h4>Ship a release — and meet the one gate that is not obvious</h4>
+    <p>
+      A version is a pointer, so releasing copies nothing. But the sealed
+      manifest has to <em>agree</em> that it is the version being released:
+    </p>
+<pre><code>deck release --depot ./work/tool --publisher ui --name table --version 1.0.0 --from dev</code></pre>
+<pre class="out"><code>error: importmap.json declares ui/table@0.1.0, but the request is publishing ui/table@1.0.0</code></pre>
+    <p>
+      So bump <code>deck.packages.&lt;name&gt;.version</code> to
+      <code>1.0.0</code>. That is an ordinary save, which means the watcher
+      publishes and seals it for you:
+    </p>
+<pre class="out"><code><b>auto-published tool/ui/table@1.0.0-dev.1 (9c1fb4417167) sealed kppyzoyuwutt</b></code></pre>
+<pre><code>deck release --depot ./work/tool --publisher ui --name table \
+  --version 1.0.0 --from dev --tag latest</code></pre>
+<pre class="out"><code>released ui/table@1.0.0 from dev: same sealed state (treeHash 9c1fb4417167c9ee…), <b>zero bytes copied</b>, tag latest</code></pre>
+    <p>
+      An amendment publishes to the <code>dev</code> line the instant it is
+      saved, and no <code>^1.0.0</code> consumer sees it — ranges never match
+      prereleases. A curator names a batch when it is right, and that naming
+      is instant no matter how large the list.
+    </p>
+    <h4>Keep your patched copy, and stay current anyway</h4>
+    <p>
+      Your fork has three internal currency codes in it. A fork records its
+      base, so it <em>is</em> a proposal — nothing registers it:
+    </p>
+<pre><code>deck fork --depot ./work/tool --from ui/table@1.0.0 --as you/table --use-in app/dashboard</code></pre>
+<pre class="out"><code>forked ui/table@1.0.0 → you/table (2 files) at …/work/tool/you/table
+  it publishes under you/table; ui/table's versions never move
+  app/dashboard now gets you/table live wherever it imports ui/table — every save, no publish</code></pre>
+<pre><code>deck offers --depot ./work/tool</code></pre>
+<pre class="out"><code>current      you/table ← ui/table@1.0.0
+1 open, 0 need a person</code></pre>
+    <h4>Nobody rebases</h4>
+    <p>
+      Upstream releases 1.1.0. The base is exact and both sides are
+      content-addressed, so re-merging is a pure function a machine runs:
+    </p>
+<pre><code>deck rebase --depot ./work/tool</code></pre>
+<pre class="out"><code>rebased      you/table ← ui/table@1.1.0  (written)
+1 rebased, 0 need a person</code></pre>
+    <p>
+      The merge landed in the fork's own tree — which auto-published and
+      sealed like any other save — and the base pointer moved to what it
+      absorbed. JSON merges <strong>by key</strong>, not by line, so two people
+      adding two different currency codes both land and neither is a conflict.
+    </p>
+    <h4>What happens when it really is a conflict</h4>
+    <p>
+      Both sides change the same key differently. The machine reports it and
+      writes <em>nothing</em> — not even the part that merged:
+    </p>
+<pre class="out"><code>conflicted   you/table ← ui/table@1.2.0  conflicts: table.js
+0 rebased, 1 need a person
+
+fork tree before: tree-hash-v1:58519146809b424024290db3579bd1e4b9d860353c099c4d96026f12d710d7d3
+fork tree after:  tree-hash-v1:58519146809b424024290db3579bd1e4b9d860353c099c4d96026f12d710d7d3</code></pre>
+    <p>
+      Byte-identical. A machine never damages a contributor's work. Run it
+      continuously with <code>deck serve --rebase</code>, and a maintainer with
+      200 open proposals sees the three that stopped merging rather than the
+      197 that someone should rebase.
+    </p>
+  </div>
+
+  <h3>12.3 Adapters, patterns, and the automation you wrote for yourself</h3>
+  <p>
+    "Slack → Google Doc" is four things with different physics: a stable
+    <strong>adapter</strong>, your <strong>bespoke pattern</strong>, the
+    <strong>generic pattern</strong> it could become, and an
+    <strong>instance</strong> that is pure config. Today each is exiled to a
+    different system, so the promotion from bespoke to generic is a rewrite
+    and mostly nobody does it.
+  </p>
+  <div class="walk">
+    <h4>Bring the adapter in-house, once</h4>
+<pre><code>deck vendor npm:nanoid@5.0.9 --depot ./work/tool --publisher lib --tag latest</code></pre>
+<pre class="out"><code>vendored 2 modules from nanoid@5.0.9 (entry index.browser.js, <b>0 rewritten — byte-identical to what npm published</b>)
+  treeHash 81c7824d64e5070895728b60233e96466afdad649d188fe225df0210f76cad36
+published lib/nanoid@5.0.9 tag latest — import it as /tool/lib/nanoid@5.0.9/</code></pre>
+    <p>
+      For something with dependencies of its own, <code>deck vendor-tree</code>
+      does the whole graph — one deck per package, wired by aliased dependency
+      records — so a library two of your decks share is stored and loaded once.
+      A version published in the last 30 days is refused by default; that is
+      the shape most supply-chain attacks arrive in.
+    </p>
+    <h4>Promote bespoke → generic without migrating anything</h4>
+<pre><code>deck fork --depot ./hub --from me/ship-notes --as team/message-to-doc</code></pre>
+    <p>
+      Pull the hardcoded IDs out into <code>config.schema.json</code> and
+      release <code>1.0.0</code>. Your private one keeps working, untouched,
+      pinned to whatever it was pinned to. The generic one has its own version
+      line from birth. Nothing migrated, and the extraction pays twice: a
+      pattern that declares a config schema is configurable without any UI
+      work, and an instance is a JSON document validated against it.
+    </p>
+    <h4>Three strata, three volatilities, one address space</h4>
+<pre><code>"lib/slack":          "^2.0.0"    // adapter — changes when Slack changes
+"team/message-to-doc": "dev"      // pattern — weekly
+"me/ship-notes":      "live"      // instance — whenever you tweak it</code></pre>
+  </div>
+
+  <h3>12.4 Skills and agent capabilities</h3>
+  <p>
+    A skill is a deck of markdown and JSON. Prompt work is the
+    highest-frequency, lowest-ceremony editing there is — a good skill is 200
+    tiny edits — and the only real evaluation is running the harness.
+  </p>
+  <div class="walk">
+    <h4>Keep all 200 iterations without authoring a single commit message</h4>
+    <p>
+      Nothing to do. The watcher already sealed every one of them, and
+      published the ones that changed the tree.
+    </p>
+    <h4>A/B two skills by opening two links</h4>
+<pre><code>curl -si "http://localhost:8788/tool/app/dashboard/index.html?with=ui/table=you/table"</code></pre>
+<pre class="out"><code>HTTP/1.1 200 OK
+<b>cache-control: no-store</b>
+x-deck-importmap: injected
+<b>x-deck-with: ui/table, ui/table/</b>
+
+&lt;script type="importmap"&gt;{"imports":{"ui/table/":"/tool/you/table/","ui/table":"/tool/you/table/table.js"}}&lt;/script&gt;
+&lt;script type="module" src="./app.js"&gt;&lt;/script&gt;</code></pre>
+    <p>
+      The server resolved that one request's import map differently, using the
+      same rules <code>deck lock</code> uses. No checkout, no build, no branch,
+      and the app's own tree is untouched. Repeat <code>with</code> to swap
+      several at once. A trial is <code>no-store</code> and carries
+      <code>x-deck-with</code>, so it can never be cached as if it were the
+      sealed thing.
+    </p>
+    <h4>Decide the version from 40 minutes ago was better</h4>
+<pre><code>deck history ./work/tool --limit 40
+deck restore ./work/tool zkzwlotsqyzm</code></pre>
+<pre class="out"><code>restored ./work/tool to zkzwlotsqyzm…: 2 file(s) written, 0 removed
+  app/dashboard/importmap.json
+  ui/table/table.js
+<b>the state you left is sealed as zmmqpxpvkvww — restore it back any time</b></code></pre>
+    <p>
+      The hour you are abandoning was sealed before the restore ran, so this
+      is undoable. Nothing is rewound: a restore replays forward as ordinary
+      writes, which auto-publish as the next dev version. History only grows.
+    </p>
+  </div>
+
+  <h3>What the four have in common</h3>
+  <table>
+    <thead><tr><th>Move</th><th>Command</th><th>Why it is not available elsewhere</th></tr></thead>
+    <tbody>
+      <tr><td>Compose work in progress</td><td><code>serve</code> + a decklist</td><td>Composition happens at load time through the import map, so "run these eight in-progress things together" is the default state rather than a merge</td></tr>
+      <tr><td>Dial churn per dependency</td><td><code>lock</code></td><td>live, dev, and semver are three different <em>addresses</em> of one deck</td></tr>
+      <tr><td>Keep every intermediate state</td><td><code>serve --history auto</code></td><td>No commit step, so the states you actually want back are the ones that survive</td></tr>
+      <tr><td>Review by running</td><td><code>?with=</code></td><td>The proposal is already published at a URL; trying it is a query parameter</td></tr>
+      <tr><td>Fork and stay current</td><td><code>fork</code> + <code>rebase</code></td><td>An exact base plus content addressing makes re-merging a pure function</td></tr>
+      <tr><td>Ship instantly at any size</td><td><code>release --from dev</code></td><td>A version is a pointer; naming a sealed state copies zero bytes</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="coding">
+  <h2>13. Coding on Deck</h2>
+  <p>
+    The four workloads above are shapes of software. This one is the act of
+    writing it — vibe coding with agents, and using Deck as the revision
+    system while you do. It is the workload every other workload sits inside,
+    and the one where the protocol's odder decisions stop looking odd.
   </p>
 
-  <h3>Adapters → patterns → instances</h3>
+  <h3>Deck as your revision system</h3>
   <p>
-    One address space for stable adapters (<code>^2.0.0</code>), vibe patterns
-    (<code>live</code>), and instance JSON. Promote bespoke→generic with
-    <code>deck fork</code>, not a rewrite in another product.
+    Not a replacement for git in general — a replacement for what git is doing
+    on the twenty tabs of half-finished work you have open right now. Those
+    two jobs have almost nothing in common, and git is only good at one.
+  </p>
+  <table>
+    <thead><tr><th>You want</th><th>git</th><th>Deck</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>keep this state</td>
+        <td><code>add</code>, <code>commit -m "…"</code>, think of a message</td>
+        <td>save the file. It is sealed and, if the tree changed, published</td>
+      </tr>
+      <tr>
+        <td>see it running</td>
+        <td>build, serve, reload</td>
+        <td>it is already at a URL, <code>no-store</code>, this instant</td>
+      </tr>
+      <tr>
+        <td>go back an hour</td>
+        <td><code>reflog</code>, <code>reset</code>, hope</td>
+        <td><code>deck restore &lt;changeId&gt;</code> — and that is itself undoable</td>
+      </tr>
+      <tr>
+        <td>two things at once</td>
+        <td>two branches, one worktree, or a stash</td>
+        <td>two decks. There was never one tree to share</td>
+      </tr>
+      <tr>
+        <td>ship it</td>
+        <td>tag, build, publish, wait</td>
+        <td><code>release --from dev</code> — a pointer, zero bytes</td>
+      </tr>
+      <tr>
+        <td>someone else's change</td>
+        <td>a diff to read</td>
+        <td>a URL to run</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    The load-bearing difference is <strong>ceremony per state</strong>. Git
+    charges you a commit message for every state you want to keep, so you keep
+    the states you can name — and the ones worth going back to are almost
+    never those. They are the accidental ones: the version from forty minutes
+    ago, before the refactor that seemed obviously right. Deck charges
+    nothing, so it keeps them all.
+  </p>
+  <div class="callout">
+    <strong>Going back always goes forward.</strong> <code>deck restore</code>
+    seals the state you are leaving <em>first</em>, then writes the old one as
+    ordinary saves, which auto-publish as the next dev version. Nothing is
+    rewound and nothing is rewritten. That is why there is no reset in this
+    CLI and no <code>--force</code> anywhere near history: an operation that
+    can destroy work is a bad operation to have available at 2am.
+  </div>
+
+  <h3>Two agents at once</h3>
+  <p>
+    The thing that actually breaks when you point several agents at one
+    codebase is not merge quality. It is that they share a working tree, so
+    one of them is always waiting or clobbering. Deck's answer is structural:
+    <strong>one deck per component</strong>, so there is nothing to share.
+  </p>
+<pre class="out"><code><b>auto-published tool/ui/table@0.1.0-dev.1 (a4e81bdb2b71) sealed zyrspmpksmzk</b>
+<b>auto-published tool/charts/spark@0.1.0-dev.1 (7cfa1b609b9c) sealed zyrspmpksmzk</b>
+two saves, two version lines, zero merges — different decks.</code></pre>
+  <p>
+    Both saves landed inside one seal window, so they share a changeId and
+    still have separate version lines. Nobody waited, and no merge ran,
+    because a merge only exists where two writers touched one name.
+  </p>
+  <p>
+    They eventually will. When both amend the same shared deck — a token set,
+    a codelist — the three-way merge runs against the base each fork recorded,
+    and most of the time there is nothing to argue about:
+  </p>
+<pre class="out"><code>agent-a/tokens   rebased      1.1.0  (written)
+agent-b/tokens   rebased      1.1.0  (written)
+agent-a: ink, surface, muted, accent
+agent-b: ink, surface, muted, warning</code></pre>
+  <p>
+    Three different keys under one JSON object. Both forks absorbed
+    upstream's and kept their own. Nobody reviewed anything, because a line
+    merge's idea of "adjacent lines changed" was never a real disagreement.
   </p>
 
-  <h3>Skills &amp; agent capabilities</h3>
+  <h3>The conflict that is real, and resolving it deterministically</h3>
   <p>
-    Versioned, forkable, try-by-URL evaluable. Hundreds of tiny edits stay sealed;
-    review means running the harness with <code>?with=</code>, not reading the prompt.
+    Then they collide for real: the same key, two answers. The generic merge
+    refuses — and refuses <em>completely</em>:
   </p>
+<pre class="out"><code>agent-a/tokens   conflicted   1.2.0  ← tokens.json
+agent-a's tree: 66febf4edc8b… before, 66febf4edc8b… after — <b>byte for byte</b></code></pre>
+  <p>
+    It has to refuse, because it does not know what the key <em>means</em>.
+    <code>scale</code> is a set, so two people extending it are agreeing.
+    <code>radius</code> is a scalar, so two people setting it are
+    disagreeing — but there may still be a house rule. Nothing generic can
+    tell those apart, and a merge tool that guessed would be worse than one
+    that stops.
+  </p>
+  <p>
+    So the rules are <strong>published data</strong>, in upstream's own sealed
+    tree, versioned like everything else:
+  </p>
+<pre><code>// std/tokens/merge-policy.json
+{ "rules": { "scale": "union", "radius": "max" } }</code></pre>
+  <p>
+    A resolver reads them and settles what they cover:
+  </p>
+<pre class="out"><code>radius   base 4  upstream 8  fork 12
+         → rule "max" → <b>12</b>
+scale    base [4,8,16,24]  upstream [4,8,16,24,40]  fork [4,8,16,24,48]
+         → rule "union" → <b>[4,8,16,24,40,48]</b>
+both intentions survived: 48 is agent-a's, 40 is upstream's.</code></pre>
+  <p>Three properties make that a resolution rather than a coin flip.</p>
+  <ul>
+    <li>
+      <strong>Deterministic.</strong> Every rule is a pure function of
+      (base, upstream, fork). <code>union</code> sorts, so it does not matter
+      which side is called ours; the demo asserts that two dry runs agree and
+      that the commutative rules actually commute.
+    </li>
+    <li>
+      <strong>Auditable.</strong> The rule that decided each key is reported,
+      and it came from a file anyone can read at an immutable URL. Upstream
+      owns the rules, so a proposal cannot grant itself the right to win.
+    </li>
+    <li>
+      <strong>Fail-closed.</strong> A key with no rule is not guessed. The
+      whole resolution is abandoned and <em>nothing</em> is written — not even
+      the keys it could have settled.
+    </li>
+  </ul>
+<pre class="out"><code>REFUSED  tokens.json name: no rule declared
+nothing written. One person decides one key, instead of three.</code></pre>
+  <p>
+    That last line is the point of the whole arrangement. Unattended merging
+    is only safe if its refusals are trustworthy, and a resolver that quietly
+    picks a side is worse than none — you stop reading its output, and then
+    you stop noticing what it decided for you.
+  </p>
+  <div class="callout">
+    Runnable: <code>pnpm --filter @deck/example-two-agents demo</code>, or the
+    <b>two-agents</b> panel in the hub. It is also the demo that turns a Timeline
+    history on, so every save there has a changeId and not just every publish.
+  </div>
+
+  <h3>A, B or C — choosing between an agent's variations</h3>
+  <p>
+    Ask for three ways to do something and you get three answers at three
+    different layers. They are not drafts of one edit; they have different
+    blast radii, so a person has to choose:
+  </p>
+  <table>
+    <thead><tr><th></th><th>layer</th><th>the edit</th><th>changes</th></tr></thead>
+    <tbody>
+      <tr><td><b>A</b></td><td>data</td><td>shrink the spacing scale</td><td>every deck that reads the tokens</td></tr>
+      <tr><td><b>B</b></td><td>view</td><td>a compact card</td><td>every page that renders a card</td></tr>
+      <tr><td><b>C</b></td><td>composition</td><td>more columns</td><td>this page only</td></tr>
+    </tbody>
+  </table>
+  <p>Each is published the moment it exists, and publishing moves nothing:</p>
+<pre class="out"><code>A  data         std/tokens@1.1.0-try.a   53e94c367a70…
+B  view         ui/card@1.1.0-try.b      addbe50dc750…
+C  composition  app/gallery@1.1.0-try.c  29fd5d6d8f8d…
+latest still points at 1.0.0 for all three. Ranges never match prereleases.</code></pre>
+  <p>
+    Review is four iframes of one sealed page, each asked for with a different
+    <code>?with=</code>. No checkout, no build, no branch, and the app's own
+    tree is identical in all four.
+  </p>
+<pre><code>/site/app/preview/preview.html?with=std/tokens@1.1.0-try.a&amp;with=ui/card@1.0.0&amp;with=app/gallery@1.0.0</code></pre>
+  <p>Choosing is a tag move:</p>
+<pre><code>deck release --depot ./depot --publisher ui --name card \
+  --version 1.1.0 --from try-b --tag latest</code></pre>
+<pre class="out"><code>ui/card@1.1.0 ← 1.1.0-try.b
+same tree addbe50dc750…, same stored object, <b>zero bytes copied</b></code></pre>
+  <p>
+    And the two you rejected are not deleted, not stashed, and not on a
+    branch. They are published versions with no <code>latest</code> pointing
+    at them, which is all "not latest" has ever needed to mean:
+  </p>
+<pre class="out"><code>A  std/tokens@1.1.0-try.a   tags: try-a   1078 bytes, still rebuilds
+C  app/gallery@1.1.0-try.c  tags: try-c   1305 bytes, still rebuilds</code></pre>
+  <p>
+    Change your mind in a month and it is the same pointer move again. This is
+    the part that has no equivalent anywhere else: rejected work normally
+    either pollutes the branch list until someone prunes it, or evaporates
+    when the agent's context window closes.
+  </p>
+  <div class="callout">
+    Runnable: <code>pnpm --filter @deck/example-variations demo</code>, or
+    <code>CHOOSE=a</code> / <code>CHOOSE=c</code> to promote a different one.
+  </div>
 </section>
 
 <section id="try">
-  <h2>13. Try it on this server</h2>
+  <h2>14. Try it on this server</h2>
   <p>If you are reading this from a running Deck server, these links hit the live surface:</p>
   <ul>
     <li><a href="/">Store browser</a> — packages, files, version switch (honest store paths)</li>
     <li><a href="/_packages">/_packages</a> — JSON catalog + history capability block</li>
     <li><a href="/_live/hmr.js">/_live/hmr.js</a> — drop-in HMR client source</li>
-    <li><a href="/live/neon-drift/index.html">Neon Drift lab</a> — multi-deck demo (if that example is served)</li>
+    <li><a href="/site/_offers">/&lt;depot&gt;/_offers</a> — the open proposals, re-merged on read</li>
+    <li><a href="/site/_history">/&lt;depot&gt;/_history</a> — the Timeline, when a history backend is attached</li>
   </ul>
+  <p>
+    And <code>pnpm demo</code> in the repo starts all seven examples at once —
+    each its own process, its own depot, its own store — at
+    <code>http://localhost:8789/</code>.
+  </p>
   <div class="callout">
     <strong>Start cold:</strong>
     <code class="cmd">node packages/cli/bin/deck.js hello ./playground</code>
@@ -546,7 +1104,7 @@ node packages/cli/bin/deck.js serve --root ./playground --history auto --rebase<
 </section>
 
 <section id="status">
-  <h2>14. Honest status</h2>
+  <h2>15. Honest status</h2>
   <table>
     <thead><tr><th>Area</th><th>State in this repo</th></tr></thead>
     <tbody>
@@ -566,6 +1124,9 @@ node packages/cli/bin/deck.js serve --root ./playground --history auto --rebase<
       <tr><td>Merkle <code>tree-hash-v2</code></td><td><strong>Rejected</strong> — <code>tree-hash-v1</code> is the identity for everything. Measurements in <code>docs/deck-tree-hash-v2-review.md</code></td></tr>
       <tr><td>Rebuild siblings (<code>rebuild-v1</code>)</td><td>Proposed — <code>docs/deck-rebuild-sibling-proposal.md</code> (git+build ≠ npm → sibling derivation, not fork)</td></tr>
       <tr><td>Depot vs realm (backport prep)</td><td>Ruled — <code>docs/deck-depot-and-realm-backport.md</code> (standalone = depot; Boxel realm stays placement-free)</td></tr>
+      <tr><td><code>deck.land</code> hostnames</td><td>Ruled — <code>docs/deck-land-hostnames.md</code> (apex / local / <strong>cloud</strong> / cdn; hub is the app)</td></tr>
+      <tr><td>Activity (<code>/_activity</code>)</td><td>Proposed — <code>docs/deck-activity-protocol.md</code> (replaces <code>/_heat</code>; lean focus + <code>story=1</code> canvas pack)</td></tr>
+      <tr><td>UI vocabulary</td><td>Ruled — <code>docs/deck-step-version-vocabulary.md</code> (Version/Step/Timeline; Import/Pin/Entry/Leaf/Closure)</td></tr>
     </tbody>
   </table>
   <p>
@@ -573,6 +1134,9 @@ node packages/cli/bin/deck.js serve --root ./playground --history auto --rebase<
     start with <code>deck-laws.md</code> (the contract),
     then <code>deck-at-rest-protocol.md</code>,
     <code>deck-depot-and-realm-backport.md</code>,
+    <code>deck-land-hostnames.md</code>,
+    <code>deck-activity-protocol.md</code>,
+    <code>deck-step-version-vocabulary.md</code>,
     <code>deck-cas-v2-spec.md</code>,
     <code>deck-efficient-delivery-spec.md</code>,
     <code>deck-rebuild-sibling-proposal.md</code>,

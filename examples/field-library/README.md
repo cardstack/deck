@@ -1,13 +1,42 @@
-# A field library — aliasing, scopes, and dedupe across many decks
+# A field library — edit a field, and the edit is a Version
 
 ```bash
 pnpm --filter @deck/example-field-library demo
 # open http://localhost:8793/
 ```
 
-Six card fields, each in its own deck, sharing a shelf of five npm libraries
-vendored from source. This is the first example where enough decks are on one
-page for the *resolution* rules to matter, and all three of them show up.
+A shipment form assembled from seven field decks over a shelf of five npm
+libraries vendored from source. Six of the fields are catalogue fields, sealed
+at `1.0.0`. The seventh is yours.
+
+## The loop you can do yourself
+
+Edit `you/ship-by` in the pane on the right and press Save. Three suggested
+edits are one click each, and you can type over any of the source.
+
+```
+you type            → the editor bridge writes you/ship-by/index.js
+the watcher wakes   → hashes the tree, publishes 1.0.0-dev.N, tags it `dev`
+the page reloads at → ?with=you/ship-by@1.0.0-dev.N
+the form redraws    → the control looks different
+```
+
+Then click `1.0.0` in the rail under the form. The original control comes back,
+byte for byte, from an address that cannot change (L4). Every version you made
+on the way is still there, including the ones you did not like.
+
+**The write path is a separate process on purpose.** The deck server answers
+`GET` and `HEAD` and nothing else (L12), so a page cannot ask it to save a
+file. `examples/shared/editor-bridge.mjs` stands in for your text editor: it
+writes one named file and stops. It publishes nothing and hashes nothing.
+Everything after the write is the ordinary live loop.
+
+`?with=` is not a demo router either. The server re-resolves the document's
+import map for one request, with the same rules `deck lock` uses at write time,
+and it reaches inside the scopes — so the substitute brings its own `date-fns`
+and its own `zod` with it.
+
+## Three resolution rules, all on one page
 
 ## Aliasing — the specifier is not the deck name
 
@@ -81,9 +110,14 @@ is famously baffling to debug. Nobody arranged for it to be true here.
 
 ## What the page does
 
-It imports six field decks and **not one library**, then reads its own injected
-import map back out of the DOM and reports what actually resolved — so the
-tables are measurements of the page you are looking at, not narration.
+It imports seven field decks and **not one library**, then reads its own
+injected import map back out of the DOM and reports what actually resolved — so
+the tables under *What resolved* are measurements of the page you are looking
+at, not narration.
+
+`you/ship-by` is imported dynamically, inside a `try`. You are about to edit
+it; a static import of a file with a typo in it takes the page down and tells
+you nothing, and a broken save should be a message in the form instead.
 
 ## The lock is checked in
 
@@ -104,5 +138,12 @@ invisible — the page worked, the header just never appeared.
   package and no scope prefix matched.
 
 Fixed, with regression tests in `packages/server/tests/`. The page now
-advertises `200/279` — 200 links emitted out of 279 modules reachable, the
+advertises `200/281` — 200 links emitted out of 281 modules reachable, the
 rest over the byte budget and reported as clipped rather than hidden.
+
+## Where the editable field lives
+
+`depot/you/ship-by/` is seeded from `starter/ship-by/` on first run and is
+gitignored, so an edit made in the browser never dirties the repository. It
+survives a restart; `RESET=1` does not delete it, and the **Revert** button
+puts the file back to the bytes it started with.

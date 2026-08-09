@@ -24,11 +24,13 @@ real address space, not a demo router.
 
 | Example | Workload | Shows |
 | --- | --- | --- |
-| [codelist](codelist/) | W2 — shared reference data | Two people amend one table concurrently and both land. A fork absorbs upstream and keeps its own codes. Every state is at rest, at an immutable URL. |
-| [contribute-to-codelist](contribute-to-codelist/) | W2 — the write side | `deck fork` → amend → `_offers` → rebase daemon. Two proposals, one rebases itself and one stops merging; a reviewer runs either with `?with=` without checking anything out. |
+| [codelist](codelist/) | W2 — shared reference data | One board, four sealed states. Switch between them and rows **grow in and out** while the count changes: two concurrent amendments both land, and a fork absorbs upstream while keeping its own codes. |
+| [contribute-to-codelist](contribute-to-codelist/) | W2 — the write side | The two open proposals side by side, each with one control: **try this one**. The one that stopped merging looks like a stopped machine and still runs — what stopped is the merge into upstream, and that needs a person. |
 | [fork-an-app](fork-an-app/) | W3 — adapters and forks | Vendor Leaflet from npm source, change one file, run yours next to upstream. The fork costs 2 objects out of 87. Nothing reaches the network at runtime. |
-| [fork-a-language](fork-a-language/) | W3 — bespoke to generic | Replace a language's parser with a FEEL-shaped one. The evaluator stays byte-identical, so both dialects share it and provably run the same semantics. |
-| [field-library](field-library/) | W4 — patterns and fields | Six field decks over five vendored libraries. Aliasing, scopes (two chroma-js versions in one document), and dedupe: 13 dependency edges collapse to 6 URLs, and one URL is one module instance. |
+| [fork-a-language](fork-a-language/) | W3 — bespoke to generic | A two-pane console: **type an expression** and both dialects evaluate it live. The parser differs, the evaluator is byte-identical, and each pane prints the digest of the bytes it fetched. |
+| [field-library](field-library/) | W4 — patterns and fields | A shipment form built from seven field decks. **Edit the seventh in the page**: the save auto-publishes `1.0.0-dev.N`, and the form redraws at `?with=`. Also aliasing, scopes (two chroma-js versions in one document), and dedupe. |
+| [two-agents](two-agents/) | W1 — concurrent agents | Three token sets, each **rendered as the interface it describes**, so an agent's edit repaints something recognisable. A merge policy published as data resolves the keys it covers and refuses — writing nothing — for the one it does not. Runs a Timeline, so every save has a changeId. |
+| [variations](variations/) | W4 — choosing agent output | A plant shop, and an agent's three answers to "make it denser" — one per layer, each looking obviously unlike the other two. Review is four iframes of one sealed page. Choosing is `deck release --from try-b`: a tag moves, zero bytes copied, and the two you rejected stay addressable. |
 
 ## Three kinds of name
 

@@ -1,0 +1,27 @@
+/* Catppuccin Latte, as a Deck theme.
+ *
+ * The light flavour of the same family, so switching between them changes
+ * nothing but the values — every hue keeps the job it had. See
+ * `/hub/theme/mocha/palette.css` for what the two groups mean.
+ *
+ * Upstream: catppuccin/catppuccin, Latte flavour.
+ */
+:root {
+  color-scheme: light;
+
+  --bg: #eff1f5;      /* base     */
+  --panel: #e6e9ef;   /* mantle   */
+  --fg: #4c4f69;      /* text     */
+  --dim: #8c8fa1;     /* overlay1 */
+  --line: #ccd0da;    /* surface0 */
+  --sel: #bcc0cc;     /* surface1 */
+
+  --red: #d20f39;
+  --green: #40a02b;
+  --amber: #df8e1d;   /* yellow   */
+  --blue: #1e66f5;
+  --violet: #8839ef;  /* mauve    */
+  --cyan: #179299;    /* teal     */
+  --pink: #ea76cb;
+  --orange: #fe640b;  /* peach    */
+}

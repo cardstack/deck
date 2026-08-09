@@ -85,13 +85,13 @@ export const DEMOS = [
     dir: 'fork-a-language',
     port: 8792,
     workload: 'W3 · bespoke to generic',
-    title: 'Fork a language, keep the engine',
-    lede: `Two decks implement one small filter language. One replaces a
-      single file — the parser — with a FEEL-shaped surface syntax instead of
-      a jq-shaped one, and adds a feature the original has no syntax for.`,
+    title: 'Two dialects. One evaluator.',
+    lede: `A two-pane console over one small filter language. Type an
+      expression in either dialect and both evaluate as you type — different
+      surface syntax, the same engine, and you can check that yourself.`,
     look: [
-      'Every question is asked in both dialects and the answers are compared. If the fork ever changed behaviour, the demo fails instead of shipping.',
-      '<code>eval.js</code> is byte-identical across the two decks, so the store holds one copy — which is the proof that both dialects run the same semantics.',
+      'Both engines run in the page, imported from two sealed decks. Type your own expression: an answer the author never thought of is still the same answer on both sides.',
+      'Each pane prints the SHA-256 of the <code>eval.js</code> bytes it fetched. The same digest twice, from two different URLs, is the proof that both dialects run the same semantics.',
       'The FEEL range <code>qty in [2..8]</code> desugars inside the parser into two comparisons the shared evaluator already understood. A new language feature, zero evaluator change.',
       '6 objects for two 4-file decks; two full copies would be 8.',
     ],
@@ -106,21 +106,118 @@ export const DEMOS = [
     dir: 'field-library',
     port: 8793,
     workload: 'W4 · patterns and fields',
-    title: 'A field library — aliasing, scopes, dedupe',
-    lede: `Six card fields, each its own deck, over five npm libraries
-      vendored from source. Enough decks on one page for the resolution rules
-      to matter — and all three of them show up at once.`,
+    title: 'Edit a field. The edit is a Version.',
+    lede: `A shipment form built from seven field decks. Six are sealed. The
+      seventh is yours: edit its source in the page, and the save becomes an
+      immutable Version the form can be pointed at.`,
     look: [
+      'Press Save. The watcher hashes the tree and publishes <code>1.0.0-dev.N</code>; the page reloads at <code>?with=you/ship-by@1.0.0-dev.N</code> and the control looks different. Click <code>1.0.0</code> to get the original back, byte for byte.',
+      'The editor writes through a <b>separate process</b> on the next port. The deck server answers GET and HEAD and nothing else, so a page cannot ask it to save a file — the bridge does what your editor does, and everything after the write is the ordinary loop.',
       `Every field imports <code>zod</code>, <code>date-fns</code>, <code>luxon</code> — bare npm specifiers. None of those is a deck name: ${pill('npm', 'zod@3.25.76')} is the artifact, ${pill('deck', 'lib/zod@3.25.76')} is the address, and one line of decklist connects them.`,
       `${pill('deck', 'fields/swatch@1.0.0')} is on chroma-js 3.1.2 and ${pill('deck', 'fields/brand-swatch@1.0.0')} is pinned to 2.6.0, and both render on the same page. A flat import map has one slot for <code>chroma-js</code>.`,
-      '13 dependency edges collapse to 6 library URLs. Nothing computed that — identical ranges resolve to identical versions, and identical bytes have identical names.',
       'One URL is one module instance, so <code>dueDate.schema instanceof handle.modules.zod.ZodType</code> is <b>true</b>. The page checks it live.',
-      'The page reads its own injected import map back out of the DOM, so the tables are measurements of the page you are looking at.',
     ],
     tries: [
+      { label: 'the form at the working tree', path: '/site/app/library@1.0.0/index.html?with=you/ship-by' },
       { label: 'a field deck’s lock', path: '/site/fields/swatch@1.0.0/importmap.json' },
       { label: 'chroma-js 3.1.2', path: '/site/lib/chroma-js@3.1.2/index.js' },
       { label: 'chroma-js 2.6.0, at the same time', path: '/site/lib/chroma-js@2.6.0/index.js' },
+    ],
+  },
+  {
+    name: 'two-agents',
+    dir: 'two-agents',
+    port: 8795,
+    workload: 'W1 · concurrent agents',
+    title: 'A rule resolves it. No rule refuses.',
+    lede: `Two agents editing the same depot in the same minute. Each token
+      set is rendered as the interface it describes, so an edit repaints
+      something you recognise — and the one key nobody wrote a rule for is the
+      loudest thing on the page.`,
+    look: [
+      'The three sets are drawn as three small interfaces, from their own values. Agent A rounded the corners and picked a green accent; agent B added a warning colour. Nothing on the page chooses those — they come off the JSON.',
+      'Both component saves auto-publish and are <b>sealed</b> — this is the demo that runs a Timeline, so every save has a changeId, not just every publish.',
+      'Round one: three different keys under one object. Both forks absorb upstream and keep their own addition. Nobody reviewed anything.',
+      'Round two: the same two keys, two answers. Reported <code>conflicted</code>, and the fork’s tree hash is byte-identical before and after — a conflicted pass writes nothing at all.',
+      'The rules live in <code>merge-policy.json</code>, published by upstream. <code>scale</code> is a set, so <code>union</code> keeps both intentions: 48 was the fork’s, 40 was upstream’s, and both survive.',
+      'A key with no rule is not guessed. The resolver abandons the whole resolution and names the key — one person decides one thing instead of three.',
+    ],
+    tries: [
+      { label: 'the queue', path: '/site/_offers' },
+      { label: 'the merge rules, sealed', path: '/site/std/tokens@1.3.0/merge-policy.json' },
+      { label: 'agent A, live', path: '/site/agent-a/tokens/tokens.json' },
+      { label: 'the seal log', path: '/site/_history' },
+    ],
+  },
+  {
+    name: 'variations',
+    dir: 'variations',
+    port: 8796,
+    workload: 'W4 · choosing between agent output',
+    title: 'A, B or C — and the two you didn’t pick',
+    lede: `Asked to make a gallery denser, an agent offers three answers at
+      three different layers: the tokens, the card, the gallery. They have
+      different blast radii, so a person chooses — and the two rejected
+      answers have to stay readable, because in a month one of them will turn
+      out to have been right.`,
+    look: [
+      'Four iframes, one sealed page. Each is <code>/site/app/preview/preview.html</code> with a different <code>?with=</code> — no checkout, no build, no branch.',
+      `Each variation is an immutable prerelease: ${pill('deck', 'std/tokens@1.1.0-try.a')}, ${pill('deck', 'ui/card@1.1.0-try.b')}, ${pill('deck', 'app/gallery@1.1.0-try.c')}. Publishing all three moved nothing downstream, because ranges never match prereleases.`,
+      'Choosing is <code>deck release --from try-b</code>: a tag moves, the same stored object is named, <b>zero bytes are copied</b>.',
+      'The two you rejected are not deleted, stashed, or branched. They are published versions with no <code>latest</code> pointing at them — which is all “not latest” has ever needed to mean.',
+      'Re-run with <code>CHOOSE=a</code> or <code>CHOOSE=c</code>. Changing your mind in a month is the same pointer move.',
+    ],
+    tries: [
+      { label: 'variation A, still there', path: '/site/std/tokens@1.1.0-try.a/tokens.json' },
+      { label: 'variation C, still there', path: '/site/app/gallery@1.1.0-try.c/gallery.js' },
+      { label: 'what latest names now', path: '/site/ui/card@1.1.0/card.js' },
+    ],
+  },
+  {
+    name: 'three-js',
+    dir: 'three-js',
+    port: 8797,
+    workload: 'W3 · own the library',
+    title: '374 files, and you may edit any of them',
+    lede: `three.js publishes both: a real per-file module tree in
+      <code>src/</code>, and the same library flattened into one 1.2 MB module
+      in <code>build/</code>. Almost every CDN hands you the second. Vendored
+      from the first, changing a shader is a text edit.`,
+    look: [
+      `Two WebGL canvases, one scene definition, run twice. Everything that differs comes from ONE file — a GLSL chunk in ${pill('deck', 'me/three@0.160.0-holo')}.`,
+      'The fork is a fresnel rim plus a screen-space scanline. Neither is reachable from a material option: <code>MeshPhongMaterial</code> has ~50 settings and none of them is either.',
+      '373 of 375 files are byte-identical, so the fork cost <b>2 objects</b> out of a 376-object store. Two independent copies would be 750.',
+      '0 rewritten during vendoring — the tree served IS the tree npm published, verifiable against the recorded GitHub commit.',
+      'The page times its own module loading: 374 modules, one request each, per side. That number is the honest cost of per-file delivery and what <code>docs/deck-efficient-delivery-spec.md</code> answers.',
+    ],
+    tries: [
+      { label: 'the one changed file', path: '/site/me/three@0.160.0-holo/src/renderers/shaders/ShaderChunk/opaque_fragment.glsl.js' },
+      { label: 'upstream, same path', path: '/site/lib/three@0.160.0/src/renderers/shaders/ShaderChunk/opaque_fragment.glsl.js' },
+      { label: 'the provenance record', path: '/site/lib/three@0.160.0/importmap.json' },
+    ],
+  },
+  {
+    name: 'prosemirror',
+    dir: 'prosemirror',
+    port: 8798,
+    workload: 'W3 · the honest gap',
+    title: 'Where per-file vendoring runs out',
+    lede: `Leaflet publishes 85 addressable modules. three.js publishes 374.
+      These eleven publish none — every declared entry is one rolled-up
+      module — and between them they ship <b>zero</b> source maps, so there is
+      nothing to recover either. This demo measures the refusal instead of
+      asserting it, and then shows what is left.`,
+    look: [
+      'The survey table is the measurement: 11 packages, every entry resolving to <b>1</b> module, and a maps column that is zero all the way down.',
+      `Source mode has no tree to take; map mode has nothing to recover from. This is the case ${pill('github', 'docs/deck-rebuild-sibling-proposal.md')} was written for.`,
+      'ProseMirror ships <code>src/</code> anyway — TypeScript. Sealed as its own deck with <b>no entry declared</b>, so it is addressable, hashed and diffable, and the server structurally refuses to import it. L11 as a shape, not a warning.',
+      'The editor is real and hermetic: 11 bundles vendored from npm tarballs and wired to each other by decklist alias, with one import-map scope per deck (L7).',
+      'Two decks, same library, same version — one readable and not runnable, one runnable and not readable. What joins them is a build, and <code>rebuild-v1</code> is still a proposal. The demo stops there rather than pretending.',
+    ],
+    tries: [
+      { label: 'readable, not runnable', path: '/site/src/prosemirror-model@1.25.11/src/schema.ts' },
+      { label: 'runnable, not readable', path: '/site/lib/prosemirror-model@1.25.11/dist/index.js' },
+      { label: "the app's scopes", path: '/site/app/editor/importmap.json' },
     ],
   },
 ];

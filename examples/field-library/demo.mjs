@@ -37,8 +37,21 @@ import { inspectStore, publishToStore, readStoredPack } from '@deck/core/store';
 import { peekPacklist } from '@deck/core/pack';
 import { readTreeFromDir } from '@deck/core/tree';
 import { vendorFromNpmSource } from '@deck/core/vendor-npm';
-import { createDeckServer } from '@deck/server/server';
 import { storeDirFor } from '@deck/server/depot';
+import { localFetch } from '@deck/server/tls';
+import {
+  createDemoServer,
+  demoOrigin,
+  liveNotes,
+  openDemoDepot,
+  serveLive,
+} from '../shared/depot.mjs';
+import {
+  readEditable,
+  seedEditable,
+  startEditorBridge,
+} from '../shared/editor-bridge.mjs';
+import { demoBuildMode } from '../shared/reset.mjs';
 import { publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -46,6 +59,10 @@ const PORT = Number(process.env.PORT ?? 8793);
 const DEPOT = 'site';
 const depotDir = join(here, 'depot');
 const storeDir = storeDirFor(depotDir);
+// The write path runs on its own port, and that is not tidiness. The deck
+// server answers GET and HEAD and nothing else (L12), so a page cannot ask it
+// to save a file. See examples/shared/editor-bridge.mjs.
+const BRIDGE_PORT = Number(process.env.BRIDGE_PORT ?? PORT + 1);
 
 // The shelf. Exact versions, because a demo that resolves differently on
 // different days cannot make a claim about bytes.
@@ -70,11 +87,32 @@ const FIELDS = [
   'fields/handle',
   'fields/audit-stamp',
 ];
+// The seventh field belongs to the reader. It is seeded from `starter/` into
+// a gitignored part of the depot, so an edit made in the browser never dirties
+// the repository and a re-run keeps whatever was left behind.
+const EDITABLE = 'you/ship-by';
 const APP = 'app/library';
 const VERSION = '1.0.0';
 
-await rm(storeDir, { recursive: true, force: true });
+// Which files a reader may edit is declared in editable.json, so this demo
+// and the Hub start the same bridge over the same allow-list.
+const EDITABLE_FILES = await readEditable(here);
+
+
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'fields/swatch', version: '1.0.0' },
+  label: 'FIELD LIBRARY',
+});
+if (buildMode === 'rebuild') {
+  await rm(storeDir, { recursive: true, force: true });
+  console.log('   RESET=1 — wiped .deck/store; Notes and Claims kept');
+}
 await mkdir(storeDir, { recursive: true });
+
+let seedState = await seedEditable(here, EDITABLE_FILES);
+
+if (buildMode !== 'serve') {
 
 console.log('\n  FIELD LIBRARY — aliasing, scopes, and dedupe across many decks\n');
 
@@ -162,7 +200,9 @@ async function lockAndSeal(deckName) {
     deckDir,
   });
   if (changed) {
-    drifted.push(deckName);
+    // The reader's field is seeded WITHOUT a lock, so locking it on the first
+    // run is the expected outcome rather than drift in a checked-in file.
+    if (deckName !== EDITABLE) drifted.push(deckName);
     await writeFile(join(deckDir, IMPORT_MAP_PATH), text);
   }
   let files = await readTreeFromDir(deckDir);
@@ -178,7 +218,7 @@ async function lockAndSeal(deckName) {
 }
 
 let fieldInfo = [];
-for (let deckName of FIELDS) {
+for (let deckName of [...FIELDS, EDITABLE]) {
   let { treeHash, resolutions } = await lockAndSeal(deckName);
   let pins = resolutions
     .map((r) => `${r.key}→${r.publisher}/${r.package}@${r.version}`)
@@ -192,13 +232,16 @@ for (let deckName of FIELDS) {
     library?.consumers.push(deckName);
   }
   fieldInfo.push({ deck: deckName, treeHash, pins });
-  console.log(`   ${deckName.padEnd(22)} ${treeHash.slice(0, 12)}…  ${pins.join('  ')}`);
+  console.log(
+    `   ${deckName.padEnd(22)} ${treeHash.slice(0, 12)}…  ${pins.join('  ')}` +
+      (deckName === EDITABLE ? `   ← yours (${seedState})` : ''),
+  );
 }
 
 // What the six decks asked for, and what it collapsed to.
 let edges = 0;
 let urls = new Map();
-for (let deckName of FIELDS) {
+for (let deckName of [...FIELDS, EDITABLE]) {
   let deckDir = join(depotDir, ...deckName.split('/'));
   let files = await readTreeFromDir(deckDir);
   let declared = parseDependencies(files.get(IMPORT_MAP_PATH).toString('utf8')) ?? {};
@@ -261,7 +304,9 @@ await writeFile(
   JSON.stringify(
     {
       depot: DEPOT,
-      decks: LIBRARIES.length - 1 + FIELDS.length + 1,
+      decks: LIBRARIES.length - 1 + FIELDS.length + 2,
+      editable: EDITABLE,
+      bridgePort: BRIDGE_PORT,
       libraries: shelfInfo.filter((l) => l.consumers.length > 0),
       fields: fieldInfo,
       chroma: { current: '3.1.2', pinned: '2.6.0' },
@@ -283,7 +328,7 @@ let appMap = JSON.parse(app.text);
 let scopeCount = Object.keys(appMap.scopes ?? {}).length;
 console.log(`\n4) ${APP}@${VERSION} · ${app.treeHash.slice(0, 12)}…`);
 console.log(`   ${Object.keys(appMap.imports).length} top-level pins, ${scopeCount} scopes`);
-console.log(`   The page imports six field decks and not one library.`);
+console.log(`   The page imports seven field decks and not one library.`);
 
 if (drifted.length > 0) {
   console.log(`\n   NOTE: the checked-in lock was out of date and has been`);
@@ -294,30 +339,75 @@ if (drifted.length > 0) {
 // ---------------------------------------------------------------------------
 // 5. Serve. Everything is at rest: no write endpoint, no login.
 // ---------------------------------------------------------------------------
-let server = createDeckServer({
-  depots: [{ name: DEPOT, dir: depotDir, storeDir }],
+} // end buildMode
+
+// ---------------------------------------------------------------------------
+// 5. Serve, with the live loop on.
+//
+//    The deck server is read-only. The editor bridge beside it is not part of
+//    Deck: it writes one file and stops, the way your editor would. Everything
+//    after the write — hash, dedup, publish, dist-tag — is the watcher doing
+//    what it does for any save.
+// ---------------------------------------------------------------------------
+let depot = await openDemoDepot({ name: DEPOT, dir: depotDir });
+let server = createDemoServer({
+  depots: [depot],
   fallback: (req, res) => {
+    // Where the editor bridge is listening, answered by the origin the page
+    // was loaded from. A GET, so it passes the read-only gate; the page can
+    // then find the bridge whatever port it landed on — which matters,
+    // because the Hub gives it an ephemeral one.
+    if (req.url?.startsWith('/_demo/editor')) {
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'cache-control': 'no-store',
+      });
+      res.end(JSON.stringify({ origin: bridge.origin, files: EDITABLE_FILES.files }));
+      return;
+    }
     res.writeHead(302, { location: `/${DEPOT}/${APP}@${VERSION}/index.html` });
     res.end();
   },
 });
+
+let bridge = await startEditorBridge({
+  depotDir,
+  files: EDITABLE_FILES.files,
+  port: BRIDGE_PORT,
+});
+
+let origin = demoOrigin(PORT);
 server.listen(PORT, async () => {
   // What the sealed page advertises up front. A cold browser learns every URL
   // from the document instead of discovering them one graph level at a time —
   // and the walk has to run the same import-map algorithm, scopes included, or
   // it stops at the first scoped edge and reports full coverage of a graph it
   // only half-walked.
-  let head = await fetch(
-    `http://127.0.0.1:${PORT}/${DEPOT}/${APP}@${VERSION}/index.html`,
+  let head = await localFetch(
+    `${demoOrigin(PORT, '127.0.0.1')}/${DEPOT}/${APP}@${VERSION}/index.html`,
     { method: 'HEAD' },
   );
   let closure = head.headers.get('x-deck-preload');
 
-  console.log(`\n5) serving\n`);
+  serveLive({
+    depot,
+    server,
+    onPublish: (event) =>
+      console.log(
+        event.reused
+          ? `   saved → ${event.name} is already published as ${event.version} — dev points back at it`
+          : `   saved → ${event.name}@${event.version}${event.sealChangeId ? ` · Step ${event.sealChangeId.slice(0, 12)}` : ''}`,
+      ),
+  });
+
+  console.log(`\n5) serving (HTTPS + HTTP/2)\n`);
   console.log(`   modulepreload closure advertised: ${closure ?? 'none'}`);
   console.log(`   (links emitted / modules reachable — the rest is over budget)\n`);
-  console.log(`      http://localhost:${PORT}/\n`);
+  console.log(liveNotes({ depot, port: PORT }));
+  console.log(`   editor bridge: ${bridge.origin} — writes ${EDITABLE}/index.js, nothing else\n`);
+  console.log(`      ${origin}/\n`);
   console.log(`      /${DEPOT}/${APP}@${VERSION}/index.html`);
+  console.log(`      /${DEPOT}/${APP}@${VERSION}/index.html?with=${EDITABLE}   ← the working tree`);
   console.log(`      /${DEPOT}/fields/swatch@${VERSION}/importmap.json        ← the lock, readable`);
   console.log(`      /${DEPOT}/lib/chroma-js@3.1.2/index.js`);
   console.log(`      /${DEPOT}/lib/chroma-js@2.6.0/index.js   ← both, at once\n`);

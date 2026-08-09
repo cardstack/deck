@@ -1,0 +1,23 @@
+{
+  "imports": {
+    "ui/table/": "/site/ui/table/",
+    "ui/table": "/site/ui/table/table.js",
+    "charts/spark/": "/site/charts/spark/",
+    "charts/spark": "/site/charts/spark/spark.js",
+    "ui/pills/": "/site/ui/pills@1.0.0/",
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js"
+  },
+  "deck": {
+    "packages": {
+      "board": {
+        "version": "1.0.0",
+        "entry": "$DECK/board.js"
+      }
+    },
+    "dependencies": {
+      "ui/table": "live",
+      "charts/spark": "live",
+      "ui/pills": "^1.0.0"
+    }
+  }
+}

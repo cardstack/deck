@@ -1,0 +1,9 @@
+{
+  "deck": {
+    "packages": {
+      "mocha": {
+        "version": "1.0.0"
+      }
+    }
+  }
+}

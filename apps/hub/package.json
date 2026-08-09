@@ -1,0 +1,12 @@
+{
+  "name": "@deck/hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node hub.mjs" },
+  "dependencies": {
+    "@deck/core": "workspace:*",
+    "@deck/history": "workspace:*",
+    "@deck/server": "workspace:*"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "deck": {
+    "packages": {
+      "nav": {
+        "version": "0.1.0",
+        "entry": "$DECK/nav.js"
+      }
+    }
+  }
+}

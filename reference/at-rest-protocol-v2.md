@@ -1,3 +1,19 @@
+> **Historical. Preserved unedited.**
+>
+> This is the at-rest protocol as ratified on 2026-08-07, written when Deck
+> was a design inside the Boxel realm server. It is kept here verbatim
+> because it is the document the rulings were made against, and a rewrite
+> would destroy the record of what was agreed.
+>
+> It is **not** the current specification. Its vocabulary predates the
+> Version / Step / Timeline pass, it calls a Deck Pack a "cardpack", and its
+> store layout predates per-file content addressing. For what is true now:
+>
+> - `docs/deck-laws.md` — the twelve laws, which are the contract
+> - `packages/conformance` — the executable form of those laws
+> - `docs/deck-at-rest.md` — the current at-rest description
+> - `docs/deck-step-version-vocabulary.md` — the current vocabulary
+
 # The Deck Protocol, At-Rest Part (v2)
 
 This document tells card authors how to publish and use package

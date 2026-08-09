@@ -1,0 +1,15 @@
+{
+  "name": "@deck/example-potluck",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo": "node demo.mjs",
+    "steps": "node steps.mjs"
+  },
+  "dependencies": {
+    "@deck/core": "workspace:*",
+    "@deck/history": "workspace:*",
+    "@deck/server": "workspace:*"
+  }
+}

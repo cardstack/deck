@@ -1,9 +1,18 @@
-# Fork a language — keep the engine, replace the syntax
+# Fork a language — two dialects, one evaluator
 
 ```bash
 pnpm --filter @deck/example-fork-a-language demo
 # open http://localhost:8792/
 ```
+
+The page is a **two-pane console**. Type an expression on either side and it
+evaluates as you type, in that side's dialect, using an engine imported from a
+sealed deck. Write something the author never thought of: both sides still
+agree, because there is only one evaluator.
+
+Each pane prints the SHA-256 of the `eval.js` bytes **it fetched from its own
+address**. The same digest twice is the proof, and the page measures it rather
+than asserting it.
 
 `lang/jqish` is a small jq-shaped filter language: a parser, an evaluator,
 and an entry that wires them together. `me/jqish` replaces **one file** — the

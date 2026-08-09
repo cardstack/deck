@@ -43,9 +43,10 @@ import { pack } from '@deck/core/pack';
 import { discoverOffers } from '@deck/core/offer';
 import { publishToStore } from '@deck/core/store';
 import { readTreeFromDir } from '@deck/core/tree';
-import { createDeckServer } from '@deck/server/server';
 import { rebasePass } from '@deck/server/rebase-daemon';
 import { storeDirFor } from '@deck/server/depot';
+import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
+import { demoBuildMode, rmKeepingNotes } from '../shared/reset.mjs';
 import { publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -55,6 +56,10 @@ const depotDir = join(here, 'depot');
 const storeDir = storeDirFor(depotDir);
 const UPSTREAM = 'std/currencies';
 const APP = 'app/picker';
+// Declared out here, not inside the build branch: the server needs it in
+// serve mode too, and a binding that only exists on one path is a crash
+// waiting for the second run.
+const depot = { name: DEPOT, dir: depotDir, storeDir };
 
 // A real ISO-4217 slice, small enough to read on one screen.
 const BASE_CODES = {
@@ -133,13 +138,21 @@ async function amend(deckDir, change) {
 const codesIn = async (deckDir) =>
   JSON.parse(await readFile(join(deckDir, 'currencies.json'), 'utf8'));
 
-// The forks are WRITTEN by `deck fork` into the depot, so they are rebuilt
-// from nothing on every run — and gitignored, because they are output.
-await rm(storeDir, { recursive: true, force: true });
-for (let publisher of ['ana', 'kim']) {
-  await rm(join(depotDir, publisher), { recursive: true, force: true });
+const buildMode = await demoBuildMode({
+  storeDir,
+  probe: { name: 'std/currencies', version: '1.4.0' },
+  label: 'CONTRIBUTE TO A CODELIST',
+});
+if (buildMode === 'rebuild') {
+  await rm(storeDir, { recursive: true, force: true });
+  for (let publisher of ['ana', 'kim']) {
+    await rmKeepingNotes(join(depotDir, publisher));
+  }
+  console.log('   RESET=1 — wiped store + fork scopes; Notes kept');
 }
 await mkdir(storeDir, { recursive: true });
+
+if (buildMode !== 'serve') {
 
 console.log('\n  CONTRIBUTE TO A CODELIST — fork, amend, offer, review\n');
 
@@ -214,7 +227,6 @@ console.log(`   discovered as offers: ${offers.map((o) => o.name).join(', ')}`);
 // ---------------------------------------------------------------------------
 // 4. The queue, before upstream moves.
 // ---------------------------------------------------------------------------
-const depot = { name: DEPOT, dir: depotDir, storeDir };
 async function queue(label, { dryRun = true } = {}) {
   let result = await rebasePass({ depot, dryRun });
   console.log(`\n   ${label}`);
@@ -286,7 +298,9 @@ console.log(`   ${applied.rebased} rebased on the first pass, ${settled.rebased}
 // ---------------------------------------------------------------------------
 // 7. Serve. The reviewer's console is the app itself.
 // ---------------------------------------------------------------------------
-let server = createDeckServer({
+} // end buildMode
+
+let server = createDemoServer({
   depots: [depot],
   fallback: (req, res) => {
     res.writeHead(302, { location: `/${DEPOT}/${APP}@1.0.0/index.html` });
@@ -294,8 +308,8 @@ let server = createDeckServer({
   },
 });
 server.listen(PORT, () => {
-  console.log(`\n7) serving — four views of one sealed page\n`);
-  console.log(`      http://localhost:${PORT}/`);
+  console.log(`\n7) serving — four views of one sealed page (HTTPS + HTTP/2)\n`);
+  console.log(`      ${demoOrigin(PORT)}/`);
   console.log(`      …/index.html                                  the release, 1.4.0`);
   console.log(`      …/index.html?with=std/currencies@1.5.0        the next release`);
   console.log(`      …/index.html?with=std/currencies=ana/currencies   ana's proposal, live`);

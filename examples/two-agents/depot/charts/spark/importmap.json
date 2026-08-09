@@ -1,0 +1,9 @@
+{
+  "imports": {},
+  "deck": {
+    "packages": {
+      "spark": { "version": "0.1.0", "entry": "$DECK/spark.js" }
+    },
+    "dependencies": { "std/tokens": "^1.0.0" }
+  }
+}
