@@ -1,3 +1,9 @@
+> **Historical wording.** This document uses `tier 1` / `tier 2` and `seal`
+> as a noun, which the vocabulary ruling replaced. Read
+> `docs/deck-step-version-vocabulary.md` first: a published state is a
+> **Version**, one every-save capture is a **Step**, and the tape of Steps is
+> the **Timeline**. A depot has either a Timeline or Versions only.
+
 # Live-tree serving + auto-publish: the filesystem endpoint design
 
 > **Vocabulary note.** This document predates the depot ruling and says

@@ -1309,7 +1309,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           res,
           404,
           'no-history',
-          `depot ${depot.name} has no history backend attached (tier 1: versions are the history)`,
+          `depot ${depot.name} has no Timeline — no history backend is attached, so its Versions are its history`,
         );
         return;
       }
@@ -1859,7 +1859,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               exports,
               baseApi: mapEntry?.baseApi ?? null,
               // Which seal this version was cut from, when the pack was
-              // sealed by a tier-2 watcher — the link from a published
+              // sealed by a watcher with a Timeline — the link from a published
               // version back into `/<depot>/_history/<changeId>`.
               sealChangeId: packlist.provenance?.sealChangeId ?? null,
               // L9/L10: who endorsed these BYTES. Public keys are not

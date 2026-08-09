@@ -63,7 +63,7 @@ const liveListeners = new Set();
 /**
  * A FRAMED PAGE IS A SUBJECT, NOT AN OBSERVER.
  *
- * /run frames Hub pages — the Hub runs itself, which is the point. But the
+ * /run frames Hub pages, because the Hub runs itself. But the
  * framed copy loaded the whole chrome too: its own SSE stream, its own
  * activity poll on every event, its own heat. Two documents on one origin,
  * each holding connections open, against HTTP/1.1's six — and the inner one
@@ -156,7 +156,7 @@ const esc = (value) =>
  * anything else here, and adding one needs no change to this file beyond a
  * line in the list.
  *
- * CSS custom properties rather than a JSON token file, deliberately: JSON
+ * CSS custom properties rather than a JSON token file, because JSON
  * needs a program to turn it into styling, and custom properties already ARE
  * styling — cascade, media queries, per-element overrides and all — with
  * nothing in between to ship or to go wrong.

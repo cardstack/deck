@@ -66,7 +66,7 @@ every save:
    seal, no noise. Touching a file is not a change.
 3. **Auto-publish** `<base>-dev.N`, tagged `dev`. Immutable from that
    instant.
-4. **Seal it** (tier 2, when `jj` or historyd attached) — including the
+4. **Seal it as a Step** (when `jj` or historyd is attached) — including the
    saves that did *not* publish, so the states between versions exist too.
 5. **Announce it** on `/_live/events`, and any page carrying
    `/_live/hmr.js` reloads.

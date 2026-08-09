@@ -17,7 +17,7 @@ import {
 const execFileAsync = promisify(execFile);
 
 // The jj CLI backend: one `jj` subprocess per operation, colocated with the
-// watched tree. It is the reference implementation of the tier-2 contract —
+// watched tree. It is the reference implementation of the Timeline contract —
 // historyd (src/historyd.ts) is the faster swap-in, not the definition.
 //
 // Ported from the vetted realm-server sidecar (packages/realm-server/lib/
@@ -390,7 +390,7 @@ function isNotFound(error: unknown): boolean {
 }
 
 // Is a usable jj on this machine? Tier 2 is optional by design: when the
-// answer is no, the caller stays on tier 1 rather than failing.
+// answer is no, the caller keeps Versions only rather than failing.
 export async function jjVersion(bin?: string): Promise<string | undefined> {
   try {
     let { stdout } = await execFileAsync(

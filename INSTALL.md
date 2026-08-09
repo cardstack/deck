@@ -104,8 +104,8 @@ deck hello ./playground
 ```
 
 The banner it prints includes a line naming the history backend it attached
-to, or the reason it could not. `jj` present means tier 2 and a seal per
-save; anything else means tier 1, which is still every settled save as an
+to, or the reason it could not. `jj` present means a Timeline and a Step per
+save; anything else means Versions only, which is still every settled save as an
 immutable version.
 
 ## Environment
@@ -124,7 +124,7 @@ immutable version.
 | `Cannot find package '@deck/core'` | `pnpm install` has not run, or you are running a copy of `packages/cli` from outside the workspace |
 | `EADDRINUSE` from `deck serve` | the port is taken. `deck hello` walks forward up to ten ports on its own; `serve` does not, because a server you asked to be on 8788 should not quietly be somewhere else |
 | `deck: --realm is now --depot` | an old flag. It still works and will keep working; the message is a note, not a failure |
-| history reports tier 1 | `jj` is not on PATH, or `DECK_HISTORYD_URL` points at nothing. The live loop is unaffected |
+| history reports Versions only | `jj` is not on PATH, or `DECK_HISTORYD_URL` points at nothing. The live loop is unaffected |
 
 ## Uninstall
 

@@ -102,7 +102,7 @@ and the depots mounted with their honest on-disk paths. The layout *is* the
 address space, so showing the path is showing the truth, not a debug detail.
 
 **Per depot.** Deck count, version count, store object count and size, history
-tier (jj colocated, historyd, or tier 1 — versions are the history), and the
+history (a Timeline from jj colocated or historyd, or Versions only), and the
 most recent seal.
 
 **The river.** `/_live/events` as a stream of change events — deck name,

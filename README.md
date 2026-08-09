@@ -93,7 +93,7 @@ How each promise is kept:
 | never lose work | every settled save auto-publishes an immutable version, and every save is sealed |
 | revert anytime | `deck restore <depot> <changeId>` — replayed forward, never rewinding |
 | ship any version | `deck release … --from dev` — names a sealed state, copies nothing |
-| share any milestone | `deck pack <deck>` → one `.pack.zip` any zip tool opens |
+| share any milestone | `deck pack <deck>` → one Deck Pack (`.pack.zip`) any zip tool opens |
 | use any library | `deck vendor https://esm.sh/three@0.160.0 …` — pulled in for good, hermetic |
 | fork freely | `deck fork` — your own publisher scope; theirs is untouched |
 | stability where you need it | `deck lock` — ranges in the tree, exact pins in the map |
@@ -246,8 +246,14 @@ Design set in [docs/](docs/) — start with:
   each one checkable, each one checked by `deck conform`. Everything else
   here is commentary, design history, or a record of how something was
   measured. An implementation implements Deck by passing the suite.
-- [deck-at-rest-protocol.md](docs/deck-at-rest-protocol.md) — the
-  protocol: state model, endpoints, serving rules, vocabulary.
+- [deck-at-rest.md](docs/deck-at-rest.md) — what a depot looks like on
+  disk: layout, store, addresses, and what the Timeline adds. The earlier
+  ratified version is kept unedited at
+  [reference/at-rest-protocol-v2.md](reference/at-rest-protocol-v2.md).
+- [deck-step-version-vocabulary.md](docs/deck-step-version-vocabulary.md)
+  — Version, Step and Timeline, and the words they replaced.
+- [deck-hub-typography.md](docs/deck-hub-typography.md) — the type
+  system for the documentation pages.
 - [deck-cas-v2-spec.md](docs/deck-cas-v2-spec.md) — next CAS work:
   blob store (pack as transport), verified dependency links, and
   signatures on treeHash.
@@ -303,8 +309,10 @@ Design set in [docs/](docs/) — start with:
   the Boxel realm server and CLI already built, and classified by who
   supplies each answer: backport, federation, protocol, or operations.
 - [deck-cardpack-requirements.md](docs/deck-cardpack-requirements.md)
-  — requirements recovered from the cardpack v0.2 implementation
-  (preserved verbatim in [reference/cardpack-v0.2](reference/cardpack-v0.2)).
+  — requirements recovered from the v0.2 implementation of what is now
+  called a **Deck Pack** (preserved verbatim in
+  [reference/cardpack-v0.2](reference/cardpack-v0.2)). `cardpack` is the
+  v0.2 name; the file form has been `.pack.zip` since v0.3.
 - [deck-unpkg-comparison.md](docs/deck-unpkg-comparison.md) and
   [deck-esmsh-comparison.md](docs/deck-esmsh-comparison.md) —
   production lessons from unpkg and esm.sh, and what was adopted.
@@ -334,7 +342,7 @@ applicable.
 - **`packages/history`** — tier-2 seals behind one contract, with two
   backends: the jj CLI and historyd (jj-lib over localhost HTTP,
   ~5-6x faster per call). A missing jj or a dead daemon degrades to
-  tier 1 with a printed reason. Restores replay forward as ordinary
+  Versions only, with a printed reason. Restores replay forward as ordinary
   writes, so history only ever grows.
 - **`packages/server`** — read-only zero-framework serving of depots:
   version-less = the working tree (`no-store`); exact = immutable +

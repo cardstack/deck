@@ -9,7 +9,7 @@ import {
   type RestorePlan,
 } from './backend.ts';
 
-// The historyd backend: the same tier-2 contract served by jj-historyd —
+// The historyd backend: the same Timeline contract served by jj-historyd —
 // jj-lib in Rust, spoken to over localhost HTTP. It exists because the CLI
 // backend pays a fork/exec per operation, which measured ~5-6x the cost of
 // an in-process jj-lib call in the realm-server spike. Identical opaque
@@ -137,7 +137,7 @@ export class HistorydHistory implements HistoryBackend {
   }
 
   // Is the daemon actually up and willing to manage this tree? Used at
-  // attach time so an absent daemon degrades to tier 1 (or to the CLI
+  // attach time so an absent daemon degrades to Versions only (or to the CLI
   // backend) instead of failing every later save.
   async probe(dir: string): Promise<boolean> {
     try {

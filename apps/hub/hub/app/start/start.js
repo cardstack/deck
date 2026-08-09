@@ -100,7 +100,7 @@ async function now() {
   let depots = packages.data ?? [];
 
   // Steps come per depot and only where a history backend attached. A depot
-  // without one is not broken — tier 1 means Versions ARE the history — so
+  // without one is not broken — its Versions ARE its history — so
   // it reports no Timeline rather than zero Steps, which would be a lie
   // about a tape that does not exist.
   //
@@ -210,7 +210,7 @@ function depotTable(state) {
             ? `<a class="s-seal" href="/browse?at=/${esc(depot.name)}/_history">` +
               `${tape?.steps ?? 0} Step${tape?.steps === 1 ? '' : 's'}</a>` +
               (tape?.newest ? ` <span class="dim">· ${esc(ago(tape.newest))}</span>` : '')
-            : `<span class="dim">tier 1 — Versions are the history</span>`
+            : `<span class="dim">Versions only — no Timeline</span>`
         }</td>` +
         `<td><a href="/run?at=/${esc(depot.name)}">run →</a></td>` +
         `</tr>`
@@ -442,19 +442,6 @@ const ANY_SYSTEM = [
     'a review',
   ],
 ];
-const CARD_SYSTEM = [
-  ['Version control below the file system', 'The system gets restore, undo and checkpoint for authored content. It does not need a separate history feature.'],
-  ['Imports that do not change', 'Each definition has an exact address. The browser caches it and does not ask about it again.'],
-  ['Libraries under your own policy', 'Your own space supplies the third-party code. You read it as catalog entries, not as a folder of dependencies.'],
-  ['One kind of checkpoint', 'One kind of milestone. To combine divergent work, merge the two trees against their common base. Do not let the last write win.'],
-  ['Four separate packaging operations', 'Install, upgrade, remix and use stay separate. A consumer can also adopt a deck directly from a catalog.'],
-  ['The catalog holds the authoritative copy', 'A running catalog is the correct state. A service on the internet holds a copy that you can read but not change.'],
-  ['Review between servers', 'Submission, audit, review and votes are a process between catalogs. They are not pull requests on one host.'],
-  ['Remix without a copy', 'Change the one module that must differ. All other modules stay shared.'],
-  ['Optimised releases', 'Minify and compress a named Version one time, because that Version will not change. The minified tree is a second Version, and a tool can prove that it came from the first.'],
-  ['One hosting mechanism for applications and libraries', 'Three separate services are not necessary.'],
-  ['Shared base definitions in the import map', 'This is a question, and it is the most interesting one. Are the definitions that many projects use better as decks that the map resolves, than as a base that the system builds in?'],
-];
 
 // ─────────────────────────────────────────────────────────────────────────
 // THE PROTOCOL SECTION EXISTS FOR SOMEBODY WHO IS NOT US.
@@ -493,10 +480,10 @@ const LAWS = [
 const PROTOCOL = `
 <p class="lede">Deck is a protocol, not a product — the same way Matrix is a
 protocol with a reference server. What follows is what a second
-implementation has to agree with. It is deliberately small: twelve laws, one
+implementation has to agree with. It is small: twelve laws, one
 hash, three address forms and a handful of read-only endpoints.</p>
 
-<h3>the shape of an address</h3>
+<h3>The shape of an address</h3>
 <pre class="term"><code>/&lt;depot&gt;/&lt;publisher&gt;/&lt;package&gt;[@&lt;spec&gt;]/&lt;path&gt;
 /&lt;depot&gt;/_history/&lt;changeId&gt;/&lt;publisher&gt;/&lt;package&gt;/&lt;path&gt;</code></pre>
 <p>Segments beginning <code>_</code> are reserved for the protocol, which is
@@ -505,7 +492,7 @@ named. The publisher segment is the fork boundary. <code>&lt;spec&gt;</code>
 is an exact semver, a range, or a dist-tag, and which one it is decides the
 caching — see L5.</p>
 
-<h3>the twelve laws</h3>
+<h3>The twelve laws</h3>
 <p>These are normative. An implementation that breaks one is not a slower or
 stricter Deck, it is a different system that will not interoperate.</p>
 <table class="laws stack"><tbody>
@@ -516,18 +503,18 @@ ${LAWS.map(
 ).join('')}
 </tbody></table>
 
-<h3>what a server MUST answer</h3>
+<h3>What a server MUST answer</h3>
 <table><tbody>
 <tr><td><code>GET /&lt;depot&gt;/&lt;pub&gt;/&lt;pkg&gt;/&lt;path&gt;</code></td><td class="dim">the live tree, <code>no-store</code></td></tr>
 <tr><td><code>GET …@&lt;exact&gt;/&lt;path&gt;</code></td><td class="dim">one sealed state, <code>immutable</code>, with a content digest</td></tr>
 <tr><td><code>GET …@&lt;range|tag&gt;/&lt;path&gt;</code></td><td class="dim">exactly one redirect to the exact address</td></tr>
 <tr><td><code>GET …@&lt;exact&gt;?format=pack</code></td><td class="dim">the stored pack bytes, byte-exact (L2)</td></tr>
-<tr><td><code>GET /_packages</code></td><td class="dim">the catalog, and the capability truth — including which history tier each depot is actually on</td></tr>
+<tr><td><code>GET /_packages</code></td><td class="dim">the catalog, and the capability truth — including whether each depot has a Timeline</td></tr>
 </tbody></table>
 
-<h3>what a server MAY answer</h3>
+<h3>What a server MAY answer</h3>
 <table><tbody>
-<tr><td><code>GET /&lt;depot&gt;/_history[/&lt;changeId&gt;/…]</code></td><td class="dim">the Timeline, when a history backend is attached. Absence is tier 1, not an error.</td></tr>
+<tr><td><code>GET /&lt;depot&gt;/_history[/&lt;changeId&gt;/…]</code></td><td class="dim">the Timeline, when a history backend is attached. Absence means the depot has Versions only. It is not an error.</td></tr>
 <tr><td><code>GET /&lt;depot&gt;/_offers</code></td><td class="dim">open proposals with their merge status</td></tr>
 <tr><td><code>GET /&lt;depot&gt;/_trees/&lt;treeHash&gt;/signatures</code></td><td class="dim">endorsements, addressed by tree (L9)</td></tr>
 <tr><td><code>GET /_activity</code></td><td class="dim">where work is happening, and what anyone declared</td></tr>
@@ -537,7 +524,7 @@ ${LAWS.map(
 fail. The capability block in <code>/_packages</code> is how it finds out,
 and a server MUST NOT report a capability it does not have (L11).</p>
 
-<h3>what is deliberately not specified</h3>
+<h3>What is not specified</h3>
 <ul>
 <li>how a server stores anything — the store layout here is one implementation of L1–L4, not part of the contract</li>
 <li>which history backend provides Steps, or whether any does</li>
@@ -545,10 +532,10 @@ and a server MUST NOT report a capability it does not have (L11).</p>
 <li>authentication and authorisation, which are a deployment’s business</li>
 </ul>
 
-<h3>the executable contract</h3>
+<h3>The executable contract</h3>
 <p>Prose can be read two ways; a hash cannot. <code>packages/conformance</code>
 holds one check per law plus a golden fixture with a published hash, and it is
-the definition of agreement — it also verifies that a deliberately broken
+the definition of agreement. It also examines a broken
 implementation is caught, so a suite that passes everything is itself a
 failure.</p>
 <pre class="term"><code>node packages/cli/bin/deck.js conform ./your-depot</code></pre>
@@ -556,27 +543,39 @@ failure.</p>
 
 const BOOK = [
   [
-    'vocabulary',
-    `<p>Borrowed lightly from trading-card games, because a Deck package is an
-     <i>arrangement</i> rather than a sealed box.</p>
-     <table><tbody>
-     <tr><td><b>depot</b></td><td>a directory that is also a URL space</td></tr>
-     <tr><td><b>deck</b></td><td>a package: <code>&lt;publisher&gt;/&lt;name&gt;</code> with an <code>importmap.json</code></td></tr>
-     <tr><td><b>Version</b></td><td>an immutable published tree, addressed by semver</td></tr>
-     <tr><td><b>Step</b></td><td>one every-save capture on the tape</td></tr>
-     <tr><td><b>Timeline</b></td><td>the tape itself — the Steps in order</td></tr>
-     <tr><td><b>Import</b></td><td>a specifier a deck asks for</td></tr>
-     <tr><td><b>Pin</b></td><td>the exact address that answers it</td></tr>
-     <tr><td><b>Entry</b></td><td>the module a deck offers as its way in</td></tr>
-     <tr><td><b>Leaf</b></td><td>a deck that imports nothing further</td></tr>
-     <tr><td><b>Closure</b></td><td>everything a page reaches, transitively</td></tr>
-     <tr><td><b>Deck Pack</b></td><td><code>.pack.zip</code> — a tree plus its packlist, faithful and openable by any zip tool</td></tr>
-     <tr><td><b>treeHash</b></td><td>content identity of a whole tree</td></tr>
-     <tr><td><b>offer</b></td><td>a fork that records its base — a proposal you can run</td></tr>
-     </tbody></table>`,
+    'Vocabulary',
+    `<p>The names come from trading-card games, because a Deck package is an
+     arrangement of a shared collection. It is not a sealed box.</p>
+
+     <p><b>Two kinds of term, and the capital letter tells you which.</b> A
+     capitalised term has a Deck meaning that is narrower than the everyday
+     word, so <i>Version</i> is not any version and <i>Step</i> is not any
+     step. A lowercase term means what it appears to mean.</p>
+
+     <table class="stack"><tbody>
+     <tr><td><b>Version</b></td><td class="says">A published tree that does not change. A semver number addresses it.</td></tr>
+     <tr><td><b>Step</b></td><td class="says">One capture of the working tree. The server records one Step for each save.</td></tr>
+     <tr><td><b>Timeline</b></td><td class="says">All the Steps of one depot, in order.</td></tr>
+     <tr><td><b>Import</b></td><td class="says">A specifier that a deck asks for.</td></tr>
+     <tr><td><b>Pin</b></td><td class="says">The exact address that answers an Import.</td></tr>
+     <tr><td><b>Entry</b></td><td class="says">The module that a deck offers as the way into itself.</td></tr>
+     <tr><td><b>Leaf</b></td><td class="says">A deck that imports nothing more.</td></tr>
+     <tr><td><b>Closure</b></td><td class="says">Every module that a page reaches, directly or through another module.</td></tr>
+     <tr><td><b>Deck Pack</b></td><td class="says">One tree and its packlist in one file. The file form is <code>.pack.zip</code>, and any zip tool opens it.</td></tr>
+     <tr><td><b>depot</b></td><td class="says">A directory that is also a URL space.</td></tr>
+     <tr><td><b>deck</b></td><td class="says">A package. It is <code>&lt;publisher&gt;/&lt;name&gt;</code>, and it has an <code>importmap.json</code>.</td></tr>
+     <tr><td><b>publisher</b></td><td class="says">The first segment of a deck name. It is the boundary at which a fork occurs.</td></tr>
+     <tr><td><b>offer</b></td><td class="says">A fork that records the tree it came from. You can run an offer.</td></tr>
+     <tr><td><b>tree hash</b></td><td class="says">The identity of a whole tree, calculated from its content. The code calls it <code>treeHash</code>.</td></tr>
+     </tbody></table>
+
+     <p>Three words are no longer in use. Write <b>Version</b>, <b>Step</b> or
+     <b>to seal</b>, and never <i>seal</i> as a noun: it meant all three at
+     once. Write <b>Step</b> and never <i>frame</i> or <i>tick</i>. Write
+     <b>Timeline</b> or <b>Versions only</b>, and never <i>tier</i>.</p>`,
   ],
   [
-    'the layout is the address',
+    'The layout is the address',
     `<p>What <code>ls</code> shows and what the URL says are the same shape.
      A depot carries its machinery inside itself and the machinery is invisible
      to the tree hash, so copying the directory takes the live files, the
@@ -593,7 +592,7 @@ const BOOK = [
      extra bytes.</p>`,
   ],
   [
-    'three levels of volatility',
+    'Three levels of volatility',
     `<p>Each level is a value in an import map, or a form of URL. You always
      choose the level. Deck never moves you to a more volatile one.</p>
      <table class="stack"><thead><tr><th>you want</th><th>you write</th><th>you get</th></tr></thead><tbody>
@@ -606,7 +605,7 @@ const BOOK = [
      a live address has no version segment.</p>`,
   ],
   [
-    'versions and ranges, with examples',
+    'Versions and ranges, with examples',
     `<p>Deck uses semantic versioning. A version has three numbers and an
      optional prerelease part:</p>
      <pre class="term"><code>1.4.2          major . minor . patch
@@ -660,7 +659,7 @@ const BOOK = [
      That change is one line, and it is part of the tree that you seal.</p>`,
   ],
   [
-    'the store',
+    'The store',
     `<p>Content-addressed <i>per file</i>, and store-wide rather than per
      package. A Version is a pointer; the tree names its files; the files are
      shared by everyone. Three consequences, all deliberate:</p>
@@ -673,21 +672,25 @@ const BOOK = [
      what keeps <code>pack(unpack(P)) === P</code> byte-exact.</p>`,
   ],
   [
-    'history, honestly',
-    `<p>Two tiers, and the capability is <i>reported</i> rather than pretended.</p>
-     <table><tbody>
-     <tr><td><b>tier 1</b></td><td>every settled save becomes an immutable
-     <code>-dev.N</code>. Versions are the history. Always on.</td></tr>
-     <tr><td><b>tier 2</b></td><td>every save is also sealed as a Step, with
-     <code>/&lt;depot&gt;/_history/&lt;changeId&gt;/…</code>, <code>deck history</code>
-     and <code>deck restore</code>. Attaches when a backend is available.</td></tr>
+    'History: Versions, or a Timeline',
+    `<p>A depot has one of two answers, and the server <b>reports</b> which
+     one. It does not pretend.</p>
+     <table class="stack"><tbody>
+     <tr><td><b>History: Versions</b></td><td class="says">Each settled save
+     becomes an immutable <code>-dev.N</code> Version. The Versions are the
+     history. Always available.</td></tr>
+     <tr><td><b>History: Timeline</b></td><td class="says">Each save also
+     becomes a Step, at
+     <code>/&lt;depot&gt;/_history/&lt;changeId&gt;/…</code>, and
+     <code>deck history</code> and <code>deck restore</code> work. Available
+     when a history backend is attached.</td></tr>
      </tbody></table>
-     <p>A missing backend degrades to tier 1 with a printed reason, and the live
-     loop keeps working. The depot table at the top of this page says which tier
-     each depot is actually on.</p>`,
+     <p>If the backend is absent or has stopped, the depot has Versions only.
+     The server prints the reason, and the live loop continues. The depot
+     table at the top of this page shows the answer for each depot.</p>`,
   ],
   [
-    'vendoring',
+    'Vendoring',
     `<p>Pull a module graph once, rewrite its references to stay inside the
      pack, seal it. Hermetic by default; reaching outside is an explicit
      opt-out. Identity travels as <code>vendoredFrom</code>, which is also
@@ -698,7 +701,7 @@ const BOOK = [
   --depot ./work/site --publisher acme --tag latest</code></pre>`,
   ],
   [
-    'fork, lock, offer, rebase',
+    'Fork, lock, offer, rebase',
     `<p>Contribution is a version you can run.</p>
      <pre class="term"><code>deck fork --depot ./work/site --from acme/palette --as you/palette --use-in you/app
 deck lock --depot ./work/site --publisher you --name app
@@ -710,7 +713,7 @@ deck rebase --depot ./work/site</code></pre>
      build, and it is never cached as sealed content.</p>`,
   ],
   [
-    'the HTTP surface is read-only',
+    'The HTTP surface is read-only',
     `<p>Writes go through the CLI and the watcher; the server distributes. That
      is a law, not a configuration — which is why the activity protocol reads
      claims from disk instead of accepting a POST.</p>
@@ -749,10 +752,10 @@ and gives each one a URL that serves. Nothing here competes with branching and
 history rewriting — Deck’s Timeline is a tape of what actually happened, which
 is a different and smaller promise.</td></tr>
 <tr><td><b>a bundler</b></td><td class="dim">There isn’t one, and that is
-load-bearing rather than minimal. Bundling means the bytes you run are not the
-bytes you wrote, which breaks the one claim this whole system makes. Transforms
-are allowed — they just have to happen <i>before</i> the seal, as ordinary
-edits to ordinary files you can read.</td></tr>
+not an omission. If you bundle, the bytes that run are not the bytes you
+wrote, and every other claim here depends on those being the same. You can
+still transform code. The transform has to run <i>before</i> you seal, as an
+ordinary change to a file that you can read.</td></tr>
 <tr><td><b>a lockfile</b></td><td class="dim"><code>deck lock</code> does the
 same job — turn declared ranges into exact pins — and writes the answer into
 the import map the browser already reads, rather than into a file a tool has
@@ -840,11 +843,6 @@ function view(state) {
       `</li>`,
   ).join('');
 
-  let fit = CARD_SYSTEM.map(
-    ([title, body], index) =>
-      `<tr><td class="num dim">${index + 1}</td>` +
-      `<td><b>${esc(title)}</b></td><td class="dim">${esc(body)}</td></tr>`,
-  ).join('');
 
   let book = BOOK.map(
     ([title, body]) =>
@@ -884,17 +882,6 @@ function view(state) {
        is a plan. Each link goes to the place where you can examine the
        item.</p>` +
         `<ul class="bens">${benefit}</ul>`,
-    ],
-    [
-      'fit',
-      'What Deck would answer for a card system',
-      `<p class="lede">This list is different from the list above. The list
-       above describes mechanisms that exist in this repository. This list
-       describes what Deck can supply to a card system, and this repository
-       does not contain a card system. Each item stays a question until
-       somebody does the work. The purpose of the list is to show the fit. It
-       is not a plan.</p>` +
-        `<table class="fit stack"><tbody>${fit}</tbody></table>`,
     ],
     ['protocol', 'The protocol: laws, addresses, endpoints', PROTOCOL],
     ['compare', 'How Deck differs from npm, CDNs, git and bundlers', COMPARE],

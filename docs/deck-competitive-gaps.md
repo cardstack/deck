@@ -324,7 +324,7 @@ and attestation**, in three parts.
 **Authorship (G4) — cheap, high payoff.** Every seal records the Matrix ID
 that caused it. jj already has an author field; the historyd backend
 declares no actor and should. Blame becomes real, and in a swarm it
-answers "which agent did this" without a convention. (When tier 2 is on,
+answers "which agent did this" without a convention. (When a Timeline is attached,
 also record the jj change id as optional seal metadata — stable across
 amends, never identity; same move Radicle is considering for patches.)
 

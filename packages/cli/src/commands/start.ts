@@ -185,7 +185,7 @@ Every deck under a depot is served live at its version-less URL
 a settled save auto-publishes as <base>-dev.N with the dev dist-tag. A save
 that does not change the tree hash publishes nothing.
 
---history seals every save (tier 2), including the states between
+--history records a Step for every save, including the states between
 publishes — that is what \`deck history\` lists and \`deck restore\` returns
 to. auto attaches jj or historyd if the machine has one and prints why if
 it does not; the live loop keeps working either way.

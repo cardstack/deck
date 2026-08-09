@@ -17,7 +17,7 @@ import type { HistoryBackend } from '@deck/history/backend';
 //
 //   file change → debounce (quiet period) → treeHash(dir)
 //     → unchanged since last publish? STOP (dedup)
-//     → [tier 2: seal the tree, take the changeId]
+//     → [with a Timeline: seal the tree, take the changeId]
 //     → packFromDir → publish <base>-dev.<n>, tag `dev`
 //
 // <base> comes from the directory's own importmap.json — the map stays the
@@ -40,7 +40,7 @@ export interface WatchPublishEvent {
   name: string;
   version: string;
   treeHash: string;
-  // The tier-2 seal this version was cut from, when history is attached.
+  // The Step this version was cut from, when a Timeline is attached.
   sealChangeId?: string;
   // True when the tree was ALREADY published under this name: no new
   // version was minted, the `dev` tag simply points back at the one that
@@ -58,7 +58,7 @@ export interface WatchOptions {
   name: string;
   storeDir: string;
   debounceMs?: number;
-  // Tier-2 history. Absent = tier 1: the store is still the history, just
+  // The Timeline. Absent: the store is still the history, just
   // at published-state granularity.
   history?: HistoryBackend;
   // Where the history repo lives. A depot seals as ONE tree, the way a

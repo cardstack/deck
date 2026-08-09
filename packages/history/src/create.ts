@@ -4,7 +4,7 @@ import type { HistoryBackend } from './backend.ts';
 
 // Attaching history is always OPTIONAL and never fatal. Tier 2 needs a jj on
 // the machine (or a daemon on a port); when neither is there the caller
-// keeps the tier-1 loop — same watcher, same store, same immutable dev
+// keeps the Versions loop — same watcher, same store, same immutable dev
 // versions, just no seals between publishes. That is why this returns an
 // attachment describing what happened instead of throwing: a missing jj is a
 // capability fact to print, not an error to crash on.
@@ -25,7 +25,7 @@ export interface CreateHistoryOptions {
 export interface HistoryAttachment {
   backend?: HistoryBackend;
   tier: 1 | 2;
-  // One line, ready to print: what is live, or why tier 2 is not.
+  // One line, ready to print: what is live, or why there is no Timeline.
   detail: string;
 }
 
@@ -55,10 +55,10 @@ export async function createHistory(
     daemon.close();
     if (kind === 'historyd') {
       // An explicit backend choice never silently becomes a different
-      // backend — it degrades to tier 1 and says so.
+      // backend — the depot keeps its Versions, loses the Timeline, and says so.
       return {
         tier: 1,
-        detail: `history: no daemon at ${daemon.baseUrl} — tier 1 (store history only)`,
+        detail: `history: no daemon at ${daemon.baseUrl} — Versions only, no Timeline`,
       };
     }
   }
@@ -68,14 +68,14 @@ export async function createHistory(
     return {
       backend: new JjCliHistory({ bin, debounceMs, onError }),
       tier: 2,
-      detail: `history: ${version} (seal-grained)`,
+      detail: `history: ${version} — a Step per save`,
     };
   }
   return {
     tier: 1,
     detail:
       kind === 'jj'
-        ? 'history: jj is not installed — tier 1 (store history only)'
-        : 'history: tier 1 (store history only) — install jj for seal-grained history',
+        ? 'history: jj is not installed — Versions only, no Timeline'
+        : 'history: Versions only, no Timeline — install jj for a Step per save',
   };
 }

@@ -11,7 +11,7 @@
 //
 // FOUR KINDS OF ADDRESS, one control.
 // ═══════════════════════════════════
-// L5 says a deck has three kinds of address. A depot with tier-2 history has
+// L5 says a deck has three kinds of address. A depot with a Timeline has
 // a fourth, and it is the one that matters most:
 //
 //   live      /<depot>/<pub>/<pkg>/<path>                every save, no-store
@@ -353,7 +353,7 @@ let lastTimeline = [];
 /**
  * The scrubber, or nothing at all.
  *
- * Nothing when the depot has no history backend (tier 1 — versions ARE the
+ * Nothing when the depot has no history backend (Versions ARE the
  * history, and a tape with no steps on it is furniture), and nothing on the
  * depot list, which is not an address in time.
  */
@@ -1227,7 +1227,7 @@ async function viewCatalog(parsed) {
     `<div><b>history</b> ${
       depot.history
         ? `<a class="s-seal" href="?at=/${esc(depot.name)}/${HISTORY}" data-at="/${esc(depot.name)}/${HISTORY}">${esc(depot.history)}</a>`
-        : 'tier 1'
+        : 'Versions only'
     }</div></div>` +
     filterBox(decks.length, 'decks') +
     `<table><thead><tr><th class="heat-cell"></th><th>deck</th>` +

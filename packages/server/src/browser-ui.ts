@@ -228,7 +228,7 @@ function renderTruth() {
     truth.innerHTML = 'Store listing loaded.';
     return;
   }
-  truth.innerHTML = \`<strong>History tier \${h.tier}</strong> —
+  truth.innerHTML = \`<strong>History: \${h.tier === 2 ? 'Timeline' : 'Versions only'}</strong> —
     \${esc(h.kind)}.
     jj: <code>\${h.jj}</code>,
     historyd: <code>\${h.historyd}</code>.

@@ -13,7 +13,7 @@
 //
 // So every row is an action, in the past tense:
 //
-//   saved       a settled edit was sealed — the tier-2 history
+//   saved       a settled edit was sealed as a Step on the Timeline
 //   auto-saved  the watcher published that save as `-dev.N`, unasked
 //   published   somebody cut an immutable version on purpose
 //   released    a dist-tag moved onto one. No bytes copied; a name changed.

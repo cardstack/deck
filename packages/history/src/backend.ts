@@ -47,7 +47,7 @@ export interface HistoryActor {
 
 export interface HistoryBackend {
   // Which implementation is live — reported by the server's capability
-  // block so a client can tell tier 2/jj from tier 2/historyd.
+  // block so a client can tell a jj Timeline from a historyd Timeline.
   readonly kind: 'jj' | 'historyd';
   // Notes a file mutation for the debounced sealer. Fire-and-forget: a
   // burst of saves becomes ONE seal.
