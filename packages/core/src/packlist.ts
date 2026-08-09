@@ -63,6 +63,30 @@ export interface PrunedRecord {
 }
 
 /**
+ * What a pack brought with it, stated rather than inferred.
+ *
+ * The mirror of `PrunedRecord`, and needed for the same reason. Once a
+ * dependency's bytes are inside the tree, nothing distinguishes them from the
+ * tree's own code — a recipient cannot tell a carried `three` from something
+ * the author wrote. That is the exact ambiguity `vendoredFrom` exists to
+ * close for a vendored deck, and a hermetic pack needs it per dependency.
+ *
+ * `from` is the canonical upstream URL, so the copy can be deduped against
+ * one the recipient already holds, upgraded, or checked against upstream.
+ * `entry` is where the specifier now resolves inside the tree. The rest of
+ * the carried files are in the packlist like any others; `modules` and
+ * `bytes` are there so the size of what arrived is readable without walking
+ * it.
+ */
+export interface CarriedRecord {
+  specifier: string;
+  from: string;
+  entry: string;
+  modules: number;
+  bytes: number;
+}
+
+/**
  * Where a pack came from, and what it assumed.
  *
  * This is the input to re-homing. Without it, intake is prefix-matching over
@@ -98,6 +122,9 @@ export interface PackProvenance {
 
   mode?: PackMode;
   pruned?: PrunedRecord;
+  /** Dependencies whose bytes ride inside this pack. Empty or absent for
+   *  `bare`, which carries nothing. */
+  carried?: CarriedRecord[];
   /**
    * The decklist as it resolved at seal time, flattened.
    *
@@ -228,6 +255,30 @@ function validateProvenance(p: unknown): void {
         unresolved.some((u) => typeof u !== 'string'))
     ) {
       throw new Error('packlist provenance.pruned.unresolved is not a string array');
+    }
+  }
+  if (prov.carried !== undefined) {
+    if (!Array.isArray(prov.carried)) {
+      throw new Error('packlist provenance.carried is not an array');
+    }
+    for (let entry of prov.carried) {
+      if (
+        typeof entry?.specifier !== 'string' ||
+        typeof entry?.from !== 'string' ||
+        typeof entry?.entry !== 'string' ||
+        typeof entry?.modules !== 'number' ||
+        typeof entry?.bytes !== 'number'
+      ) {
+        throw new Error('packlist provenance.carried entry is malformed');
+      }
+    }
+    // A `bare` pack that claims to have carried something is describing a
+    // pack that does not exist. Catching it here means intake never has to
+    // decide which half of the contradiction to believe.
+    if (prov.mode === 'bare' && prov.carried.length > 0) {
+      throw new Error(
+        'packlist provenance: mode "bare" carries nothing, but provenance.carried is non-empty',
+      );
     }
   }
   if (prov.resolved !== undefined) {

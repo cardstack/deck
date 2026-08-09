@@ -137,6 +137,17 @@ export function unpack(zip: Buffer): UnpackedPack {
       throw new Error(`packlist entry missing from archive: ${path}`);
     }
   }
+  // A carried record names a file the pack claims to have brought along. If
+  // it names one the pack does not contain, the claim is the only evidence
+  // for a dependency that is not there — worse than saying nothing, because
+  // a recipient checking provenance would conclude it was covered.
+  for (let record of packlist.provenance?.carried ?? []) {
+    if (!files.has(record.entry)) {
+      throw new Error(
+        `provenance.carried says ${record.specifier} rides at ${record.entry}, which the pack does not contain`,
+      );
+    }
+  }
   let recomputed = treeHashFromEntries(
     [...files.entries()].map(([path, bytes]) => ({
       path,

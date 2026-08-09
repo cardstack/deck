@@ -89,12 +89,41 @@ negotiation.
 **Why.** They cover backup and archival — what the realm download is actually
 used for — and they prove the model while `negotiated` stays undesigned.
 
-**Done so far:** `planPack` in `@cardstack/deck/pack-mode` decides what each mode
-carries and prunes, and emits the provenance block's `pruned` record.
-**Not done:** wiring `hermetic`'s byte carriage to the existing vendoring in
-`vendor.ts` / `vendor-tree.ts`. The decision is the part the backport needed
-settled; the copying is machinery that already works and can be connected
-when a caller wants a hermetic pack for real.
+**Done.** `planPack` in `@cardstack/deck/pack-mode` decides what each mode
+carries and prunes; `carryHermetic` in `@cardstack/deck-tools/pack-hermetic`
+goes and gets it, reusing `vendorFromCdn` unchanged. The split is the W7
+line: deciding is pure and browser-safe, fetching is intake work. Driven by
+`deck pack --hermetic`, verified end to end against a live HTTP origin — the
+graph lands under `_vendor/`, `importmap.json` is rewritten to `$DECK/…`, the
+pack round-trips, and a dependency that would stay live stops the pack.
+
+**`provenance.carried`, the mirror of `pruned`.** Once bytes are inside the
+tree nothing distinguishes them from the author's own code, which is the
+exact ambiguity `vendoredFrom` closes for a vendored deck. Each record is
+`{ specifier, from, entry, modules, bytes }` — `from` being the canonical
+upstream URL, so the copy stays dedupable, upgradable and checkable. Three
+refusals keep the record honest:
+
+- `unpack` fails if a carried record names a file the pack does not contain.
+  A claim with no bytes behind it is worse than no claim, because a recipient
+  checking provenance would conclude the dependency was covered.
+- `parsePacklist` fails on `mode: "bare"` with a non-empty `carried` — the
+  two halves of one fact, disagreeing.
+- `carryHermetic` refuses the reserved prefix, a collision with the tree's
+  own files, two bodies claiming one path, and a relative dependency with no
+  `sourceBase` to resolve it against. Guessing any of these corrupts content
+  silently.
+
+**Also settled while wiring it:** `deck pack` now records the mode
+unconditionally. A pack is always in one, and a reader inferring it from the
+absence of carried bytes is guessing at the thing intake most needs told.
+
+**One limitation, recorded rather than fixed.** Carried paths come from
+`urlToTreePath` = `<host>/<pathname>`, so an origin on an explicit port puts
+a colon in a path segment — legal in a Deck tree and on POSIX, illegal as a
+Windows filename. It cannot be normalised away: those paths are already
+inside sealed trees and L4 says a published Version never changes. Real CDNs
+have no port, so it only bites a local origin.
 
 ### W5 — conformance against a foreign implementation
 
@@ -275,7 +304,7 @@ packaging — real, but it does not block Boxel from starting.
 | W1 | `extends` | **done** — core, server, conformance, `examples/remix` |
 | W2 | absolute-reference classifier | **done** — `@cardstack/deck/classify`, conformance L11 |
 | W3 | provenance block | **done** — `PackProvenance`, `intakeReadiness`, conformance L11 |
-| W4 | pack modes `bare` / `hermetic` | **decision layer done** — `planPack`; byte carriage reuses `vendor.ts`, not yet wired |
+| W4 | pack modes `bare` / `hermetic` | **done** — `planPack` decides, `carryHermetic` carries, `deck pack --hermetic` drives it; `provenance.carried` verified on unpack |
 | W5 | foreign conformance | **done** — `--export` + at-rest excluded from foreign runs |
 | W6 | entries | **done** — `@cardstack/deck` (browser) + `/node`. `.d.ts` struck: Boxel consumes TS source (see W6 note). |
 | W7 | lean trim | **done** — `@cardstack/deck-tools`; Core 26 modules, `semver` only |

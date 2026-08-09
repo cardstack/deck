@@ -10,6 +10,7 @@
     "./vendor-map": "./src/vendor-map.ts",
     "./vendor-tree": "./src/vendor-tree.ts",
     "./derive": "./src/derive.ts",
+    "./pack-hermetic": "./src/pack-hermetic.ts",
     "./rebase-daemon": "./src/rebase-daemon.ts",
     "./depot-policy": "./src/depot-policy.ts"
   },

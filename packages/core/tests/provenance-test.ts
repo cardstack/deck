@@ -104,6 +104,53 @@ module('provenance: fail closed on malformed input', function () {
     );
   });
 
+  function hermeticRaw(): {
+    provenance: { mode: string; carried: Record<string, unknown>[] };
+  } {
+    return JSON.parse(
+      serializePacklist(
+        createPacklist(FILES, {
+          mode: 'hermetic',
+          carried: [
+            {
+              specifier: 'three',
+              from: 'https://esm.sh/three@0.160.0',
+              entry: '_vendor/esm.sh/three@0.160.0.mjs',
+              modules: 2,
+              bytes: 900,
+            },
+          ],
+        }),
+      ).toString('utf8'),
+    );
+  }
+
+  test('a carried record round-trips, and a malformed one is refused', function (assert) {
+    let raw = hermeticRaw();
+    assert.strictEqual(
+      parsePacklist(Buffer.from(JSON.stringify(raw))).provenance?.carried?.[0]
+        .from,
+      'https://esm.sh/three@0.160.0',
+      'the canonical upstream URL survives the trip',
+    );
+    delete raw.provenance.carried[0].modules;
+    assert.throws(
+      () => parsePacklist(Buffer.from(JSON.stringify(raw))),
+      /carried entry is malformed/,
+    );
+  });
+
+  // The two halves of one fact must agree. A pack that declares it carries
+  // nothing while listing what it carried leaves intake to pick a side.
+  test('a bare pack that claims to have carried something is refused', function (assert) {
+    let raw = hermeticRaw();
+    raw.provenance.mode = 'bare';
+    assert.throws(
+      () => parsePacklist(Buffer.from(JSON.stringify(raw))),
+      /mode "bare" carries nothing/,
+    );
+  });
+
   test('a packlist with no provenance still parses', function (assert) {
     let bytes = serializePacklist(createPacklist(FILES));
     assert.strictEqual(parsePacklist(bytes).provenance, undefined);
