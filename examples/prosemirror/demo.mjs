@@ -36,8 +36,9 @@
 import { writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pack } from '@deck/core/pack';
-import { publishToStore, inspectStore } from '@deck/core/store';
+import { pack, unpack } from '@deck/core/pack';
+import { hashBytes } from '@deck/core/tree-hash';
+import { publishToStore, inspectStore, readStoredPack } from '@deck/core/store';
 import {
   deckNameForNpm,
   probeEntries,
@@ -257,17 +258,109 @@ console.log(`   Every arrow is a decklist ALIAS: the key is the bare specifier t
 console.log(`   bundle imports, the value is the deck that answers to it (L7).`);
 
 // ---------------------------------------------------------------------------
-// 4. Serve the editor.
+// 4. Change it anyway — and see what changing a rollup costs.
+//
+// The demo has spent three sections saying you cannot edit these packages at
+// the module boundary. You can still edit them; there is just no boundary to
+// do it at. So: fork the 242 KB prosemirror-view rollup and change one
+// string in it.
+//
+// `attrs.class = "ProseMirror"` is the class the view puts on its editable
+// element, assigned once, mid-bundle, around line 5900 of generated code.
+// The patch works. It is also everything wrong with the situation: a string
+// match against machine output, with no way to express what was meant, and
+// nothing to carry it onto the next release.
+// ---------------------------------------------------------------------------
+const VIEW = 'lib/prosemirror-view';
+const VIEW_ROW = survey.find((row) => row.name === 'prosemirror-view');
+let viewPack = await readStoredPack(storeDir, VIEW, VIEW_ROW.version);
+let viewTree = unpack(viewPack).files;
+const VIEW_FILE = 'dist/index.js';
+const NEEDLE = 'attrs.class = "ProseMirror";';
+let viewSource = viewTree.get(VIEW_FILE).toString('utf8');
+if (!viewSource.includes(NEEDLE)) {
+  throw new Error(
+    `the demo expected ${NEEDLE} in ${VIEW}@${VIEW_ROW.version}/${VIEW_FILE} — the rollup changed shape, which is the point`,
+  );
+}
+let patchedView = viewSource.replace(NEEDLE, 'attrs.class = "ProseMirror pm-ruled";');
+const FORK_VERSION = `${VIEW_ROW.version}-ruled.${hashBytes(Buffer.from(patchedView, 'utf8')).slice(0, 8)}`;
+
+let forkFiles = [...viewTree.entries()].map(([path, bytes]) =>
+  path === VIEW_FILE
+    ? { path, bytes: Buffer.from(patchedView, 'utf8') }
+    : path === 'importmap.json'
+      ? {
+          path,
+          bytes: Buffer.from(
+            JSON.stringify(
+              {
+                deck: {
+                  packages: {
+                    'prosemirror-view': {
+                      ...JSON.parse(bytes.toString('utf8')).deck.packages['prosemirror-view'],
+                      version: FORK_VERSION,
+                      forkedFrom: {
+                        deck: VIEW,
+                        version: VIEW_ROW.version,
+                        treeHash: vendoredDecks.find((d) => d.deck === VIEW).hash,
+                      },
+                      changed: [VIEW_FILE],
+                    },
+                  },
+                  // The fork needs the same wiring as upstream, or its own
+                  // bare specifiers resolve to nothing.
+                  dependencies: JSON.parse(bytes.toString('utf8')).deck.dependencies,
+                },
+              },
+              null,
+              2,
+            ) + '\n',
+            'utf8',
+          ),
+        }
+      : { path, bytes },
+);
+let forkRecord = await publishToStore(
+  storeDir,
+  'me/prosemirror-view',
+  FORK_VERSION,
+  pack(forkFiles),
+  { tag: 'ruled' },
+);
+console.log(`\n4) forked the rollup → me/prosemirror-view@${FORK_VERSION}`);
+console.log(`   one string, ${NEEDLE.length} characters, at offset ${viewSource.indexOf(NEEDLE).toLocaleString()} of ${viewSource.length.toLocaleString()}`);
+console.log(`   the file is ${(viewSource.length / 1024).toFixed(0)} KB of generated code with no module boundary in it`);
+console.log(`   · ${forkRecord.treeHash.slice(0, 12)}…`);
+
+// ---------------------------------------------------------------------------
+// 5. Serve the editor.
 // ---------------------------------------------------------------------------
 let [pills] = await publishShared(storeDir);
 let report = await inspectStore(storeDir);
-console.log(`\n4) store: ${report.objects} objects, ${(report.bytes / 1024).toFixed(0)} KB`);
+console.log(`\n   store: ${report.objects} objects, ${(report.bytes / 1024).toFixed(0)} KB`);
 console.log(`   shared: ${pills.name}@${pills.version} · ${pills.treeHash.slice(0, 12)}…`);
 
 await writeFile(
   join(depotDir, 'app', 'editor', 'build.json'),
   JSON.stringify(
-    { depot: DEPOT, survey, sourceDecks, vendoredDecks, store: report },
+    {
+      depot: DEPOT,
+      survey,
+      sourceDecks,
+      vendoredDecks,
+      store: report,
+      viewFork: {
+        deck: 'me/prosemirror-view',
+        version: FORK_VERSION,
+        from: { deck: VIEW, version: VIEW_ROW.version },
+        file: VIEW_FILE,
+        needle: NEEDLE,
+        offset: viewSource.indexOf(NEEDLE),
+        bytes: viewSource.length,
+        hash: forkRecord.treeHash,
+      },
+    },
     null,
     2,
   ) + '\n',
@@ -289,7 +382,7 @@ let server = createDemoServer({
 serveLive({ depot, server });
 let origin = demoOrigin(PORT);
 server.listen(PORT, () => {
-  console.log(`\n5) serving a real editor, hermetically (HTTPS + HTTP/2)\n`);
+  console.log(`\n6) serving two editors, hermetically\n`);
   console.log(`      ${origin}/`);
   console.log(`      /${DEPOT}/src/prosemirror-model@${survey[0].version}/src/schema.ts   readable, not runnable`);
   console.log(`      /${DEPOT}/lib/prosemirror-model@${survey[0].version}/dist/index.js   runnable, not readable`);

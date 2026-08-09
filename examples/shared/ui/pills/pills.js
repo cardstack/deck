@@ -134,14 +134,22 @@ export function pill(kind, value, options = {}) {
   );
 }
 
-/** The key, shown once per page so the convention teaches itself. */
-export function legend(kinds = Object.keys(KINDS)) {
+/**
+ * The key, shown once per page so the convention teaches itself.
+ *
+ * `examples` overrides the grammar with the page's OWN three names, which is
+ * almost always better: a reader looking at a page about prosemirror-model
+ * learns more from the three real names for prosemirror-model than from three
+ * slots with angle brackets in them. Pass real ones. The grammar is the
+ * fallback for a page that has no single subject.
+ */
+export function legend(kinds = Object.keys(KINDS), examples = {}) {
   return (
     `<div class="dpill-legend">` +
     kinds
       .map(
         (kind) =>
-          `<span class="dpill-legend-item">${pill(kind, EXAMPLE[kind])}` +
+          `<span class="dpill-legend-item">${pill(kind, examples[kind] ?? EXAMPLE[kind])}` +
           `<em>${esc(MEANS[kind])}</em></span>`,
       )
       .join('') +
@@ -149,10 +157,14 @@ export function legend(kinds = Object.keys(KINDS)) {
   );
 }
 
-// The legend shows the GRAMMAR, not a plausible-looking fake address. A
-// concrete example there reads as a real URL and invites the reader to go
-// looking for it; the angle brackets say "this slot is a name you choose".
-// Real addresses on these pages carry the real depot name, `site`.
+// The FALLBACK legend shows the grammar rather than a plausible-looking fake
+// address: a made-up concrete example reads as a real URL and invites the
+// reader to go looking for something that is not there, while the angle
+// brackets say "this slot is a name you choose".
+//
+// A page that has a real subject should pass real names instead — see the
+// `examples` argument above. Every concrete address in these demos is one the
+// server actually answers.
 const EXAMPLE = {
   deck: '/<depot>/<publisher>/<package>@<version>/<path>',
   npm: '<scope>/<name>@<version>',

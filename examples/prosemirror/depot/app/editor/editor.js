@@ -8,6 +8,7 @@
 
 import { EditorState } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
+import { EditorView as RuledEditorView } from 'prosemirror-view-ruled';
 import { DOMParser, Schema } from 'prosemirror-model';
 import { schema as basic } from 'prosemirror-schema-basic';
 import { keymap } from 'prosemirror-keymap';
@@ -18,7 +19,7 @@ import { installPillStyles, legend, pill } from 'ui/pills';
 const build = await (await fetch('./build.json')).json();
 installPillStyles();
 
-const { survey, sourceDecks, vendoredDecks, store } = build;
+const { survey, sourceDecks, vendoredDecks, store, viewFork } = build;
 const totalMaps = survey.reduce((n, row) => n + row.maps, 0);
 const totalSrc = survey.reduce((n, row) => n + row.sources, 0);
 
@@ -36,7 +37,22 @@ app.innerHTML = `
       <code>deck-rebuild-sibling-proposal.md</code> was written for, and this
       page is the measurement rather than the assertion.
     </p>
-    <div class="namekey">${legend()}</div>
+    <div class="namekey">
+      ${legend(['deck', 'npm', 'github'], {
+        deck: `/site/lib/prosemirror-model@${survey[0].version}/dist/index.js`,
+        npm: `prosemirror-model@${survey[0].version}`,
+        github: 'ProseMirror/prosemirror-model',
+      })}
+      <p class="note">
+        Three names for one library, and on this page they disagree about
+        something that matters: the ${pill('github', 'ProseMirror/prosemirror-model')}
+        repository is 14 TypeScript modules, the
+        ${pill('npm', `prosemirror-model@${survey[0].version}`)} artifact is one
+        rolled-up JavaScript file, and the
+        ${pill('deck', `lib/prosemirror-model@${survey[0].version}`)} address can
+        only serve what npm shipped.
+      </p>
+    </div>
   </header>
 
   <section class="editor-wrap">
@@ -47,6 +63,32 @@ app.innerHTML = `
     </p>
     <div id="editor"></div>
     <p class="note" id="verdict"></p>
+  </section>
+
+  <section class="editor-wrap forked">
+    <h3>Changing it anyway: the same editor, on a forked rollup</h3>
+    <p class="note">
+      ${pill('deck', `${viewFork.deck}@${viewFork.version}`, { wrap: true })}
+      — one string replaced in
+      <code>${viewFork.file}</code>, at offset
+      ${viewFork.offset.toLocaleString()} of ${viewFork.bytes.toLocaleString()}.
+    </p>
+    <pre class="patch"><code>- ${viewFork.needle}
++ ${viewFork.needle.replace('"ProseMirror"', '"ProseMirror pm-ruled"')}</code></pre>
+    <div id="editor-ruled"></div>
+    <p class="note">
+      It works. That is the uncomfortable part. The class the view puts on its
+      editable element is assigned once, mid-rollup, and the only way to reach
+      it is a string match against machine output — no module to import, no
+      symbol to override, nothing that says what was <em>meant</em>. The next
+      release regenerates that file and the patch is gone or, worse, silently
+      matches something else.
+      <br />
+      Compare ${pill('deck', 'me/three@0.160.0-holo')} in the three.js demo:
+      one file out of 374, at a path that will still be there next release,
+      and a diff a person can review. Same operation, and the only difference
+      is whether the boundary survived publishing.
+    </p>
   </section>
 
   <section>
@@ -164,33 +206,64 @@ const schema = new Schema({
   nodes: basic.spec.nodes,
   marks: basic.spec.marks,
 });
-const doc = document.createElement('div');
-doc.innerHTML = `
-  <h3>Sealed, aliased, and typing.</h3>
-  <p>Every module behind this editor is served from <strong>this depot</strong>
-  at an exact version. There is no CDN in the network panel, and there is no
-  build step in this page.</p>
-  <p>What you cannot do is open one of these files and change a line — because
-  npm published a rollup, and the module boundary was lost before Deck ever
-  saw it.</p>
+// Real prose, because an editor full of notes about the editor teaches
+// nobody anything about editing. Type in it, select something, hit ⌘B.
+const CONTENT = `
+  <h3>On the naming of tools</h3>
+  <p>A carpenter's plane has a <em>frog</em>, a <em>chipbreaker</em> and a
+  <em>tote</em>. None of these words is decorative. The frog is the wedge the
+  blade rests on and it is named for the shape, the chipbreaker curls the
+  shaving before it can split the grain ahead of the cut, and the tote is
+  simply the handle — from the same root as <strong>to tote</strong>, to
+  carry.</p>
+  <p>You can plane a board without knowing any of them. You cannot
+  <em>fix</em> a plane without knowing all of them, because the fault is
+  always in a specific part, and a part you cannot name is a part you cannot
+  order, describe to anyone, or reason about at three in the afternoon with
+  the shaving jamming every fourth stroke.</p>
+  <p>Software has the same arrangement and hides it better.</p>
 `;
+const doc = document.createElement('div');
+doc.innerHTML = CONTENT;
+
+const parser = DOMParser.fromSchema(schema);
+const plugins = () => [
+  history(),
+  keymap({
+    'Mod-z': undo,
+    'Mod-y': redo,
+    'Mod-Shift-z': redo,
+    'Mod-b': toggleMark(schema.marks.strong),
+    'Mod-i': toggleMark(schema.marks.em),
+  }),
+  keymap(baseKeymap),
+];
+const stateFrom = (html) => {
+  let source = document.createElement('div');
+  source.innerHTML = html;
+  return EditorState.create({ doc: parser.parse(source), plugins: plugins() });
+};
 
 let view = new EditorView(document.querySelector('#editor'), {
-  state: EditorState.create({
-    doc: DOMParser.fromSchema(schema).parse(doc),
-    plugins: [
-      history(),
-      keymap({
-        'Mod-z': undo,
-        'Mod-y': redo,
-        'Mod-Shift-z': redo,
-        'Mod-b': toggleMark(schema.marks.strong),
-        'Mod-i': toggleMark(schema.marks.em),
-      }),
-      keymap(baseKeymap),
-    ],
-  }),
+  state: EditorState.create({ doc: parser.parse(doc), plugins: plugins() }),
 });
+
+// The same editor, from the forked rollup. Same schema, same plugins, same
+// content — the only difference in the whole page is which `dist/index.js`
+// the view came from.
+let ruled = new RuledEditorView(document.querySelector('#editor-ruled'), {
+  state: stateFrom(`
+    <h3>The same document, a different build</h3>
+    <p>This editor is running a <strong>forked</strong> copy of
+    prosemirror-view. Everything else about it — the schema, the plugins, the
+    key bindings, the text you are reading — is identical to the one
+    above.</p>
+    <p>The ruled paper is the tell. It comes from a class name that was
+    changed inside 242 kilobytes of generated JavaScript, because there was
+    nowhere else to change it.</p>
+  `),
+});
+void ruled;
 document.querySelector('#verdict').textContent =
   `${vendoredDecks.length} decks, ${vendoredDecks.reduce((n, d) => n + d.kb, 0)} KB, 0 requests off this origin.`;
 void view;
@@ -220,7 +293,20 @@ style.textContent = `
              border:1px solid var(--line); border-radius:10px; }
 
   .editor-wrap { background:var(--panel); border:1px solid var(--line);
-                 border-radius:10px; padding:1.1rem 1.2rem 1.2rem; }
+                 border-radius:10px; padding:1.1rem 1.2rem 1.2rem; margin-bottom:1rem; }
+  .editor-wrap.forked { border-color:#f4e6d4; box-shadow:0 0 0 2px #fdf3e6; }
+  .patch { background:#fffaf3; border:1px solid #f4e6d4; border-radius:8px;
+           padding:.6rem .8rem; overflow:auto; font-size:.78rem; margin:.5rem 0 .8rem; }
+  .patch code { white-space:pre; }
+  /* The forked build stamps this class on its editable element. Nothing but
+     the fork can produce it, which is the only reason the page can style it. */
+  #editor-ruled .pm-ruled {
+    background:
+      repeating-linear-gradient(to bottom, #fffdf7 0, #fffdf7 27px, #f0e4cf 27px, #f0e4cf 28px);
+    border-left:2px solid #e0b088;
+    padding-left:1rem;
+  }
+  #editor-ruled .pm-ruled::selection { background:#ffe0b2; }
   #editor { border:1px solid var(--line); border-radius:8px; padding:.4rem 1rem;
             margin:.8rem 0 .5rem; background:#fff; min-height:11rem; }
   #editor .ProseMirror { outline:none; }

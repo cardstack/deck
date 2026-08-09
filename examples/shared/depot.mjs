@@ -28,16 +28,23 @@ const SHARED_TLS_DIR = join(
  * Every demo speaks HTTPS + HTTP/2. One shared localhost leaf under
  * `examples/shared/.deck/certs` so accepting the browser warning once
  * covers every demo port the hub starts.
+ *
+ * `DECK_DEMO_HTTP=1` drops back to plain HTTP/1.1, the same switch
+ * `deck serve --http` is. It exists because the self-signed leaf costs a
+ * click-through per port, and when you are debugging a demo rather than
+ * measuring one, that interstitial is between you and the console.
  */
+export const DEMO_TLS = process.env.DECK_DEMO_HTTP !== '1';
+
 export function createDemoServer(options) {
   if (!process.env.DECK_TLS_DIR) {
     process.env.DECK_TLS_DIR = SHARED_TLS_DIR;
   }
-  return createDeckServer({ ...options, tls: true });
+  return createDeckServer({ ...options, tls: DEMO_TLS });
 }
 
 export function demoOrigin(port, host = 'localhost') {
-  return `https://${host}:${port}`;
+  return `${DEMO_TLS ? 'https' : 'http'}://${host}:${port}`;
 }
 
 /**
@@ -85,7 +92,9 @@ export function liveNotes({ depot, port, origin }) {
   let lines = [
     '   live: every save under depot/ auto-publishes @<base>-dev.N, and any',
     '         open page carrying /_live/hmr.js reloads itself',
-    '   http2: HTTPS + HTTP/2 (self-signed localhost leaf — accept once)',
+    DEMO_TLS
+      ? '   http2: HTTPS + HTTP/2 (self-signed localhost leaf — accept once)'
+      : '   http:  plain HTTP/1.1 (DECK_DEMO_HTTP=1)',
   ];
   if (depot.history) {
     lines.push(

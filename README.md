@@ -267,6 +267,9 @@ Design set in [docs/](docs/) — start with:
 - [deck-depot-and-realm-backport.md](docs/deck-depot-and-realm-backport.md)
   — standalone Deck says **depot** (a place), not realm; publishers sit
   inside; Boxel realm is placement-free and may become deck-enabled.
+- [deck-land-hostnames.md](docs/deck-land-hostnames.md) — **`deck.land`**
+  map: apex / `local` / **`cloud`** (hosted sync server) / `cdn`; hub is
+  the app, not a hostname.
 - [deck-pack-equivalence.md](docs/deck-pack-equivalence.md) — deck ⇄
   pack: four homes, treeHash identity, carriage modes, round-trip
   laws, `!/` mounts, canonical-zip-v1. All opens ruled.
