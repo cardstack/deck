@@ -483,11 +483,9 @@ It is small: twelve laws, one hash, three forms of address, and a few
 read-only endpoints.</p>
 
 <p><b>Be accurate about the word "protocol".</b> Deck is an addressing scheme
-and two formats, supplied over HTTP with defined cache behaviour. It is not a
-federation protocol. Matrix defines how independent servers exchange messages
-with each other; Deck defines what a URL means, what the bytes at that URL
-are, and how long a client may keep them. Those are different sizes of
-claim.</p>
+and two formats, supplied over HTTP with defined cache behaviour. It defines
+what a URL means, what the bytes at that URL are, and how long a client may
+keep them. It does not define how one server talks to another.</p>
 
 <p>The part that is most like a protocol is the <b>address</b>. Two programs
 that agree on the grammar below, and on the cache rule for each form of
