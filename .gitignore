@@ -17,6 +17,9 @@ examples/contribute-to-codelist/depot/kim/
 examples/two-agents/depot/agent-a/
 examples/two-agents/depot/agent-b/
 examples/variations/depot/try/
+# Seeded from examples/field-library/starter/ so that an edit made in the
+# browser never dirties the repository.
+examples/field-library/depot/you/
 # Demo-run facts, served BESIDE a depot and never inside one, so they cannot
 # fold into a tree hash. Written by the demo that owns them, so a tracked copy
 # could only go stale.

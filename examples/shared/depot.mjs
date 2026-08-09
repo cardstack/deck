@@ -48,9 +48,9 @@ export function demoOrigin(port, host = 'localhost') {
 }
 
 /**
- * A depot mount with tier-2 history attached when the machine can do it.
- * Prints which tier it got, because a capability that is quietly absent is
- * worse than one that is loudly absent.
+ * A depot mount with a Timeline attached when the machine can do it.
+ * Prints which of the two it got, because a capability that is quietly absent
+ * is worse than one that is loudly absent.
  */
 export async function openDemoDepot({ name, dir, quiet = false }) {
   let history = await createHistory({
@@ -58,8 +58,8 @@ export async function openDemoDepot({ name, dir, quiet = false }) {
     onError: (error) => console.error(`   history: ${error}`),
   });
   if (!quiet) {
-    // `detail` already names itself ("history: jj 0.43.0 (seal-grained)" /
-    // "history: tier 1 — no jj on PATH"), so this only indents it.
+    // `detail` already names itself ("history: jj 0.43.0 — a Step per save" /
+    // "history: Versions only, no Timeline"), so this only indents it.
     console.log(`   ${history.detail}`);
   }
   return { name, dir, storeDir: storeDirFor(dir), history: history.backend };

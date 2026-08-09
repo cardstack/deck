@@ -202,7 +202,7 @@ console.log('\n  TWO AGENTS — separate decks never collide; the shared one doe
 // Tier 2, for real. Two people are editing at once, so "what did the tree
 // look like when it published that" has to have an answer — and the answer
 // is a seal per save, not per publish. Without jj or historyd on the machine
-// this degrades to tier 1 and says so; nothing else in the demo changes.
+// this degrades to Versions only and says so; nothing else in the demo changes.
 depot = await openDemoDepot({ name: DEPOT, dir: depotDir });
 
 let base = await publishUpstream('1.0.0', TOKENS['1.0.0']);

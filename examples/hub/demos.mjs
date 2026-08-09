@@ -106,18 +106,19 @@ export const DEMOS = [
     dir: 'field-library',
     port: 8793,
     workload: 'W4 · patterns and fields',
-    title: 'A field library — aliasing, scopes, dedupe',
-    lede: `Six card fields, each its own deck, over five npm libraries
-      vendored from source. Enough decks on one page for the resolution rules
-      to matter — and all three of them show up at once.`,
+    title: 'Edit a field. The edit is a Version.',
+    lede: `A shipment form built from seven field decks. Six are sealed. The
+      seventh is yours: edit its source in the page, and the save becomes an
+      immutable Version the form can be pointed at.`,
     look: [
+      'Press Save. The watcher hashes the tree and publishes <code>1.0.0-dev.N</code>; the page reloads at <code>?with=you/ship-by@1.0.0-dev.N</code> and the control looks different. Click <code>1.0.0</code> to get the original back, byte for byte.',
+      'The editor writes through a <b>separate process</b> on the next port. The deck server answers GET and HEAD and nothing else, so a page cannot ask it to save a file — the bridge does what your editor does, and everything after the write is the ordinary loop.',
       `Every field imports <code>zod</code>, <code>date-fns</code>, <code>luxon</code> — bare npm specifiers. None of those is a deck name: ${pill('npm', 'zod@3.25.76')} is the artifact, ${pill('deck', 'lib/zod@3.25.76')} is the address, and one line of decklist connects them.`,
       `${pill('deck', 'fields/swatch@1.0.0')} is on chroma-js 3.1.2 and ${pill('deck', 'fields/brand-swatch@1.0.0')} is pinned to 2.6.0, and both render on the same page. A flat import map has one slot for <code>chroma-js</code>.`,
-      '13 dependency edges collapse to 6 library URLs. Nothing computed that — identical ranges resolve to identical versions, and identical bytes have identical names.',
       'One URL is one module instance, so <code>dueDate.schema instanceof handle.modules.zod.ZodType</code> is <b>true</b>. The page checks it live.',
-      'The page reads its own injected import map back out of the DOM, so the tables are measurements of the page you are looking at.',
     ],
     tries: [
+      { label: 'the form at the working tree', path: '/site/app/library@1.0.0/index.html?with=you/ship-by' },
       { label: 'a field deck’s lock', path: '/site/fields/swatch@1.0.0/importmap.json' },
       { label: 'chroma-js 3.1.2', path: '/site/lib/chroma-js@3.1.2/index.js' },
       { label: 'chroma-js 2.6.0, at the same time', path: '/site/lib/chroma-js@2.6.0/index.js' },
@@ -134,7 +135,7 @@ export const DEMOS = [
       name. On the one thing they share, they eventually do — and the generic
       merge refuses, correctly, because it does not know what the key means.`,
     look: [
-      'Both component saves auto-publish and are <b>sealed</b> — this is the demo that runs tier-2 history, so every save has a changeId, not just every publish.',
+      'Both component saves auto-publish and are <b>sealed</b> — this is the demo that runs a Timeline, so every save has a changeId, not just every publish.',
       'Round one: three different keys under one object. Both forks absorb upstream and keep their own addition. Nobody reviewed anything.',
       'Round two: the same two keys, two answers. Reported <code>conflicted</code>, and the fork’s tree hash is byte-identical before and after — a conflicted pass writes nothing at all.',
       'The rules live in <code>merge-policy.json</code>, published by upstream. <code>scale</code> is a set, so <code>union</code> keeps both intentions: 48 was the fork’s, 40 was upstream’s, and both survive.',

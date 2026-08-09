@@ -235,7 +235,8 @@ of them in full.
 Open [deckbook.html](deckbook.html) (or `http://localhost:<port>/deckbook.html`
 on a running server) for a teaching tour of the protocol against what this
 reference implementation actually runs — vocabulary, address space, live loop,
-store/packs, history tiers, vendor, fork/lock/offers, HTTP + CLI maps, four
+store/packs, Versions and the Timeline, vendor, fork/lock/offers, HTTP + CLI
+maps, four
 use cases worked end to end at the command line, and honest status.
 
 ## Documents
@@ -346,7 +347,7 @@ applicable.
   **three-way merge** (line-level for text, key-level for JSON), and
   **offers** — a fork with a recorded base, planned and rebased as a pure
   function.
-- **`packages/history`** — tier-2 seals behind one contract, with two
+- **`packages/history`** — the Timeline behind one contract, with two
   backends: the jj CLI and historyd (jj-lib over localhost HTTP,
   ~5-6x faster per call). A missing jj or a dead daemon degrades to
   Versions only, with a printed reason. Restores replay forward as ordinary
@@ -356,8 +357,8 @@ applicable.
   Content-Digest; range/tag = one 302 hop; bare/alias = 301; `?meta`
   (including which seal a version was cut from); `?format=pack`;
   `!/` mounts; `/<depot>/_history/<changeId>/<path>`; import-map
-  injection for HTML; coded JSON errors with two negative-cache
-  tiers; HEAD; writes refused. Plus `/_packages`, `/_browse`,
+  injection for HTML; coded JSON errors, negative-cached by how
+  permanent the miss is; HEAD; writes refused. Plus `/_packages`, `/_browse`,
   `/<depot>/_offers`, the `?with=` trial override, the **rebase daemon**,
   and an SSE change bus at `/_live/events` with a drop-in HMR client.
 - **`packages/cli`** — 27 commands in eight groups, one module per group

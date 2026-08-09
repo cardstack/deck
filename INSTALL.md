@@ -16,13 +16,13 @@ from this repository instead.
 | --- | --- | --- |
 | **Node** | ≥ 22 | required — the CLI is TypeScript with no build step, and relies on Node's native type stripping |
 | **pnpm** | 11 | required to install the workspace's dev dependencies (`packageManager` pins the exact version) |
-| **jj** | any recent | optional — turns on tier-2 history: a seal per save, and `deck history` / `deck restore` |
+| **jj** | any recent | optional — turns on the Timeline: a Step per save, and `deck history` / `deck restore` |
 
 Verified on Node v24.17.0, pnpm 11.0.9, jj 0.43.0.
 
 Without `jj` everything still works and nothing is lost: the store keeps
 every settled save as an immutable `-dev.N` version. What you give up is the
-states *between* publishes. The CLI says which tier it attached at, every
+states *between* publishes. The CLI says which of the two it attached, every
 time, rather than pretending.
 
 ## Get it
@@ -97,7 +97,7 @@ pnpm test && pnpm lint
 Expect 185 core, 19 history, 76 server, 4 conformance, 13 CLI — all
 passing — and no lint or type errors.
 
-## Check which history tier you got
+## Check whether you got a Timeline
 
 ```bash
 deck hello ./playground
@@ -114,7 +114,7 @@ immutable version.
 | --- | --- | --- |
 | `DECK_KEYRING` | `~/.deck/keys` | where `deck keygen` writes private keys. They never leave the machine |
 | `JJ_BIN` | `jj` | which `jj` binary to seal with |
-| `DECK_HISTORYD_URL` | — | point tier-2 history at a running historyd instead of shelling out to the jj CLI (roughly 5–6× faster per call) |
+| `DECK_HISTORYD_URL` | — | point the Timeline at a running historyd instead of shelling out to the jj CLI (roughly 5–6× faster per call) |
 
 ## When something is wrong
 

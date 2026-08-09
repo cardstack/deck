@@ -49,7 +49,7 @@ export async function createHistory(
       return {
         backend: daemon,
         tier: 2,
-        detail: `history: historyd at ${daemon.baseUrl} (seal-grained)`,
+        detail: `history: historyd at ${daemon.baseUrl} — a Step per save`,
       };
     }
     daemon.close();
