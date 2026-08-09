@@ -21,6 +21,14 @@ export {
 } from './import-map.ts';
 export type { PackageMapEntry } from './import-map.ts';
 
+export { classifyReference, summarise } from './classify.ts';
+export type {
+  Classification,
+  ClassificationReport,
+  ClassifyOptions,
+  ReferenceRole,
+} from './classify.ts';
+
 export {
   EXTENDS_KEY,
   EXTENDS_MAX_DEPTH,

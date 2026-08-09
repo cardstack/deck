@@ -39,6 +39,7 @@ module.exports = {
       files: [
         'packages/core/src/resolve.ts',
         'packages/core/src/inherit.ts',
+        'packages/core/src/classify.ts',
         'packages/core/src/import-map.ts',
         'packages/core/src/merge.ts',
         'packages/core/src/es-lexer.ts',

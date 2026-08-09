@@ -24,6 +24,7 @@ import {
 } from '@deck/core/signature';
 import { parseDependencyValue } from '@deck/core/lock';
 import { flattenInheritance, isExactParent } from '@deck/core/inherit';
+import { classifyReference } from '@deck/core/classify';
 import { resolveSpecifier } from '@deck/core/resolve';
 import { verifyLinks } from '@deck/core/verify-links';
 import {
@@ -367,6 +368,52 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
       assert(isExactParent('acme/blog@1.2.3'), 'exact');
       assert(!isExactParent('acme/blog@latest'), 'a tag is refused');
       assert(!isExactParent('acme/blog@^1.2.3'), 'a range is refused');
+    });
+
+    // ---- L11 re-homing is enumerated, never guessed -----------------------
+    //
+    // Moving a tree means deciding, for every URL-shaped string in it,
+    // whether to touch it. Implementations that answer by pattern-matching
+    // corrupt data the first time a value merely LOOKS like a reference, and
+    // the damage is silent. These two checks are the contract that makes
+    // that impossible.
+    await checks.run('L11', 'data is never rewritten, whatever it matches', () => {
+      let imports = { '@base/': 'https://cardstack.example/base/' };
+      // Both of these match a rule. Neither is a reference.
+      for (let value of [
+        'https://cardstack.example/base/looks-like-a-module',
+        'https://images.example/icon.png',
+      ]) {
+        assertEqual(
+          classifyReference({ value, role: 'opaque', imports }).action,
+          'leave',
+          `opaque ${value}`,
+        );
+      }
+    });
+
+    await checks.run('L11', 'only a declared dependency rebinds', () => {
+      let imports = { '@base/': 'https://cardstack.example/base/' };
+      assertEqual(
+        classifyReference({
+          value: 'https://cardstack.example/base/string',
+          role: 'reference',
+          imports,
+        }).action,
+        'rebind',
+        'declared',
+      );
+      // Absolute, a genuine reference, and not in the decklist: it survives
+      // untouched, because rewriting it would point it at nothing.
+      assertEqual(
+        classifyReference({
+          value: 'https://elsewhere.example/card.json',
+          role: 'reference',
+          imports,
+        }).action,
+        'leave',
+        'undeclared',
+      );
     });
 
     // ---- L8 provenance ---------------------------------------------------
