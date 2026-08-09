@@ -25,6 +25,11 @@ import {
 import { parseDependencyValue } from '@deck/core/lock';
 import { flattenInheritance, isExactParent } from '@deck/core/inherit';
 import { classifyReference } from '@deck/core/classify';
+import {
+  createPacklist,
+  parsePacklist,
+  serializePacklist,
+} from '@deck/core/packlist';
 import { resolveSpecifier } from '@deck/core/resolve';
 import { verifyLinks } from '@deck/core/verify-links';
 import {
@@ -414,6 +419,30 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
         'leave',
         'undeclared',
       );
+    });
+
+    // A pack states what it assumed about its recipient. An implementation
+    // that reads a mode it does not know as "the ordinary one" would produce
+    // a confidently wrong intake — the artifact would look carried when part
+    // of it was pruned under rules this build cannot honour.
+    await checks.run('L11', 'an unrecognised pack mode is refused', () => {
+      let packlist = createPacklist(
+        fixtureFiles().map((f) => ({
+          path: f.path,
+          size: f.bytes.length,
+          sha256: hashBytes(f.bytes),
+        })),
+        { mode: 'bare' },
+      );
+      let raw = JSON.parse(serializePacklist(packlist).toString('utf8'));
+      raw.provenance.mode = 'negotiated';
+      let refused = false;
+      try {
+        parsePacklist(Buffer.from(JSON.stringify(raw)));
+      } catch {
+        refused = true;
+      }
+      assert(refused, 'an unknown mode was accepted');
     });
 
     // ---- L8 provenance ---------------------------------------------------
