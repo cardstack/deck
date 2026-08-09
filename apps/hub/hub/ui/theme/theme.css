@@ -310,25 +310,96 @@ p { margin: calc(var(--row) * .3em) 0; }
   border: 1px solid var(--dim); border-radius: 0; padding: 0 1ch;
 }
 
+/* ── The stage ──────────────────────────────────────────────────────────
+   CodePen's arrangement, and for CodePen's reason: the running thing is
+   the subject, everything else is apparatus, and the person watching is
+   the only one who knows how much room each deserves right now.
+
+   The stage was a fixed 70vh box with the readout scrolling under it, which
+   meant a tall demo scrolled inside a short window while a table of eight
+   rows had the rest of the screen. Now the two share the viewport through a
+   splitter, the split is remembered, and the stage can take the lot.
+
+   Grid rather than flex: `--split` is a single number the drag handler
+   writes, and grid-template-rows reads it directly, so dragging costs one
+   custom-property write per frame and no layout thrash. */
+.runsplit {
+  display: grid;
+  /* PERCENT, NOT FR. `fr` is not a permitted unit inside calc(), so
+     `calc(var(--split) * 1fr)` is not merely wrong for one row — it
+     invalidates the entire track list, and every row silently falls back to
+     auto. The container has a definite height, so a percentage means the
+     same thing and does compute; the last row takes whatever is left. */
+  grid-template-rows:
+    auto
+    minmax(0, calc(var(--split, 62) * 1%))
+    auto
+    minmax(0, 1fr);
+  height: calc(100vh - var(--chrome, 9rem));
+  min-height: 22rem;
+}
+.runsplit[data-full='1'] {
+  grid-template-rows: auto minmax(0, 1fr) 0 0;
+}
+.runsplit[data-full='1'] .grip { display: none; }
+.runsplit[data-full='1'] .runsplit-under { display: none; }
+
 .stage {
-  width: 100%; height: min(70vh, 720px);
+  width: 100%; height: 100%; min-height: 0;
   border: 1px solid var(--line); background: var(--panel);
 }
+/* Centring rather than stretching, so the width presets read as a device
+   width and not as a differently-broken layout. */
+.stagewrap {
+  min-height: 0; display: flex; justify-content: center;
+  background: var(--panel);
+}
+.stagewrap .stage { max-width: var(--stagew, 100%); }
+
+.runsplit-under { overflow: auto; min-height: 0; padding-top: .4em; }
+
+/* The grip. A row of its own, so it never overlaps either pane. */
+.grip {
+  height: .9em; cursor: row-resize; position: relative;
+  display: flex; align-items: center; justify-content: center;
+}
+.grip::before {
+  content: ''; position: absolute; left: 0; right: 0; height: 1px;
+  background: var(--line);
+}
+.grip::after {
+  content: ''; position: relative; width: 4ch; height: 3px;
+  background: var(--line); border-radius: 2px;
+}
+.grip:hover::after, .grip[data-dragging]::after { background: var(--a-package); }
+/* While dragging, the pointer is over the iframe half the time and the
+   iframe would swallow the move events. */
+.runsplit[data-dragging] .stage { pointer-events: none; }
+
 h2.scope {
   font-size: 1em; font-weight: 400; color: var(--dim);
   margin: calc(var(--row) * 1em) 0 calc(var(--row) * .2em) 0;
 }
 td.indent { padding-left: 2ch; }
 
-/* The way out of the frame: above it, never over it. */
-.stagebar { display: flex; justify-content: flex-end; }
-.popout {
-  padding: 0 1.5ch; color: var(--dim);
-  background: var(--panel); border: 1px solid var(--line); border-bottom: 0;
+/* The controls sit above the frame, never over it: an iframe is already a
+   compromise without the chrome eating a corner of the thing on show. */
+.stagebar {
+  display: flex; align-items: center; gap: 0;
+  border-bottom: 0;
 }
-.popout:hover {
+.stagebar .grow { flex: 1; }
+.stagebar button, .popout {
+  font: inherit; cursor: pointer; padding: 0 1.5ch; color: var(--dim);
+  background: var(--panel); border: 1px solid var(--line); border-bottom: 0;
+  border-radius: 0; margin-left: -1px;
+}
+.stagebar button:hover, .popout:hover {
   background: var(--a-package); color: var(--bg);
   border-color: var(--a-package); text-decoration: none;
+}
+.stagebar button[aria-pressed='true'] {
+  color: var(--fg); border-color: var(--dim);
 }
 
 /* The theme picker rides in the nav, so every app has it. */

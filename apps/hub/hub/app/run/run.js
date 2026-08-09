@@ -294,13 +294,34 @@ async function viewOne(at) {
   );
   return (
     head +
-    // The way out of the frame sits ABOVE it, right-aligned. Overlapping the
-    // stage would cover the running page — the one thing on screen this app
-    // exists to show — and an iframe is already a compromise without the
-    // chrome eating a corner of it.
-    `<div class="stagebar"><a class="popout" href="${esc(url)}" ` +
-    `target="_blank" rel="noopener">Pop Out ↗</a></div>` +
-    `<iframe class="stage" src="${esc(url)}" title="${esc(at)}"></iframe>` +
+    // THE STAGE OWNS THE SCREEN, AND YOU DECIDE HOW MUCH.
+    //
+    // This was a fixed 70vh box with the readout scrolling underneath, which
+    // gave a tall demo a short window and gave a table of eight rows the rest
+    // of the page. The two now share the viewport through a splitter you can
+    // drag, the position is remembered, and `Full` gives the stage all of it.
+    //
+    // Every control sits ABOVE the frame, never over it: an iframe is already
+    // a compromise without the chrome eating a corner of the thing on show.
+    `<div class="runsplit" data-role="split">` +
+    `<div class="stagebar">` +
+    // Width presets, because "does this demo hold up narrow" is a question
+    // about the demo, and answering it by resizing the whole window loses
+    // the readout underneath.
+    WIDTHS.map(
+      ([value, label]) =>
+        `<button data-role="width" data-width="${value}" ` +
+        `aria-pressed="${value === stageWidth() ? 'true' : 'false'}">${label}</button>`,
+    ).join('') +
+    `<button data-role="reload" title="reload the frame">Reload</button>` +
+    `<span class="grow"></span>` +
+    `<button data-role="full" aria-pressed="${isFull() ? 'true' : 'false'}">Full</button>` +
+    `<a class="popout" href="${esc(url)}" target="_blank" rel="noopener">Pop Out ↗</a>` +
+    `</div>` +
+    `<div class="stagewrap"><iframe class="stage" data-role="stage" ` +
+    `src="${esc(url)}" title="${esc(at)}"></iframe></div>` +
+    `<div class="grip" data-role="grip" title="drag to resize"></div>` +
+    `<div class="runsplit-under">` +
     // "imports 1 · scopes 0" is two numbers and no meaning. What a reader
     // wants is the sentence those numbers are evidence for.
     `<p class="dim">${
@@ -324,16 +345,85 @@ async function viewOne(at) {
               `<table><tbody>${mapRows(table, true)}</tbody></table>`,
           )
           .join('')) +
+    `</div></div>` +
     `</main>`
   );
 }
 
 // ---------------------------------------------------------------------------
+// The splitter
+//
+// Three pieces of state, all of them the reader's rather than the app's, so
+// all three outlive the page: how the stage and the readout divide the
+// viewport, how wide the stage is, and whether the readout is hidden. Nothing
+// here belongs in the URL — it is how you are looking, not what at — and a
+// share link that carried someone else's pane sizes would be worse than one
+// that did not.
+
+const SPLIT_KEY = 'deck.run.split';
+const WIDTH_KEY = 'deck.run.width';
+const FULL_KEY = 'deck.run.full';
+
+// `100%` first because it is the default and the common case. The rest are
+// the two widths that actually decide whether a layout holds.
+const WIDTHS = [
+  ['100%', 'fit'],
+  ['768px', '768'],
+  ['390px', '390'],
+];
+
+const stageWidth = () => localStorage.getItem(WIDTH_KEY) ?? '100%';
+const isFull = () => localStorage.getItem(FULL_KEY) === '1';
+const splitAt = () => Number(localStorage.getItem(SPLIT_KEY) ?? 62);
+
+function applyStage() {
+  let split = app.querySelector('[data-role="split"]');
+  if (!split) return;
+  split.style.setProperty('--split', String(splitAt()));
+  split.style.setProperty('--stagew', stageWidth());
+  split.dataset.full = isFull() ? '1' : '0';
+  // MEASURED, not guessed. The chrome above this is a nav plus a prompt line
+  // plus sometimes a trial banner, and the legend at the foot shows or hides
+  // on a key. A hard-coded offset would be wrong for most of those states and
+  // would leave the page scrolling by a few pixels — which, on a pane that is
+  // supposed to fill the window exactly, reads as a broken layout.
+  let above = split.getBoundingClientRect().top + scrollY;
+  let legend = document.querySelector('deck-keys')?.offsetHeight ?? 0;
+  split.style.setProperty('--chrome', `${Math.round(above + legend + 8)}px`);
+}
+
+// The legend toggles with `h` and the trial banner comes and goes, so the
+// measurement has to be redone rather than taken once.
+new ResizeObserver(() => applyStage()).observe(document.documentElement);
+
+function dragSplit(event) {
+  let split = app.querySelector('[data-role="split"]');
+  if (!split || isFull()) return;
+  event.preventDefault();
+  let box = split.getBoundingClientRect();
+  let move = (moveEvent) => {
+    // Clamped so neither pane can be dragged out of existence: a splitter
+    // that can hide a pane permanently is a splitter that will, and then the
+    // pane looks broken rather than collapsed.
+    let fraction = ((moveEvent.clientY - box.top) / box.height) * 100;
+    split.style.setProperty('--split', String(Math.max(15, Math.min(88, fraction))));
+  };
+  let done = () => {
+    removeEventListener('pointermove', move);
+    removeEventListener('pointerup', done);
+    delete split.dataset.dragging;
+    localStorage.setItem(SPLIT_KEY, split.style.getPropertyValue('--split'));
+  };
+  split.dataset.dragging = '1';
+  addEventListener('pointermove', move);
+  addEventListener('pointerup', done);
+}
 
 async function render() {
   let at = currentAt();
   try {
     app.innerHTML = at ? await viewOne(at) : await viewIndex();
+    applyStage();
   } catch (error) {
     app.innerHTML =
       `<main><div class="err"><b>${esc(error.code ?? 'error')}</b> — ` +
@@ -364,6 +454,9 @@ function bindings() {
   let list = [[['j', 'k'], 'move'], ['↵', 'open']];
   if (currentAt()) list.push(['u', 'up']);
   if (app.querySelector('[data-role="filter"]')) list.push(['/', 'filter']);
+  if (app.querySelector('[data-role="split"]')) {
+    list.push(['f', 'full'], ['r', 'reload']);
+  }
   list.push([['g', 'G'], 'ends'], ['y', 'copy address']);
   return list;
 }
@@ -407,12 +500,49 @@ addEventListener('keydown', (event) => {
     }
     case 'y':
       return navigator.clipboard?.writeText(currentAt());
+    case 'f':
+      return app.querySelector('[data-role="full"]')?.click();
+    case 'r':
+      return app.querySelector('[data-role="reload"]')?.click();
     default:
   }
 });
 
+app.addEventListener('pointerdown', (event) => {
+  if (event.target.closest('[data-role="grip"]')) dragSplit(event);
+});
+
 app.addEventListener('click', (event) => {
   if (event.target.closest('[data-role="clear-with"]')) return go({ with: [] });
+
+  let width = event.target.closest('[data-role="width"]');
+  if (width) {
+    localStorage.setItem(WIDTH_KEY, width.dataset.width);
+    for (let button of app.querySelectorAll('[data-role="width"]')) {
+      button.setAttribute(
+        'aria-pressed',
+        button.dataset.width === width.dataset.width ? 'true' : 'false',
+      );
+    }
+    return applyStage();
+  }
+
+  if (event.target.closest('[data-role="full"]')) {
+    localStorage.setItem(FULL_KEY, isFull() ? '0' : '1');
+    let button = app.querySelector('[data-role="full"]');
+    button?.setAttribute('aria-pressed', isFull() ? 'true' : 'false');
+    return applyStage();
+  }
+
+  if (event.target.closest('[data-role="reload"]')) {
+    // Re-assigning `src` rather than reaching into contentWindow: the demos
+    // run at a different origin, so there is nothing here we are allowed to
+    // touch, and this is the one reload that works for both.
+    let stage = app.querySelector('[data-role="stage"]');
+    if (stage) stage.src = stage.src;
+    return;
+  }
+
   let link = event.target.closest('a[data-at]');
   if (!link || event.metaKey || event.ctrlKey || event.shiftKey) return;
   event.preventDefault();
