@@ -214,9 +214,9 @@ packaging — real, but it does not block Boxel from starting.
 | W3 | provenance block | **done** — `PackProvenance`, `intakeReadiness`, conformance L11 |
 | W4 | pack modes `bare` / `hermetic` | **decision layer done** — `planPack`; byte carriage reuses `vendor.ts`, not yet wired |
 | W5 | foreign conformance | **done** — `--export` + at-rest excluded from foreign runs |
-| W6 | one entry + types | next — after W8, or the same imports move twice |
+| W6 | entries | **done** — `@cardstack/deck` (browser) + `/node`. Shipping `.d.ts` needs a build step this repo does not have; not started. |
 | W7 | lean trim | not started |
-| W8 | naming → `@cardstack/deck` | **decided**; rename not yet done |
+| W8 | naming → `@cardstack/deck` | **done** |
 | W9 | L12 amendment | not started |
 | W10 | two proofs | scopes proof partly covered by `examples/remix` |
 | — | Embroider §3 and §4 | **applied** (see §1a) |
