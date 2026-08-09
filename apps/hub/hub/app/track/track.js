@@ -181,10 +181,27 @@ async function collect(scope) {
             when: attrs.timestamp ?? '',
             files: touched,
             changes,
-            at: `/${depot.name}/${HISTORY}/${attrs.changeId}`,
-            // The seal before this one: what this save changed.
+            // WHERE `diff →` LANDS.
+            //
+            // The row already knows two seals and a list of paths, and that
+            // IS a diff — so it hands over the diff rather than an invitation
+            // to go and find one. A save that touched a single file goes
+            // straight to that file's before and after; a save that touched
+            // several goes to the seal comparison, whose rows descend into
+            // the same view one file at a time.
+            //
+            // Landing on the seal in both cases would throw away the most
+            // specific thing the feed knows, which is usually the only thing
+            // the reader wanted.
+            at:
+              touched.length === 1
+                ? `/${depot.name}/${HISTORY}/${attrs.changeId}/${touched[0]}`
+                : `/${depot.name}/${HISTORY}/${attrs.changeId}`,
+            // The seal before this one is the before-state of this save.
             vs: seals[index + 1]
-              ? `/${depot.name}/${HISTORY}/${seals[index + 1].attributes.changeId}`
+              ? touched.length === 1
+                ? `/${depot.name}/${HISTORY}/${seals[index + 1].attributes.changeId}/${touched[0]}`
+                : `/${depot.name}/${HISTORY}/${seals[index + 1].attributes.changeId}`
               : '',
           });
         });
@@ -660,5 +677,28 @@ app.addEventListener('input', (event) => {
   let readout = app.querySelector('[data-role="filter-count"]');
   if (readout) readout.textContent = needle ? `${shown} shown` : '';
 });
+
+// A CHANGE FEED THAT NEEDS RELOADING IS NOT A FEED.
+//
+// This app exists to answer "what just happened", and until now it answered
+// "what had happened when you last pressed reload" — which, while an agent is
+// working, is wrong within seconds and wrong silently. The depot already
+// announces every save on the SSE channel; the query cache just was not
+// listening.
+//
+// Invalidate rather than refetch: query-core then only re-fetches what is
+// actually mounted, and the seal log is the one query that grows.
+new EventSource('/_live/events').addEventListener('change', () => {
+  client.invalidateQueries();
+  render();
+});
+
+// The clock keeps moving even when the depot does not, and every row is
+// stamped with a relative time and a recency fade. Left alone, `just now`
+// stays on screen for an hour. A minute is finer than the smallest unit the
+// feed prints, so nothing ever displays a time that has gone stale.
+setInterval(() => {
+  if (!document.hidden) render();
+}, 60_000);
 
 render();

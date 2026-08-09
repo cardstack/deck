@@ -270,6 +270,10 @@ Design set in [docs/](docs/) — start with:
 - [deck-land-hostnames.md](docs/deck-land-hostnames.md) — **`deck.land`**
   map: apex / `local` / **`cloud`** (hosted sync server) / `cdn`; hub is
   the app, not a hostname.
+- [deck-activity-protocol.md](docs/deck-activity-protocol.md) — **proposed.**
+  **`GET /_activity`** replaces `/_heat`: one agent-activity door (EWMA
+  trie + optional `story=1` run/code/commentary) for gutters and the
+  watch canvas. ([old heat note](docs/deck-heat-protocol.md) points here.)
 - [deck-pack-equivalence.md](docs/deck-pack-equivalence.md) — deck ⇄
   pack: four homes, treeHash identity, carriage modes, round-trip
   laws, `!/` mounts, canonical-zip-v1. All opens ruled.

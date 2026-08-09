@@ -7,11 +7,14 @@
       }
     },
     "dependencies": {
-      "ui/nav": "live"
+      "ui/nav": "live",
+      "ui/heat": "live"
     }
   },
   "imports": {
     "ui/nav/": "/hub/ui/nav/",
-    "ui/nav": "/hub/ui/nav/nav.js"
+    "ui/nav": "/hub/ui/nav/nav.js",
+    "ui/heat/": "/hub/ui/heat/",
+    "ui/heat": "/hub/ui/heat/heat.js"
   }
 }

@@ -1,0 +1,10 @@
+{
+  "deck": {
+    "packages": {
+      "heat": {
+        "version": "0.1.0",
+        "entry": "$DECK/heat.js"
+      }
+    }
+  }
+}

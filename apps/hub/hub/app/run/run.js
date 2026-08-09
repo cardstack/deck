@@ -15,8 +15,17 @@
 // a readout, sitting directly below the thing doing the running.
 import 'ui/nav';
 import { installNavStyles } from 'ui/nav';
+import {
+  heatCell,
+  heatScale,
+  installHeatStyles,
+  loadHeat,
+  onHeatChange,
+  scoreOf,
+} from 'ui/heat';
 
 installNavStyles();
+installHeatStyles();
 
 const app = document.getElementById('app');
 const keys = document.querySelector('deck-keys');
@@ -171,10 +180,16 @@ async function inventory() {
 
 async function viewIndex() {
   let items = await inventory();
+  // Which of these thirteen is being worked on right now. Same bar, same
+  // meaning, same module as /browse and /track — a reader who has learned it
+  // once has learned it everywhere.
+  let heats = items.map((item) => scoreOf(`/${item.depot}/${item.deck}`));
+  let scale = heatScale(heats.map((entry) => entry.score));
   let rows = items
     .map(
-      (item) =>
+      (item, index) =>
         `<tr data-name="${esc(item.at.toLowerCase())}">` +
+        heatCell(scale(heats[index].score), { last: heats[index].last }) +
         `<td><a href="?at=${esc(item.at)}" data-at="${esc(item.at)}">` +
         `<span class="s-depot">${esc(item.depot)}</span><span class="sep">/</span>` +
         `<span class="s-publisher">${esc(item.publisher)}</span><span class="sep">/</span>` +
@@ -194,7 +209,8 @@ async function viewIndex() {
         `size="24" placeholder="${items.length} pages" autocomplete="off" /> ` +
         `<span class="dim" data-role="filter-count"></span></div>`
       : '') +
-    `<table><thead><tr><th>deck</th><th>page</th><th>where</th></tr></thead>` +
+    `<table><thead><tr><th class="heat-cell"></th><th>deck</th>` +
+    `<th>page</th><th>where</th></tr></thead>` +
     `<tbody>${rows}</tbody></table></main>`
   );
 }
@@ -417,4 +433,12 @@ app.addEventListener('input', (event) => {
 });
 
 await loadOrigins();
+await loadHeat();
+onHeatChange(() => {
+  // Only the index is decorated, and re-rendering while a demo is framed
+  // would tear the iframe down and restart whatever it was doing.
+  if (!currentAt()) render();
+});
+new EventSource('/_live/events').addEventListener('change', () => loadHeat());
+
 render();

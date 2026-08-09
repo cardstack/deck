@@ -26,6 +26,14 @@
 // because choosing between them is the same act.
 import 'ui/nav';
 import { installNavStyles } from 'ui/nav';
+import {
+  heatCell,
+  heatScale,
+  installHeatStyles,
+  loadHeat,
+  onHeatChange,
+  scoreOf,
+} from 'ui/heat';
 import { diffLines } from 'diff';
 import hljs from 'highlight-js';
 import {
@@ -38,6 +46,7 @@ import {
 import { storeReactivityBindings } from '@tanstack/table-core/dist/store-reactivity-bindings.js';
 
 installNavStyles();
+installHeatStyles();
 
 const app = document.getElementById('app');
 const keys = document.querySelector('deck-keys');
@@ -518,10 +527,13 @@ function sortedRows(key, data, columns) {
  * ascending must not look the same, and a column you CAN sort must not look
  * like one you cannot. `⇅` is the affordance, `↑`/`↓` the state.
  */
-function sortableHead(columns, sorting, extraClass = '') {
+function sortableHead(columns, sorting, extraClass = '', gutter = false) {
   let active = sorting[0];
   return (
     `<thead><tr>` +
+    // The heat gutter is not sortable and has no label: it is read at a
+    // glance, and a column heading over a 3px bar is more furniture than fact.
+    (gutter ? `<th class="heat-cell"></th>` : '') +
     columns
       .map(
         (column) =>
@@ -568,11 +580,21 @@ function listing(parsed, attrs) {
   let { rows, sorting } = sortedRows(key, data, FILE_COLUMNS);
   let dirs = rows.filter((entry) => entry.type === 'dir');
   let files = rows.filter((entry) => entry.type !== 'dir');
-  let body = [...dirs, ...files]
-    .map((entry) => {
+  let ordered = [...dirs, ...files];
+  // Heat is keyed on the LIVE address — `/hub/app/run/run.js` — because that
+  // is the path the depot's history records. A sealed view of the same file
+  // carries the same heat, which is correct: the heat is a fact about the
+  // work, not about which representation you happen to be reading.
+  let heats = ordered.map((entry) =>
+    scoreOf(`/${parsed.depot}/${parsed.publisher}/${parsed.pkg}/${entry.path}`),
+  );
+  let scale = heatScale(heats.map((entry) => entry.score));
+  let body = ordered
+    .map((entry, index) => {
       let at = addressOf({ ...parsed, path: entry.path });
       return (
         `<tr data-name="${esc(entry.name.toLowerCase())}">` +
+        heatCell(scale(heats[index].score), { last: heats[index].last }) +
         `<td><a href="?at=${esc(at)}" data-at="${esc(at)}" ` +
         `class="${entry.type === 'dir' ? 's-dir' : 's-file'}">` +
         `${esc(entry.name)}${entry.type === 'dir' ? '/' : ''}</a></td>` +
@@ -588,7 +610,7 @@ function listing(parsed, attrs) {
     .join('');
   return (
     filterBox(attrs.entries.length, 'entries') +
-    `<table data-sort-key="${esc(key)}">${sortableHead(FILE_COLUMNS, sorting)}` +
+    `<table data-sort-key="${esc(key)}">${sortableHead(FILE_COLUMNS, sorting, '', true)}` +
     `<tbody>${body}</tbody></table>` +
     `<p class="dim">${dirs.length} director${dirs.length === 1 ? 'y' : 'ies'} · ` +
     `${files.length} file${files.length === 1 ? '' : 's'} · ${esc(attrs.kind)}</p>`
@@ -776,14 +798,21 @@ function fileDiffView(leftText, rightText, leftLabel, rightLabel) {
 
 async function viewDepots() {
   let { data } = await getJson('/_packages');
+  // Heat first, so the list arrives already sorted by where the work is
+  // rather than alphabetically by an accident of naming.
+  let scored = data.map((depot) => ({ depot, ...scoreOf(`/${depot.name}`) }));
+  let scale = heatScale(scored.map((row) => row.score));
   return (
     `<h1>depots on this server</h1>` +
-    `<table><thead><tr><th>depot</th><th class="num">decks</th>` +
+    `<table><thead><tr><th class="heat-cell"></th><th>depot</th>` +
+    `<th class="num">decks</th>` +
     `<th>history</th><th>on disk</th></tr></thead><tbody>` +
-    data
+    scored
       .map(
-        (depot) =>
-          `<tr data-name="${esc(depot.name)}"><td><a class="s-depot" href="?at=/${esc(depot.name)}" ` +
+        ({ depot, score, last }) =>
+          `<tr data-name="${esc(depot.name)}">` +
+          heatCell(scale(score), { last }) +
+          `<td><a class="s-depot" href="?at=/${esc(depot.name)}" ` +
           `data-at="/${esc(depot.name)}">${esc(depot.name)}</a></td>` +
           `<td class="num">${depot.packages.length}</td>` +
           `<td>${
@@ -819,13 +848,18 @@ async function viewCatalog(parsed) {
   let decks = depot.packages.filter(
     (deck) => !parsed.publisher || deck.publisher === parsed.publisher,
   );
+  let heats = decks.map((deck) =>
+    scoreOf(`/${depot.name}/${deck.publisher}/${deck.name}`),
+  );
+  let scale = heatScale(heats.map((entry) => entry.score));
   let rows = decks
-    .map((deck) => {
+    .map((deck, index) => {
       let at = `/${depot.name}/${deck.publisher}/${deck.name}`;
       let versions = Object.keys(deck.versions ?? {});
       let newest = deck.distTags?.latest ?? versions.at(-1);
       return (
         `<tr data-name="${esc(`${deck.publisher}/${deck.name}`.toLowerCase())}">` +
+        heatCell(scale(heats[index].score), { last: heats[index].last }) +
         `<td><a href="?at=${esc(at)}" data-at="${esc(at)}">` +
         `${parsed.publisher ? '' : `<span class="s-publisher">${esc(deck.publisher)}</span><span class="sep">/</span>`}` +
         `<span class="s-package">${esc(deck.name)}</span></a></td>` +
@@ -850,7 +884,8 @@ async function viewCatalog(parsed) {
         : 'tier 1'
     }</div></div>` +
     filterBox(decks.length, 'decks') +
-    `<table><thead><tr><th>deck</th><th class="num">versions</th>` +
+    `<table><thead><tr><th class="heat-cell"></th><th>deck</th>` +
+    `<th class="num">versions</th>` +
     `<th>latest</th><th>where</th></tr></thead><tbody>${rows}</tbody></table>` +
     `</main>`
   );
@@ -898,7 +933,7 @@ async function viewSealLog(parsed) {
 }
 
 /** One seal: the whole depot tree as it was at that moment. */
-async function viewSeal(parsed) {
+async function viewSeal(parsed, vs) {
   let { data } = await getJson(`/${parsed.depot}/${HISTORY}/${parsed.seal}`);
   let attrs = data.attributes;
   if (!attrs.filesAvailable) {
@@ -908,6 +943,71 @@ async function viewSeal(parsed) {
     );
   }
   let files = attrs.files ?? [];
+
+  // Two seals: what this save did to the depot. A save that touched several
+  // decks arrives here rather than at a single file, and each row descends
+  // into the per-file diff carrying both revisions with it.
+  if (vs) {
+    let other = await getJson(vs.replace(/^\/([^/]+)\/_history\//, '/$1/_history/'))
+      .then((body) => body.data.attributes)
+      .catch(() => undefined);
+    if (!other?.filesAvailable) {
+      throw Object.assign(new Error(`cannot read ${vs} to compare against`), {
+        code: 'no-manifest',
+      });
+    }
+    let beforePaths = new Set(other.files ?? []);
+    let afterPaths = new Set(files);
+    let rows = [
+      ...new Set([...beforePaths, ...afterPaths]),
+    ]
+      .filter((path) => !beforePaths.has(path) || !afterPaths.has(path) ||
+        (attrs.changed ?? []).includes(path))
+      .sort();
+    // A seal manifest lists paths, not hashes, so a path present in both is
+    // only KNOWN to differ when the seal says which files it touched. Falling
+    // back to every shared path would list the entire depot as changed, which
+    // is worse than useless — so this trusts `filesSummary` where it exists.
+    let touched = new Set(
+      (attrs.filesSummary ?? []).map((line) => line.replace(/^[A-Z]\s+/, '')),
+    );
+    if (touched.size) {
+      rows = [...touched].sort();
+    }
+    let body = rows
+      .map((path) => {
+        let status = !beforePaths.has(path)
+          ? 'added'
+          : !afterPaths.has(path)
+            ? 'removed'
+            : 'changed';
+        let at = `/${parsed.depot}/${HISTORY}/${parsed.seal}/${path}`;
+        let against = `${vs}/${path}`;
+        return (
+          `<tr data-status="${status}" data-name="${esc(path.toLowerCase())}">` +
+          `<td class="mark">${MARK[status]}</td>` +
+          `<td>${
+            status === 'removed'
+              ? `<span class="dim">${esc(path)}</span>`
+              : `<a href="?at=${esc(at)}&vs=${esc(against)}" data-at="${esc(at)}" ` +
+                `data-vs="${esc(against)}">${esc(path)}</a>`
+          }</td></tr>`
+        );
+      })
+      .join('');
+    return (
+      crumbs(parsed) +
+      `<main><div class="diffhead">` +
+      `<span class="dim">base</span> <b class="s-base">${esc(shortSeal(vs))}</b> ` +
+      `<span class="dim">→ viewing</span> ` +
+      `<b class="s-head">${esc(String(parsed.seal).slice(0, 12))}…</b> · ` +
+      `<b>${rows.length}</b> file${rows.length === 1 ? '' : 's'} touched</div>` +
+      (rows.length
+        ? `<table class="treediff"><tbody>${body}</tbody></table>`
+        : `<p class="dim">no differences</p>`) +
+      `</main>`
+    );
+  }
   let rows = files
     .map((path) => {
       let at = `/${parsed.depot}/${HISTORY}/${parsed.seal}/${path}`;
@@ -929,8 +1029,19 @@ async function viewSeal(parsed) {
   );
 }
 
-/** A file inside a seal. Raw bytes, not JSON: the history route serves them. */
-async function viewSealFile(parsed) {
+/**
+ * A file inside a seal — and, with `vs`, the diff that a /track row means.
+ *
+ * This is the landing site for "what did that save actually change". A row in
+ * /track knows two seals and one path, which is exactly a diff; before this
+ * it could only hand over the after-state, so the answer to "what changed"
+ * was a whole file and an invitation to read it.
+ *
+ * `vs` is a full seal address, so it may name a different path as well as a
+ * different revision. That is what makes a rename representable rather than
+ * an add next to an unrelated delete.
+ */
+async function viewSealFile(parsed, vs) {
   let url = addressOf(parsed);
   let response = await fetch(url);
   if (!response.ok) {
@@ -939,6 +1050,23 @@ async function viewSealFile(parsed) {
     });
   }
   let text = await response.text();
+
+  if (vs) {
+    // Absent on the other side means this save CREATED the file, which is a
+    // real and common answer — every line is an addition. Treating a 404 as
+    // an error here would make "added" look like a broken link.
+    let before = await fetch(vs).then((other) => (other.ok ? other.text() : ''));
+    // A STRING, not `{html}`. The object form is the contract for "there is a
+    // blob to stream in after paint", and render() will go looking for the
+    // `#blob` element it implies. A diff has already rendered its own body.
+    return (
+      crumbs(parsed) +
+      `<main>` +
+      fileDiffView(before, text, shortSeal(vs), shortSeal(url)) +
+      `</main>`
+    );
+  }
+
   return {
     html:
       crumbs(parsed) +
@@ -951,6 +1079,12 @@ async function viewSealFile(parsed) {
     text,
     path: parsed.path,
   };
+}
+
+/** `pzpsvyqoysw… /app/run/run.js` — enough of a seal address to tell two apart. */
+function shortSeal(address) {
+  let match = String(address).match(/\/_history\/([^/]+)(\/.*)?$/);
+  return match ? `${match[1].slice(0, 12)}…${match[2] ?? ''}` : String(address);
 }
 
 async function viewAddress(input, vs) {
@@ -1097,8 +1231,8 @@ async function render() {
     let out;
     if (!parsed.depot) out = `<main>${await viewDepots()}</main>`;
     else if (parsed.seal === true) out = await viewSealLog(parsed);
-    else if (parsed.seal && !parsed.path) out = await viewSeal(parsed);
-    else if (parsed.seal) out = await viewSealFile(parsed);
+    else if (parsed.seal && !parsed.path) out = await viewSeal(parsed, vs);
+    else if (parsed.seal) out = await viewSealFile(parsed, vs);
     else if (parsed.pkg) out = await viewAddress(parsed, vs);
     else out = await viewCatalog(parsed);
 
@@ -1114,6 +1248,18 @@ async function render() {
   }
   cursor = -1;
   keys.keys = bindings();
+
+  // A DIFF OPENS ON THE CHANGE.
+  //
+  // Landing at line 1 of a 900-line file to report that 23 lines differ makes
+  // the reader scroll until they find the point — and a /track row that says
+  // `diff →` promised to show them the change, not the file it is in. The
+  // first hunk is the answer to the question that was asked.
+  //
+  // Only when arriving fresh: `hunk` is left where it was so that `n` and `p`
+  // continue from here rather than restarting at the top.
+  hunk = -1;
+  if (currentVs() && app.querySelector('pre.diff')) stepChange(1);
 }
 
 // ---------------------------------------------------------------------------
@@ -1354,5 +1500,14 @@ app.addEventListener('change', (event) => {
     go(currentAt(), event.target.value.trim());
   }
 });
+
+// Heat before the first paint, so no list renders undecorated and then jumps.
+// One small request, and every view reads it synchronously afterwards.
+await loadHeat();
+// And again whenever the depot moves. A decoration that only updates on
+// reload is a decoration that lies for as long as the tab stays open — which,
+// for the person watching an agent work, is the whole time.
+onHeatChange(() => render());
+new EventSource('/_live/events').addEventListener('change', () => loadHeat());
 
 render();

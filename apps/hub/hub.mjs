@@ -23,7 +23,7 @@
 // change to the server, and if anyone ever creates a depot actually named
 // `browse` the depot wins. Real data beating a convenience alias is the
 // correct precedence, and it costs nothing to get right.
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDeckServer } from '@deck/server/server';
@@ -220,6 +220,106 @@ for (let depot of demos) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// HEAT — where the work is happening, as one number per path.
+//
+// A list of ten depots that looks identical whether a depot was touched four
+// seconds ago or four months ago is a list that cannot be navigated. What a
+// reader wants is not "sort by date" — it is to glance at a list, see which
+// row is warm, go into it, and see which row in THERE is warm, all the way
+// down to the file. Following heat.
+//
+// That only works if heat AGGREGATES, and it only aggregates cleanly if it is
+// a sum. So heat is a decayed count:
+//
+//     score(path) = Σ over changes to path of  e^(−age / τ)
+//
+// A change now is worth 1, a change τ ago is worth 0.37, a change 5τ ago is
+// worth 0.007. Two properties fall out for free, and both are what makes this
+// navigable rather than decorative:
+//
+//   · A parent's score is the SUM of its children's. No special case, no
+//     second formula — a directory is hot because of what is inside it, and
+//     the arithmetic says so.
+//   · It is a RATE, not a timestamp. Fourteen edits in six minutes outranks
+//     one edit ten minutes ago, which is the ordering a person actually
+//     means by "where is the action".
+//
+// The absolute number is meaningless, so nothing displays it. Each view
+// normalises against the hottest row it is showing, which keeps the full
+// range in use and makes the only question the eye has to answer — "which of
+// these is hotter?" — the one it is good at.
+const TAU_MS = 2 * 60 * 60 * 1000; // 2 hours: a working session, roughly
+const HEAT_WINDOW_MS = 48 * 60 * 60 * 1000; // beyond this, e^-24 is noise
+
+/** Every change this depot can account for, as [path, epochMs] pairs. */
+async function depotChanges(depot) {
+  let since = Date.now() - HEAT_WINDOW_MS;
+  // Tier 2: the seal log is an exact record of every save and what it touched.
+  if (depot.history) {
+    let seals = await depot.history.list(depot.dir).catch(() => []);
+    let changes = [];
+    for (let seal of seals) {
+      let when = Date.parse(seal.timestamp);
+      if (!Number.isFinite(when) || when < since) continue;
+      for (let entry of seal.filesSummary ?? []) {
+        // "M app/run/run.js" — the letter is the verb, the rest is the path.
+        let path = entry.replace(/^[A-Z]\s+/, '');
+        if (path) changes.push([path, when]);
+      }
+    }
+    return changes;
+  }
+  // Tier 1: no seal log, so mtime is the only witness. It records the LAST
+  // change and not how many, which under-reports a busy file rather than
+  // inventing a number — the honest failure direction.
+  let changes = [];
+  async function walk(dir, prefix) {
+    let entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (let entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      let path = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        await walk(join(dir, entry.name), path);
+      } else {
+        let info = await stat(join(dir, entry.name)).catch(() => undefined);
+        if (info && info.mtimeMs >= since) changes.push([path, info.mtimeMs]);
+      }
+    }
+  }
+  await walk(depot.dir, '');
+  return changes;
+}
+
+// Walking nine depots per request would make heat cost more than the data it
+// decorates. It is recomputed when something actually changes, and otherwise
+// at most this often.
+const HEAT_TTL_MS = 5000;
+let heatCache = { at: 0, body: undefined };
+
+async function heatReport() {
+  if (heatCache.body && Date.now() - heatCache.at < HEAT_TTL_MS) {
+    return heatCache.body;
+  }
+  let now = Date.now();
+  let scores = {};
+  let last = {};
+  for (let depot of depots) {
+    for (let [path, when] of await depotChanges(depot)) {
+      let full = `/${depot.name}/${path}`;
+      let weight = Math.exp(-(now - when) / TAU_MS);
+      scores[full] = (scores[full] ?? 0) + weight;
+      last[full] = Math.max(last[full] ?? 0, when);
+    }
+  }
+  // Leaves only. Rollup is the client's job because only the client knows
+  // what it is showing — and since the rollup is a sum, it is a fold over
+  // whichever prefix is on screen rather than a second index to keep true.
+  let body = JSON.stringify({ now, tau: TAU_MS, scores, last });
+  heatCache = { at: now, body };
+  return body;
+}
+
 const built = new Set();
 for (let app of APPS) {
   try {
@@ -252,9 +352,18 @@ function notBuilt(res, app) {
 const server = createDeckServer({
   depots,
   fallback(req, res) {
-    let path = new URL(req.url ?? '/', 'http://localhost').pathname;
-    // Where each demo depot answers to its own name. /run needs this to frame
-    // a demo at an origin whose pins resolve.
+    let requested = new URL(req.url ?? '/', 'http://localhost');
+    let path = requested.pathname;
+    // Where the work is. Every list in every app decorates itself from this.
+    if (path === '/_hub/heat') {
+      return heatReport().then((body) => {
+        res.writeHead(200, {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store',
+        });
+        res.end(body);
+      });
+    }
     if (path === '/_hub/origins') {
       let body = JSON.stringify({
         origins: Object.fromEntries(origins),
@@ -275,8 +384,16 @@ const server = createDeckServer({
       (candidate) => path === `/${candidate.route}` || path === `/${candidate.route}/`,
     );
     if (app) {
+      // THE QUERY STRING SURVIVES THE REDIRECT.
+      //
+      // These four routes are aliases, and an alias that silently drops the
+      // query is an alias that only works for the front page. It broke the
+      // one link that matters most — `/browse?at=…&vs=…` from a /track row —
+      // by landing you on the depot index with no hint that you had asked for
+      // a diff. It would break the lens tabs the same way the moment they
+      // start carrying a focused address between apps.
       return built.has(app.route)
-        ? redirect(res, `/${hub.name}/${app.deck}/`)
+        ? redirect(res, `/${hub.name}/${app.deck}/${requested.search}`)
         : notBuilt(res, app);
     }
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
@@ -290,7 +407,13 @@ const server = createDeckServer({
 // the only way to find out what using it is actually like.
 let watcher = watchDepot({
   depot: hub,
-  onLiveChange: (event) => server.liveBus.emit(event),
+  onLiveChange: (event) => {
+    // The heat report is stale the instant anything changes, and a five second
+    // TTL is five seconds of a warm row not warming. The whole point is that
+    // it moves while you watch.
+    heatCache = { at: 0, body: undefined };
+    server.liveBus.emit(event);
+  },
   onPublish: (event) =>
     console.log(
       `   saved → ${event.name}@${event.version}` +
