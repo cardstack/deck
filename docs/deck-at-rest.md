@@ -62,6 +62,11 @@ server supplies.
   .jj/                               the Timeline, when a backend attached
 ```
 
+**Target (deckd):** Timeline moves under `.deck/timeline/` and derived build
+cache under `.deck/build/` — **no top-level `.jj`**. See
+[`deck-daemon.md`](deck-daemon.md). Until that lands, `.jj/` above remains
+the reference layout.
+
 Two rules make this work:
 
 1. **The store path and the URL path have the same shape.** A package at

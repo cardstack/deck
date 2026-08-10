@@ -174,7 +174,7 @@ const serve = defineCommand({
   summary: 'serve depots live, auto-publishing and sealing every save',
   usage: [
     'serve --root <dir> | --depot <dir> --as <name> ...',
-    '      [--port <p>] [--https|--http] [--history auto|jj|historyd|none]',
+    '      [--port <p>] [--https|--http] [--history auto|jj|historyd|deckd|none]',
     '      [--rebase] [--onto <spec>]',
   ],
   detail: `--root is a directory OF depots: every child directory is one,
@@ -218,7 +218,7 @@ editor; the server distributes what it finds.`,
       fail('each --depot <dir> needs a matching --as <name>');
     }
     if (!isValidHistoryKind(values.history!)) {
-      fail('--history must be auto, jj, historyd, or none');
+      fail('--history must be auto, jj, historyd, deckd, or none');
     }
     // A root is a directory OF depots — every child directory is one,
     // named after itself, exactly as it is addressed.

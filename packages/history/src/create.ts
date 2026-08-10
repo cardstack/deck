@@ -9,7 +9,7 @@ import type { HistoryBackend } from './backend.ts';
 // attachment describing what happened instead of throwing: a missing jj is a
 // capability fact to print, not an error to crash on.
 
-export type HistoryKind = 'auto' | 'jj' | 'historyd' | 'none';
+export type HistoryKind = 'auto' | 'jj' | 'historyd' | 'deckd' | 'none';
 
 export interface CreateHistoryOptions {
   // The tree to attach history to. Probing is per-tree because historyd's
@@ -30,35 +30,57 @@ export interface HistoryAttachment {
 }
 
 export function isValidHistoryKind(value: string): value is HistoryKind {
-  return ['auto', 'jj', 'historyd', 'none'].includes(value);
+  return ['auto', 'jj', 'historyd', 'deckd', 'none'].includes(value);
+}
+
+/** Prefer DECKD_URL (christse/deckd-poc) over legacy DECK_HISTORYD_URL. */
+export function daemonBaseUrl(explicit?: string): string | undefined {
+  return (
+    explicit ??
+    process.env.DECKD_URL ??
+    process.env.DECK_HISTORYD_URL ??
+    undefined
+  );
 }
 
 export async function createHistory(
   options: CreateHistoryOptions,
 ): Promise<HistoryAttachment> {
   let { dir, kind = 'auto', debounceMs, baseUrl, bin, onError } = options;
-  let wantsDaemon = baseUrl !== undefined || process.env.DECK_HISTORYD_URL;
+  let resolvedUrl = daemonBaseUrl(baseUrl);
+  let wantsDaemon =
+    resolvedUrl !== undefined || kind === 'historyd' || kind === 'deckd';
+  let daemonLabel =
+    process.env.DECKD_URL || kind === 'deckd' ? 'deckd' : 'historyd';
 
   if (kind === 'none') {
     return { tier: 1, detail: 'history off — the store is the history' };
   }
 
-  if (kind === 'historyd' || (kind === 'auto' && wantsDaemon)) {
-    let daemon = new HistorydHistory({ baseUrl, debounceMs, onError });
+  if (
+    kind === 'historyd' ||
+    kind === 'deckd' ||
+    (kind === 'auto' && wantsDaemon)
+  ) {
+    let daemon = new HistorydHistory({
+      baseUrl: resolvedUrl,
+      debounceMs,
+      onError,
+    });
     if (await daemon.probe(dir)) {
       return {
         backend: daemon,
         tier: 2,
-        detail: `history: historyd at ${daemon.baseUrl} — a Step per save`,
+        detail: `history: ${daemonLabel} at ${daemon.baseUrl} — a Step per save`,
       };
     }
     daemon.close();
-    if (kind === 'historyd') {
+    if (kind === 'historyd' || kind === 'deckd') {
       // An explicit backend choice never silently becomes a different
       // backend — the depot keeps its Versions, loses the Timeline, and says so.
       return {
         tier: 1,
-        detail: `history: no daemon at ${daemon.baseUrl} — Versions only, no Timeline`,
+        detail: `history: no ${daemonLabel} at ${daemon.baseUrl} — Versions only, no Timeline`,
       };
     }
   }

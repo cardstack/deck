@@ -13,9 +13,45 @@ Internal numbering from our planning docs is kept in parentheses so you can matc
 | **R1–R5** | Suggested release / phase order |
 | **Deck Core** | Protocol library: identity, packs, store, merge, serve grammar, optional timeline — not the Deck Hub app |
 
-Companions (optional deep dives):  
-`deck-boxel-monorepo-change-register.md`, `deck-boxel-backport-plan.md`, `deck-depot-and-realm-backport.md`, `deck-work-plan-for-backport.md`,
-`deck-boxel-backport-changelist-mockup.md` (stacked PR walkthrough with author-facing examples; sample decklist + `.gts` under `docs/artifacts/`).
+**Two living docs for execution** (everything else is appendix):
+
+| Where | Doc | Role |
+| --- | --- | --- |
+| **Deck repo** | [`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md) | Protocol questions closed *here* so Boxel PRs are wiring |
+| **Boxel work** | [`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md) | Stacked PRs, blast radius, agent prompts |
+
+Appendix (why / deep dives): `deck-boxel-monorepo-change-register.md`, `deck-boxel-backport-plan.md`, `deck-depot-and-realm-backport.md`, `deck-core-backport-split.md`, [`deck-daemon.md`](deck-daemon.md) (deckd / `.deck`-only Timeline + build). Sample decklist + `.gts` under `docs/artifacts/`.
+
+---
+
+## How we execute (campaign, not the benefit list)
+
+The K1–K14 table is the destination. The **campaign** is shorter and stricter:
+
+1. **Deck-side gate before Boxel PR 0.** `extends`, classifier, provenance, bare/hermetic packs, lean Core cone, and `deck conform` against a foreign URL — settled in the Deck work plan. Monorepo PRs must stay “call this / mount that,” not reopen design.
+2. **Prove the decklist in product early.** After importer-aware resolve, ship a **thin** install / remix / use against a fixture LibSpec — before Timeline, before Matrix, before catalog authority theater.
+3. **Slice the Timeline hinge.** Steps on one write path → restore API → one host restore surface → agent claims → CLI 3-way. Refuse Timeline PRs that reimplement merge/store in realm-server.
+4. **Three tracks, different merge bars.**
+
+| Track | Owns | May lag |
+| --- | --- | --- |
+| **A — Map** | Resolver, decklist, thin verbs, LibSpec fixtures | Matrix, packs polish |
+| **B — Tape** | Timeline / Steps / Versions, restore, CLI merge | Catalog CDN |
+| **C — Carriage** | Classifier wiring, packs, GitHub share/gather interim | Base realm |
+| **D — Build** | **deckd**: Timeline under `.deck` only; esbuild/AMD derived plane ([`deck-daemon.md`](deck-daemon.md)) | Not on Map/Tape critical path; D0 layout can trail Timeline attach |
+
+5. **Program gates** (falsifiable — not fourteen local Done whens):
+   - Monorepo PRs are wiring, not design debates.
+   - Algorithms imported from `@cardstack/deck`, not forked.
+   - `deck conform` against a deck-enabled realm URL is green.
+   - **Author gate:** remix of a multi-file package does not duplicate unchanged files.
+
+**Demote / do not staff on the critical path:** negotiated prune; full Matrix submission (use GitHub share/gather + Base-Version until A+B are real); review-tools product (K13); minify gold-plating (K9); bulk vendor corpus and “catalog on CDN” as blockers for Map/Tape.
+
+**Spines if you cut hard:**
+
+- **Product:** resolver → versioned serve door → thin decklist verbs → Timeline restore  
+- **Infra:** resolver → Timeline write path → CLI 3-way  
 
 ---
 

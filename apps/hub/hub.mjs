@@ -180,6 +180,10 @@ async function serveSidecar(depot, path, res) {
 // so there is no longer a reason to run the Hub with its own live loop
 // switched off.
 const WANT_HISTORY = process.env.DECK_HUB_HISTORY !== '0';
+// Prefer christse/deckd-poc when DECKD_URL (or DECK_HISTORYD_URL) is set.
+const HISTORY_KIND =
+  process.env.DECK_HUB_HISTORY_KIND ??
+  (process.env.DECKD_URL || process.env.DECK_HISTORYD_URL ? 'deckd' : 'auto');
 
 let hub = {
   ...HUB,
@@ -188,6 +192,7 @@ let hub = {
     ? (
         await createHistory({
           dir: HUB.dir,
+          kind: HISTORY_KIND,
           onError: (error) => console.error(`   history: ${error}`),
         })
       ).backend
@@ -203,6 +208,7 @@ if (WANT_HISTORY) {
     demos.map(async (depot) => {
       let attachment = await createHistory({
         dir: depot.dir,
+        kind: HISTORY_KIND,
         onError: (error) => console.error(`   history ${depot.name}: ${error}`),
       });
       return { ...depot, history: attachment.backend };

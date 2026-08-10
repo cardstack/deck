@@ -36,6 +36,7 @@ export interface HistorydOptions {
 }
 
 export class HistorydHistory implements HistoryBackend {
+  // Wire protocol is historyd's; christse/deckd-poc speaks the same routes.
   readonly kind = 'historyd' as const;
   #base: string;
   #ensured: Set<string> = new Set();
@@ -45,6 +46,7 @@ export class HistorydHistory implements HistoryBackend {
   constructor(options: HistorydOptions = {}) {
     this.#base = (
       options.baseUrl ??
+      process.env.DECKD_URL ??
       process.env.DECK_HISTORYD_URL ??
       DEFAULT_URL
     ).replace(/\/$/, '');

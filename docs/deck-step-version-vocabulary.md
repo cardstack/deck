@@ -28,7 +28,7 @@ labels (“deck”, “path”, “dependency”).
 | --- | --- | --- |
 | **Version** | One immutable package tree, forever addressable | `.deck/store/…@<version>`; URL `@exact` / tags → exact |
 | **Step** | One settled **depot** save on the every-save tape | jj change / historyd seal; `/<depot>/_history/<id>/…` |
-| **Timeline** | The capability / tape that holds Steps | `.jj/` or historyd attached to the depot |
+| **Timeline** | The capability / tape that holds Steps | `.jj/` or historyd today; target **`.deck/timeline/`** via deckd ([`deck-daemon.md`](deck-daemon.md)) |
 
 **Versions** are always on — that is Deck.  
 **Timeline** is optional. Absence: `History: Versions`, not an error.

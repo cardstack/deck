@@ -33,7 +33,7 @@ before it is reported, so the log is never behind the tree.`,
     let [dir] = positionals;
     if (!dir) fail('usage: deck history <dir> [--limit <n>] [--json]');
     if (!isValidHistoryKind(values.history!)) {
-      fail('--history must be auto, jj, historyd, or none');
+      fail('--history must be auto, jj, historyd, deckd, or none');
     }
     let attachment = await createHistory({
       dir: resolve(dir!),
@@ -86,7 +86,7 @@ only ever grows.`,
     let [dir, changeId] = positionals;
     if (!dir || !changeId) fail('usage: deck restore <dir> <changeId>');
     if (!isValidHistoryKind(values.history!)) {
-      fail('--history must be auto, jj, historyd, or none');
+      fail('--history must be auto, jj, historyd, deckd, or none');
     }
     let attachment = await createHistory({
       dir: resolve(dir!),
