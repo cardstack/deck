@@ -32,9 +32,11 @@ import type { HistoryBackend } from '@cardstack/deck-history/backend';
 
 // jj and git write into their own repos on every operation, and those
 // writes land inside the watched tree. Treating them as tree changes would
-// make sealing feed itself: seal → .jj write → event → seal. The tree hash
-// already ignores both directories, so filtering here costs nothing.
-const REPO_INTERNALS = /^\.(jj|git)(\/|$)/;
+// make sealing feed itself: seal → .jj write → event → seal. The same is
+// true for `.deck/timeline` (and the rest of `.deck/`): seals and packs
+// land there when history is rooted under `.deck`, so ignoring only
+// `.jj`/`.git` still loops. The tree hash already ignores all three.
+const REPO_INTERNALS = /^\.(jj|git|deck)(\/|$)/;
 
 export interface WatchPublishEvent {
   name: string;
