@@ -50,7 +50,7 @@ export async function createHistory(
   let resolvedUrl = daemonBaseUrl(baseUrl);
   let wantsDaemon =
     resolvedUrl !== undefined || kind === 'historyd' || kind === 'deckd';
-  let daemonLabel =
+  let daemonLabel: 'historyd' | 'deckd' =
     process.env.DECKD_URL || kind === 'deckd' ? 'deckd' : 'historyd';
 
   if (kind === 'none') {
@@ -66,6 +66,7 @@ export async function createHistory(
       baseUrl: resolvedUrl,
       debounceMs,
       onError,
+      kind: daemonLabel,
     });
     if (await daemon.probe(dir)) {
       return {

@@ -261,11 +261,10 @@ for (let depot of demos) {
   }
 }
 
-// A demo that hands the reader an editor also needs the loop that turns a
-// save into a Version, or the edit lands on disk and nothing happens. Only
-// those depots are watched: nine watchers over trees nobody is editing —
-// three.js alone is 374 files — costs real descriptors for no signal.
-// The array is what keeps the controllers reachable for the process's life.
+// Every demo origin gets a watcher so LIVE in /run is a real tip: save →
+// publish → SSE → /_live/hmr.js reload. Editor bridges are separate (write
+// path from the page); watchers are the IDE/Cursor path. Controllers stay
+// reachable for the process life via this array.
 const demoWatchers = [];
 
 for (let depot of demos) {
@@ -304,21 +303,29 @@ for (let depot of demos) {
       server.listen(0, () => resolve(server.address().port));
     });
     origins.set(depot.name, `http://localhost:${port}`);
-    if (bridges.has(depot.name)) {
-      let watcher = watchDepot({
-        depot: { name: 'site', dir: depot.dir, storeDir: depot.storeDir, history: depot.history },
-        onLiveChange: (event) => server.liveBus.emit(event),
-        onPublish: (event) =>
-          console.log(
-            event.reused
-              ? `   ${depot.name}: ${event.name} is already published as ${event.version}`
-              : `   ${depot.name}: saved → ${event.name}@${event.version}`,
-          ),
-        onError: (error) => console.error(`   ${depot.name} watch: ${error}`),
-      });
-      watcher.rescan();
-      demoWatchers.push(watcher);
-    }
+    // Watch every demo, not only editor-bridge ones. /run's green LIVE notch
+    // is the sports-stream tip: Cursor/IDE saves must publish + fan out on
+    // this origin's liveBus so the framed page's /_live/hmr.js reloads.
+    // Historical ?step= addresses stay immutable (DVR) — HMR only matters
+    // when the stage is pointed at the working tree.
+    let watcher = watchDepot({
+      depot: {
+        name: 'site',
+        dir: depot.dir,
+        storeDir: depot.storeDir,
+        history: depot.history,
+      },
+      onLiveChange: (event) => server.liveBus.emit(event),
+      onPublish: (event) =>
+        console.log(
+          event.reused
+            ? `   ${depot.name}: ${event.name} is already published as ${event.version}`
+            : `   ${depot.name}: saved → ${event.name}@${event.version}`,
+        ),
+      onError: (error) => console.error(`   ${depot.name} watch: ${error}`),
+    });
+    watcher.rescan();
+    demoWatchers.push(watcher);
   } catch (error) {
     // One depot that cannot get a listener is one demo that cannot run. It is
     // not a reason to take the other eight down with it, and it is absolutely

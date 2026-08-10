@@ -48,7 +48,7 @@ export interface HistoryActor {
 export interface HistoryBackend {
   // Which implementation is live — reported by the server's capability
   // block so a client can tell a jj Timeline from a historyd Timeline.
-  readonly kind: 'jj' | 'historyd';
+  readonly kind: 'jj' | 'historyd' | 'deckd';
   // Notes a file mutation for the debounced sealer. Fire-and-forget: a
   // burst of saves becomes ONE seal.
   noteMutation(dir: string, path: string): void;

@@ -194,16 +194,28 @@ async function loadOrigins() {
  * empty white box with nothing in the console the reader can see. Silence is
  * the one answer this must never give, so a missing origin returns a reason.
  */
+/** Concrete page last framed — scrubbing must not use a depot-only `?at=`. */
+let stageAt = '';
+
 function runTarget(at, withs = currentWith(), step = currentStep()) {
   let [, depot, ...rest] = at.split('/');
   let query = withs.map((value) => `with=${value}`).join('&');
   let suffix = query ? `?${query}` : '';
+  let inner = rest.join('/');
+  // `/vale-sale` is a depot, not a document. Framing `/site/` or
+  // `/site/_history/<step>/` answers `file-not-found: / does not exist`.
+  if (!inner) {
+    return {
+      why:
+        `No page in this address — open a concrete document ` +
+        `(for example /${depot}/vale/sale/index.html), not the depot root.`,
+    };
+  }
   // A Step is an address, so running one needs no separate machinery: the
   // same page, at the state it was in. The server injects that step's own
   // import map with its live pins rewritten to resolve inside the step, so
   // what loads is the page AND its dependencies as they actually were.
   if (step) {
-    let inner = rest.join('/');
     return {
       url:
         depot === 'hub'
@@ -215,9 +227,9 @@ function runTarget(at, withs = currentWith(), step = currentStep()) {
         `No depot named ${depot} is mounted, so there is no origin to run it at.`,
     };
   }
-  if (depot === 'hub') return { url: at + suffix };
+  if (depot === 'hub') return { url: `/${depot}/${inner}${suffix}` };
   let origin = ORIGINS[depot];
-  if (origin) return { url: `${origin}/site/${rest.join('/')}${suffix}` };
+  if (origin) return { url: `${origin}/site/${inner}${suffix}` };
   if (!ORIGINS_REACHABLE) {
     return {
       why:
@@ -515,6 +527,16 @@ async function viewOne(input) {
   }
   let at = resolved.at;
   let substituted = resolved.instead;
+  // Scrub / LIVE need a document path in the URL. Keeping only `?at=/vale-sale`
+  // after resolving to index.html made the live tip frame `/site/` and the
+  // stage showed `file-not-found: / does not exist in depot site`.
+  if (at && at !== currentAt()) {
+    let query = new URLSearchParams(location.search);
+    query.set('at', at);
+    let text = query.toString();
+    history.replaceState({}, '', text ? `?${decodeURIComponent(text)}` : location.pathname);
+  }
+  stageAt = at;
   let withs = currentWith();
   let { url, why } = runTarget(at, withs);
   // The address goes to the shared subject bar. It is the same address
@@ -762,7 +784,7 @@ async function render() {
       onScrub: (step) => {
         let stage = app.querySelector('[data-role="stage"]');
         if (!stage) return;
-        let next = runTarget(currentAt(), currentWith(), step).url;
+        let next = runTarget(stageAt || currentAt(), currentWith(), step).url;
         if (next && stage.getAttribute('src') !== next) {
           measureFrame(stage, app.querySelector('[data-role="timing"]'));
           stage.setAttribute('src', next);

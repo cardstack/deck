@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Start christse/deckd-poc then the Deck Hub with Timeline via deckd.
+# JS stay identity ESM (main's live pipeline) — no esbuild/derived serve.
 # Usage: ./scripts/run-hub-with-deckd.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DECKD_ROOT="${DECKD_ROOT:-$HOME/Projects/deckd-poc}"
 export DECKD_URL="${DECKD_URL:-http://127.0.0.1:8787}"
 export DECK_DEMO_HTTP=1
-export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+# Volta's Node (22+) can load workspace .ts; Homebrew/system Node 20 cannot.
+export PATH="$HOME/.volta/bin:$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
 
 if [[ ! -d "$DECKD_ROOT" ]]; then
   echo "missing deckd-poc at $DECKD_ROOT" >&2
@@ -23,7 +25,7 @@ echo "→ building deckd in $DECKD_ROOT"
 # Keep artifacts in-tree (sandbox may redirect CARGO_TARGET_DIR).
 (cd "$DECKD_ROOT" && unset CARGO_TARGET_DIR && CARGO_TARGET_DIR="$DECKD_ROOT/target" cargo build --quiet)
 
-echo "→ deckd on $DECKD_URL"
+echo "→ deckd on $DECKD_URL (Timeline only; identity JS on Hub)"
 ("$DECKD_ROOT/target/debug/deckd") &
 DECKD_PID=$!
 trap 'kill $DECKD_PID 2>/dev/null || true' EXIT

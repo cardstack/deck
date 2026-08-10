@@ -84,6 +84,9 @@ function startStub(): Promise<{
         case '/restore-plan':
           reply({ writes: ['app.js'], deletes: ['added-later.js'] });
           return;
+        case '/file-list-at':
+          reply({ paths: ['app.js', 'lib/util.js'] });
+          return;
         default:
           res.writeHead(404, { 'content-type': 'application/json' });
           res.end(JSON.stringify({ error: 'no such endpoint' }));
@@ -129,6 +132,7 @@ module('history: historyd client', function (hooks) {
       path: '/seal',
       body: { dir: DIR, message: 'save: app.js' },
     });
+    assert.strictEqual(history.kind, 'historyd');
   });
 
   test('a no-op seal reports nothing sealed', async function (assert) {
@@ -190,18 +194,24 @@ module('history: historyd client', function (hooks) {
     });
   });
 
-  test('the capability gaps are declared, not faked', async function (assert) {
-    assert.strictEqual(
-      (history as { fileListAt?: unknown }).fileListAt,
-      undefined,
-      'no tree enumeration: absent, so callers cannot mistake it for an empty tree',
-    );
-    await history.seal(DIR, 'with actor', { name: 'Chris' });
+  test('deckd capabilities: actor on seal + file-list-at', async function (assert) {
+    await history.seal(DIR, 'with actor', {
+      name: 'Chris',
+      email: 'chris@example.com',
+    });
     assert.deepEqual(
       stub.calls.at(-1)!.body,
-      { dir: DIR, message: 'with actor' },
-      'the actor is dropped rather than sent to an endpoint that ignores it',
+      {
+        dir: DIR,
+        message: 'with actor',
+        actor: { name: 'Chris', email: 'chris@example.com' },
+      },
+      'actor rides the seal so deckd can stamp author',
     );
+    assert.deepEqual(await history.fileListAt(DIR, 'vvvvvvvv'), [
+      'app.js',
+      'lib/util.js',
+    ]);
   });
 
   test('no daemon: probe says so instead of failing every later save', async function (assert) {

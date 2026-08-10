@@ -233,22 +233,31 @@ export function timelineHtml({ steps, current, label = 'timeline', busy }) {
     `<button class="tl-jump" data-role="step-by" data-by="-1" title="back one">◀</button>` +
     `<span class="tl-track">${notches}` +
     `<button class="tl-notch tl-live" data-role="step" data-step="" ` +
-    `data-here="${atLive ? 1 : 0}" title="live — the working tree"></button>` +
+    `data-here="${atLive ? 1 : 0}" title="LIVE — tip of the working tree (HMR)" ` +
+    `data-summary="${esc(
+      JSON.stringify({
+        live: true,
+        when: '',
+        why: [],
+        files: [],
+        folded: 1,
+        actor: '',
+        note: 'Tip of the working tree. Edits land here and HMR-lite refreshes the stage.',
+        claim: '',
+        id: 'LIVE',
+      }),
+    )}"></button>` +
     `</span>` +
     `<button class="tl-jump" data-role="step-by" data-by="1" title="forward one">▶</button>` +
     `<button class="tl-jump" data-role="step-by" data-by="10" title="forward ten">▶▶</button>` +
-    // ONE SHORT READOUT. It carried the position, the age, the save count
-    // and two file paths, which wrapped the row onto three lines and pushed
-    // everything else off the end. All of that already lives in the popover,
-    // where it belongs — you get it by pointing at the notch you are asking
-    // about, rather than having it shouted about the notch you are on.
+    // ONE SHORT READOUT. When LIVE is selected, keep that word reserved and
+    // unmistakable (broadcast tip, not "a step"). Step positions stay compact
+    // as N/total · age. Detail for either lives in the popover on hover.
     //
-    // No `back to live` button either: the live notch is the right-hand end
-    // of the tape, it is green, and it is already a click target. A second
-    // control for a thing that is on screen is furniture.
+    // No `back to live` button: the green notch is already the tip control.
     `<span class="tl-read">` +
     (atLive
-      ? `<b class="tl-now">live</b>`
+      ? `<b class="tl-now">LIVE</b><span class="dim"> · tip</span>`
       : `<b>${ordered.length - index}</b><span class="dim">/${ordered.length}</span> · ` +
         `${esc(ago(selected?.timestamp))}`) +
     `</span>` +
@@ -297,20 +306,27 @@ export function attachScrub(root, { onScrub, onCommit } = {}) {
       return;
     }
     let step = JSON.parse(raw);
-    let files = step.files ?? [];
-    pop.innerHTML =
-      `<div class="tl-pop-head">` +
-      `<b>${esc(ago(step.when))}</b>` +
-      (step.folded > 1 ? ` <span class="dim">${step.folded} saves</span>` : '') +
-      (step.actor ? ` <span class="tl-pop-actor">${esc(step.actor)}</span>` : '') +
-      `</div>` +
-      (step.claim ? `<div class="tl-pop-claim">active — ${esc(step.claim)}</div>` : '') +
-      (step.note ? `<div class="tl-pop-note">${esc(step.note)}</div>` : '') +
-      `<div class="tl-pop-files">` +
-      files.slice(0, 6).map((path) => `<div>${esc(path)}</div>`).join('') +
-      (files.length > 6 ? `<div class="dim">+${files.length - 6} more</div>` : '') +
-      `</div>` +
-      `<div class="dim tl-pop-id">${esc(String(step.id).slice(0, 12))}</div>`;
+    if (step.live) {
+      pop.innerHTML =
+        `<div class="tl-pop-head"><b class="tl-now">LIVE</b>` +
+        ` <span class="dim">working tree</span></div>` +
+        `<div class="tl-pop-note">${esc(step.note ?? '')}</div>`;
+    } else {
+      let files = step.files ?? [];
+      pop.innerHTML =
+        `<div class="tl-pop-head">` +
+        `<b>${esc(ago(step.when))}</b>` +
+        (step.folded > 1 ? ` <span class="dim">${step.folded} saves</span>` : '') +
+        (step.actor ? ` <span class="tl-pop-actor">${esc(step.actor)}</span>` : '') +
+        `</div>` +
+        (step.claim ? `<div class="tl-pop-claim">active — ${esc(step.claim)}</div>` : '') +
+        (step.note ? `<div class="tl-pop-note">${esc(step.note)}</div>` : '') +
+        `<div class="tl-pop-files">` +
+        files.slice(0, 6).map((path) => `<div>${esc(path)}</div>`).join('') +
+        (files.length > 6 ? `<div class="dim">+${files.length - 6} more</div>` : '') +
+        `</div>` +
+        `<div class="dim tl-pop-id">${esc(String(step.id).slice(0, 12))}</div>`;
+    }
     let box = track.getBoundingClientRect();
     let spot = notch.getBoundingClientRect();
     pop.hidden = false;
@@ -470,8 +486,9 @@ export const TIMELINE_CSS = `
 .tl-live { flex: 0 0 1.6ch; background: var(--green); }
 .tl-live[data-here='1'] { background: var(--green); box-shadow: inset 0 0 0 1px var(--fg); }
 
-.tl-read { white-space: nowrap; color: var(--dim); min-width: 9ch; }
-.tl-now { color: var(--green); }
+/* Reserve width so LIVE · tip and N/total · age don't shove the row. */
+.tl-read { white-space: nowrap; color: var(--dim); min-width: 12ch; }
+.tl-now { color: var(--green); letter-spacing: 0.04em; }
 .tl-timing { white-space: nowrap; color: var(--dim); min-width: 10ch; text-align: right; }
 .tl-timing .ok { color: var(--green); }
 
