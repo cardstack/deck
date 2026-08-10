@@ -19,6 +19,7 @@ QUnit.on('runEnd', (runEnd) => {
 await import('./server-test.ts');
 await import('./live-autopublish-test.ts');
 await import('./live-hmr-test.ts');
+await import('./seal-on-watch-test.ts');
 await import('./browse-test.ts');
 await import('./history-test.ts');
 await import('./inject-importmap-test.ts');

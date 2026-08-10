@@ -74,6 +74,10 @@ export interface WatchOptions {
   // depot's repo; their paths are reported depot-relative. Defaults to the
   // watched directory (a standalone deck is its own depot).
   historyDir?: string;
+  // When false, this watcher publishes Versions + HMR only — it does not
+  // noteMutation / flush Timeline. Default: false for `history.kind ===
+  // 'deckd'` (deckd's FS watch owns seals); true for jj / historyd.
+  sealOnWatch?: boolean;
   onPublish?: (event: WatchPublishEvent) => void;
   // Fired as soon as a new treeHash is observed — before packing — so
   // live HMR can reload against on-disk `/live/` bytes without waiting
@@ -98,10 +102,14 @@ export function watchAndPublish(options: WatchOptions): WatchController {
     debounceMs = 500,
     history,
     historyDir,
+    sealOnWatch,
     onPublish,
     onLiveChange,
     onError,
   } = options;
+  // deckd owns Timeline seals via its watchexec-shaped FS plane. Hub/Node
+  // watchers still publish + HMR; they must not double-note /flush.
+  let sealWithWatch = sealOnWatch ?? history?.kind !== 'deckd';
   // A store inside the watched tree feeds itself: publishing writes packs
   // into the tree, which changes its treeHash, which publishes again —
   // forever, with every pack swallowing the previous ones. Refuse it
@@ -138,7 +146,7 @@ export function watchAndPublish(options: WatchOptions): WatchController {
       return;
     }
     // Only a NAMED identity-tree file feeds the sealer / publish loop.
-    if (history) {
+    if (history && sealWithWatch) {
       history.noteMutation(sealRoot, sealPrefix ? `${sealPrefix}/${path}` : path!);
     }
     schedule();
@@ -216,11 +224,12 @@ export function watchAndPublish(options: WatchOptions): WatchController {
       return;
     }
     let version = nextDevVersion(meta, base);
-    // Seal first, then pack, so the version names a state that history can
-    // also hand back file-by-file. `flush` returns the changeId it sealed;
-    // when the debounced sealer already got there, `head` names that seal.
+    // Seal only when this watcher owns Timeline. With deckd, the daemon FS
+    // plane seals; we still read head() for pack provenance (may lag one burst).
     let sealChangeId = history
-      ? ((await history.flush(sealRoot)) ?? (await history.head(sealRoot)))
+      ? sealWithWatch
+        ? ((await history.flush(sealRoot)) ?? (await history.head(sealRoot)))
+        : await history.head(sealRoot)
       : undefined;
     // Content-addressing means an identical tree keeps the pack bytes it was
     // first stored under — so a tree that comes back (a restore) keeps the

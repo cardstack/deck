@@ -185,6 +185,11 @@ Default listen: `http://127.0.0.1:8787` (today’s `DECK_HISTORYD_URL`);
 `deck serve` stays on 8788. Env: `DECKD_URL` supersedes `DECK_HISTORYD_URL`
 when both set. With `DECKD_URL`, `createHistory` attaches **deckd** (not jj CLI).
 
+**Sealer cutover:** when `history.kind === 'deckd'`, Hub `watchAndPublish`
+defaults `sealOnWatch: false` — Versions + HMR only. Timeline seals come from
+deckd’s FS watch plane (`notify` → debounce → jj-lib). jj / historyd keep
+Node-side note/flush.
+
 ---
 
 ## 3. Gaps vs today’s historyd (must close in D1)
