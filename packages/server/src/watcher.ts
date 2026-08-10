@@ -30,13 +30,19 @@ import type { HistoryBackend } from '@cardstack/deck-history/backend';
 // save is sealed on its own debounce, so the states between publishes are
 // recoverable too, and each published pack records the seal it was cut from.
 
-// jj and git write into their own repos on every operation, and those
-// writes land inside the watched tree. Treating them as tree changes would
-// make sealing feed itself: seal → .jj write → event → seal. The same is
-// true for `.deck/timeline` (and the rest of `.deck/`): seals and packs
-// land there when history is rooted under `.deck`, so ignoring only
-// `.jj`/`.git` still loops. The tree hash already ignores all three.
-const REPO_INTERNALS = /^\.(jj|git|deck)(\/|$)/;
+// Machinery writes land inside the watched tree. Treating them as edits
+// would make sealing feed itself: seal → .deck/timeline (or .jj) write →
+// event → treeHash → seal. Named events under DEFAULT_IGNORE are dropped.
+// Nameless events are dropped too: on macOS, recursive fs.watch often
+// omits the filename for deep repo writes, and re-hashing the whole depot
+// on those is what wedged the Hub at 100% CPU after Timeline moved under
+// `.deck/`. A real editor save reports a path; mount already schedules once.
+function isMachineryWatchPath(path: string | undefined): boolean {
+  if (!path) {
+    return true;
+  }
+  return path.split('/').some((segment) => DEFAULT_IGNORE.has(segment));
+}
 
 export interface WatchPublishEvent {
   name: string;
@@ -128,14 +134,12 @@ export function watchAndPublish(options: WatchOptions): WatchController {
   let pending: Promise<void> = Promise.resolve();
   let watcher: FSWatcher = watch(dir, { recursive: true }, (_event, raw) => {
     let path = raw?.toString().split('\\').join('/');
-    if (path && REPO_INTERNALS.test(path)) {
+    if (isMachineryWatchPath(path)) {
       return;
     }
-    // Only a NAMED file feeds the sealer. When the platform gives no
-    // filename we cannot tell a repo write from a tree write, so we fall
-    // back to publish-time sealing rather than risk the feedback loop.
-    if (path && history) {
-      history.noteMutation(sealRoot, sealPrefix ? `${sealPrefix}/${path}` : path);
+    // Only a NAMED identity-tree file feeds the sealer / publish loop.
+    if (history) {
+      history.noteMutation(sealRoot, sealPrefix ? `${sealPrefix}/${path}` : path!);
     }
     schedule();
   });
