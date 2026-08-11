@@ -16,14 +16,15 @@ from this repository instead.
 | --- | --- | --- |
 | **Node** | ≥ 22 | required — the CLI is TypeScript with no build step, and relies on Node's native type stripping |
 | **pnpm** | 11 | required to install the workspace's dev dependencies (`packageManager` pins the exact version) |
-| **jj** | any recent | optional — turns on the Timeline: a Step per save, and `deck history` / `deck restore` |
+| **jj** | any recent | optional — Timeline via the jj CLI when no daemon is running |
+| **Rust / cargo** | stable | optional — only to build `packages/deckd`, the in-tree Timeline daemon |
 
 Verified on Node v24.17.0, pnpm 11.0.9, jj 0.43.0.
 
-Without `jj` everything still works and nothing is lost: the store keeps
-every settled save as an immutable `-dev.N` version. What you give up is the
-states *between* publishes. The CLI says which of the two it attached, every
-time, rather than pretending.
+Without `jj` or deckd everything still works and nothing is lost: the store
+keeps every settled save as an immutable `-dev.N` version. What you give up
+is the states *between* publishes. The CLI says which backend it attached,
+every time, rather than pretending.
 
 ## Get it
 
@@ -113,8 +114,19 @@ immutable version.
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `DECK_KEYRING` | `~/.deck/keys` | where `deck keygen` writes private keys. They never leave the machine |
-| `JJ_BIN` | `jj` | which `jj` binary to seal with |
-| `DECK_HISTORYD_URL` | — | point the Timeline at a running historyd instead of shelling out to the jj CLI (roughly 5–6× faster per call) |
+| `JJ_BIN` | `jj` | which `jj` binary to seal with when no daemon URL is set |
+| `DECKD_URL` | — | point the Timeline at in-tree **deckd** (`packages/deckd`, default listen `http://127.0.0.1:8787`). Preferred over `DECK_HISTORYD_URL` when both are set |
+| `DECK_HISTORYD_URL` | — | legacy alias for an external historyd; same HTTP contract as deckd |
+
+To run Hub with deckd from this clone:
+
+```bash
+./scripts/run-hub-with-deckd.sh
+```
+
+That builds `packages/deckd` if needed, starts it on `:8787`, and starts Hub
+on `:8788` with `DECKD_URL` set. See [`packages/deckd/README.md`](packages/deckd/README.md)
+and [`docs/deck-daemon.md`](docs/deck-daemon.md).
 
 ## When something is wrong
 
@@ -124,7 +136,7 @@ immutable version.
 | `Cannot find package '@cardstack/deck'` | `pnpm install` has not run, or you are running a copy of `packages/cli` from outside the workspace |
 | `EADDRINUSE` from `deck serve` | the port is taken. `deck hello` walks forward up to ten ports on its own; `serve` does not, because a server you asked to be on 8788 should not quietly be somewhere else |
 | `deck: --realm is now --depot` | an old flag. It still works and will keep working; the message is a note, not a failure |
-| history reports Versions only | `jj` is not on PATH, or `DECK_HISTORYD_URL` points at nothing. The live loop is unaffected |
+| history reports Versions only | `jj` is not on PATH, and `DECKD_URL` / `DECK_HISTORYD_URL` point at nothing. The live loop is unaffected |
 
 ## Uninstall
 

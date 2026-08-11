@@ -2,8 +2,7 @@
 
 Deck Timeline daemon: **historyd-compatible HTTP** over **jj-lib**, plus a
 **watchexec-shaped FS pipeline** (`notify` → filter → per-depot debounce →
-jj-lib seal). Design: [`docs/deck-daemon.md`](../../docs/deck-daemon.md) and
-[`docs/deckd-watchexec-architecture.md`](../../docs/deckd-watchexec-architecture.md).
+jj-lib seal). Design: [`docs/deck-daemon.md`](../../docs/deck-daemon.md).
 
 Lives in the Deck monorepo at `packages/deckd/`. Timeline + watch is the
 default binary; optional planes are feature-gated off.
