@@ -249,27 +249,60 @@ something done to people.
 - **Advisories and yanks want to be instances** in a catalog realm —
   reviewable, searchable, with history. That is the most native form available
   and it needs no new storage.
-- **The loader becomes the enforcement point** for denies, and the filter
-  distribution channel becomes security-critical: signed, with a staleness
-  bound. Its failure mode should be last-known-good with loud operator-side
-  alerting, because a control whose failure mode is "nothing works" gets
-  disabled and then protects nothing.
 - **Deny entries need expiry or re-affirmation.** Otherwise the filter only
   grows, false positives accumulate, and nobody remembers why an entry is
   there.
 
+### 7.1 Delivery: a bundled baseline plus a pulled overlay
+
+The loader is the enforcement point, so the filter has to be there whenever
+the loader is. **Pulled, never pushed** — a page load already fetches a pile
+of dependencies, and one more small static file is cheaper than an always-on
+push channel into every running client. Cache it for one to ten minutes.
+
+Split it in two, because the two halves have different failure costs:
+
+- **A baseline filter inside the app bundle** — same deploy artifact, same
+  cache lifecycle as the JavaScript. If the app loaded, the baseline loaded.
+  There is no such thing as an unprotected cold client, which removes the only
+  genuinely bad case rather than deciding how to fail in it.
+- **An overlay, pulled on the 1–10 minute cycle**, carrying denies added since
+  that build. Losing it costs at most the last few minutes of new entries,
+  never the whole set.
+
+**Sign the overlay and verify before merging.** An unsigned overlay is an
+injection path directly into the kill switch. On a signature or parse failure,
+fall back to last-known-good rather than treating it as empty.
+
+### 7.2 How each failure resolves
+
+The two failures get opposite answers, which follows from their blast radius
+rather than from inconsistency.
+
+| failure | behaviour | why |
+| --- | --- | --- |
+| overlay fetch fails | **open**, on baseline + last-known-good, with loud operator-side telemetry | bounded to recent entries; the likeliest cause is a build pipeline, not an attacker |
+| confirm-on-hit fails | **closed** | the suspicion already exists, and failing open lets one blocked URL defeat the mechanism for exactly the case it is for |
+
+The arithmetic on the second: at a one-in-ten-thousand false positive rate and
+99.9% endpoint availability, blocking pending confirmation costs about one
+spurious refusal in ten million loads. Failing open there costs the whole
+control.
+
+A control whose failure mode is "nothing works" gets switched off, and then
+protects nothing — which is why the baseline is bundled rather than the
+overlay being mandatory.
+
 ## 8. Not decided here
 
-- **Whether the confirm-on-hit call may fail open.** Failing open means an
-  adversary who can block that endpoint gets a pass on anything not
-  definitively confirmed. Failing closed means a network blip blocks
-  legitimate code. The filter already flagged it, which argues for closed;
-  operational reality argues for open.
-- **Push or poll for a security yank.** "Stops you dead" implies immediate,
-  which means a push channel into every running loader — meaningfully more
-  infrastructure than a poll, and a new always-on dependency.
-- **Who owns false positives.** There must be a way to say "this is wrong"
-  that reaches a human, and a human whose job it is. Neither exists.
+- **No appeal path, for now** — a decision rather than an omission. It makes
+  confirm-on-hit **load-bearing**: it is the only thing standing between a
+  false positive and a permanently blocked file with no explanation and nobody
+  to ask. Two things follow. Nobody may simplify the confirm step away later
+  as an optimisation. And every block is logged with its hash and its reason,
+  user-visible in the realm's timeline (§6.4) and operator-side — without a
+  path, the log is the only evidence that a wrong block ever happened, and it
+  will be wanted the first time somebody asks why their card stopped working.
 - **Whether an out-of-range operator override exists at all.** When the fix is
   a major and an intermediate package is abandoned, the honest options are
   fork it, or let an operator force an untested combination and mark every
