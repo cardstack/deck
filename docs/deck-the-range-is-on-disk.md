@@ -121,10 +121,11 @@ having.
 
 ## 6. Not decided here
 
-- **What a failed resolution means.** No published Version satisfies `^3` —
-  is the instance broken, or is it fine and unrenderable? It has data, it has
-  a stated intent, and it has no code. That is a third state and the index
-  probably needs to say so rather than filing it under "error".
+- ~~**What a failed resolution means.**~~ **Settled** by
+  [`deck-who-may-intervene.md`](deck-who-may-intervene.md) §4: it is **held** —
+  data present, intent present, code withdrawn — and a security yank produces
+  it on purpose. It must read differently from a broken card, or every
+  withdrawal looks like a platform failure.
 - **Whether an instance may pin exactly.** A range of one is expressible and
   sometimes right — a fixture that must not move. The question is whether that
   should look different from a range, or whether uniformity is worth more.

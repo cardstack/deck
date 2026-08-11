@@ -91,12 +91,11 @@ tune the depot.
 
 ## 5. Not decided here
 
-- **Whether a depot may ever override a sealed pin.** The case that argues
-  for it is a security patch: a depot operator who must move every consumer
-  off a compromised version today, without waiting for each package to
-  republish. The case against is this ruling. If such an override exists it
-  must be loud, recorded, and visible to anyone reading the resolution — not
-  a quiet entry that happens to win.
+- ~~**Whether a depot may ever override a sealed pin.**~~ **Settled** by
+  [`deck-who-may-intervene.md`](deck-who-may-intervene.md). A sealed pin may
+  be advanced *within the range the package itself declared* — permission
+  granted in writing at publish time, so it is not a depot second-guessing a
+  package. Out-of-range remains open there.
 - **What a packaged module's *unsealed* imports mean.** A `$DECK/` reference
   is documented as the deliberate live escape hatch; whether a bare specifier
   with no sealed answer should refuse to resolve, or fall through to the
