@@ -6,13 +6,18 @@
 > Boxel construct, it means that. See
 > [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
 
-Status (updated 2026-08-07): the at-rest endpoints this skill uses
-(publish, dist-tags, versioned serving) are BUILT — see
-`deck-at-rest.md`. The migration steps (3, 5, 7) describe
-DEFERRED gate features; today a breaking publish is not blocked, so
-the honesty rules below carry the full weight. As built, the
-manifest is `importmap.json` (`boxel.packages[<name>].version`), not
-a `package.json`.
+Status (updated 2026-08-10): **partially superseded** for stable Versions by
+[`deck-version-is-a-proposal.md`](deck-version-is-a-proposal.md) — cutting a
+stable Version is propose → review → accept, not a one-shot
+`POST …/publish`. Keep this skill for the at-rest verbs and agent honesty
+rules; treat one-shot stable publish steps as the old world. Prerelease /
+`dev` auto-publish is unchanged.
+
+The at-rest endpoints (publish, dist-tags, versioned serving) are BUILT — see
+`deck-at-rest.md`. The migration steps (3, 5, 7) describe DEFERRED gate
+features; today a breaking publish is not blocked, so the honesty rules below
+carry the full weight. As built, the manifest is `importmap.json`
+(`boxel.packages[<name>].version`), not a `package.json`.
 
 Audience: an AI agent (Claude Code via boxel CLI, or any REST-capable
 agent) asked to ship a change to a Boxel package that live users depend

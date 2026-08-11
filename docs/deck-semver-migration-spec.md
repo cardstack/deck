@@ -6,16 +6,21 @@
 > Boxel construct, it means that. See
 > [deck-depot-and-realm-backport.md](deck-depot-and-realm-backport.md).
 
-Status (updated 2026-08-07): this spec covers the FULL protocol. The
-**at-rest subset is BUILT AND TESTED** — stack L0–L5, branches
-`deck/01`–`deck/05`; current description in `deck-at-rest.md`.
-**Deferred by Chris's at-rest descope ruling**: the migration gate
-(§2 steps 5–9), fleet migrations, security verbs (§6), the shim/AppDef
-manifest layer (§4a), capability tiers, promotion, catalog intake.
-One built-time change supersedes the text below: **the package
+Status (updated 2026-08-10): this spec covers the FULL protocol. **Stable
+Version authorship** is now ruled by
+[`deck-version-is-a-proposal.md`](deck-version-is-a-proposal.md) (propose →
+accept; proposals beside the store). Semver *meaning*, migration gates, and
+catalog rules below still apply — but a one-shot stable publish is no longer
+the product shape.
+
+The **at-rest subset is BUILT AND TESTED** — stack L0–L5; current description
+in `deck-at-rest.md`. **Deferred by Chris's at-rest descope ruling**: the
+migration gate (§2 steps 5–9), fleet migrations, security verbs (§6), the
+shim/AppDef manifest layer (§4a), capability tiers, promotion, catalog
+intake. One built-time change supersedes the text below: **the package
 manifest is `importmap.json` (`boxel.packages[<name>]`), not a root
-`package.json`** — see `deck-multi-package-design.md`; multi-package
-realms with free file placement are supported.
+`package.json`** — see `deck-multi-package-design.md`; multi-package realms
+with free file placement are supported.
 Companion docs: `deck-publishing-skill.md` (the AI playbook), `deck-software-lifecycle.md` (the lifecycle narrative), `deck-at-rest.md` (what is built).
 Repository of record for decisions: `ctse/bpm-architecture` realm on realms-staging.
 

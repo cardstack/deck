@@ -1,9 +1,9 @@
 # A Version is a proposal, not a save
 
-**Status: RULING** (2026-08-10). Companion to
-[`deck-step-version-vocabulary.md`](deck-step-version-vocabulary.md), which
-says what a Version and a Step *are*. This says **who decides one exists**,
-which that document leaves open.
+**Status: RULING** (2026-08-10; §5 settled from Boxel propose/accept spike).
+Companion to [`deck-step-version-vocabulary.md`](deck-step-version-vocabulary.md),
+which says what a Version and a Step *are*. This says **who decides one
+exists**, which that document leaves open.
 
 ---
 
@@ -153,24 +153,45 @@ surfaces.
 
 ## 4. What this changes about the build
 
-- **`deck publish` becomes two-phase**: propose, then accept. That is a
-  larger change to the publish path than the backport plan assumes, and it
-  lands *before* R5 rather than inside it — a gate built as a one-shot
-  refusal has to be rebuilt as a proposal check.
+- **`deck publish` becomes two-phase**: propose, then accept. A gate built as
+  a one-shot refusal has to be rebuilt as a proposal check — review material,
+  not a thrown error after someone believed they were done.
 - **K7 stops being a later phase.** UC-19 already designs the mechanism:
   Submission cards carrying review state, with `SubmitForReview` and
   `ApproveRelease` as Seats held by different Parties. This ruling promotes
   that from "how promotion works between realms" to **what publishing is**.
 - **The Version record grows a body and a proposer.** Both are additive to
   the store's version record.
+- **Standalone Deck ships protocol + CLI/server.** Boxel may wrap the same
+  doors in cards; the Hub is optional chrome, not a requirement of the
+  ruling. A clone of this repo should teach and eventually run propose →
+  accept without any Ember host.
 
-## 5. Not decided here
+## 5. Settled from the Boxel propose/accept spike
+
+Proven in Boxel (`package-proposals` + `semver-delta` on `deck/at-rest-poc`)
+and adopted here as the standalone shape:
+
+| Question | Settlement |
+| --- | --- |
+| Where do proposals live? | Beside the store, not in version records: `<store>/_proposals/<name>/<id>.json`. Never addressable as `@<version>`. |
+| Never-accepted proposals? | Stay `open` or `withdrawn` on disk; the served world is untouched. Cheap to propose. |
+| Gate at propose time? | Run the publish gate on the proposal; **record** the verdict (including refusals) as review material — do not throw it away. |
+| Structural bump? | Compare exported surfaces; verdict is a **floor** (`blindTo` always names meaning-only breaks). Model/reviewer may raise, never lower without `overrideReason`. |
+| Claimed bump? | Must follow the suggestion sequentially, or carry `overrideReason` in the Version body. |
+| Accept? | Commit the Version **then** mark the proposal `accepted`. Failed publish leaves the proposal open. |
+| HTTP surface? | Mutating door is separate from the read-only `/_packages/` (or depot equivalent) grammar so GET cannot reach the gate. |
+| Identity? | `proposedBy` / `acceptedBy` come from auth / the CLI actor — not free-typed request body strings. |
+
+Standalone implementation status: **ruling + Core ready; two-phase CLI/server
+path still to land** (today `deck publish` remains one-shot). Older playbooks
+(`deck-publishing-skill.md`, `deck-semver-migration-spec.md`) describe that
+one-shot world and should be read as superseded on the deliberate-stable path.
+
+## 6. Still open (policy, not protocol layout)
 
 - Whether a Version may be proposed by an agent and accepted by another agent
   with no human in the chain. The Seat model permits it; whether the release
-  Seat may ever be held by a bot is a policy question, not a protocol one.
-- What happens to a proposal that is never accepted. It is not a Version, so
-  it is not in the store — which suggests proposals live beside claims in
-  `.deck/`, but that layout is not settled.
+  Seat may ever be held by a bot is a policy question.
 - Whether a `dev` prerelease can be *promoted* to a stable Version without
   re-cutting, given the bytes are already sealed and identical.
