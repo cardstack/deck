@@ -12,6 +12,20 @@ record. The current protocol description is
 `deck-at-rest.md`. This file uses ASD-STE100 Simplified
 Technical English.
 
+> **Superseded in two places** (2026-08-11), by rulings written after this
+> design was built on:
+>
+> - **§2, `packages` held in the depot's map.** A package's name and version
+>   now live in the package's own manifest, not in a registry the depot keeps.
+>   See [deck-a-package-carries-its-own-name.md](deck-a-package-carries-its-own-name.md).
+> - **§5, snapshot semantics as a property of packs.** The same rule is now an
+>   invariant on resolution generally: a packaged module resolves through its
+>   own sealed map, and the depot's map resolves only what is not packaged.
+>   See [deck-a-package-resolves-through-its-own-map.md](deck-a-package-resolves-through-its-own-map.md).
+>
+> Everything else stands, including the entry redirect and export aliases in
+> §4.
+
 ## 1. The rules this design follows
 
 1. A realm has no file placement rules. A realm is not a real file
