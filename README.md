@@ -1,7 +1,7 @@
 # Deck
 
 **Deck is version management without the commit, package management
-without the install, and delivery without the deploy.**
+without the install, and cloud delivery without the deploy.**
 
 One thing makes all three true: there is only one kind of object here — a
 file, named by the hash of its own bytes, reachable at a URL. A tree is a
