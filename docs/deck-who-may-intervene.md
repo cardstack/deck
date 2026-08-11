@@ -70,6 +70,12 @@ depot subscribes to an ordered list of catalogs.
 Stating policy as *data* is deliberate: it is what a deterministic workflow
 bot may evaluate without ever running realm JS.
 
+**A catalog's two verbs have different reach**, and §8.1 is why. A **yank** is
+a listing operation — "this is no longer selectable in what I serve" — so it
+is meaningless for something the catalog does not carry. An **advisory** is a
+claim about the world, and a catalog may make one about anything; its force
+comes from who subscribed, not from control of the artifact.
+
 **An operator** governs execution, and only on infrastructure it runs. This
 layer is security operations rather than package management, and §5 is about
 why that distinction earns its keep.
@@ -116,6 +122,12 @@ The rest of the ladder:
 
 A yank normally changes future selection. A yank marked **security** stops
 what is live.
+
+Halting is an **effect**, not a verb: a subscriber's policy grants it to
+signals above a severity from sources it trusts. A yank from a catalog that
+lists the package produces it, and so does a security advisory from an advisor
+the depot subscribed to but which lists nothing at all (§8.1). The difference
+between those two is the scope of the authority, not the size of the effect.
 
 That makes a state real that was previously an unresolved edge case:
 `deck-the-range-is-on-disk.md` §6 asks what a failed resolution means, and the
@@ -293,7 +305,7 @@ A control whose failure mode is "nothing works" gets switched off, and then
 protects nothing — which is why the baseline is bundled rather than the
 overlay being mandatory.
 
-## 8. Not decided here
+## 8. What is open, and where the prior art puts it
 
 - **No appeal path, for now** — a decision rather than an omission. It makes
   confirm-on-hit **load-bearing**: it is the only thing standing between a
@@ -303,11 +315,80 @@ overlay being mandatory.
   user-visible in the realm's timeline (§6.4) and operator-side — without a
   path, the log is the only evidence that a wrong block ever happened, and it
   will be wanted the first time somebody asks why their card stopped working.
-- **Whether an out-of-range operator override exists at all.** When the fix is
-  a major and an intermediate package is abandoned, the honest options are
-  fork it, or let an operator force an untested combination and mark every
-  resolution it touches as locally modified. The second must never travel
-  beyond the depot that chose it.
-- **Whether a catalog may yank a package it does not list.** Saying no is
-  clean; it also means a catalog cannot warn about something its members
-  reach for directly.
+### 8.1 Settled: a catalog advises about anything, and yanks only what it lists
+
+The question was framed wrongly. Every ecosystem has already split these two
+verbs, and along a line that gives us what we wanted anyway.
+
+**Yank is universally owner- or registry-scoped.** crates.io `yank` is owner
+only. npm `deprecate` is owner only. Go `retract` is declared in the module's
+own `go.mod`, so author only. In each case the verb means "remove from
+selection in the thing I control", which is incoherent applied to something
+you do not serve.
+
+**Advisory is universally open to third parties.** CVE/MITRE assigns
+identifiers to software it has no relationship with — the entire disclosure
+system rests on strangers warning about other people's code. The GitHub
+Advisory Database publishes across npm, PyPI, Maven, RubyGems, NuGet, Go, Rust
+and more while hosting none of those registries, and `npm audit` consumes it.
+RustSec is community-run and entirely separate from crates.io. OSV is designed
+from the start so that *several* databases may publish about one package
+universe. Debian's security tracker even tracks CVEs for packages Debian does
+not ship.
+
+So:
+
+> **A catalog may not yank what it does not list, and may advise about
+> anything. The effect of an advisory on a depot is whatever that depot's
+> subscription grants it.**
+
+That recovers the capability the original question was worried about losing. A
+depot subscribing to `boxel-catalog`'s security advisories honours them for
+packages `boxel-catalog` does not serve. The catalog is not reaching into
+somebody else's store; the depot chose whose warnings to act on.
+
+The power this hands a third-party advisor is real — with §4, a security
+advisory halts running code in every depot that subscribed. The check on it is
+the same one CVE lives with: advisories are public, attributed, and a
+subscriber can drop you.
+
+### 8.2 Narrowed: the out-of-range override
+
+Still open, but three findings move it a long way toward "no".
+
+**Every ecosystem built an override, and every one made it non-travelling.**
+yarn `resolutions`, npm `overrides`, pnpm `overrides`, Go `replace`, Cargo
+`[patch]`, Maven `dependencyManagement` — all of them apply from the root
+consumer and none propagate to anyone consuming *you*. Six independent
+arrivals at the same rule is not a coincidence, and it is the rule this
+document already guessed at. npm is worth singling out: it refused `overrides`
+for about a decade on precisely our argument, that it breaks the guarantee a
+package got what it declared, and then shipped it.
+
+**Where intervention is routine, it renames rather than shadows.** Debian
+patches upstream constantly without permission, and ships the result as
+`1.2.3-4+deb11u1` — the distributor is in the version, and it never claims to
+be upstream's `1.2.3`. Nix is cleaner still: an overlay yields a different
+derivation with a different hash, so silent substitution is structurally
+impossible. That is §2.1 arrived at twice more.
+
+**"Fork it" is cheap here in a way it is not elsewhere.** The dominant
+real-world answer to an abandoned intermediate is not a fork but a *patch* —
+`patch-package`, and Yarn Berry's first-class `patch:` protocol. Deck's remix
+is already that mechanism: a parent Version plus a small overlay,
+copy-on-write. So forking a dead intermediate does not mean copying its tree;
+it means a named overlay on a sealed parent. The expense an override exists to
+avoid is mostly not there.
+
+Against all of that, one honest counterexample. **npm has changed bytes under
+a name.** In 2016 it restored `left-pad` against the author's wishes to
+unbreak the ecosystem; in 2018 it removed a malicious `event-stream` release
+and took over the name. The operator intervened at the byte-and-name level and
+almost everyone was glad. §2.1 is therefore *stricter than the largest
+registry's actual practice*. It is still the right stance here — under content
+addressing a hash that means two things poisons everything downstream — but it
+is a position, not a consensus, and it should be held knowingly.
+
+An empirical note on the cost of the honest answer: when faker.js was
+sabotaged, the community forked to `@faker-js/faker` and migrated. That took
+weeks.
