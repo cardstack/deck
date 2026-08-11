@@ -1078,7 +1078,7 @@ function view(state) {
     // The mark, then the sentence. Only the NAME is the mark — "is" belongs to
     // the sentence and takes the sentence's face, or the mark grows a word.
     `<h1><b>DECK</b> is version management without the commit, package
-     management without the install, and delivery without the deploy.</h1>` +
+     management without the install, and cloud delivery without the deploy.</h1>` +
     // The unifying assumption, before any mechanism. Three claims that each
     // sound like a separate trick are one claim said three times, and a
     // reader who does not get that in the second paragraph reads the rest as
