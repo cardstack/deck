@@ -1,7 +1,7 @@
 import { watch, type FSWatcher } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
-import { DEFAULT_IGNORE } from '@cardstack/deck/tree-hash';
+import { DEFAULT_IGNORE, isIgnoredTreeSegment } from '@cardstack/deck/tree-hash';
 import { parsePackages, IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
 import { packFromDir } from '@cardstack/deck/pack';
 import {
@@ -41,7 +41,7 @@ function isMachineryWatchPath(path: string | undefined): boolean {
   if (!path) {
     return true;
   }
-  return path.split('/').some((segment) => DEFAULT_IGNORE.has(segment));
+  return path.split('/').some((segment) => isIgnoredTreeSegment(segment));
 }
 
 export interface WatchPublishEvent {
@@ -121,12 +121,12 @@ export function watchAndPublish(options: WatchOptions): WatchController {
   if (storeRoot === watchedRoot || storeRoot.startsWith(`${watchedRoot}/`)) {
     let hidden = relative(watchedRoot, storeRoot)
       .split('/')
-      .some((segment) => DEFAULT_IGNORE.has(segment));
+      .some((segment) => isIgnoredTreeSegment(segment));
     if (!hidden) {
       throw new Error(
         `the store (${storeRoot}) is inside the watched directory (${watchedRoot}); ` +
           `every publish would change the tree and trigger another publish — keep the store outside, ` +
-          `or under a directory the tree hash ignores (${[...DEFAULT_IGNORE].join(', ')})`,
+          `or under a directory the tree hash ignores (${[...DEFAULT_IGNORE].join(', ')}, .jj.*)`,
       );
     }
   }

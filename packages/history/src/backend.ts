@@ -1,6 +1,6 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { DEFAULT_IGNORE } from '@cardstack/deck/tree-hash';
+import { isIgnoredTreeSegment } from '@cardstack/deck/tree-hash';
 
 // Tier 2 of the live-tree design (docs/deck-live-autopublish.md): seal-grained
 // history UNDER the auto-publish loop. Tier 1 — the content-addressed store —
@@ -151,7 +151,7 @@ export async function applyRestore(
 // exclude it from sealing too; this is the belt to that suspenders, and it
 // also protects trees sealed before those rules existed.
 function isRestorable(path: string): boolean {
-  return !path.split('/').some((segment) => DEFAULT_IGNORE.has(segment));
+  return !path.split('/').some((segment) => isIgnoredTreeSegment(segment));
 }
 
 // Per-directory serialization shared by both backends: every history

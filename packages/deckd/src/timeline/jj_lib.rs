@@ -468,7 +468,7 @@ fn snapshot_options() -> HistoryResult<SnapshotOptions<'static>> {
         .chain(
             RepoPath::root(),
             Path::new(""),
-            b".deck/\n.jj/\n.git/\n.gitignore\nnode_modules/\n.DS_Store\n.boxel-history/\n",
+            b".deck/\n.jj/\n.jj.*/\n.git/\n.gitignore\nnode_modules/\n.DS_Store\n.boxel-history/\n",
         )
         .map_err(|e| HistoryError::msg(e.to_string()))?;
     Ok(SnapshotOptions {

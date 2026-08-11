@@ -8,6 +8,7 @@ import {
   DEFAULT_IGNORE,
   formatTreeHash,
   hashBytes,
+  isIgnoredTreeSegment,
   isNormalizedTreePath,
   isValidTreePath,
   normalizeTreePath,
@@ -181,6 +182,28 @@ module('tree-hash-v1', function () {
         ['accounting/account.gts', 'importmap.json'],
       );
       assert.true(DEFAULT_IGNORE.has('.jj'), 'sidecar dir reserved');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('jj workspace leftovers (.jj.main-orphan) are ignored like .jj', async function (assert) {
+    assert.true(isIgnoredTreeSegment('.jj'));
+    assert.true(isIgnoredTreeSegment('.jj.main-orphan'));
+    assert.false(isIgnoredTreeSegment('.jjfoo'));
+    assert.false(isIgnoredTreeSegment('vale'));
+
+    let dir = await mkdtemp(join(tmpdir(), 'tree-hash-jj-orphan-'));
+    try {
+      await mkdir(join(dir, '.jj.main-orphan', 'repo'), { recursive: true });
+      await writeFile(join(dir, '.jj.main-orphan', 'repo', 'index'), 'noise');
+      await writeFile(join(dir, 'keep.js'), 'export {};');
+      let walked = await treeHashFromDir(dir);
+      assert.deepEqual(
+        walked.entries.map((e) => e.path),
+        ['keep.js'],
+        'orphan jj dirs do not change the tree hash',
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

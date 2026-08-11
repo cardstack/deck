@@ -111,22 +111,26 @@ pub fn timeline_dir(depot: &Path) -> std::path::PathBuf {
 }
 
 pub fn auto_track_fileset() -> &'static str {
-    r#"'all() ~ glob:".deck/**" ~ glob:".deck" ~ glob:".git/**" ~ glob:".git" ~ glob:".gitignore" ~ glob:"node_modules/**" ~ glob:"node_modules" ~ glob:".DS_Store" ~ glob:".boxel-history/**" ~ glob:".boxel-history"'"#
+    // `.jj.*` covers jj workspace leftovers (e.g. `.jj.main-orphan`) left
+    // when relocating `.jj/repo` under `.deck/timeline/`.
+    r#"'all() ~ glob:".deck/**" ~ glob:".deck" ~ glob:".jj/**" ~ glob:".jj" ~ glob:".jj.*" ~ glob:".jj.*/**" ~ glob:".git/**" ~ glob:".git" ~ glob:".gitignore" ~ glob:"node_modules/**" ~ glob:"node_modules" ~ glob:".DS_Store" ~ glob:".boxel-history/**" ~ glob:".boxel-history"'"#
 }
 
 /// Machinery / VCS paths that must never appear in Timeline tree listings or
 /// restore plans — even if an older seal accidentally tracked them.
+///
+/// Any path segment named `.jj` or starting with `.jj.` is machinery: the
+/// thin stub is `.jj/`, and jj may leave `.jj.main-orphan/` (and similar)
+/// beside it during workspace moves.
 pub fn is_machinery_path(path: &str) -> bool {
-    path == ".deck"
-        || path.starts_with(".deck/")
-        || path == ".jj"
-        || path.starts_with(".jj/")
-        || path == ".git"
-        || path.starts_with(".git/")
-        || path == ".gitignore"
-        || path == "node_modules"
-        || path.starts_with("node_modules/")
-        || path == ".DS_Store"
-        || path == ".boxel-history"
-        || path.starts_with(".boxel-history/")
+    path.split('/').any(|seg| {
+        seg == ".deck"
+            || seg == ".jj"
+            || seg.starts_with(".jj.")
+            || seg == ".git"
+            || seg == ".gitignore"
+            || seg == "node_modules"
+            || seg == ".DS_Store"
+            || seg == ".boxel-history"
+    })
 }

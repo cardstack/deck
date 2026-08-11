@@ -153,6 +153,15 @@ export const DEFAULT_IGNORE = new Set([
   '.boxel-history',
 ]);
 
+/**
+ * A directory/file name that is never part of a deck's logical tree.
+ * Exact names in {@link DEFAULT_IGNORE}, plus jj workspace leftovers such as
+ * `.jj.main-orphan` (left beside `.jj` when the store is relocated).
+ */
+export function isIgnoredTreeSegment(name: string): boolean {
+  return DEFAULT_IGNORE.has(name) || name.startsWith('.jj.');
+}
+
 export async function treeHashFromDir(
   dir: string,
   options: { ignore?: ReadonlySet<string> } = {},
@@ -172,7 +181,7 @@ export async function treeHashFromDir(
   let seenOnDisk = new Map<string, string>();
   async function walk(current: string, prefix: string): Promise<void> {
     for (let dirent of await readdir(current, { withFileTypes: true })) {
-      if (ignore.has(dirent.name)) {
+      if (ignore.has(dirent.name) || dirent.name.startsWith('.jj.')) {
         continue;
       }
       let raw = prefix === '' ? dirent.name : `${prefix}/${dirent.name}`;

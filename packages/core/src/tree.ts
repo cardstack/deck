@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { DEFAULT_IGNORE, isValidTreePath } from './tree-hash.ts';
+import { isIgnoredTreeSegment, isValidTreePath } from './tree-hash.ts';
 
 // Reading and writing a deck's tree as plain bytes. Everything that moves
 // trees around — fork, rebase, restore — goes through here, so they all
@@ -19,7 +19,7 @@ export async function readTreeFromDir(
       return;
     }
     for (let entry of entries) {
-      if (DEFAULT_IGNORE.has(entry.name)) {
+      if (isIgnoredTreeSegment(entry.name)) {
         continue;
       }
       let path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
