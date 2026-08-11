@@ -24,6 +24,7 @@
 // being answerable and starts being gameable by saying so.
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isIgnoredTreeSegment } from '@cardstack/deck/tree-hash';
 import type { DepotMount } from './depot.js';
 
 /** e^(−Δt/τ): a change now is worth 1, a change τ ago is worth 0.37. */
@@ -212,7 +213,12 @@ async function depotChanges(depot: DepotMount): Promise<Change[]> {
       for (let entry of seal.filesSummary ?? []) {
         // "M app/run/run.js" — the letter is the verb, the rest is the path.
         let path = entry.replace(/^[A-Z]\s+/, '').trim();
-        if (path) changes.push({ path, when, actor: seal.author });
+        if (!path) continue;
+        // Machinery seals (.jj.main-orphan, .deck, …) are not work.
+        if (path.split('/').some((segment) => isIgnoredTreeSegment(segment))) {
+          continue;
+        }
+        changes.push({ path, when, actor: seal.author });
       }
     }
     return changes;

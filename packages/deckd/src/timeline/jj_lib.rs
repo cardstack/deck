@@ -741,12 +741,29 @@ async fn list_inner(dir: &Path) -> HistoryResult<Vec<HistoryEntry>> {
             .map_err(|e| HistoryError::msg(e.to_string()))?;
 
         let files_summary = files_summary_from_index(repo.as_ref(), &commit).await?;
+        // Seals that only touched `.jj` / `.jj.main-orphan` / `.deck` / …
+        // are Timeline noise from workspace moves — never content. Hide them
+        // from `/list` so Hub /track and `/_history` stay readable.
+        if files_summary.is_empty() {
+            continue;
+        }
         let author_name = commit.author().name.clone();
+        // Prefer a description from the filtered summary: older seals may
+        // still carry a commit message that lists machinery paths.
+        let paths: HashSet<String> = files_summary
+            .iter()
+            .filter_map(|line| line.split_once(' ').map(|(_, p)| p.to_owned()))
+            .collect();
+        let description = if paths.is_empty() {
+            first_line(commit.description()).to_owned()
+        } else {
+            message_for_paths(&paths)
+        };
         entries.push(HistoryEntry {
             change_id: commit.change_id().to_string(),
             commit_id: commit.id().hex(),
             timestamp: format_timestamp(&commit),
-            description: first_line(commit.description()).to_owned(),
+            description,
             files_summary,
             author: if author_name.is_empty() || author_name == "deck-history" {
                 None

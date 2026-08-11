@@ -65,6 +65,22 @@ const esc = (value) =>
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
   );
 
+/** Match Core `isIgnoredTreeSegment` — any path segment that is machinery. */
+function isMachineryPath(path) {
+  return String(path)
+    .split('/')
+    .some(
+      (segment) =>
+        segment === '.deck' ||
+        segment === '.jj' ||
+        segment.startsWith('.jj.') ||
+        segment === '.git' ||
+        segment === 'node_modules' ||
+        segment === '.boxel-history' ||
+        segment === '.DS_Store',
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Fetching
 //
@@ -195,19 +211,14 @@ async function collect(scope) {
                 ? { how: match[1], path: match[2] }
                 : { how: 'M', path: line };
             })
-            // `.deck/` IS NOT CONTENT, wherever it turns up.
+            // Machinery is not content, wherever it turns up.
             //
-            // It holds the store and the claim register — machinery with a
-            // half-hour lifetime — and `.deck` is in DEFAULT_IGNORE precisely
-            // so it never enters a tree. But auto-track only governs files
-            // jj has not seen: a depot whose timeline was started outside
-            // that config has them tracked already, and jj keeps tracking
-            // what it tracks. Claims then churn into the feed as edits,
-            // which is the exact opposite of the guarantee.
-            //
-            // Filtering here is the honest defence: whatever jj happens to
-            // carry, a change to machinery is not a change to the work.
-            .filter((change) => !change.path.startsWith('.deck/'));
+            // `.deck/` holds the store; `.jj` / `.jj.main-orphan` are Timeline
+            // stubs and jj workspace leftovers. DEFAULT_IGNORE / `.jj.*` exist
+            // so they never enter a tree — but older seals may still list them.
+            // Filtering here keeps /track honest: a change to machinery is not
+            // a change to the work.
+            .filter((change) => !isMachineryPath(change.path));
           // A save that touched nothing else was pure machinery.
           if (!changes.length) return;
           let touched = changes.map((change) => change.path);
