@@ -22,7 +22,6 @@ QUnit.on('runEnd', (runEnd) => {
 await import('./vendor-npm-test.ts');
 await import('./vendor-map-test.ts');
 await import('./derive-test.ts');
-await import('./pack-hermetic-test.ts');
 await import('./rebase-daemon-test.ts');
 
 QUnit.start();

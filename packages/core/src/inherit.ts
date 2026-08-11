@@ -44,17 +44,61 @@ export interface FlatMap {
   scopes: Record<string, Record<string, string>>;
 }
 
-// `pub/pkg@1.2.3` — an EXACT version, never a tag.
+// A parent names an EXACT version, never a tag.
 //
 // L4 says a published version never changes, which is the only reason
 // inheriting from one is safe. A tag moves; a child that inherited through a
 // tag would change meaning without anybody editing it, and every remix built
 // on it would drift at once.
-const EXACT_PARENT =
-  /^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*@\d+\.\d+\.\d+(?:-[0-9a-z.-]+)?(?:\+[0-9a-z.-]+)?$/i;
+//
+// THE RULE IS EXACTNESS, NOT AN ADDRESS SPACE. This used to accept only
+// `pub/pkg@1.2.3`, which is how a depot names its own decks — and that quietly
+// made `extends` unusable outside a depot. A Boxel realm names a parent with a
+// fully-qualified URL today and will name it with an RRI alias once that
+// migration lands, and neither could inherit from anything. The invariant L4
+// cares about is that the version cannot move; where the parent lives is the
+// host's business.
+//
+// So all three forms are accepted, and the version is checked in all three:
+//
+//   acme/blog@1.2.3                              depot-local
+//   https://app.example/catalog/acme/blog@1.2.3/ fully qualified
+//   @catalog/acme/blog@1.2.3/                    scoped alias
+//
+// A trailing slash is optional — a realm addresses a deck as a directory and
+// writes one; a depot does not.
+const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9a-z.-]+)?(?:\+[0-9a-z.-]+)?$/i;
+const DEPOT_LOCAL_NAME = /^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*$/i;
+// `@scope/…` with at least one segment after the scope.
+const SCOPED_ALIAS_NAME = /^@[a-z0-9][a-z0-9-]*\/[^/].*$/i;
+
+function isAbsoluteName(name: string): boolean {
+  let url;
+  try {
+    url = new URL(name);
+  } catch {
+    return false;
+  }
+  return url.protocol === 'https:' || url.protocol === 'http:';
+}
 
 export function isExactParent(spec: string): boolean {
-  return EXACT_PARENT.test(spec);
+  let candidate = spec.endsWith('/') ? spec.slice(0, -1) : spec;
+  // The LAST `@` is the version separator. A leading one belongs to a scope
+  // (`@catalog/…`), so an `@` at index 0 means no version was given at all.
+  let at = candidate.lastIndexOf('@');
+  if (at <= 0) {
+    return false;
+  }
+  let name = candidate.slice(0, at);
+  if (!EXACT_VERSION.test(candidate.slice(at + 1))) {
+    return false;
+  }
+  return (
+    DEPOT_LOCAL_NAME.test(name) ||
+    SCOPED_ALIAS_NAME.test(name) ||
+    isAbsoluteName(name)
+  );
 }
 
 /**
@@ -80,7 +124,11 @@ export function parseExtends(jsonText: string): string | undefined {
   }
   if (typeof value !== 'string' || !isExactParent(value)) {
     throw new Error(
-      `deck.extends must name an exact version, like "acme/blog@1.2.3" — got ${JSON.stringify(value)}`,
+      `deck.extends must name an exact version — "acme/blog@1.2.3", ` +
+        `"https://app.example/catalog/acme/blog@1.2.3/" or ` +
+        `"@catalog/acme/blog@1.2.3/". A tag or a range is refused because ` +
+        `it can move, and every deck built on it would drift at once (L4). ` +
+        `Got ${JSON.stringify(value)}`,
     );
   }
   return value;

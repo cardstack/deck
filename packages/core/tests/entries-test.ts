@@ -93,4 +93,78 @@ module('package entries', function () {
       'one implementation, reachable from either entry',
     );
   });
+
+  // The entries exist so an embedder gets a contract. That is only true if
+  // the contract covers what the embedder actually reaches for, and the
+  // list below is not hypothetical: it is every algorithm the Boxel backport
+  // plan says to import rather than fork.
+  //
+  // This test was written because three of them were not on either entry.
+  // `mergeTrees` in particular — the one thing most likely to be
+  // reimplemented badly, and the reason K4 exists — was reachable only from
+  // a deep subpath, so the first PR that tried
+  // `import { mergeTrees } from '@cardstack/deck/node'` would have failed and
+  // the likely repair would have been a hand-rolled diff3 in the consumer.
+  // A missing export is not a small thing when the alternative to finding it
+  // is writing it again.
+  test('every algorithm the backport imports is reachable from an entry', function (assert) {
+    // name → the entry it must be on. `root` implies `/node` too, since the
+    // node entry re-exports the root.
+    let contract: [string, 'root' | 'node'][] = [
+      // resolution: the resolver seam
+      ['resolveSpecifier', 'root'],
+      ['parsePackages', 'root'],
+      ['parseDependencies', 'root'],
+      // remix: extends and its flattening
+      ['parseExtends', 'root'],
+      ['flattenInheritance', 'root'],
+      ['resolveInheritance', 'root'],
+      // publish and intake: what a URL is
+      ['classifyReference', 'root'],
+      // sync and pack intake: three-way merge, base = a Version
+      ['mergeTrees', 'root'],
+      ['mergeText', 'root'],
+      ['mergeJsonValues', 'root'],
+      // packs
+      ['planPack', 'root'],
+      ['pack', 'node'],
+      ['unpack', 'node'],
+      ['intakeReadiness', 'node'],
+      ['carryHermetic', 'node'],
+      // identity and the store
+      ['treeHashFromDir', 'node'],
+      ['publishToStore', 'node'],
+      ['resolveVersionSpec', 'node'],
+      // The naming rules a publish gate has to enforce. An embedder that
+      // cannot ask "is this a legal package name" writes its own regex, and
+      // two spellings of the rule is one more than the protocol allows.
+      ['isValidPackageName', 'node'],
+      ['isValidDistTag', 'node'],
+      // catalog verbs: ranges in, pins and scopes out
+      ['lockDeck', 'node'],
+      ['resolveDependencies', 'node'],
+      ['resolveScopes', 'node'],
+      ['parseDependencyValue', 'node'],
+      // moving trees around
+      ['readTreeFromDir', 'node'],
+      ['writeTreeToDir', 'node'],
+      ['forkDeck', 'node'],
+      // offers: a proposal is a Version
+      ['discoverOffers', 'node'],
+      ['planRebase', 'node'],
+      ['applyRebase', 'node'],
+      // endorsement
+      ['signTreeHash', 'node'],
+      ['verifyEnvelope', 'node'],
+      ['verifyLinks', 'node'],
+    ];
+    let missing: string[] = [];
+    for (let [name, entry] of contract) {
+      let table = (entry === 'root' ? root : node) as Record<string, unknown>;
+      if (typeof table[name] !== 'function') {
+        missing.push(`${name} (expected on ${entry})`);
+      }
+    }
+    assert.deepEqual(missing, [], 'reachable from a documented entry');
+  });
 });

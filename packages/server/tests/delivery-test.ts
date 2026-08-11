@@ -218,6 +218,70 @@ module('C: closure preload', () => {
     );
   });
 
+  // Scope keys are prefixes only when they end in a slash; otherwise they
+  // must match the importer exactly. That is the import maps spec's rule, and
+  // without it a scope written `…/gallery` silently governs
+  // `…/gallery-legacy/…`, because one string does start with the other. The
+  // symptom is a neighbouring deck resolving to the wrong version, which is
+  // the same silent-wrong-answer class as the absolute-URL bug above.
+  test('a slashless scope matches exactly, and never a sibling', (assert) => {
+    let map = {
+      imports: { three: '/site/other/three@9/src/Three.js' },
+      scopes: {
+        '@workspace/acme/gallery': { three: '/site/lib/three@1/src/Three.js' },
+      },
+    };
+    assert.strictEqual(
+      resolveSpecifier({
+        specifier: 'three',
+        fromUrl: '@workspace/acme/gallery-legacy/scene',
+        ...map,
+      }),
+      '/site/other/three@9/src/Three.js',
+      'the sibling deck is not swept into the scope',
+    );
+    assert.strictEqual(
+      resolveSpecifier({
+        specifier: 'three',
+        fromUrl: '@workspace/acme/gallery',
+        ...map,
+      }),
+      '/site/lib/three@1/src/Three.js',
+      'an exact match still applies',
+    );
+  });
+
+  // The identifiers a Boxel decklist actually carries are RRIs, not paths —
+  // hand-written, and never valid URLs. Prefix matching has to work in that
+  // space too, which it does because both sides are in the same one.
+  test('scopes work in RRI space, on both sides', (assert) => {
+    let map = {
+      imports: { three: '@catalog/lib/three@0.169.0/build/three.module.js' },
+      scopes: {
+        '@workspace/acme/gallery/legacy-viewer/': {
+          three: '@catalog/lib/three@0.160.0/build/three.module.js',
+        },
+      },
+    };
+    assert.strictEqual(
+      resolveSpecifier({
+        specifier: 'three',
+        fromUrl: '@workspace/acme/gallery/legacy-viewer/scene',
+        ...map,
+      }),
+      '@catalog/lib/three@0.160.0/build/three.module.js',
+    );
+    assert.strictEqual(
+      resolveSpecifier({
+        specifier: 'three',
+        fromUrl: '@workspace/acme/gallery/scene',
+        ...map,
+      }),
+      '@catalog/lib/three@0.169.0/build/three.module.js',
+      'and a module outside the scope keeps the newer pin',
+    );
+  });
+
   function reader(files: Record<string, string>) {
     return async (url: { depot: string; publisher: string; pkg: string; version?: string; path: string }) => {
       let key = formatDeckUrl(url);

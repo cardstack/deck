@@ -5,7 +5,10 @@ That word is Boxel’s. This note freezes the standalone terms and how they
 map when Deck is backported onto a realm server.
 
 Companions: `deck-at-rest.md` (still realm-shaped in places —
-historical), `deck-laws.md`, `packages/server` URL grammar.
+historical), `deck-laws.md`, `packages/server` URL grammar,
+`deck-core-backport-split.md` (isolate backportable Core vs Tools),
+`deck-github-mirror-analysis.md` (depot↔GitHub monorepo mirror + intake),
+`deck-in-motion.md` (§3.7 cross-depot offer/rebase + Boxel/Matrix plan).
 
 ---
 
@@ -128,6 +131,34 @@ Mapping:
 - Allow decks to be addressed even when their files are not under a tidy
   publisher folder — resolution goes through the realm map / decklist, not
   through folder layout alone.
+
+### 3.3 Cross-realm offer / rebase (in-motion on deck-enabled realms)
+
+Standalone Deck’s offer + rebase loop works **inside one depot** today.
+Across depots (and therefore across deck-enabled realms) the same three
+carriages apply — normative detail in `deck-in-motion.md` §3.7:
+
+1. **Public realm readable by both sides** — ordinary Deck GETs of offer
+   tip, upstream Version, digests.  
+2. **Out-of-band message of intent** — not wire protocol yet.  
+3. **If the tip cannot be public:** a **Deck Pack** attached to that
+   message; receiver unpacks, then local offer/rebase.
+
+**Boxel plan for (2):** use **Matrix** as the signal —
+
+| Piece | Role |
+| --- | --- |
+| Matrix **identity** | who is offering / who may accept |
+| Matrix **room** | where the negotiation lives |
+| Matrix **message** | message of intent (base Version, treeHash, why) |
+| optional **Deck Pack** on the message | case (3) when the offer tip is not world-readable |
+
+Realms stay **depot-shaped** for Deck (one realm ↔ one Deck mount from the
+client’s view). Realm **access control** decides who may **issue** an offer
+and who may **run rebase / accept** a pointer move; public catalog realms
+are case (1). GitHub share/gather remains an interim stand-in until Matrix
+negotiation lands (`deck-github-mirror-analysis.md` §5b). Synthesis vs
+locus-shift merge philosophy: `deck-in-motion.md` §3.3a.
 
 ---
 

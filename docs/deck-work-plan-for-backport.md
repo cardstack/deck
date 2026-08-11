@@ -1,8 +1,21 @@
 # Work plan: make the backport a one-way port
 
-**Status: PLAN** (2026-08-09). Branch: `deck/backport-ready`. The deck-repo counterpart to
-[`deck-boxel-monorepo-change-register.md`](deck-boxel-monorepo-change-register.md),
-which lists what changes inside `cardstack/boxel`.
+**Status: LIVING DOC (Deck side)** (2026-08-09). Branch: `deck/backport-ready`.
+
+This is the **Deck-repo living doc** for the backport: protocol questions
+close **here** so Boxel PRs stay wiring. Paired with:
+
+| Doc | Role |
+| --- | --- |
+| [`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md) | Campaign order, tracks, program gates |
+| [`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md) | Boxel stacked PRs (product spine **1 → 1b → 4c**) |
+
+Appendix: [`deck-boxel-monorepo-change-register.md`](deck-boxel-monorepo-change-register.md)
+(file-level Boxel touch list).
+
+**Gate to Boxel PR 0:** W1–W10 (and lean Core) done — see §4 Status. If a
+Boxel review reopens an `extends` / classify / pack question, the fix lands
+in this repo first.
 
 ---
 
@@ -55,6 +68,27 @@ mechanism. Today each would be designed separately, in three different PRs.
 **Done when:** the resolver handles inheritance, conformance covers it, and a
 demo remixes a deck by overriding one entry.
 
+**Amended (2026-08-09): a parent may be named in any address space.**
+`isExactParent` accepted only `pub/pkg@1.2.3`, which is how a DEPOT names its
+own decks — and that quietly made `extends` unusable anywhere else. A Boxel
+realm names a parent with a fully-qualified URL today and with a scoped alias
+(`@catalog/…`) once the RRI migration lands; both were refused, so remix (K8)
+and the four verbs (K5) could not have been wired at all.
+
+The invariant L4 actually needs is that the version cannot MOVE. Where the
+parent lives is the host's business. All three forms are now accepted, with
+the exactness check applied in each, and a trailing slash optional because a
+realm addresses a deck as a directory:
+
+    acme/blog@1.2.3                              depot-local
+    https://app.example/catalog/acme/blog@1.2.3/ fully qualified
+    @catalog/acme/blog@1.2.3/                    scoped alias
+
+Tags and ranges are still refused in every space, and so is a name with no
+version. Accepting the alias form now rather than later is deliberate: it
+means the RRI migration is a change of what Boxel writes, with no Deck
+change trailing behind it.
+
 ### W2 — the absolute-reference classifier
 
 **What.** `(string, decklist) → leave | rebind | rewrite`. Pure, browser-safe.
@@ -90,9 +124,15 @@ negotiation.
 used for — and they prove the model while `negotiated` stays undesigned.
 
 **Done.** `planPack` in `@cardstack/deck/pack-mode` decides what each mode
-carries and prunes; `carryHermetic` in `@cardstack/deck-tools/pack-hermetic`
-goes and gets it, reusing `vendorFromCdn` unchanged. The split is the W7
-line: deciding is pure and browser-safe, fetching is intake work. Driven by
+carries and prunes; `carryHermetic` on `@cardstack/deck/node` goes and gets
+it, reusing `vendorFromCdn` unchanged.
+
+It shipped in Tools first, on the reasoning that carriage is intake work.
+Moved to Core on 2026-08-09 (Boxel decision): the realm download becoming a
+pack needs it, PR 0 deliberately does not take Tools, and the alternative was
+realm-server writing its own — forking the one thing the pack modes exist to
+make uniform. It costs Core nothing new, since every module it reaches was
+already there. Driven by
 `deck pack --hermetic`, verified end to end against a live HTTP origin — the
 graph lands under `_vendor/`, `importmap.json` is rewritten to `$DECK/…`, the
 pack round-trips, and a dependency that would stay live stops the pack.
@@ -145,6 +185,17 @@ the wrong target — the package has two audiences with different runtimes,
 and the root goes to the browser because a missing export is a signpost
 while an accidental `node:fs` in someone's bundle is a morning.
 
+**The entries were incomplete, and the team brief caught it.** `mergeTrees`,
+`forkDeck` and `discoverOffers` were on neither entry — reachable only from
+deep subpaths. The Boxel brief's own PR 0 sample,
+`import { mergeTrees, publishToStore } from '@cardstack/deck/node'`, would
+have failed, and the likely repair is a hand-rolled diff3 in the consumer:
+the exact "fork the algorithm" outcome the contract exists to prevent. Merge
+is now on the ROOT entry (it needs nothing but three trees), and fork,
+offers, tree read/write, the decklist lock and endorsement are on `/node`.
+`entries-test.ts` now asserts the whole list the backport imports, keyed to
+the plan, so the gap cannot reopen quietly.
+
 **`.d.ts` struck from the plan.** `@cardstack/runtime-common` ships raw
 `.ts` — no build, no `types` field, no `dist` — and host and realm-server
 consume it as `workspace:*`. Deck already matches. Declarations would be
@@ -162,9 +213,11 @@ in the first Boxel drop. Smaller cone, smaller review.
 
 **Done.** `@cardstack/deck-tools` holds `npm`, `vendor-npm`, `vendor-map`,
 `vendor-tree`, `derive`, the depot cooldown policy and the rebase daemon.
-Core is down to 26 modules from 30, its only runtime dependency is `semver`
-(`terser` left with `derive`), and `packages/core/src` now contains no
-`fetch`. The layering `core ← server ← tools ← cli` is two lint rules, both
+Core is down to 26 modules from 30 and its only runtime dependency is
+`semver` (`terser` left with `derive`). One network call site remains in
+Core — `vendor.ts`, injectable via `fetchImpl`. (An earlier note here said
+Core reached the network nowhere; the grep behind that claim missed
+`fetchImpl(`.) The layering `core ← server ← tools ← cli` is two lint rules, both
 negative-tested. Full suite **374 pass / 0 fail** against a 373 baseline —
 the extra test is a new one, see below.
 
@@ -361,3 +414,17 @@ packaging — real, but it does not block Boxel from starting.
 | W9 | L12 amendment | **done** — law reworded, conformance now re-reads the bytes after the refusals; the serve path also cannot reach `applyRebase` (W7) |
 | W10 | two proofs | **done** — scopes proof as a test (found and fixed a silent wrong-version bug in `resolveSpecifier`); streaming spike settled, one pass, ~8 MB held at the cap |
 | — | Embroider §3 and §4 | **applied** (see §1a) |
+
+---
+
+## 5. After the gate — Boxel campaign (pointer only)
+
+Do **not** expand this file into a second PR novel. Boxel execution lives in
+the changelist + team brief. Short reminder:
+
+1. Lean Core drop (no Hub / vendor-npm / minify / rebase-daemon).  
+2. Resolver → **thin decklist verbs (1b)** before Timeline.  
+3. Timeline as slices (write → HTTP restore → host → claims → CLI).  
+4. Vendoring, minify, Matrix submission, review tools: off the critical path.  
+5. Program gates: wiring-only PRs, import-not-fork, `deck conform`, author
+   remix-without-copy.

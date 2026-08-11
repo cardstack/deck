@@ -99,9 +99,17 @@ export function resolveSpecifier(options: {
  * never prefix `https://depot/site/x/y.js`, and the scope would be skipped in
  * silence — the resolution would still return an answer, just the wrong
  * version. That is the failure this had to not have.
+ *
+ * A prefix only prefixes when it ENDS IN A SLASH. Otherwise it must match the
+ * importer exactly. That is the spec's rule, and dropping it is the classic
+ * sibling-directory bug: a scope written `…/gallery` silently governs
+ * `…/gallery-legacy/scene`, because one string does start with the other.
+ * It matters more the more identifiers are hand-written — a Boxel decklist
+ * spelling scopes as `@workspace/acme/gallery` is exactly that shape, and the
+ * symptom is a neighbouring deck quietly resolving to the wrong version.
  */
 function scopeMatch(prefix: string, fromUrl: string): string | undefined {
-  if (fromUrl.startsWith(prefix)) {
+  if (covers(prefix, fromUrl)) {
     return prefix;
   }
   let absolute;
@@ -110,7 +118,13 @@ function scopeMatch(prefix: string, fromUrl: string): string | undefined {
   } catch {
     return undefined; // fromUrl is not a usable base, so there is nothing to resolve against
   }
-  return fromUrl.startsWith(absolute) ? absolute : undefined;
+  return covers(absolute, fromUrl) ? absolute : undefined;
+}
+
+function covers(prefix: string, fromUrl: string): boolean {
+  return (
+    prefix === fromUrl || (prefix.endsWith('/') && fromUrl.startsWith(prefix))
+  );
 }
 
 function lookup(
