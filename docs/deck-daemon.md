@@ -17,9 +17,9 @@ jj-lib source used for spikes / dependency work:
 `/Users/chris/Projects/jj` (upstream [`jj-vcs/jj`](https://github.com/jj-vcs/jj)
 `lib/`). That tree is **not** where AMD or esbuild live.
 
-**POC repo:** [`christse/deckd-poc`](https://github.com/christse/deckd-poc) —
-historyd-compatible HTTP, Timeline under `.deck/timeline`, jj via CLI first
-(`jj_lib_notes` for the in-process path).
+**Implementation:** [`packages/deckd/`](../packages/deckd/) — historyd-compatible
+HTTP, Timeline under `.deck/timeline`, jj-lib in-process with a watchexec-shaped
+FS seal plane (`jj_cli` feature optional).
 
 ---
 
@@ -209,16 +209,12 @@ For each: **recommendation**, then **other options** kept visible.
 
 ### Q1 — Where does the deckd crate live?
 
-**Recommendation:** new repo or `deck` workspace path
-`packages/deckd/` (Rust), depending on jj-lib via path/crates.io. TypeScript
-in Deck keeps only the HTTP client (`HistoryBackend` + build client).
+**Resolved:** `packages/deckd/` (Rust), jj-lib from crates.io. TypeScript in
+Deck keeps only the HTTP client (`HistoryBackend` + build client). The former
+`christse/deckd-poc` sidecar is folded in and retired.
 
-**Other options:**
-
-- Soft-fork jj-vcs/jj and add a `deckd` binary crate upstream-shaped in that
-  clone (`/Users/chris/Projects/jj`) — heavier merge tax.
-- Keep using external jj-historyd forever and put only build in a second
-  process — two daemons to supervise; rejected for product default.
+**Rejected options:** soft-fork jj-vcs/jj for a `deckd` binary (merge tax);
+keep external jj-historyd + a second build process (two daemons).
 
 ### Q2 — When does AMD / esbuild run?
 

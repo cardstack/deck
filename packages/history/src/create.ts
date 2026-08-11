@@ -33,7 +33,7 @@ export function isValidHistoryKind(value: string): value is HistoryKind {
   return ['auto', 'jj', 'historyd', 'deckd', 'none'].includes(value);
 }
 
-/** Prefer DECKD_URL (christse/deckd-poc) over legacy DECK_HISTORYD_URL. */
+/** Prefer DECKD_URL (packages/deckd) over legacy DECK_HISTORYD_URL. */
 export function daemonBaseUrl(explicit?: string): string | undefined {
   return (
     explicit ??

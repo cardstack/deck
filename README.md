@@ -375,10 +375,12 @@ into Tools.
   **offers** — a fork with a recorded base, planned and rebased as a pure
   function.
 - **`packages/history`** — the Timeline behind one contract, with two
-  backends: the jj CLI and historyd (jj-lib over localhost HTTP,
+  backends: the jj CLI and historyd/deckd (jj-lib over localhost HTTP,
   ~5-6x faster per call). A missing jj or a dead daemon degrades to
   Versions only, with a printed reason. Restores replay forward as ordinary
   writes, so history only ever grows.
+- **`packages/deckd`** — Rust Timeline daemon (jj-lib + watchexec-shaped FS
+  seals). Hub attaches it via `DECKD_URL`; see `./scripts/run-hub-with-deckd.sh`.
 - **`packages/server`** — read-only zero-framework serving of depots:
   version-less = the working tree (`no-store`); exact = immutable +
   Content-Digest; range/tag = one 302 hop; bare/alias = 301; `?meta`

@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Start christse/deckd-poc then the Deck Hub with Timeline via deckd.
+# Start packages/deckd then the Deck Hub with Timeline via deckd.
 # JS stay identity ESM (main's live pipeline) — no esbuild/derived serve.
 # Usage: ./scripts/run-hub-with-deckd.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DECKD_ROOT="${DECKD_ROOT:-$HOME/Projects/deckd-poc}"
+DECKD_ROOT="${DECKD_ROOT:-$ROOT/packages/deckd}"
 export DECKD_URL="${DECKD_URL:-http://127.0.0.1:8787}"
 export DECK_DEMO_HTTP=1
 # Volta's Node (22+) can load workspace .ts; Homebrew/system Node 20 cannot.
 export PATH="$HOME/.volta/bin:$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
 
 if [[ ! -d "$DECKD_ROOT" ]]; then
-  echo "missing deckd-poc at $DECKD_ROOT" >&2
+  echo "missing deckd at $DECKD_ROOT" >&2
   exit 1
 fi
 

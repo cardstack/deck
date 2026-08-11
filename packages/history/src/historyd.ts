@@ -19,7 +19,7 @@ import {
 //   /file-list-at   {dir, revisionId}                  → {paths}   (deckd; optional)
 //   /restore-plan   {dir, revisionId}                  → {writes, deletes}
 //
-// christse/deckd-poc speaks this contract and closes the old historyd gaps
+// packages/deckd speaks this contract and closes the old historyd gaps
 // (actor on seal, file-list-at). A legacy historyd that 404s /file-list-at
 // still works — `fileListAt` returns undefined so callers cannot mistake a
 // missing capability for an empty tree.
