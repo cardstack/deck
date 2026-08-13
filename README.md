@@ -374,9 +374,8 @@ into Tools.
   **three-way merge** (line-level for text, key-level for JSON), and
   **offers** — a fork with a recorded base, planned and rebased as a pure
   function.
-- **`packages/history`** — the Timeline behind one contract, with two
-  backends: the jj CLI and historyd/deckd (jj-lib over localhost HTTP,
-  ~5-6x faster per call). A missing jj or a dead daemon degrades to
+- **`packages/history`** — the Timeline behind one contract, attached
+  through **deckd** (jj-lib over localhost HTTP). A dead daemon degrades to
   Versions only, with a printed reason. Restores replay forward as ordinary
   writes, so history only ever grows.
 - **`packages/deckd`** — Rust Timeline daemon (jj-lib + watchexec-shaped FS

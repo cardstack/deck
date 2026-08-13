@@ -119,7 +119,6 @@ if (!formReady) {
   await writeFile(join(formDir, 'index.html'), stage1.html);
   await writeFile(join(formDir, 'form.css'), stage1.css);
   await writeFile(join(formDir, 'form.js'), stage1.js);
-  await writeFile(join(formDir, 'importmap.json'), stage1.importmap);
   console.log(formReady ? '   reset live form to stage 1' : '   seeded stage 1');
 } else {
   console.log('   live form present — left alone (run `pnpm steps` to evolve)');

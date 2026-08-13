@@ -33,5 +33,3 @@ default = []
 # Derived esbuild AMD plane (`/ensure-build`, `/artifact-at`). Off by default —
 # Timeline is the product; enable with `cargo run --features build`.
 build = []
-# jj CLI Timeline backend for comparison / fallback. Off by default.
-jj-cli = []

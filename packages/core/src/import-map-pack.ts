@@ -46,25 +46,24 @@ export function packageJsonFromPack(
 export function packagesFromPack(
   packBytes: Buffer,
 ): Record<string, PackageMapEntry> | undefined {
+  let pkg = packageJsonFromPack(packBytes);
+  if (!pkg) {
+    return undefined;
+  }
   let fromMap = (() => {
     let raw = readZipEntry(packBytes, IMPORT_MAP_PATH);
     return raw ? parsePackages(raw.toString('utf8')) : undefined;
   })();
-  let pkg = packageJsonFromPack(packBytes);
-  // Pre-package.json packs still declare entry/lineage only on importmap.json.
-  // Returning undefined here made `deck lock` emit slash-only pins and every
-  // bare `import 'prosemirror-state'` 404 at runtime.
-  if (!pkg) {
-    return fromMap;
-  }
   let mapEntry =
     (pkg.name ? fromMap?.[pkg.name] : undefined) ??
     (pkg.name
       ? fromMap?.[pkg.name.replace(/^@[^/]+\//, '')]
       : undefined) ??
     (fromMap ? Object.values(fromMap)[0] : undefined);
-  let entryPath = entryFromPackageJson(pkg);
-  let exports = subpathExports(pkg);
+  let entryPath = mapEntry?.sourceOnly
+    ? undefined
+    : entryFromPackageJson(pkg);
+  let exports = mapEntry?.sourceOnly ? {} : subpathExports(pkg);
   let merged: PackageMapEntry = {
     version: pkg.version,
     entry: entryPath ? `$DECK/${entryPath}` : undefined,

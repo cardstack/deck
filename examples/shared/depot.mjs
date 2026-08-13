@@ -58,8 +58,8 @@ export async function openDemoDepot({ name, dir, quiet = false }) {
     onError: (error) => console.error(`   history: ${error}`),
   });
   if (!quiet) {
-    // `detail` already names itself ("history: jj 0.43.0 — a Step per save" /
-    // "history: Versions only, no Timeline"), so this only indents it.
+    // `detail` already names itself ("history: deckd at … — a Step per save" /
+    // "history: no deckd at … — Versions only"), so this only indents it.
     console.log(`   ${history.detail}`);
   }
   return { name, dir, storeDir: storeDirFor(dir), history: history.backend };

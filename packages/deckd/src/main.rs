@@ -5,7 +5,7 @@
 //! jj-lib seal. HTTP remains for ensure / list / file-at / optional /note.
 //!
 //! Default binary: Timeline + watch only.
-//! Optional: `--features build` (esbuild plane), `--features jj-cli`.
+//! Optional: `--features build` (esbuild plane).
 
 mod api;
 #[cfg(feature = "build")]

@@ -7,7 +7,7 @@ import type { HistoryBackend } from './backend.ts';
 // Attaching history is still OPTIONAL and never fatal: when deckd is down the
 // caller keeps the Versions loop — same watcher, same store, no seals.
 
-export type HistoryKind = 'auto' | 'deckd' | 'historyd' | 'none';
+export type HistoryKind = 'auto' | 'deckd' | 'none';
 
 export interface CreateHistoryOptions {
   dir: string;
@@ -15,8 +15,6 @@ export interface CreateHistoryOptions {
   debounceMs?: number;
   baseUrl?: string;
   onError?: (error: unknown) => void;
-  /** @deprecated Ignored — jj-cli is removed. */
-  bin?: string;
 }
 
 export interface HistoryAttachment {
@@ -26,7 +24,7 @@ export interface HistoryAttachment {
 }
 
 export function isValidHistoryKind(value: string): value is HistoryKind {
-  return ['auto', 'deckd', 'historyd', 'none'].includes(value);
+  return ['auto', 'deckd', 'none'].includes(value);
 }
 
 /** Prefer DECKD_URL; DECK_HISTORYD_URL is a legacy alias for the same daemon. */
@@ -48,13 +46,12 @@ export async function createHistory(
     return { tier: 1, detail: 'history off — the store is the history' };
   }
 
-  // auto / historyd / deckd → one client, one daemon (deckd).
+  // auto / deckd → one client, one daemon.
   let resolvedUrl = daemonBaseUrl(baseUrl) ?? 'http://127.0.0.1:8787';
   let daemon = new HistorydHistory({
     baseUrl: resolvedUrl,
     debounceMs,
     onError,
-    kind: 'deckd',
   });
   if (await daemon.probe(dir)) {
     return {

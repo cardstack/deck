@@ -162,7 +162,7 @@ for (let row of WITH_SOURCE) {
             deck: {
               packages: {
                 [deckNameForNpm(row.name)]: {
-                  version: row.version,
+                  sourceOnly: true,
                   vendoredFrom: {
                     registry: 'https://registry.npmjs.org',
                     name: row.name,
@@ -182,9 +182,20 @@ for (let row of WITH_SOURCE) {
         'utf8',
       ),
     },
-    ...(pkg.files.get('package.json')
-      ? [{ path: 'package.json', bytes: pkg.files.get('package.json') }]
-      : []),
+    {
+      path: 'package.json',
+      bytes: Buffer.from(
+        JSON.stringify(
+          {
+            name: row.name,
+            version: row.version,
+          },
+          null,
+          2,
+        ) + '\n',
+        'utf8',
+      ),
+    },
     ...files,
   ]);
   let record = await publishToStore(storeDir, deck, row.version, bytes, { tag: 'latest' });
@@ -227,8 +238,6 @@ for (let { spec, entry } of PACKAGES) {
             deck: {
               packages: {
                 [name]: {
-                  version: vendored.pkg.version,
-                  entry: `$DECK/${vendored.entryPath}`,
                   vendoredFrom: vendored.vendoredFrom,
                 },
               },
@@ -310,7 +319,6 @@ let forkFiles = [...viewTree.entries()].map(([path, bytes]) =>
                   packages: {
                     'prosemirror-view': {
                       ...JSON.parse(bytes.toString('utf8')).deck.packages['prosemirror-view'],
-                      version: FORK_VERSION,
                       forkedFrom: {
                         deck: VIEW,
                         version: VIEW_ROW.version,
@@ -318,10 +326,6 @@ let forkFiles = [...viewTree.entries()].map(([path, bytes]) =>
                       },
                       changed: [VIEW_FILE],
                     },
-                  },
-                  // The fork needs the same wiring as upstream, or its own
-                  // bare specifiers resolve to nothing.
-                  dependencies: JSON.parse(bytes.toString('utf8')).deck.dependencies,
                 },
               },
               null,

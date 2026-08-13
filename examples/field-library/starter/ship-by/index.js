@@ -1,8 +1,8 @@
 // The one field on this page that you own.
 //
 // It is an ordinary deck. It imports `date-fns` and `zod` by the bare
-// specifiers npm-shaped source already writes; the decklist in
-// importmap.json says which decks answer to those names. Nothing about this
+// specifiers npm-shaped source already writes; package.json says which
+// decks answer to those names. Nothing about this
 // file knows it is editable.
 //
 // The page beside it writes this file to disk when you press Save. From

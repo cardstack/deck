@@ -216,7 +216,7 @@ editor; the server distributes what it finds.`,
       fail('each --depot <dir> needs a matching --as <name>');
     }
     if (!isValidHistoryKind(values.history!)) {
-      fail('--history must be auto, deckd, historyd, or none');
+      fail('--history must be auto, deckd, or none');
     }
     // A root is a directory OF depots — every child directory is one,
     // named after itself, exactly as it is addressed.

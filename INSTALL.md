@@ -136,7 +136,7 @@ and [`docs/deck-daemon.md`](docs/deck-daemon.md).
 | `Cannot find package '@cardstack/deck'` | `pnpm install` has not run, or you are running a copy of `packages/cli` from outside the workspace |
 | `EADDRINUSE` from `deck serve` | the port is taken. `deck hello` walks forward up to ten ports on its own; `serve` does not, because a server you asked to be on 8788 should not quietly be somewhere else |
 | `deck: --realm is now --depot` | an old flag. It still works and will keep working; the message is a note, not a failure |
-| history reports Versions only | `jj` is not on PATH, and `DECKD_URL` / `DECK_HISTORYD_URL` point at nothing. The live loop is unaffected |
+| history reports Versions only | deckd is not running (`DECKD_URL` / `DECK_HISTORYD_URL` point at nothing). The live loop is unaffected |
 
 ## Uninstall
 

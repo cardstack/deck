@@ -324,7 +324,13 @@ pre.blob:not(.diff) .ln::before {
   text-align: right; color: var(--dim);
   position: sticky; left: 0; background: var(--bg);
 }
-pre.blob .ln:target { background: var(--sel); }
+pre.blob a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--line);
+}
+pre.blob a:hover { text-decoration-color: currentColor; }
 
 /* ── syntax ─────────────────────────────────────────────────────────
    Our own mapping of highlight.js classes onto the palette, rather than

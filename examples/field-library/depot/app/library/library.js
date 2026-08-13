@@ -452,7 +452,7 @@ the browser loads one module and a schema built by one field validates under
 another. Two copies make that false, and the failure is famously baffling.</p>
 <p class="quiet">${Object.keys(map.imports).length} top-level pins,
 ${Object.keys(map.scopes ?? {}).length} scopes, injected by the server from this
-deck's own <code>importmap.json</code>.</p>
+deck's depot <code>importmap.json</code>.</p>
 `;
 
 // ── Style ───────────────────────────────────────────────────────────────

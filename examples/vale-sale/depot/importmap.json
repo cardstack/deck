@@ -2,14 +2,5 @@
   "imports": {
     "vale/ui": "/site/vale/ui/index.js",
     "vale/ui/": "/site/vale/ui/"
-  },
-  "scopes": {
-    "/site/vale/sale/": {
-      "vale/ui": "/site/vale/ui/index.js",
-      "vale/ui/": "/site/vale/ui/"
-    }
-  },
-  "integrity": {
-    "/site/vale/ui/index.js": "sha256-dB8awEDHIG9UOw2WRdAkwVQVJZ37g46TDUllFPC/G7I="
   }
 }

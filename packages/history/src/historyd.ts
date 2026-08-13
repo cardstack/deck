@@ -30,12 +30,10 @@ export interface HistorydOptions {
   baseUrl?: string;
   debounceMs?: number;
   onError?: (error: unknown) => void;
-  /** Wire label for Hub/_history meta. Always deckd in production. */
-  kind?: 'historyd' | 'deckd';
 }
 
 export class HistorydHistory implements HistoryBackend {
-  readonly kind: 'historyd' | 'deckd';
+  readonly kind = 'deckd' as const;
   #base: string;
   #ensured: Set<string> = new Set();
   #queue = new DirQueue();
@@ -49,7 +47,6 @@ export class HistorydHistory implements HistoryBackend {
       process.env.DECK_HISTORYD_URL ??
       DEFAULT_URL
     ).replace(/\/$/, '');
-    this.kind = options.kind ?? 'deckd';
     this.#debouncer = new SealDebouncer({
       debounceMs: options.debounceMs ?? 400,
       seal: (dir, message) => this.seal(dir, message),

@@ -450,22 +450,16 @@ export async function planVendorTree(
   };
 }
 
-// Thin Deck metadata only: entry override (source-mode) and provenance.
-// Dependency ranges live in the unmodified package.json in the same pack.
+// Lineage only. Identity, entry, and ranges live in the unmodified
+// package.json in the same pack.
 export function vendorUnitImportMap(unit: VendoredUnit): Buffer {
   let name = unit.deck.split('/').at(-1)!;
   return Buffer.from(
     JSON.stringify(
       {
-        imports: {},
         deck: {
           packages: {
             [name]: {
-              version: unit.version,
-              entry: `$DECK/${unit.entry}`,
-              ...(Object.keys(unit.exports).length > 0
-                ? { exports: unit.exports }
-                : {}),
               vendoredFrom: unit.vendoredFrom,
             },
           },

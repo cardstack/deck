@@ -332,17 +332,14 @@ export async function vendorFromSourceMap(
 // this deck as a module — which is exactly the promise map mode can keep.
 export function mapVendorImportMap(
   name: string,
-  version: string,
   result: MapVendorResult,
 ): Buffer {
   return Buffer.from(
     JSON.stringify(
       {
-        imports: {},
         deck: {
           packages: {
             [name]: {
-              version,
               sourceOnly: true,
               recoveredFrom: {
                 bundle: result.bundleEntry,

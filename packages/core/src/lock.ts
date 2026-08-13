@@ -5,7 +5,6 @@ import semver from 'semver';
 import {
   treePathFromMapValue,
   IMPORT_MAP_PATH,
-  parsePackages,
 } from './import-map.ts';
 import {
   dependenciesFromPack,
@@ -45,8 +44,10 @@ import { readZipEntry } from './canonical-zip.ts';
 // A specifier key that ends in `/` must map to a value that ends in `/`.
 //
 // pnpm lockfile v9 is the *policy* we emulate when filling those members
-// (importers → scopes, packages/snapshots → pins, overrides, install vs
-// update). The browser never sees YAML; it sees this map.
+// (importers → scopes only when they disagree with `imports`, packages/
+// snapshots → pins, overrides, install vs update). An importer scope that
+// merely copies top-level pins is omitted: the browser already falls back
+// to `imports`. The browser never sees YAML; it sees this map.
 //
 // Three levels of volatility, all expressible, all just URLs
 // (docs/deck-unfrozen-mode.md):
@@ -221,63 +222,38 @@ async function readTreeText(
   return typeof raw === 'string' ? raw : raw.toString('utf8');
 }
 
-function entryFromImportMapText(
-  mapText: string,
-  packageName: string,
-): string | undefined {
-  let packages = parsePackages(mapText);
-  if (!packages) return undefined;
-  let value =
-    packages[packageName]?.entry ?? Object.values(packages)[0]?.entry;
-  return value ? treePathFromMapValue(value) : undefined;
-}
-
-async function entryOf(
+function entryOf(
   options: ResolveOptions,
   target: { depot: string; publisher: string; package: string },
   version: string | undefined,
 ): Promise<string | undefined> {
   if (version === undefined) {
     let pkgPath = `${target.publisher}/${target.package}/${PACKAGE_JSON_PATH}`;
-    let fromTree = await readTreeText(options.readTreeFile, pkgPath);
-    if (fromTree !== undefined) {
-      let entry = entryFromPackageJson(parsePackageJson(fromTree) ?? {});
-      if (entry) return entry;
-    }
-    let dir = join(options.depotDir, target.publisher, target.package);
-    try {
-      let pkgText = await readFile(join(dir, PACKAGE_JSON_PATH), 'utf8');
-      let entry = entryFromPackageJson(parsePackageJson(pkgText) ?? {});
-      if (entry) return entry;
-    } catch {
-      // fall through to importmap.json
-    }
-    // Pre-package.json live decks still declare entry on importmap.json.
-    let mapPath = `${target.publisher}/${target.package}/${IMPORT_MAP_PATH}`;
-    let mapFromTree = await readTreeText(options.readTreeFile, mapPath);
-    if (mapFromTree !== undefined) {
-      return entryFromImportMapText(mapFromTree, target.package);
-    }
-    try {
-      let mapText = await readFile(join(dir, IMPORT_MAP_PATH), 'utf8');
-      return entryFromImportMapText(mapText, target.package);
-    } catch {
-      return undefined;
-    }
+    return readTreeText(options.readTreeFile, pkgPath).then(async (fromTree) => {
+      if (fromTree !== undefined) {
+        return entryFromPackageJson(parsePackageJson(fromTree) ?? {});
+      }
+      let dir = join(options.depotDir, target.publisher, target.package);
+      try {
+        let pkgText = await readFile(join(dir, PACKAGE_JSON_PATH), 'utf8');
+        return entryFromPackageJson(parsePackageJson(pkgText) ?? {});
+      } catch {
+        return undefined;
+      }
+    });
   }
-  let bytes = await readStoredPack(
+  return readStoredPack(
     options.storeDir,
     `${target.publisher}/${target.package}`,
     version,
-  );
-  if (!bytes) {
-    return undefined;
-  }
-  let fromPack = packagesFromPack(bytes);
-  let value =
-    fromPack?.[target.package]?.entry ??
-    fromPack?.[Object.keys(fromPack ?? {})[0] ?? '']?.entry;
-  return value ? treePathFromMapValue(value) : undefined;
+  ).then((bytes) => {
+    if (!bytes) return undefined;
+    let fromPack = packagesFromPack(bytes);
+    let value =
+      fromPack?.[target.package]?.entry ??
+      fromPack?.[Object.keys(fromPack ?? {})[0] ?? '']?.entry;
+    return value ? treePathFromMapValue(value) : undefined;
+  });
 }
 
 function remember(
@@ -587,8 +563,9 @@ export async function resolveScopes(options: {
         record[specifier] = `${base}/${entry}`;
       }
       for (let [alias, targetPath] of Object.entries(exports)) {
-        record[`${specifier}/${alias.replace(/^\.\//, '')}`] =
-          `${base}/${targetPath}`;
+        let sub = alias.replace(/^\.\//, '');
+        if (sub === 'package.json' || sub.endsWith('/package.json')) continue;
+        record[`${specifier}/${sub}`] = `${base}/${targetPath}`;
       }
       scopes.set(scope, record);
       queue.push({ deck: childDeck, version, depth: job.depth + 1 });
@@ -618,8 +595,10 @@ async function entryAndExportsOf(
     (fromPack ? Object.values(fromPack)[0] : undefined);
   let exports: Record<string, string> = {};
   for (let [alias, value] of Object.entries(mapEntry?.exports ?? {})) {
+    let sub = alias.replace(/^\.\//, '');
+    if (sub === 'package.json' || sub.endsWith('/package.json')) continue;
     let treePath = treePathFromMapValue(value);
-    if (treePath) {
+    if (treePath && !treePath.endsWith('/package.json') && treePath !== 'package.json') {
       exports[alias] = treePath;
     }
   }
@@ -722,24 +701,53 @@ async function dependenciesFromDir(
     let pkg = parsePackageJson(
       await readFile(join(deckDir, PACKAGE_JSON_PATH), 'utf8'),
     );
-    if (pkg) {
-      let fromPkg = suggestedDependencies(pkg);
-      if (Object.keys(fromPkg).length > 0) {
-        return fromPkg;
-      }
-    }
-  } catch {
-    // fall through — many demos still declare deps only on importmap.json
-  }
-  // Pre-package.json decks: `deck.dependencies` on the deck's importmap.
-  try {
-    let map = JSON.parse(
-      await readFile(join(deckDir, IMPORT_MAP_PATH), 'utf8'),
-    ) as { deck?: { dependencies?: Record<string, string> } };
-    return map.deck?.dependencies ?? {};
+    return pkg ? suggestedDependencies(pkg) : {};
   } catch {
     return {};
   }
+}
+
+const LINEAGE_KEYS = [
+  'forkedFrom',
+  'vendoredFrom',
+  'derivedFrom',
+  'derivation',
+  'sourceOnly',
+  'recoveredFrom',
+  'baseApi',
+] as const;
+
+/**
+ * A per-pack import map may carry lineage. Pins, identity, and ranges do
+ * not belong here — those live on the depot lock and package.json.
+ * Empty string means the file should be deleted.
+ */
+export function lineageOnlyImportMap(mapText: string): string {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(mapText) as Record<string, unknown>;
+  } catch {
+    return '';
+  }
+  if (!parsed || typeof parsed !== 'object') return '';
+  let vendorKey = 'deck' in parsed ? 'deck' : 'boxel' in parsed ? 'boxel' : '';
+  if (!vendorKey) return '';
+  let vendor = parsed[vendorKey] as
+    | { packages?: Record<string, Record<string, unknown>> }
+    | undefined;
+  let packages = vendor?.packages;
+  if (!packages || typeof packages !== 'object') return '';
+  let kept: Record<string, Record<string, unknown>> = {};
+  for (let [name, entry] of Object.entries(packages)) {
+    if (!entry || typeof entry !== 'object') continue;
+    let slim: Record<string, unknown> = {};
+    for (let key of LINEAGE_KEYS) {
+      if (entry[key] !== undefined) slim[key] = entry[key];
+    }
+    if (Object.keys(slim).length > 0) kept[name] = slim;
+  }
+  if (Object.keys(kept).length === 0) return '';
+  return JSON.stringify({ [vendorKey]: { packages: kept } }, null, 2) + '\n';
 }
 
 export async function lockDeck(options: {
@@ -749,12 +757,14 @@ export async function lockDeck(options: {
   deckDir: string;
 }): Promise<{ resolutions: DependencyResolution[]; text: string; changed: boolean }> {
   let mapPath = join(options.deckDir, IMPORT_MAP_PATH);
-  let mapText = await readFile(mapPath, 'utf8').catch(() => '{\n  "imports": {}\n}\n');
+  let existing = await readFile(mapPath, 'utf8').catch(() => '');
+  let text = existing ? lineageOnlyImportMap(existing) : '';
+  let changed = text !== existing && `${text}` !== `${existing}\n`;
+  if (!existing && !text) changed = false;
   let dependencies = await dependenciesFromDir(options.deckDir);
-  let currentImports = (JSON.parse(mapText).imports ?? {}) as Record<
-    string,
-    string
-  >;
+  let currentImports = (existing
+    ? ((JSON.parse(existing).imports ?? {}) as Record<string, string>)
+    : {}) as Record<string, string>;
   let locate = await inventoryLocations({
     depotDir: options.depotDir,
     storeDir: options.storeDir,
@@ -767,19 +777,6 @@ export async function lockDeck(options: {
     currentImports,
     locate,
   });
-  let scoped = await resolveScopes({
-    depotName: options.depotName,
-    storeDir: options.storeDir,
-    roots: resolutions,
-    locate,
-    depotDir: options.depotDir,
-  });
-  let { text, changed } = applyLock(
-    mapText,
-    resolutions,
-    scoped,
-    options.depotName,
-  );
   return { resolutions, text, changed };
 }
 
@@ -834,7 +831,6 @@ function stillSatisfies(target: string | undefined, spec: string): boolean {
 
 async function integrityFor(
   storeDir: string,
-  depotDir: string,
   depotName: string,
   imports: Record<string, string>,
 ): Promise<Record<string, string>> {
@@ -844,33 +840,57 @@ async function integrityFor(
     if (specifier.endsWith('/') || !target.startsWith(prefix)) {
       continue;
     }
-    let rest = target.slice(prefix.length);
-    let versioned = /^([^/]+\/[^/]+)@([^/]+)\/(.*)$/.exec(rest);
-    if (versioned) {
-      let bytes = await readStoredFile(
-        storeDir,
-        versioned[1],
-        versioned[2],
-        versioned[3],
-      );
-      if (bytes) {
-        integrity[target] = sriSha256(bytes);
-      }
+    if (target.endsWith('/package.json') || specifier.endsWith('package.json')) {
       continue;
     }
-    let live = /^([^/]+)\/([^/]+)\/(.*)$/.exec(rest);
-    if (live) {
-      try {
-        let bytes = await readFile(
-          join(depotDir, live[1], live[2], live[3]),
+    let rest = target.slice(prefix.length);
+    // Sealed pins only. Live `/pub/pkg/file` hashes go stale on every save
+    // and do not belong in the lock — the server rehashes those at serve time.
+    let versioned = /^([^/]+\/[^/]+)@([^/]+)\/(.*)$/.exec(rest);
+    if (!versioned) {
+      continue;
+    }
+    let bytes = await readStoredFile(
+      storeDir,
+      versioned[1],
+      versioned[2],
+      versioned[3],
+    );
+    if (!bytes) {
+      let meta = await readStoreMeta(storeDir, versioned[1]);
+      let exact = meta?.tags[versioned[2]];
+      if (exact) {
+        bytes = await readStoredFile(
+          storeDir,
+          versioned[1],
+          exact,
+          versioned[3],
         );
-        integrity[target] = sriSha256(bytes);
-      } catch {
-        // missing live file — omit rather than lie
       }
+    }
+    if (bytes) {
+      integrity[target] = sriSha256(bytes);
     }
   }
   return integrity;
+}
+
+/** Drop scope rows that copy `imports` — the browser already falls back. */
+function dropEchoedScopes(
+  imports: Record<string, string>,
+  scoped: readonly ScopedResolution[],
+): ScopedResolution[] {
+  let out: ScopedResolution[] = [];
+  for (let { scope, imports: table } of scoped) {
+    let needed: Record<string, string> = {};
+    for (let [spec, url] of Object.entries(table)) {
+      if (imports[spec] !== url) needed[spec] = url;
+    }
+    if (Object.keys(needed).length > 0) {
+      out.push({ scope, imports: needed });
+    }
+  }
+  return out;
 }
 
 export async function lockDepot(
@@ -959,15 +979,11 @@ export async function lockDepot(
   for (let resolution of allResolutions) {
     Object.assign(imports, resolution.imports);
   }
-  let integrity = await integrityFor(
-    options.storeDir,
-    options.depotDir,
-    options.depotName,
-    {
-      ...imports,
-      ...Object.assign({}, ...scoped.map((entry) => entry.imports)),
-    },
-  );
+  scoped = dropEchoedScopes(imports, scoped);
+  let integrity = await integrityFor(options.storeDir, options.depotName, {
+    ...imports,
+    ...Object.assign({}, ...scoped.map((entry) => entry.imports)),
+  });
 
   let continuous = options.continuous ?? existing.deck?.continuous ?? false;
   let parsed: Record<string, unknown> = {

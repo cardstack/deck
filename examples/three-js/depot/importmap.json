@@ -3,12 +3,6 @@
     "ui/pills": "/site/ui/pills@1.0.0/pills.js",
     "ui/pills/": "/site/ui/pills@1.0.0/"
   },
-  "scopes": {
-    "/site/app/studio/": {
-      "ui/pills": "/site/ui/pills@1.0.0/pills.js",
-      "ui/pills/": "/site/ui/pills@1.0.0/"
-    }
-  },
   "integrity": {
     "/site/ui/pills@1.0.0/pills.js": "sha256-lrX+8UWsimQ+3y8TZgeV0+aG8Fm3QECUlAPn4/GNAzk="
   }

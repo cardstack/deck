@@ -9,6 +9,7 @@ import {
   applyLock,
   lockDeck,
   lockDepot,
+  lineageOnlyImportMap,
   parseDepotLock,
   parseDependencyValue,
   resolveDependencies,
@@ -62,6 +63,10 @@ async function writeAppPackage(dependencies: Record<string, string>) {
   );
 }
 
+function lockApp() {
+  return lockDepot({ depotDir, depotName: 'demo', storeDir });
+}
+
 module('the decklist lock: ranges in, pins out', function (hooks) {
   hooks.beforeEach(async function () {
     depotDir = join(await mkdtemp(join(tmpdir(), 'deck-lock-')), 'demo');
@@ -97,12 +102,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
 
   test('a range resolves to the highest STABLE that satisfies it', async function (assert) {
     await writeAppPackage({ 'acme/confetti': '^1.0.0' });
-    let { resolutions, text, changed } = await lockDeck({
-      depotDir,
-      depotName: 'demo',
-      storeDir,
-      deckDir: join(depotDir, 'me', 'app'),
-    });
+    let { resolutions, text, changed } = await lockApp();
     assert.true(changed);
     assert.strictEqual(resolutions[0].version, '1.2.0');
     assert.deepEqual(resolutions[0].imports, {
@@ -126,12 +126,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
 
   test('a range never picks up a prerelease; the dev tag is how you opt in', async function (assert) {
     await writeAppPackage({ 'acme/confetti': '^1.0.0' });
-    let ranged = await lockDeck({
-      depotDir,
-      depotName: 'demo',
-      storeDir,
-      deckDir: join(depotDir, 'me', 'app'),
-    });
+    let ranged = await lockApp();
     assert.strictEqual(
       ranged.resolutions[0].version,
       '1.2.0',
@@ -139,12 +134,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     );
 
     await writeAppPackage({ 'acme/confetti': 'dev' });
-    let tagged = await lockDeck({
-      depotDir,
-      depotName: 'demo',
-      storeDir,
-      deckDir: join(depotDir, 'me', 'app'),
-    });
+    let tagged = await lockApp();
     assert.strictEqual(tagged.resolutions[0].version, '1.3.0-dev.4');
     assert.deepEqual(tagged.resolutions[0].imports, {
       'acme/confetti': '/demo/acme/confetti@dev/confetti.js',
@@ -154,12 +144,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
 
   test('"workspace:*" pins to the working tree; "live" is a read synonym', async function (assert) {
     await writeAppPackage({ 'acme/confetti': 'workspace:*' });
-    let canonical = await lockDeck({
-      depotDir,
-      depotName: 'demo',
-      storeDir,
-      deckDir: join(depotDir, 'me', 'app'),
-    });
+    let canonical = await lockApp();
     assert.strictEqual(canonical.resolutions[0].version, undefined);
     assert.deepEqual(canonical.resolutions[0].imports, {
       'acme/confetti': '/demo/acme/confetti/confetti.js',
@@ -167,32 +152,17 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     });
 
     await writeAppPackage({ 'acme/confetti': 'live' });
-    let synonym = await lockDeck({
-      depotDir,
-      depotName: 'demo',
-      storeDir,
-      deckDir: join(depotDir, 'me', 'app'),
-    });
+    let synonym = await lockApp();
     assert.deepEqual(synonym.resolutions[0].imports, canonical.resolutions[0].imports);
   });
 
   test('an exact pin, and a tag, resolve as themselves', async function (assert) {
     await writeAppPackage({ 'acme/confetti': '2.0.0' });
-    let exact = await lockDeck({
-      depotDir,
-      depotName: 'demo',
-      storeDir,
-      deckDir: join(depotDir, 'me', 'app'),
-    });
+    let exact = await lockApp();
     assert.strictEqual(exact.resolutions[0].version, '2.0.0');
 
     await writeAppPackage({ 'acme/confetti': 'latest' });
-    let tagged = await lockDeck({
-      depotDir,
-      depotName: 'demo',
-      storeDir,
-      deckDir: join(depotDir, 'me', 'app'),
-    });
+    let tagged = await lockApp();
     assert.strictEqual(tagged.resolutions[0].version, '1.2.0');
     assert.deepEqual(
       tagged.resolutions[0].imports,
@@ -206,29 +176,14 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
 
   test('locking twice is a no-op; moving the range moves the pin', async function (assert) {
     await writeAppPackage({ 'acme/confetti': '^1.0.0' });
-    let first = await lockDeck({
-      depotDir,
-      depotName: 'demo',
-      storeDir,
-      deckDir: join(depotDir, 'me', 'app'),
-    });
-    await writeFile(join(depotDir, 'me', 'app', 'importmap.json'), first.text);
+    let first = await lockApp();
+    await writeFile(join(depotDir, 'importmap.json'), first.text);
 
-    let again = await lockDeck({
-      depotDir,
-      depotName: 'demo',
-      storeDir,
-      deckDir: join(depotDir, 'me', 'app'),
-    });
+    let again = await lockApp();
     assert.false(again.changed, 'a settled lock writes nothing');
 
     await writeAppPackage({ 'acme/confetti': '^2.0.0' });
-    let moved = await lockDeck({
-      depotDir,
-      depotName: 'demo',
-      storeDir,
-      deckDir: join(depotDir, 'me', 'app'),
-    });
+    let moved = await lockApp();
     assert.true(moved.changed);
     assert.strictEqual(moved.resolutions[0].version, '2.0.0');
     assert.strictEqual(
@@ -270,12 +225,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       }),
     );
     await writeAppPackage({ 'acme/confetti': 'you/confetti@live' });
-    let { resolutions, text } = await lockDeck({
-      depotDir,
-      depotName: 'demo',
-      storeDir,
-      deckDir: join(depotDir, 'me', 'app'),
-    });
+    let { resolutions, text } = await lockApp();
     assert.strictEqual(resolutions[0].key, 'acme/confetti');
     assert.strictEqual(resolutions[0].alias, 'you/confetti');
     assert.strictEqual(resolutions[0].publisher, 'you');
@@ -295,12 +245,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
   test('an alias to a published fork resolves its range', async function (assert) {
     await publishToStore(storeDir, 'you/confetti', '1.5.0', confetti('1.5.0'));
     await writeAppPackage({ 'acme/confetti': 'you/confetti@^1.0.0' });
-    let { resolutions } = await lockDeck({
-      depotDir,
-      depotName: 'demo',
-      storeDir,
-      deckDir: join(depotDir, 'me', 'app'),
-    });
+    let { resolutions } = await lockApp();
     assert.strictEqual(resolutions[0].version, '1.5.0');
     assert.deepEqual(resolutions[0].imports, {
       'acme/confetti': '/demo/you/confetti@1.5.0/confetti.js',
@@ -311,12 +256,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
   test('an alias to a deck that does not parse is refused', async function (assert) {
     await writeAppPackage({ 'acme/confetti': 'a/b/c/d@live' });
     await assert.rejects(
-      lockDeck({
-        depotDir,
-        depotName: 'demo',
-        storeDir,
-        deckDir: join(depotDir, 'me', 'app'),
-      }),
+      lockApp(),
       /aliases "a\/b\/c\/d"/,
     );
   });
@@ -590,6 +530,66 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       'acme/confetti/': '/demo/acme/confetti@1.2.0/',
     });
   });
+
+  test('a per-pack import map keeps lineage and drops pins', function (assert) {
+    assert.strictEqual(
+      lineageOnlyImportMap(
+        JSON.stringify({
+          imports: { 'acme/confetti': '/demo/acme/confetti@1.2.0/confetti.js' },
+          deck: {
+            packages: {
+              app: {
+                version: '1.0.0',
+                entry: '$DECK/app.js',
+                forkedFrom: { package: 'acme/app', version: '1.0.0' },
+              },
+            },
+            dependencies: { 'acme/confetti': '^1.0.0' },
+          },
+        }),
+      ),
+      JSON.stringify({
+        deck: {
+          packages: {
+            app: { forkedFrom: { package: 'acme/app', version: '1.0.0' } },
+          },
+        },
+      }, null, 2) + '\n',
+    );
+    assert.strictEqual(
+      lineageOnlyImportMap(
+        JSON.stringify({
+          imports: { x: '/x' },
+          deck: { packages: { app: { version: '1.0.0', entry: '$DECK/a.js' } } },
+        }),
+      ),
+      '',
+      'no lineage → the file should go',
+    );
+  });
+
+  test('lockDeck no longer writes pins into the package map', async function (assert) {
+    await writeAppPackage({ 'acme/confetti': '^1.0.0' });
+    await writeFile(
+      join(depotDir, 'me', 'app', 'importmap.json'),
+      JSON.stringify({
+        imports: { 'acme/confetti': '/demo/acme/confetti@1.0.0/confetti.js' },
+        deck: {
+          packages: { app: { version: '0.1.0', entry: '$DECK/app.js' } },
+          dependencies: { 'acme/confetti': '^1.0.0' },
+        },
+      }) + '\n',
+    );
+    let stripped = await lockDeck({
+      depotDir,
+      depotName: 'demo',
+      storeDir,
+      deckDir: join(depotDir, 'me', 'app'),
+    });
+    assert.strictEqual(stripped.text, '');
+    assert.true(stripped.changed);
+    assert.strictEqual(stripped.resolutions[0].version, '1.2.0');
+  });
 });
 
 module('the depot lock: package.json suggests, importmap decides', function (hooks) {
@@ -689,6 +689,11 @@ module('the depot lock: package.json suggests, importmap decides', function (hoo
       'integrity is SRI of the pinned entry',
     );
     assert.ok(integrity['/demo/acme/confetti@1.2.0/confetti.js']);
+    assert.equal(
+      lock.scopes['/demo/me/app/'],
+      undefined,
+      'importer scope that copies imports is omitted',
+    );
   });
 
   test('a second lock without --update keeps the pin even if a newer in-range version appears', async function (assert) {
@@ -764,6 +769,87 @@ module('the depot lock: package.json suggests, importmap decides', function (hoo
       continuous: true,
     });
     assert.true(parseDepotLock(locked.text).continuous);
+  });
+
+  test('integrity hashes sealed pins, not live workspace files', async function (assert) {
+    await mkdir(join(depotDir, 'acme', 'palette'), { recursive: true });
+    await writeFile(
+      join(depotDir, 'acme', 'palette', 'package.json'),
+      JSON.stringify({
+        name: 'palette',
+        version: '0.1.0',
+        exports: { '.': './palette.js' },
+      }) + '\n',
+    );
+    await writeFile(
+      join(depotDir, 'acme', 'palette', 'palette.js'),
+      'export {}\n',
+    );
+    await writeFile(
+      join(depotDir, 'me', 'app', 'package.json'),
+      JSON.stringify({
+        name: 'app',
+        version: '0.1.0',
+        exports: { '.': './app.js' },
+        dependencies: {
+          confetti: '^1.0.0',
+          'acme/palette': 'workspace:*',
+        },
+      }) + '\n',
+    );
+    let lock = parseDepotLock(
+      (await lockDepot({ depotDir, depotName: 'demo', storeDir })).text,
+    );
+    assert.ok(lock.integrity['/demo/acme/confetti@1.2.0/confetti.js']);
+    assert.equal(
+      lock.integrity['/demo/acme/palette/palette.js'],
+      undefined,
+      'live files are not hashed into the lock',
+    );
+  });
+
+  test('a nested scope is kept when it disagrees with imports', async function (assert) {
+    await publishToStore(
+      storeDir,
+      'me/widget',
+      '1.0.0',
+      pack([
+        {
+          path: 'package.json',
+          bytes: Buffer.from(
+            JSON.stringify({
+              name: 'widget',
+              version: '1.0.0',
+              type: 'module',
+              exports: { '.': './w.js' },
+              dependencies: { 'acme/confetti': '^1.0.0' },
+            }),
+          ),
+        },
+        { path: 'w.js', bytes: Buffer.from("import 'acme/confetti';\n") },
+      ]),
+      { tag: 'latest' },
+    );
+    await writeFile(
+      join(depotDir, 'me', 'app', 'package.json'),
+      JSON.stringify({
+        name: 'app',
+        version: '0.1.0',
+        exports: { '.': './app.js' },
+        dependencies: { 'me/widget': '^1.0.0', confetti: '^2.0.0' },
+      }) + '\n',
+    );
+    let lock = parseDepotLock(
+      (await lockDepot({ depotDir, depotName: 'demo', storeDir })).text,
+    );
+    assert.strictEqual(
+      lock.imports.confetti,
+      '/demo/acme/confetti@2.0.0/confetti.js',
+    );
+    assert.strictEqual(
+      lock.scopes['/demo/me/widget@1.0.0/']?.['acme/confetti'],
+      '/demo/acme/confetti@1.2.0/confetti.js',
+    );
   });
 
   test('unfrozenKeysMissingFromLock is empty when the depot lock already pins', async function (assert) {

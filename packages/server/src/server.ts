@@ -426,8 +426,6 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     if (!pkg) {
       return undefined;
     }
-    let entryPath = entryFromPackageJson(pkg);
-    let exports = subpathExports(pkg);
     let mapRaw = await pack.read(IMPORT_MAP_PATH);
     let fromMap = mapRaw
       ? parsePackages(mapRaw.toString('utf8'))
@@ -438,6 +436,10 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         ? fromMap?.[pkg.name.replace(/^@[^/]+\//, '')]
         : undefined) ??
       (fromMap ? Object.values(fromMap)[0] : undefined);
+    let entryPath = mapEntry?.sourceOnly
+      ? undefined
+      : entryFromPackageJson(pkg);
+    let exports = mapEntry?.sourceOnly ? {} : subpathExports(pkg);
     let entry: PackageMapEntry = {
       version: pkg.version,
       ...(entryPath ? { entry: `$DECK/${entryPath}` } : {}),
@@ -458,6 +460,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       ...(mapEntry?.derivedFrom ? { derivedFrom: mapEntry.derivedFrom } : {}),
       ...(mapEntry?.derivation ? { derivation: mapEntry.derivation } : {}),
       ...(mapEntry?.baseApi ? { baseApi: mapEntry.baseApi } : {}),
+      ...(mapEntry?.sourceOnly ? { sourceOnly: mapEntry.sourceOnly } : {}),
     };
     let out: Record<string, PackageMapEntry> = {};
     if (pkg.name) {
@@ -474,9 +477,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     let kinds = new Set(
       depots
         .map((depot) => depot.history?.kind)
-        .filter(
-          (kind): kind is 'historyd' | 'deckd' => kind !== undefined,
-        ),
+        .filter((kind): kind is 'deckd' => kind !== undefined),
     );
     if (kinds.size === 0) {
       return {
@@ -489,7 +490,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     return {
       tier: 2,
       kind: 'sealed-tree',
-      deckd: kinds.has('deckd') || kinds.has('historyd'),
+      deckd: true,
       depots: depots
         .filter((depot) => depot.history)
         .map((depot) => depot.name)

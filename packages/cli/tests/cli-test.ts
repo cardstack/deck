@@ -424,7 +424,7 @@ module('deck CLI end-to-end', function (hooks) {
   test('history + restore: the mulligan, through the CLI', async function (assert) {
     let source = join(work, DECK);
     {
-      let probe = new HistorydHistory({ kind: 'deckd' });
+      let probe = new HistorydHistory();
       let ok = await probe.probe(source);
       probe.close();
       if (!ok) {
@@ -469,10 +469,10 @@ module('deck CLI end-to-end', function (hooks) {
     await assert.rejects(
       // Port 1 answers nothing — an explicitly requested backend that is not
       // there degrades to tier 1 rather than silently becoming another one.
-      deck(['history', 'demo', '--history', 'historyd'], work, {
+      deck(['history', 'demo', '--history', 'deckd'], work, {
         DECK_HISTORYD_URL: 'http://127.0.0.1:1',
       }),
-      /no historyd at http:\/\/127\.0\.0\.1:1/,
+      /no deckd at http:\/\/127\.0\.0\.1:1/,
       'the message names what was missing',
     );
   });

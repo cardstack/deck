@@ -82,8 +82,12 @@ const esc = (value) =>
 // the Hub is allowed to understand.
 // ---------------------------------------------------------------------------
 
+/** The compiled lock. Lives at the depot root, not inside a package. */
+const DEPOT_LOCK = 'importmap.json';
+
 const LANGUAGE = {
   mjs: 'javascript', cjs: 'javascript', js: 'javascript', jsx: 'javascript',
+  json: 'json',
   ts: 'typescript', tsx: 'typescript', mts: 'typescript',
   htm: 'xml', html: 'xml', svg: 'xml', vue: 'xml',
   md: 'markdown', markdown: 'markdown',
@@ -179,6 +183,10 @@ function parseAddress(at) {
   if (second === HISTORY) {
     let [rev, ...tail] = rest;
     return { depot, seal: rev || true, path: tail.join('/') || undefined };
+  }
+  // `/<depot>/importmap.json` is the lock, not a publisher named that.
+  if (second === DEPOT_LOCK && rest.length === 0) {
+    return { depot, path: DEPOT_LOCK };
   }
   let [pkgAndSpec, ...tail] = rest;
   let out = { depot, publisher: second };
@@ -335,8 +343,12 @@ function atStep(parsed, changeId) {
   let within = scopeOf(parsed);
   if (!changeId) {
     // Back to live. A path under `_history` is depot-relative, so its first
-    // two segments are the publisher and package it lives in.
+    // two segments are the publisher and package it lives in — except the
+    // depot lock, which is one file at the root.
     if (!parsed.seal) return addressOf({ ...parsed, spec: undefined });
+    if (within === DEPOT_LOCK) {
+      return addressOf({ depot: parsed.depot, path: DEPOT_LOCK });
+    }
     let [publisher, pkg, ...rest] = within.split('/').filter(Boolean);
     return addressOf({
       depot: parsed.depot,
@@ -847,8 +859,11 @@ function blob(text, path) {
       let rest = lines.slice(CHUNK);
       requestIdleCallback(() => {
         element.insertAdjacentHTML('beforeend', lineSpans(rest, CHUNK));
+        linkifyJsonUrls(element, path);
         if (location.hash) document.querySelector(location.hash)?.scrollIntoView();
       });
+    } else {
+      linkifyJsonUrls(element, path);
     }
   };
   paint(text.split('\n').map(esc));
@@ -861,6 +876,85 @@ function blob(text, path) {
     }
   });
   return element;
+}
+
+/** `compiled 2h ago`, or `compiled` when the tape has not seen this file. */
+async function lockLabel(depot, atSeal) {
+  let seals = await sealsOf(depot);
+  if (atSeal) {
+    let step = seals.find((seal) => seal.changeId === atSeal);
+    return step?.timestamp ? `compiled ${relative(step.timestamp)}` : 'compiled';
+  }
+  let steps = stepsFor(seals, [DEPOT_LOCK]);
+  let when = steps[0]?.timestamp;
+  return when ? `compiled ${relative(when)}` : 'compiled';
+}
+
+/**
+ * Deck addresses in a lock or a package.json are doors, not strings.
+ *
+ * `/hub/ui/nav/nav.js` opens that file in this lens. `./start.js` opens the
+ * sibling in this package. A seal (`/_history/<changeId>/…`) is an address.
+ * An integrity hash is not — `sha256-…` base64 contains `/`, which is not a
+ * path.
+ */
+function linkifyJsonUrls(root, path) {
+  let leaf = (path ?? '').split('/').pop();
+  if (leaf !== DEPOT_LOCK && leaf !== 'package.json') return;
+  let here = parseAddress(currentAt());
+  let walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  let pattern = /\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~@+/-]*)?|\.\/[A-Za-z0-9._~/@+-]+/g;
+  for (let node of nodes) {
+    if (node.parentElement?.closest('a')) continue;
+    let text = node.nodeValue ?? '';
+    pattern.lastIndex = 0;
+    if (!pattern.test(text)) continue;
+    pattern.lastIndex = 0;
+    let frag = document.createDocumentFragment();
+    let last = 0;
+    let match;
+    while ((match = pattern.exec(text))) {
+      if (match.index > last) frag.append(text.slice(last, match.index));
+      let raw = match[0];
+      if (!isLinkableAddress(text, match.index, raw)) {
+        frag.append(raw);
+      } else {
+        let at = raw.startsWith('./')
+          ? here.publisher && here.pkg
+            ? `/${here.depot}/${here.publisher}/${here.pkg}/${raw.slice(2)}`
+            : ''
+          : raw.replace(/\/+$/, '');
+        if (!at || at === '/') {
+          frag.append(raw);
+        } else {
+          let a = document.createElement('a');
+          a.href = `?at=${at}`;
+          a.dataset.at = at;
+          a.textContent = raw;
+          frag.append(a);
+        }
+      }
+      last = match.index + raw.length;
+    }
+    if (last < text.length) frag.append(text.slice(last));
+    node.parentNode?.replaceChild(frag, node);
+  }
+}
+
+/** Integrity `sha256-…` values contain `/`. Seals (`_history/`) do not. */
+function isLinkableAddress(text, index, raw) {
+  if (raw.includes('=') || raw.includes('+')) return false;
+  let before = text.slice(0, index);
+  if (/sha256-[A-Za-z0-9+/]*$/.test(before)) return false;
+  if (raw.startsWith('./')) return true;
+  let path = raw.replace(/\/+$/, '');
+  return (
+    path.includes('/_history/') ||
+    path.includes('@') ||
+    /\.[A-Za-z][A-Za-z0-9]+$/.test(path)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1153,6 +1247,7 @@ async function viewDepots() {
     `<h1>depots on this server</h1>` +
     `<table><thead><tr><th class="heat-cell"></th><th>depot</th>` +
     `<th class="num">decks</th>` +
+    `<th>lock</th>` +
     `<th>history</th><th>on disk</th></tr></thead><tbody>` +
     scored
       .map(
@@ -1162,6 +1257,8 @@ async function viewDepots() {
           `<td><a class="s-depot" href="?at=/${esc(depot.name)}" ` +
           `data-at="/${esc(depot.name)}">${esc(depot.name)}</a></td>` +
           `<td class="num">${depot.packages.length}</td>` +
+          `<td><a class="s-file" href="?at=/${esc(depot.name)}/${DEPOT_LOCK}" ` +
+          `data-at="/${esc(depot.name)}/${DEPOT_LOCK}">${DEPOT_LOCK}</a></td>` +
           `<td>${
             depot.history
               ? `<a class="s-seal" href="?at=/${esc(depot.name)}/${HISTORY}" ` +
@@ -1229,7 +1326,11 @@ async function viewCatalog(parsed) {
       depot.history
         ? `<a class="s-seal" href="?at=/${esc(depot.name)}/${HISTORY}" data-at="/${esc(depot.name)}/${HISTORY}">${esc(depot.history)}</a>`
         : 'Versions only'
-    }</div></div>` +
+    }</div>` +
+    `<div><b>lock</b> <a class="s-file" href="?at=/${esc(depot.name)}/${DEPOT_LOCK}" ` +
+    `data-at="/${esc(depot.name)}/${DEPOT_LOCK}">${DEPOT_LOCK}</a>` +
+    ` <span class="dim">${esc(await lockLabel(depot.name))}</span></div>` +
+    `</div>` +
     filterBox(decks.length, 'decks') +
     `<table><thead><tr><th class="heat-cell"></th><th>deck</th>` +
     `<th class="num">versions</th>` +
@@ -1471,6 +1572,47 @@ async function viewSealFile(parsed, vs) {
   };
 }
 
+/**
+ * The compiled lock, as a file.
+ *
+ * It sits at the depot root rather than inside a package, so `_browse` and
+ * the package catalog never list it. Opening it still has to be the ordinary
+ * blob: syntax colour, a raw link, and the Timeline scoped to this path so
+ * `[` / `]` walk the saves that rewrote the pins.
+ */
+async function viewDepotLock(parsed, vs) {
+  let url = addressOf(parsed);
+  let response = await fetch(url);
+  if (!response.ok) {
+    throw Object.assign(new Error(`${DEPOT_LOCK} is not in this depot`), {
+      code: 'file-not-found',
+    });
+  }
+  let text = await response.text();
+
+  if (vs) {
+    let before = await fetch(vs).then((other) => (other.ok ? other.text() : ''));
+    return (
+      crumbs(parsed) +
+      `<main>` +
+      fileDiffView(before, text, vs, url) +
+      `</main>`
+    );
+  }
+
+  return {
+    html:
+      crumbs(parsed) +
+      `<main><div class="facts" data-tour="facts">` +
+      `<div><b>lock</b> ${esc(await lockLabel(parsed.depot, parsed.seal && parsed.seal !== true ? String(parsed.seal) : undefined))}</div>` +
+      `<div><b>size</b> ${esc(bytes(text.length))}</div></div>` +
+      `<p class="raw"><a href="${esc(url)}">raw</a></p>` +
+      `<div id="blob"></div></main>`,
+    text,
+    path: parsed.path ?? DEPOT_LOCK,
+  };
+}
+
 /** `pzpsvyqoysw… /app/run/run.js` — enough of a seal address to tell two apart. */
 function shortSeal(address) {
   let match = String(address).match(/\/_history\/([^/]+)(\/.*)?$/);
@@ -1622,6 +1764,7 @@ async function render() {
     else if (parsed.seal === true) out = await viewSealLog(parsed);
     else if (parsed.seal && !parsed.path) out = await viewSeal(parsed, vs);
     else if (parsed.seal) out = await viewSealFile(parsed, vs);
+    else if (parsed.path === DEPOT_LOCK && !parsed.pkg) out = await viewDepotLock(parsed, vs);
     else if (parsed.pkg) out = await viewAddress(parsed, vs);
     else out = await viewCatalog(parsed);
 

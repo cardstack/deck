@@ -1,9 +1,0 @@
-{
-  "imports": {},
-  "deck": {
-    "packages": {
-      "table": { "version": "0.1.0", "entry": "$DECK/table.js" }
-    },
-    "dependencies": { "std/tokens": "^1.0.0" }
-  }
-}

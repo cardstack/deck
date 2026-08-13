@@ -38,7 +38,7 @@
 //! 1. Install a rustc that can build the sibling jj tree.
 //! 2. Uncomment `jj-lib` path dep in `Cargo.toml`.
 //! 3. Add `src/timeline/jj_lib.rs` implementing [`super::Timeline`].
-//! 4. Select backend with `DECKD_TIMELINE=jj-lib|jj-cli`.
+//! 4. Select backend with `DECKD_TIMELINE=jj-lib`.
 //!
 //! Do **not** maintain a long-lived full fork of jj-vcs/jj unless a lib patch
 //! for custom `.deck/timeline` without symlink is required upstream.

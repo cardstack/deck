@@ -7,8 +7,6 @@ use std::pin::Pin;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[cfg(feature = "jj-cli")]
-pub mod jj_cli;
 pub mod jj_lib;
 pub mod jj_lib_notes;
 

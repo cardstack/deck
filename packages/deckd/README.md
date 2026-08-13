@@ -19,7 +19,6 @@ Dependency: crates.io `jj-lib = "0.43.0"` (same pin as historyd).
 | --- | --- | --- |
 | *(none)* | ✓ | jj-lib Timeline + FS watch seals |
 | `build` | off | `/ensure-build`, `/artifact-at` (esbuild AMD) |
-| `jj-cli` | off | compile unused CLI timeline backend |
 
 ```bash
 cargo run                         # Timeline + watch

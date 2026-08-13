@@ -37,8 +37,6 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { forkDeck } from '@cardstack/deck/fork';
-import { IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
-import { lockDeck } from '@cardstack/deck/lock';
 import { pack } from '@cardstack/deck/pack';
 import { discoverOffers } from '@cardstack/deck/offer';
 import { publishToStore } from '@cardstack/deck/store';
@@ -47,7 +45,7 @@ import { rebasePass } from '@cardstack/deck-tools/rebase-daemon';
 import { storeDirFor } from '@cardstack/deck-server/depot';
 import { createDemoServer, demoOrigin } from '../shared/depot.mjs';
 import { demoBuildMode, rmKeepingNotes } from '../shared/reset.mjs';
-import { publishShared } from '../shared/publish.mjs';
+import { publishShared, lockAndWrite } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8794);
@@ -111,10 +109,15 @@ export async function currencies() {
 function upstreamTree(version, codes) {
   return [
     {
-      path: IMPORT_MAP_PATH,
+      path: 'package.json',
       bytes: Buffer.from(
         JSON.stringify(
-          { deck: { packages: { currencies: { version, entry: '$DECK/index.js' } } } },
+          {
+            name: 'currencies',
+            version,
+            type: 'module',
+            exports: { '.': './index.js' },
+          },
           null,
           2,
         ) + '\n',
@@ -179,13 +182,8 @@ console.log(`   shared: ${pills.name}@${pills.version} · ${pills.treeHash.slice
 // 2. The app that consumes it, locked to the release and sealed.
 // ---------------------------------------------------------------------------
 let appDir = join(depotDir, ...APP.split('/'));
-let locked = await lockDeck({ depotDir, depotName: DEPOT, storeDir, deckDir: appDir });
-if (locked.changed) {
-  await writeFile(join(appDir, IMPORT_MAP_PATH), locked.text);
-  console.log('   (the checked-in lock was stale and has been rewritten)');
-}
+let locked = await lockAndWrite({ depotDir, depotName: DEPOT, storeDir });
 let appFiles = await readTreeFromDir(appDir);
-appFiles.set(IMPORT_MAP_PATH, Buffer.from(locked.text, 'utf8'));
 let app = await publishToStore(
   storeDir,
   APP,

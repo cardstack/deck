@@ -25,7 +25,7 @@ export const DEMOS = [
     look: [
       'Both amendments land in 1.5.0 with zero conflicts. Nobody resolved anything.',
       'The fork rebases onto 1.5.0 and keeps its three internal codes.',
-      'The one conflict reported is <code>importmap.json</code> — both sides renamed the version. A machine can combine two sets of codes; it cannot decide what to CALL the combination.',
+      'The one conflict reported is <code>package.json</code> — both sides renamed the version. A machine can combine two sets of codes; it cannot decide what to CALL the combination.',
       'Every state is at rest at its own immutable URL. There is no write endpoint in this demo at all.',
     ],
     tries: [
@@ -119,7 +119,7 @@ export const DEMOS = [
     ],
     tries: [
       { label: 'the form at the working tree', path: '/site/app/library@1.0.0/index.html?with=you/ship-by' },
-      { label: 'a field deck’s lock', path: '/site/fields/swatch@1.0.0/importmap.json' },
+      { label: 'the depot lock', path: '/site/importmap.json' },
       { label: 'chroma-js 3.1.2', path: '/site/lib/chroma-js@3.1.2/index.js' },
       { label: 'chroma-js 2.6.0, at the same time', path: '/site/lib/chroma-js@2.6.0/index.js' },
     ],
@@ -217,7 +217,7 @@ export const DEMOS = [
     tries: [
       { label: 'readable, not runnable', path: '/site/src/prosemirror-model@1.25.11/src/schema.ts' },
       { label: 'runnable, not readable', path: '/site/lib/prosemirror-model@1.25.11/dist/index.js' },
-      { label: "the app's scopes", path: '/site/app/editor/importmap.json' },
+      { label: "the depot lock's scopes", path: '/site/importmap.json' },
     ],
   },
 ];

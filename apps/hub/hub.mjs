@@ -229,10 +229,10 @@ let depots = [hub, ...demos];
 // answered `no-history`. The tape loaded and every step in it 404'd, which is
 // the worst arrangement of the two, because it looks like it works.
 //
-// The SAME backend object, not a second `createHistory` on the same path. Two
-// backends over one `.jj` are two processes' worth of locking against one
-// working copy, and jj is entitled to assume otherwise. Sharing costs nothing
-// and is also simply what is true: there is one timeline here.
+// The SAME backend object, not a second `createHistory` on the same path.
+// Two clients over one timeline are two processes' worth of locking against
+// one working copy. Sharing costs nothing and is also simply what is true:
+// there is one timeline here.
 const origins = new Map();
 const originErrors = new Map();
 // The write path, for the examples that have one. Not part of Deck: the deck

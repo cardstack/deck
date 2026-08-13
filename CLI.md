@@ -66,7 +66,7 @@ every save:
    seal, no noise. Touching a file is not a change.
 3. **Auto-publish** `<base>-dev.N`, tagged `dev`. Immutable from that
    instant.
-4. **Seal it as a Step** (when `jj`, historyd, or **deckd** is attached) —
+4. **Seal it as a Step** (when **deckd** is attached) —
    including the saves that did *not* publish, so the states between versions
    exist too. With `DECKD_URL`, deckd’s FS watch owns seals; Hub still
    publishes + HMR.

@@ -1,0 +1,12 @@
+{
+  "name": "meeting-slot",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "dependencies": {
+    "luxon": "lib/luxon@^3.5.0",
+    "zod": "lib/zod@^3.25.0"
+  }
+}

@@ -13,7 +13,11 @@ import { pack, peekPacklist } from '@cardstack/deck/pack';
 import { publishToStore } from '@cardstack/deck/store';
 import { lockDepot, DEPOT_LOCK_PATH } from '@cardstack/deck/lock';
 import { assertLinksOk, verifyLinks } from '@cardstack/deck/verify-links';
-import { vendorFromCdn, vendorImportMap } from '@cardstack/deck/vendor';
+import {
+  vendorFromCdn,
+  vendorImportMap,
+  vendorPackageJson,
+} from '@cardstack/deck/vendor';
 import {
   deckNameForNpm,
   probeEntries,
@@ -158,9 +162,9 @@ Whichever mode, the canonical source travels with the bytes as
       let bytes = pack([
         {
           path: 'importmap.json',
-          bytes: mapVendorImportMap(deckName, deckVersion, recovered),
+          bytes: mapVendorImportMap(deckName, recovered),
         },
-        ...recovered.files,
+        ...recovered.files.filter((file) => file.path !== 'importmap.json'),
       ]);
       console.log(`  treeHash ${peekPacklist(bytes).treeHash.hash}`);
       if (values.depot && values.publisher) {
@@ -242,13 +246,18 @@ Whichever mode, the canonical source travels with the bytes as
       console.log(`vendored ${moduleCount} modules from ${url}`);
     }
 
-    let bytes = pack([
-      {
-        path: 'importmap.json',
-        bytes: vendorImportMap(deckName, deckVersion, entryPath, provenance),
-      },
-      ...vendoredFiles,
-    ]);
+    let files = vendoredFiles.filter((file) => file.path !== 'importmap.json');
+    if (!files.some((file) => file.path === 'package.json')) {
+      files.push({
+        path: 'package.json',
+        bytes: vendorPackageJson(deckName, deckVersion, entryPath),
+      });
+    }
+    files.push({
+      path: 'importmap.json',
+      bytes: vendorImportMap(deckName, provenance),
+    });
+    let bytes = pack(files);
     console.log(`  treeHash ${peekPacklist(bytes).treeHash.hash}`);
     if (externals.length > 0) {
       console.log(

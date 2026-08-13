@@ -92,6 +92,7 @@ export {
   inventoryLocations,
   lockDeck,
   lockDepot,
+  lineageOnlyImportMap,
   parseDepotLock,
   parseDependencyValue,
   resolveDependencies,

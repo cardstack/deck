@@ -230,8 +230,7 @@ function renderTruth() {
   }
   truth.innerHTML = \`<strong>History: \${h.tier === 2 ? 'Timeline' : 'Versions only'}</strong> —
     \${esc(h.kind)}.
-    jj: <code>\${h.jj}</code>,
-    historyd: <code>\${h.historyd}</code>.
+    deckd: <code>\${h.deckd}</code>.
     \${esc(h.note)}
     Layout: <code>\${esc(catalogMeta.layout)}</code>\`;
 }

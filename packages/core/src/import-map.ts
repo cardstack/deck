@@ -46,10 +46,9 @@ export function parsePackages(
   }
 }
 
-// What this deck depends on, as RANGES: `"acme/confetti": "^1.0.0"`. The
-// author writes intent here; `deck lock` resolves it into `imports` pins
-// (see lock.ts) so consumers of a published deck never inherit somebody
-// else's working tree.
+// Ranges live in package.json (`dependencies`). This reader exists so a
+// thin per-pack map written before that split can still be inspected; it
+// is not how `deck lock` or serve resolve.
 export function parseDependencies(
   jsonText: string,
 ): Record<string, string> | undefined {
