@@ -578,34 +578,15 @@ export function resumeHubTour(options = {}) {
 }
 
 export function mountTourButton(host) {
-  if (!host || host.querySelector('[data-role="tour"]')) return;
+  let root = host ?? document;
+  let btn = root.querySelector('[data-role="tour"]');
+  if (!btn || btn.dataset.bound === '1') return;
   ensureTourCss();
-  let bar = document.createElement('p');
-  bar.className = 'tour-launch';
-  bar.innerHTML =
-    `<button type="button" class="tour-btn" data-role="tour">Walk the stories</button> ` +
-    `<span class="dim">4 stories · run, versions, trial, scrub · ` +
-    `<a href="/deckbook">or read the Deckbook</a></span>`;
-  host.insertBefore(bar, host.firstChild);
-  bar.querySelector('[data-role="tour"]').addEventListener('click', () => {
-    startHubTour();
-  });
+  btn.dataset.bound = '1';
+  btn.addEventListener('click', () => startHubTour());
 }
 
 const TOUR_CSS = `
-.tour-launch { margin: 0 0 var(--s3, 1.5rem); }
-.tour-btn {
-  font: inherit;
-  font-family: var(--mono);
-  cursor: pointer;
-  color: var(--bg, #111);
-  background: var(--a-live, #df8e1d);
-  border: 0;
-  padding: .2em .8em;
-  letter-spacing: .04em;
-}
-.tour-btn:hover { filter: brightness(1.08); }
-
 /* Caption lives on <deck-keys> — never cover the exhibit with a popover. */
 .deck-tour-popover.driver-popover,
 .driver-popover.deck-tour-popover {

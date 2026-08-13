@@ -945,6 +945,15 @@ function section(id, number, title, body) {
   );
 }
 
+const DECK_MARK = `
+██████╗ ███████╗ ██████╗██╗  ██╗
+██╔══██╗██╔════╝██╔════╝██║ ██╔╝
+██║  ██║█████╗  ██║     █████╔╝ 
+██║  ██║██╔══╝  ██║     ██╔═██╗ 
+██████╔╝███████╗╚██████╗██║  ██╗
+╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝
+`.trim();
+
 /**
  * `state` may be undefined, and that is the normal first call.
  *
@@ -1053,10 +1062,8 @@ function view(state) {
     // `<details>` and not a scripted menu: it opens without JavaScript, it is
     // focusable and announced by a screen reader for free, and the browser
     // already knows how to draw the state.
-    // `.prose` is the documentation type system, defined once in theme.css
-    // and specified in docs/deck-hub-typography.md. It governs this page and
-    // the Deckbook and touches nothing in the three lens apps.
-    `<div class="start prose">` +
+    // Same lattice as browse / run / track — one face, one size, no prose scale.
+    `<div class="start">` +
     // OPEN BY DEFAULT ON A WIDE SCREEN, AND IT HAS TO BE THE ATTRIBUTE.
     //
     // A closed `<details>` hides its children in the browser's own shadow
@@ -1070,24 +1077,21 @@ function view(state) {
     // contents and a desktop reader can still collapse it.
     `<details class="toc" data-role="toc"${WIDE.matches ? ' open' : ''}>` +
     `<summary>contents</summary>` +
-    // The Deckbook is the long form of this page and a separate document, so
-    // it belongs in the same contents list — marked as a departure rather
-    // than dressed up as one more section of this one.
     `<nav>${toc}` +
-    `<a class="toc-out" href="/deckbook"><i>↗</i>The Deckbook<br>` +
-    `<span class="dim">worked examples, full transcripts</span></a>` +
+    `<a class="toc-out" href="/deckbook">deckbook</a>` +
     `</nav>` +
     `</details>` +
     `<main class="start-main" data-role="main">` +
-    // WHAT IS THIS. The hero said "Everything here is runnable", which is a
-    // true and clever thing to notice about the page and tells a first-time
-    // reader nothing about what the project is. A landing page owes the
-    // reader the description before the observation.
     `<header class="hero">` +
-    // The mark, then the sentence. Only the NAME is the mark — "is" belongs to
-    // the sentence and takes the sentence's face, or the mark grows a word.
-    `<h1><b>DECK</b> is version management without the commit, package
-     management without the install, and cloud delivery without the deploy.</h1>` +
+    `<p class="prompt"><span class="prompt-mark">hub</span>start</p>` +
+    `<pre class="deck-mark" role="img" aria-label="DECK">${DECK_MARK}</pre>` +
+    `<h1>version management without the commit<br>` +
+    `package management without the install<br>` +
+    `cloud delivery without the deploy</h1>` +
+    `<div class="doors">` +
+    `<a class="here" href="/deckbook">deckbook</a>` +
+    `<button type="button" data-role="tour">walk the stories</button>` +
+    `</div>` +
     // The unifying assumption, before any mechanism. Three claims that each
     // sound like a separate trick are one claim said three times, and a
     // reader who does not get that in the second paragraph reads the rest as
@@ -1266,7 +1270,7 @@ async function refresh() {
 }
 
 paint();
-mountTourButton(app.querySelector('.hero'));
+mountTourButton(app);
 resumeHubTour({ waitMs: 120 });
 refresh();
 setInterval(refresh, REFRESH_MS);
@@ -1285,147 +1289,165 @@ WIDE.addEventListener('change', (event) => {
   if (toc) toc.open = event.matches;
 });
 
-// IN THE HOUSE STYLE, WHICH MEANS ADDING ALMOST NOTHING.
-//
-// The theme's rules are one typeface at one size doing every job, colour only
-// where colour means something, measurement in `ch` and whole rows, and
-// structure from alignment rather than from boxes. A page of prose is exactly
-// where those get broken — the reflex is a bigger heading and a bordered code
-// block — so this sets no font sizes at all and draws one hairline per
-// section. Hierarchy comes from the numbered inverse marker the nav already
-// uses, and from the measure.
+// Same lattice as the three lenses. One face, one size, colour only where it
+// means something. The mark is ASCII because this is a terminal; the Deckbook
+// door is inverse because that is how this surface says "go here" — the same
+// fill as the current nav tab.
 const START_CSS = `
-/* Page-specific layout only. Everything typographic — the two faces, the
-   scale, the rhythm, the measure, the tables — lives in the .prose block in
-   theme.css and is specified in docs/deck-hub-typography.md. If a rule here
-   is about type, it is in the wrong file. */
-
-.tour-launch { margin: 0 0 var(--s3, 1.5rem); }
-.hero { padding: var(--s2) 0 var(--s4); }
-/* "Deck is" — THE SAME MARK AS THE ONE IN THE NAV.
-   The name appeared twice on the first screen in two different typefaces:
-   Commit Mono in the corner, the prose sans in the sentence. Two faces for
-   one word is two marks, and a reader has to decide whether they refer to
-   the same thing. So the name takes the vendored face wherever it appears,
-   at the same weight, in full-strength foreground and never in a hue from
-   the address palette — those hues mean depot, publisher and package, and
-   spending one on the product name makes the name read as a segment.
-
-   Tracking is lighter than the nav's .22em: that value is for four capitals
-   at 13px, and the same value at 31px pulls the word apart. */
-.hero h1 b {
-  font-family: var(--mono); font-weight: 700;
-  letter-spacing: .1em; color: var(--fg);
-  /* The mark is set in capitals wherever it appears, so the case is a rule
-     here and not a decision the copy makes. Tracking sits between the nav's
-     .22em and none: that value is tuned for 13px, and the same figure at
-     31px pulls four letters into four separate letters. */
-  text-transform: uppercase;
-  margin-right: .15em;
+.start { display: block; max-width: 108ch; }
+.start h2, .start h3 {
+  font-size: 1em; font-weight: 600; color: var(--fg);
+  margin: calc(var(--row) * 1.2em) 0 calc(var(--row) * .3em);
 }
-.lede { opacity: .9; }
+.start h2:first-child, .start h3:first-child { margin-top: 0; }
+.start .lede { color: var(--dim); max-width: 88ch; }
+.start pre.term {
+  background: var(--panel); padding: calc(var(--row) * .4em) 1.5ch;
+  overflow-x: auto; margin: calc(var(--row) * .8em) 0;
+}
+.start td.says, .start td.ok, .start td.todo { white-space: normal; max-width: 64ch; }
+.start td.ok { color: var(--green); font-weight: 600; }
 
-/* The counts. Doors, so each gets a door's hover; tabular figures so the
-   numbers sit in a row rather than jittering as they update. */
+.hero { padding: calc(var(--row) * .6em) 0 calc(var(--row) * 1.4em); }
+.deck-mark {
+  margin: 0 0 calc(var(--row) * .8em);
+  font-family: var(--mono); font-size: 15px; line-height: 1.05;
+  color: var(--fg); overflow-x: auto; user-select: none;
+  white-space: pre;
+}
+.hero .prompt { padding-top: 0; color: var(--dim); }
+.hero h1 {
+  font-size: 1em; font-weight: 400; color: var(--fg);
+  max-width: none; margin: 0 0 calc(var(--row) * .8em);
+  line-height: var(--row);
+}
+
+/* Same gesture as .deck-nav-here — filled chip, package hue, no box. */
+.doors {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0;
+  margin: 0 0 calc(var(--row) * 1em);
+}
+.doors .here, .doors button {
+  font: inherit; padding: 0 1ch; margin-right: 1ch;
+}
+.doors .here {
+  background: var(--a-package); color: var(--bg); font-weight: 600;
+  text-decoration: none;
+}
+.doors .here:hover {
+  background: var(--fg); color: var(--bg); text-decoration: none;
+}
+.doors button {
+  cursor: pointer; background: none; color: var(--dim); border: 0;
+}
+.doors button:hover { color: var(--fg); background: var(--sel); }
+
+.start .isjust { max-width: 88ch; margin: calc(var(--row) * .8em) 0; }
+.start .isjust dt { font-weight: 600; margin-top: calc(var(--row) * .5em); }
+.start .isjust dt:first-child { margin-top: 0; }
+.start .isjust dd { margin: 0; color: var(--dim); }
+@media (min-width: 60rem) {
+  .start .isjust {
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 42ch) minmax(0, 1fr);
+    column-gap: 3ch; align-items: baseline;
+  }
+  .start .isjust dt, .start .isjust dd {
+    margin-top: 0; padding: calc(var(--row) * .2em) 0;
+    border-top: 1px solid var(--line);
+  }
+  .start .isjust dt:first-of-type,
+  .start .isjust dt:first-of-type + dd { border-top: none; }
+}
+
 .stats {
-  display: flex; flex-wrap: wrap; gap: var(--s3);
-  padding: var(--s3) 0 0; margin-top: var(--s2);
+  display: flex; flex-wrap: wrap; gap: .2em 2.5ch;
+  padding: calc(var(--row) * .6em) 0 0; margin-top: calc(var(--row) * .6em);
   border-top: 1px solid var(--line);
 }
 .stat {
   display: flex; align-items: baseline; gap: .8ch; text-decoration: none;
-  font-size: var(--t-small);
 }
 .stat b {
-  color: var(--a-package); font-size: var(--t-h3); font-weight: 600;
+  color: var(--a-package); font-weight: 600;
   font-variant-numeric: tabular-nums;
-  font-family: var(--mono, ui-monospace, monospace);
 }
 .stat span { color: var(--dim); }
 .stat:hover b, .stat:hover span { color: var(--fg); }
 
-/* A section is a band, and the rule is the band's edge — the space above a
-   heading does the separating, the rule only confirms it. */
-.doc { padding-top: var(--s6); border-top: 1px solid var(--line); }
+.doc { padding-top: calc(var(--row) * 1.6em); border-top: 1px solid var(--line); }
 .doc:first-of-type { border-top: none; }
 .doc > h2 { margin-top: 0; }
 .doc-n {
   display: inline-block; min-width: 2.4ch; text-align: center;
   background: var(--fg); color: var(--bg);
-  font-size: var(--t-micro); font-weight: 600;
+  font-size: .82em; font-weight: 600;
   padding: .1em .5ch; margin-right: 1.5ch;
-  vertical-align: .25em;
+  vertical-align: .15em;
 }
-.doc-sub { padding-top: var(--s2); }
+.doc-sub { padding-top: calc(var(--row) * .6em); }
 
-/* The benefit list: a claim, its explanation, and the place to check it.
-   Not a table — each item is a short essay, and a table would force the
-   explanation into a cell that wants to be a paragraph. */
-.bens { list-style: none; padding: 0; margin: 0; max-width: none; }
-.ben {
-  padding: var(--s2) 0; border-bottom: 1px solid var(--line);
-  max-width: var(--measure);
-}
+.bens { list-style: none; padding: 0; margin: 0; }
+.ben { padding: calc(var(--row) * .6em) 0; border-bottom: 1px solid var(--line); max-width: 88ch; }
 .ben:last-child { border-bottom: none; }
-.ben > b { display: block; font-size: var(--t-body); margin-bottom: 4px; }
-.ben p { color: var(--fg); opacity: .88; margin: 0 0 var(--s1); }
-.ben a { font-size: var(--t-small); color: var(--a-package); }
+.ben > b { display: block; margin-bottom: 4px; }
+.ben p { color: var(--dim); margin: 0 0 calc(var(--row) * .3em); }
+.ben a { color: var(--a-package); }
 .todo { color: var(--a-live); font-weight: 600; }
-.prose td.ok { color: var(--green); font-weight: 600; }
 
 ul.plain { list-style: none; padding: 0; margin: 0; }
 ul.plain li { margin-bottom: 4px; }
 
-/* ── the contents rail ───────────────────────────────────────────────────
-   Wide screens get a sticky rail; narrow ones get a disclosure. One element
-   doing both, because two would be two states to keep in step and a
-   duplicate list for a screen reader to read twice. */
-.start { display: block; }
-
 .toc summary {
   cursor: pointer; color: var(--dim); list-style: none;
-  padding: var(--s1) 0; font-size: var(--t-small);
+  padding: calc(var(--row) * .3em) 0;
 }
 .toc summary::-webkit-details-marker { display: none; }
 .toc summary::before { content: '▸ '; }
 .toc[open] summary::before { content: '▾ '; }
-.toc nav { display: flex; flex-direction: column; padding-bottom: var(--s2); }
+.toc nav { display: flex; flex-direction: column; padding-bottom: calc(var(--row) * .6em); }
 .toc a {
   display: flex; gap: 1.2ch; text-decoration: none; color: var(--dim);
-  padding: 5px 0; font-size: var(--t-small); line-height: 1.35;
+  padding: calc(var(--row) * .15em) 0; line-height: 1.35;
 }
 .toc a i {
   font-style: normal; opacity: .55; min-width: 2ch;
   font-variant-numeric: tabular-nums;
-  font-family: var(--mono, ui-monospace, monospace);
 }
 .toc a:hover { color: var(--fg); }
 .toc a[data-here='1'] { color: var(--fg); font-weight: 600; }
 .toc a[data-here='1'] i { opacity: 1; color: var(--a-package); }
-/* A departure from this page, so it sits below a rule rather than in the
-   run of sections — the numbering stops and the arrow says why. */
+
+/* Same fill as the current nav tab — a destination, not a footnote. */
 .toc-out {
-  margin-top: var(--s2); padding-top: var(--s2) !important;
-  border-top: 1px solid var(--line);
+  margin-top: calc(var(--row) * .6em);
+  padding: 0 1ch !important;
+  align-self: start;
+  width: max-content;
+  background: var(--a-package); color: var(--bg) !important; font-weight: 600;
+  border-top: 0;
 }
-.toc-out i { color: var(--a-package); opacity: 1 !important; }
-.toc-out .dim { display: block; }
+.toc-out:hover {
+  background: var(--fg); color: var(--bg) !important; text-decoration: none;
+}
 
 @media (min-width: 62rem) {
   .start {
-    display: grid; grid-template-columns: 30ch minmax(0, 1fr); gap: 6ch;
-    align-items: start;
+    display: grid; grid-template-columns: 30ch minmax(0, 1fr); gap: 4ch;
+    align-items: start; max-width: none;
   }
   .toc {
-    position: sticky; top: var(--s3);
+    position: sticky; top: calc(var(--row) * .8em);
     max-height: 86vh; overflow-y: auto;
   }
   .toc summary { display: none; }
 }
 
 @media (max-width: 40rem) {
-  .stats { gap: var(--s2); }
-  .doc { padding-top: var(--s4); }
+  .deck-mark { font-size: 10px; }
+  .stats { gap: .2em 1.5ch; }
+  .doc { padding-top: calc(var(--row) * 1.1em); }
 }
 `;
 
