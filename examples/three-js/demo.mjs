@@ -156,6 +156,11 @@ let upstream = pack([
   { path: 'importmap.json', bytes: manifest(VERSION) },
   ...vendored.files,
 ]);
+let packedManifest = unpack(upstream).files.get('package.json');
+let npmManifest = pkg.files.get('package.json');
+if (!packedManifest || !npmManifest || !packedManifest.equals(npmManifest)) {
+  throw new Error('vendored three.js package.json is not byte-identical to npm');
+}
 let upstreamHash = (
   await publishToStore(storeDir, 'lib/three', VERSION, upstream, { tag: 'latest' })
 ).treeHash;
@@ -268,7 +273,7 @@ await lockAndWrite({
   depotDir,
   depotName: DEPOT,
   storeDir,
-  deckDir: join(depotDir, 'app', 'studio'),
+  depotLock: true,
 });
 
 } // end buildMode

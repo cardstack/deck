@@ -31,6 +31,8 @@ import type { DepotMount } from './depot.js';
 export const TAU_MS = 2 * 60 * 60 * 1000;
 /** Beyond this, e^-24 is indistinguishable from zero and costs a walk. */
 export const WINDOW_MS = 48 * 60 * 60 * 1000;
+/** Serve stale heat this long after a change before rebuilding. */
+export const INVALIDATE_DEBOUNCE_MS = 1500;
 
 // The TTL belongs to the WRITER, not the reader — `deck claim` decides how
 // long it is asserting for, and this only enforces expiry. Exported so the
@@ -195,49 +197,58 @@ function normalise(prefix: string): string {
 }
 
 /**
- * Every change a depot can account for, as leaves.
+ * Cheap change leaves for gutters — not the seal tape.
  *
- * Tier 2 has a seal log, which is exact: it records every save and the files
- * it touched. Tier 1 has only mtime, which records the LAST change and not
- * how many — so a busy file is under-reported rather than invented, which is
- * the failure direction to prefer.
+ * `/_history` / `/track` own seal-accurate rivers. Those answers pay for
+ * `jj log` + `diff.summary()` and are multi-second on fat demo depots. Heat
+ * only needs "what is warm right now", so this uses:
+ *
+ *   1. mtime of the live working tree (per file)
+ *   2. mtime of each store `meta.json` (per package — covers Versions-only)
+ *
+ * Under-reports bursty seal history vs the old walk; never blocks a file list.
  */
 async function depotChanges(depot: DepotMount): Promise<Change[]> {
   let since = Date.now() - WINDOW_MS;
-  if (depot.history) {
-    let seals = await depot.history.list(depot.dir).catch(() => []);
-    let changes: Change[] = [];
-    for (let seal of seals) {
-      let when = Date.parse(seal.timestamp ?? '');
-      if (!Number.isFinite(when) || when < since) continue;
-      for (let entry of seal.filesSummary ?? []) {
-        // "M app/run/run.js" — the letter is the verb, the rest is the path.
-        let path = entry.replace(/^[A-Z]\s+/, '').trim();
-        if (!path) continue;
-        // Machinery seals (.jj.main-orphan, .deck, …) are not work.
-        if (path.split('/').some((segment) => isIgnoredTreeSegment(segment))) {
-          continue;
-        }
-        changes.push({ path, when, actor: seal.author });
-      }
-    }
-    return changes;
-  }
   let changes: Change[] = [];
-  async function walk(dir: string, prefix: string): Promise<void> {
+
+  async function walkLive(dir: string, prefix: string): Promise<void> {
     let entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
     for (let entry of entries) {
       if (entry.name.startsWith('.')) continue;
+      if (isIgnoredTreeSegment(entry.name)) continue;
       let path = prefix ? `${prefix}/${entry.name}` : entry.name;
+      let full = join(dir, entry.name);
       if (entry.isDirectory()) {
-        await walk(join(dir, entry.name), path);
+        await walkLive(full, path);
       } else {
-        let info = await stat(join(dir, entry.name)).catch(() => undefined);
+        let info = await stat(full).catch(() => undefined);
         if (info && info.mtimeMs >= since) changes.push({ path, when: info.mtimeMs });
       }
     }
   }
-  await walk(depot.dir, '');
+  await walkLive(depot.dir, '');
+
+  // Store packages: publisher/pkg/meta.json — one leaf per deck at package grain.
+  let publishers = await readdir(depot.storeDir, { withFileTypes: true }).catch(
+    () => [],
+  );
+  for (let pub of publishers) {
+    if (!pub.isDirectory() || pub.name.startsWith('.')) continue;
+    let pubDir = join(depot.storeDir, pub.name);
+    let pkgs = await readdir(pubDir, { withFileTypes: true }).catch(() => []);
+    for (let pkg of pkgs) {
+      if (!pkg.isDirectory()) continue;
+      let metaPath = join(pubDir, pkg.name, 'meta.json');
+      let info = await stat(metaPath).catch(() => undefined);
+      if (info && info.mtimeMs >= since) {
+        changes.push({
+          path: `${pub.name}/${pkg.name}`,
+          when: info.mtimeMs,
+        });
+      }
+    }
+  }
   return changes;
 }
 
@@ -250,9 +261,10 @@ interface Leaf {
 /**
  * The report, cached.
  *
- * Walking nine depots per request would cost more than the data it decorates.
- * Five seconds, and dropped outright whenever anything changes — the point of
- * this is that it moves while you watch.
+ * Walking every depot's seal log per request costs more than the decoration
+ * it buys. Hold a computed index, debounce invalidation so a save-storm does
+ * not rebuild on every SSE tick, and keep a compact per-depot change list so
+ * a rebuild is Σ(recent seals) rather than re-parsing multi-MB histories.
  */
 export class ActivityIndex {
   #depots: DepotMount[];
@@ -260,6 +272,10 @@ export class ActivityIndex {
   #leaves = new Map<string, Leaf>();
   #computedAt = 0;
   #ttlMs: number;
+  #debounceMs: number;
+  #invalidateTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Compact leaves per depot — cleared when invalidation flushes. */
+  #changeCache = new Map<string, Change[]>();
   // SINGLE FLIGHT. A TTL alone does not prevent a stampede — it only helps
   // requests that arrive AFTER one has finished. Twelve depots take about
   // half a second to walk, a browser will happily have six requests in the
@@ -276,18 +292,48 @@ export class ActivityIndex {
   // awaits the first caller's promise. One walk, however many askers.
   #inFlight: Promise<void> | undefined;
 
-  constructor(depots: DepotMount[], options: { ttlMs?: number } = {}) {
+  constructor(
+    depots: DepotMount[],
+    options: { ttlMs?: number; debounceMs?: number } = {},
+  ) {
     this.#depots = depots;
     this.#claims = new ClaimRegister(depots);
-    this.#ttlMs = options.ttlMs ?? 5000;
+    // Long enough that start's 15s refresh and browse navigation share one
+    // walk; short enough that heat still moves while you watch.
+    this.#ttlMs = options.ttlMs ?? 30_000;
+    this.#debounceMs = options.debounceMs ?? INVALIDATE_DEBOUNCE_MS;
   }
 
   get claims(): ClaimRegister {
     return this.#claims;
   }
 
+  /**
+   * Schedule a rebuild. Until the debounce fires, callers keep the last
+   * index — a one-second-stale gutter beats a five-second blank page.
+   */
   invalidate(): void {
+    if (this.#invalidateTimer) return;
+    this.#invalidateTimer = setTimeout(() => {
+      this.#invalidateTimer = undefined;
+      this.#computedAt = 0;
+      this.#changeCache.clear();
+    }, this.#debounceMs);
+  }
+
+  /** Tests / shutdown — drop debounce and force the next refresh to walk. */
+  invalidateNow(): void {
+    if (this.#invalidateTimer) {
+      clearTimeout(this.#invalidateTimer);
+      this.#invalidateTimer = undefined;
+    }
     this.#computedAt = 0;
+    this.#changeCache.clear();
+  }
+
+  /** Boot-time warm so the first browser hit is not the cold walk. */
+  async warm(): Promise<void> {
+    await this.#refresh();
   }
 
   async #refresh(): Promise<void> {
@@ -302,6 +348,14 @@ export class ActivityIndex {
     return this.#inFlight;
   }
 
+  async #depotChangeList(depot: DepotMount): Promise<Change[]> {
+    let hit = this.#changeCache.get(depot.name);
+    if (hit) return hit;
+    let changes = await depotChanges(depot);
+    this.#changeCache.set(depot.name, changes);
+    return changes;
+  }
+
   async #walk(): Promise<void> {
     // Claims refresh on their own, shorter clock: presence changes faster
     // than the touch index and must not wait on it.
@@ -309,8 +363,16 @@ export class ActivityIndex {
     let now = Date.now();
     if (this.#computedAt && now - this.#computedAt < this.#ttlMs) return;
     let leaves = new Map<string, Leaf>();
-    for (let depot of this.#depots) {
-      for (let change of await depotChanges(depot)) {
+    // Parallel across depots — sequential jj log was Σ(cost), which made a
+    // cold Hub look hung even after capping seals.
+    let lists = await Promise.all(
+      this.#depots.map(async (depot) => ({
+        depot,
+        changes: await this.#depotChangeList(depot),
+      })),
+    );
+    for (let { depot, changes } of lists) {
+      for (let change of changes) {
         let id = `/${depot.name}/${change.path}`;
         let weight = Math.exp(-(now - change.when) / TAU_MS);
         let leaf = leaves.get(id) ?? { score: 0, last: 0, actors: new Map() };
@@ -323,7 +385,8 @@ export class ActivityIndex {
       }
     }
     this.#leaves = leaves;
-    this.#computedAt = now;
+    // Stamp when ready — walk-start would make a slow walk already expired.
+    this.#computedAt = Date.now();
   }
 
   /**

@@ -25,16 +25,14 @@ let origin: string;
 let controller: DepotWatchController;
 let published: WatchPublishEvent[] = [];
 
-async function writeImportMap(version: string): Promise<void> {
+async function writePackage(version: string): Promise<void> {
   await writeFile(
-    join(deckDir, 'importmap.json'),
+    join(deckDir, 'package.json'),
     JSON.stringify({
-      imports: {},
-      deck: {
-        packages: {
-          mylib: { version, entry: '$DECK/lib.js' },
-        },
-      },
+      name: 'mylib',
+      version,
+      type: 'module',
+      exports: { '.': './lib.js' },
     }),
   );
 }
@@ -54,7 +52,7 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
     storeDir = storeDirFor(depotDir);
     deckDir = join(depotDir, 'me', 'mylib');
     await mkdir(deckDir, { recursive: true });
-    await writeImportMap('0.1.0');
+    await writePackage('0.1.0');
     await writeFile(join(deckDir, 'lib.js'), 'export const v = 1;\n');
 
     let depot: DepotMount = { name: 'demo', dir: depotDir, storeDir };
@@ -90,7 +88,7 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
     assert.deepEqual(
       controller.decks().map((deck) => deck.name),
       ['me/mylib'],
-      'a directory with an importmap.json IS a deck',
+      'a directory with a package.json IS a deck',
     );
     let meta = await readStoreMeta(storeDir, 'me/mylib');
     assert.strictEqual(
@@ -169,8 +167,8 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
     assert.strictEqual(traversal.status, 404, 'tree-path rules hold');
   });
 
-  test('bumping the map version starts the next dev line — one edit, part of the seal', async function (assert) {
-    await writeImportMap('1.0.0');
+  test('bumping the package.json version starts the next dev line — one edit, part of the seal', async function (assert) {
+    await writePackage('1.0.0');
     await controller.settled();
     assert.strictEqual(published.at(-1)!.version, '1.0.0-dev.1');
   });
@@ -242,7 +240,7 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
     await assert.rejects(
       releaseVersion(storeDir, 'me/mylib', '9.9.9', { tag: 'dev' }),
       /declares me\/mylib@1\.0\.0/,
-      'the sealed map must agree it IS this version',
+      'package.json must agree it IS this version',
     );
     await assert.rejects(
       releaseVersion(storeDir, 'me/mylib', '1.0.0', { tag: 'dev' }),
@@ -259,11 +257,12 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
     let second = join(depotDir, 'me', 'other');
     await mkdir(second, { recursive: true });
     await writeFile(
-      join(second, 'importmap.json'),
+      join(second, 'package.json'),
       JSON.stringify({
-        deck: {
-          packages: { other: { version: '0.0.1', entry: '$DECK/other.js' } },
-        },
+        name: 'other',
+        version: '0.0.1',
+        type: 'module',
+        exports: { '.': './other.js' },
       }),
     );
     await writeFile(join(second, 'other.js'), 'export const other = true;\n');
@@ -272,7 +271,7 @@ module('live tree + auto-publish + no-copies release', function (hooks) {
 
     assert.true(
       controller.decks().some((deck) => deck.name === 'me/other'),
-      'creating a directory with an importmap.json is the whole ceremony',
+      'creating a directory with a package.json is the whole ceremony',
     );
     let meta = await readStoreMeta(storeDir, 'me/other');
     assert.strictEqual(meta!.tags.dev, '0.0.1-dev.1');

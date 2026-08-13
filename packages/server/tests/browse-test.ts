@@ -25,12 +25,12 @@ module('deck browser API', function (hooks) {
     liveDir = join(depotDir, 'acme', 'lib');
     await mkdir(liveDir, { recursive: true });
     await writeFile(
-      join(liveDir, 'importmap.json'),
+      join(liveDir, 'package.json'),
       JSON.stringify({
-        imports: {},
-        deck: {
-          packages: { lib: { version: '1.0.0', entry: '$DECK/index.js' } },
-        },
+        name: 'lib',
+        version: '1.0.0',
+        type: 'module',
+        exports: { '.': './index.js' },
       }),
     );
     await writeFile(join(liveDir, 'index.js'), 'export const n = 1;\n');
@@ -39,15 +39,13 @@ module('deck browser API', function (hooks) {
 
     let bytes = pack([
       {
-        path: 'importmap.json',
+        path: 'package.json',
         bytes: Buffer.from(
           JSON.stringify({
-            imports: {},
-            deck: {
-              packages: {
-                lib: { version: '1.0.0', entry: '$DECK/index.js' },
-              },
-            },
+            name: 'lib',
+            version: '1.0.0',
+            type: 'module',
+            exports: { '.': './index.js' },
           }),
         ),
       },
@@ -99,8 +97,7 @@ module('deck browser API', function (hooks) {
     assert.strictEqual(pkg.versions['1.0.0'].file, undefined);
     assert.true(/^[0-9a-f]{64}$/.test(pkg.versions['1.0.0'].treeHash));
     assert.equal(body.meta.history.tier, 1);
-    assert.equal(body.meta.history.jj, false);
-    assert.equal(body.meta.history.historyd, false);
+    assert.equal(body.meta.history.deckd, false);
   });
 
   test('GET /_browse/<depot> lists the decks that live there', async function (assert) {
@@ -130,8 +127,8 @@ module('deck browser API', function (hooks) {
       ]),
       [
         ['util', 'dir'],
-        ['importmap.json', 'file'],
         ['index.js', 'file'],
+        ['package.json', 'file'],
       ],
     );
 

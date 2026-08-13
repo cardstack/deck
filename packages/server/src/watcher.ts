@@ -2,7 +2,10 @@ import { watch, type FSWatcher } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { DEFAULT_IGNORE, isIgnoredTreeSegment } from '@cardstack/deck/tree-hash';
-import { parsePackages, IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
+import {
+  PACKAGE_JSON_PATH,
+  parsePackageJson,
+} from '@cardstack/deck/package-json';
 import { packFromDir } from '@cardstack/deck/pack';
 import {
   nextDevVersion,
@@ -20,8 +23,8 @@ import type { HistoryBackend } from '@cardstack/deck-history/backend';
 //     → [with a Timeline: seal the tree, take the changeId]
 //     → packFromDir → publish <base>-dev.<n>, tag `dev`
 //
-// <base> comes from the directory's own importmap.json — the map stays the
-// manifest, and bumping its version is the only edit a new line needs.
+// <base> comes from the directory's own package.json — bumping its version
+// is the only edit a new line needs.
 // Ranges never match prereleases, so auto-publishes are invisible to every
 // consumer who did not explicitly opt in via the `dev` tag or an exact pin.
 // Stable versions are NEVER auto-minted: semver intent is human.
@@ -75,8 +78,7 @@ export interface WatchOptions {
   // watched directory (a standalone deck is its own depot).
   historyDir?: string;
   // When false, this watcher publishes Versions + HMR only — it does not
-  // noteMutation / flush Timeline. Default: false for `history.kind ===
-  // 'deckd'` (deckd's FS watch owns seals); true for jj / historyd.
+  // noteMutation / flush Timeline. Default false: deckd's FS watch owns seals.
   sealOnWatch?: boolean;
   onPublish?: (event: WatchPublishEvent) => void;
   // Fired as soon as a new treeHash is observed — before packing — so
@@ -109,7 +111,7 @@ export function watchAndPublish(options: WatchOptions): WatchController {
   } = options;
   // deckd owns Timeline seals via its watchexec-shaped FS plane. Hub/Node
   // watchers still publish + HMR; they must not double-note /flush.
-  let sealWithWatch = sealOnWatch ?? history?.kind !== 'deckd';
+  let sealWithWatch = sealOnWatch ?? false;
   // A store inside the watched tree feeds itself: publishing writes packs
   // into the tree, which changes its treeHash, which publishes again —
   // forever, with every pack swallowing the previous ones. Refuse it
@@ -198,14 +200,14 @@ export function watchAndPublish(options: WatchOptions): WatchController {
     onLiveChange?.({ name, treeHash });
     let base = '0.0.0';
     try {
-      let map = parsePackages(
-        await readFile(join(dir, IMPORT_MAP_PATH), 'utf8'),
+      let pkg = parsePackageJson(
+        await readFile(join(dir, PACKAGE_JSON_PATH), 'utf8'),
       );
-      // The map is keyed by the PACKAGE; the publisher comes from where the
-      // deck sits on disk, so moving a deck never edits its map.
-      base = map?.[name.split('/').at(-1)!]?.version ?? base;
+      if (pkg?.version) {
+        base = pkg.version;
+      }
     } catch {
-      // no map — dev line runs on 0.0.0
+      // no package.json — dev line runs on 0.0.0
     }
     let meta = await readStoreMeta(storeDir, name);
     // Content-addressed identity, taken seriously: a tree that is already

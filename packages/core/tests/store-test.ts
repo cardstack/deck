@@ -19,12 +19,13 @@ import { listObjects, listTrees } from '../src/object-store.ts';
 function libFiles(base: string, body: string) {
   return [
     {
-      path: 'importmap.json',
+      path: 'package.json',
       bytes: Buffer.from(
         JSON.stringify({
-          deck: {
-            packages: { lib: { version: base, entry: '$DECK/lib.js' } },
-          },
+          name: 'lib',
+          version: base,
+          type: 'module',
+          exports: { '.': './lib.js' },
         }),
       ),
     },
@@ -180,11 +181,12 @@ module('store: content addressing and pruning', function (hooks) {
   test('editing ONE file in a large tree costs ONE object', async function (assert) {
     let many = (marker: string) => [
       {
-        path: 'importmap.json',
+        path: 'package.json',
         bytes: Buffer.from(
           JSON.stringify({
-            imports: {},
-            deck: { packages: { big: { version: '1.0.0' } } },
+            name: 'big',
+            version: '1.0.0',
+            type: 'module',
           }) + '\n',
         ),
       },
@@ -366,14 +368,23 @@ module('store: content addressing and pruning', function (hooks) {
   test('one deck name is one upstream library', async function (assert) {
     let vendored = (npmName: string, version: string) => [
       {
+        path: 'package.json',
+        bytes: Buffer.from(
+          JSON.stringify({
+            name: npmName,
+            version,
+            type: 'module',
+            exports: { '.': './lib.js' },
+          }),
+        ),
+      },
+      {
         path: 'importmap.json',
         bytes: Buffer.from(
           JSON.stringify({
             deck: {
               packages: {
                 'babel-runtime': {
-                  version,
-                  entry: '$DECK/lib.js',
                   vendoredFrom: { registry: 'npm', name: npmName, version },
                 },
               },
@@ -433,14 +444,23 @@ module('store: content addressing and pruning', function (hooks) {
     let upstreamPublishedAt = '2018-08-27T00:00:00.000Z';
     let vendoredPack = pack([
       {
+        path: 'package.json',
+        bytes: Buffer.from(
+          JSON.stringify({
+            name: 'lib',
+            version: '1.0.0',
+            type: 'module',
+            exports: { '.': './lib.js' },
+          }),
+        ),
+      },
+      {
         path: 'importmap.json',
         bytes: Buffer.from(
           JSON.stringify({
             deck: {
               packages: {
                 lib: {
-                  version: '1.0.0',
-                  entry: '$DECK/lib.js',
                   vendoredFrom: {
                     registry: 'npm',
                     name: 'lib',

@@ -47,8 +47,8 @@ export interface HistoryActor {
 
 export interface HistoryBackend {
   // Which implementation is live — reported by the server's capability
-  // block so a client can tell a jj Timeline from a historyd Timeline.
-  readonly kind: 'jj' | 'historyd' | 'deckd';
+  // block. Production is deckd; `historyd` remains only as a wire alias.
+  readonly kind: 'historyd' | 'deckd';
   // Notes a file mutation for the debounced sealer. Fire-and-forget: a
   // burst of saves becomes ONE seal.
   noteMutation(dir: string, path: string): void;
@@ -64,7 +64,17 @@ export interface HistoryBackend {
   // The newest sealed changeId (not the working copy). Undefined before the
   // first seal.
   head(dir: string): Promise<string | undefined>;
-  list(dir: string): Promise<HistoryEntry[]>;
+  /**
+   * Newest-first.
+   * - `limit` caps how many seals are materialised (jj `-n`).
+   * - `before` (change/commit id): only seals strictly older than this tip.
+   * - `flush: false` skips sealing the working copy first — required for
+   *   cheap read paths like `/_activity` that must not pay seal cost.
+   */
+  list(
+    dir: string,
+    options?: { limit?: number; before?: string; flush?: boolean },
+  ): Promise<HistoryEntry[]>;
   fileAt(
     dir: string,
     revisionId: string,

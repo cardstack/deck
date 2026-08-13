@@ -1,0 +1,11 @@
+{
+  "name": "preview",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./preview.js"
+  },
+  "dependencies": {
+    "app/gallery": "^1.0.0"
+  }
+}

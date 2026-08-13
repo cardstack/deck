@@ -1,0 +1,12 @@
+{
+  "name": "run",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./run.js" },
+  "dependencies": {
+    "ui/nav": "workspace:*",
+    "ui/timeline": "workspace:*",
+    "ui/activity": "workspace:*",
+    "ui/tour": "workspace:*"
+  }
+}

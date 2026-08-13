@@ -218,3 +218,5 @@ code{font-family:var(--mono);font-size:.86em}
 .reading b{color:var(--ink)}
 `;
 document.head.append(style);
+
+// teach: currencies viewer v2 — pin moved

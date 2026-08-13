@@ -8,7 +8,6 @@ import {
   applyRebase,
   discoverOffers,
   planRebase,
-  readForkedFrom,
 } from '../src/offer.ts';
 import { packFromDir } from '../src/pack.ts';
 import { publishToStore, readStoreMeta } from '../src/store.ts';
@@ -30,14 +29,13 @@ async function publishUpstream(version: string, tag = 'latest') {
 
 async function writeUpstream(files: Record<string, string>, version: string) {
   await writeFile(
-    join(depotDir, 'acme', 'palette', 'importmap.json'),
+    join(depotDir, 'acme', 'palette', 'package.json'),
     JSON.stringify(
       {
-        deck: {
-          packages: {
-            palette: { version, entry: '$DECK/palette.js' },
-          },
-        },
+        name: 'palette',
+        version,
+        type: 'module',
+        exports: { '.': './palette.js' },
       },
       null,
       2,
@@ -215,14 +213,25 @@ module('offers: a fork that remembers where it came from', function (hooks) {
   test('a base that is not in the store is unresolvable, and says why', async function (assert) {
     await mkdir(join(depotDir, 'you', 'ghost'), { recursive: true });
     await writeFile(
+      join(depotDir, 'you', 'ghost', 'package.json'),
+      JSON.stringify(
+        {
+          name: 'ghost',
+          version: '1.0.0',
+          type: 'module',
+          exports: { '.': './g.js' },
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    await writeFile(
       join(depotDir, 'you', 'ghost', 'importmap.json'),
       JSON.stringify(
         {
           deck: {
             packages: {
               ghost: {
-                version: '1.0.0',
-                entry: '$DECK/g.js',
                 forkedFrom: { package: UPSTREAM, treeHash: 'f'.repeat(64) },
               },
             },
@@ -278,11 +287,6 @@ module('offers: a fork that remembers where it came from', function (hooks) {
   });
 
   test('a plain deck with no base is not an offer', async function (assert) {
-    let mapText = await readFile(
-      join(depotDir, 'acme', 'palette', 'importmap.json'),
-      'utf8',
-    );
-    assert.strictEqual(readForkedFrom(mapText, 'palette'), undefined);
     assert.deepEqual(await discoverOffers(depotDir), []);
   });
 });

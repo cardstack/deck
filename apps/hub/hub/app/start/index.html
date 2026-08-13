@@ -12,12 +12,33 @@
       nothing at runtime, and a webfont request is a third party learning
       every reader's IP and holding the power to change the bytes.
     -->
+    <!-- Shell fill + theme before first paint / VT snapshot (kills white flash). -->
+    <link rel="stylesheet" href="/hub/ui/theme/boot.css" />
+    <script src="/hub/ui/theme/boot.js"></script>
     <link rel="stylesheet" href="/hub/type/commit-mono@5.3.0/font.css" />
     <link rel="stylesheet" href="/hub/ui/theme/theme.css" />
+    <!--
+      Cross-document View Transitions: opt-in here (not only in theme.css) so
+      Chrome/Safari can start the MPA transition before the stylesheet lands.
+      Named chrome + nested `view-transition-group` live in ui/theme.
+    -->
+    <style>
+      @media (prefers-reduced-motion: no-preference) {
+        @view-transition { navigation: auto; }
+      }
+    </style>
   </head>
   <body>
     <deck-nav app="start"></deck-nav>
-    <div id="app" class="dim">loading…</div>
+    <!--
+      `#app` stays empty until the module paints — View Transitions morph this
+      named region, and a "loading…" placeholder was capturing into the
+      transition and flashing over the previous page. Boot status lives in
+      `#boot`, outside every view-transition-name.
+    -->
+    <div id="app" aria-busy="true"></div>
+    <!-- hidden until boot.js slow-path; never first-paint (breaks VT / tour). -->
+    <p id="boot" class="hub-boot" hidden aria-live="polite">still loading…</p>
     <deck-keys></deck-keys>
     <script type="module" src="/_live/hmr.js"></script>
     <script type="module" src="./start.js"></script>

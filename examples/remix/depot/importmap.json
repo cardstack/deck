@@ -1,0 +1,16 @@
+{
+  "imports": {
+    "notes/app": "/site/catalog/notes-app@1.0.0/app.js",
+    "notes/list": "/site/catalog/notes-app@1.0.0/list.js",
+    "notes/item": "/site/catalog/notes-app@1.0.0/item.js",
+    "notes/theme": "/site/catalog/notes-app@1.0.0/theme.js"
+  },
+  "scopes": {
+    "/site/you/my-notes/": {
+      "notes/theme": "/site/you/my-notes/theme.js"
+    },
+    "/site/you/my-notes@0.1.0-dev.1/": {
+      "notes/theme": "/site/you/my-notes@0.1.0-dev.1/theme.js"
+    }
+  }
+}

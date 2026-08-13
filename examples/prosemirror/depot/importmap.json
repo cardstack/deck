@@ -1,0 +1,54 @@
+{
+  "imports": {
+    "prosemirror-commands": "/site/lib/prosemirror-commands@1.7.2/dist/index.js",
+    "prosemirror-commands/": "/site/lib/prosemirror-commands@1.7.2/",
+    "prosemirror-history": "/site/lib/prosemirror-history@1.5.0/dist/index.js",
+    "prosemirror-history/": "/site/lib/prosemirror-history@1.5.0/",
+    "prosemirror-keymap": "/site/lib/prosemirror-keymap@1.2.3/dist/index.js",
+    "prosemirror-keymap/": "/site/lib/prosemirror-keymap@1.2.3/",
+    "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+    "prosemirror-model/": "/site/lib/prosemirror-model@1.25.11/",
+    "prosemirror-schema-basic": "/site/lib/prosemirror-schema-basic@1.2.4/dist/index.js",
+    "prosemirror-schema-basic/": "/site/lib/prosemirror-schema-basic@1.2.4/",
+    "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+    "prosemirror-state/": "/site/lib/prosemirror-state@1.4.4/",
+    "prosemirror-view": "/site/lib/prosemirror-view@1.42.2/dist/index.js",
+    "prosemirror-view-ruled": "/site/me/prosemirror-view@ruled/dist/index.js",
+    "prosemirror-view-ruled/": "/site/me/prosemirror-view@ruled/",
+    "prosemirror-view/": "/site/lib/prosemirror-view@1.42.2/",
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js",
+    "ui/pills/": "/site/ui/pills@1.0.0/"
+  },
+  "scopes": {
+    "/site/app/editor/": {
+      "prosemirror-commands": "/site/lib/prosemirror-commands@1.7.2/dist/index.js",
+      "prosemirror-commands/": "/site/lib/prosemirror-commands@1.7.2/",
+      "prosemirror-history": "/site/lib/prosemirror-history@1.5.0/dist/index.js",
+      "prosemirror-history/": "/site/lib/prosemirror-history@1.5.0/",
+      "prosemirror-keymap": "/site/lib/prosemirror-keymap@1.2.3/dist/index.js",
+      "prosemirror-keymap/": "/site/lib/prosemirror-keymap@1.2.3/",
+      "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+      "prosemirror-model/": "/site/lib/prosemirror-model@1.25.11/",
+      "prosemirror-schema-basic": "/site/lib/prosemirror-schema-basic@1.2.4/dist/index.js",
+      "prosemirror-schema-basic/": "/site/lib/prosemirror-schema-basic@1.2.4/",
+      "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+      "prosemirror-state/": "/site/lib/prosemirror-state@1.4.4/",
+      "prosemirror-view": "/site/lib/prosemirror-view@1.42.2/dist/index.js",
+      "prosemirror-view-ruled": "/site/me/prosemirror-view@ruled/dist/index.js",
+      "prosemirror-view-ruled/": "/site/me/prosemirror-view@ruled/",
+      "prosemirror-view/": "/site/lib/prosemirror-view@1.42.2/",
+      "ui/pills": "/site/ui/pills@1.0.0/pills.js",
+      "ui/pills/": "/site/ui/pills@1.0.0/"
+    }
+  },
+  "integrity": {
+    "/site/lib/prosemirror-commands@1.7.2/dist/index.js": "sha256-yi7Quc9KkiNpb4Fkx1CXFwv8a06l2XapEY4jv0LKlEI=",
+    "/site/lib/prosemirror-history@1.5.0/dist/index.js": "sha256-cwWUdtQxc260rdv5ZM5TMzBqee7y2FKP9Cqd3nR46wk=",
+    "/site/lib/prosemirror-keymap@1.2.3/dist/index.js": "sha256-HuE3Rb6L7ccHkCJqrwuXyyTbcXcPQtncqb81g/3p0DE=",
+    "/site/lib/prosemirror-model@1.25.11/dist/index.js": "sha256-F+MAnLxou9maL3y84YumOOahbsqCys1iraE8P5nehsg=",
+    "/site/lib/prosemirror-schema-basic@1.2.4/dist/index.js": "sha256-udDxo0H1fri0Urz1FEPBQjZ7npozBYzc6jOGHj5SFqA=",
+    "/site/lib/prosemirror-state@1.4.4/dist/index.js": "sha256-1L1OmFIKvQuwFQQ22Eo4MthWqlljbqI6WUCdNZKXMKM=",
+    "/site/lib/prosemirror-view@1.42.2/dist/index.js": "sha256-m6FYfVpnt9foLSbK+/15dhq6rPiw4BrXLCardD7OAec=",
+    "/site/ui/pills@1.0.0/pills.js": "sha256-lrX+8UWsimQ+3y8TZgeV0+aG8Fm3QECUlAPn4/GNAzk="
+  }
+}

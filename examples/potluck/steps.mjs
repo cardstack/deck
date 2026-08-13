@@ -14,7 +14,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const attachment = await createHistory({
   dir: depot,
-  kind: 'jj',
+  kind: 'deckd',
   onError: (error) => console.error(error),
 });
 

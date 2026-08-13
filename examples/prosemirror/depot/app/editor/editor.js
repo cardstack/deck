@@ -27,10 +27,10 @@ let app = document.querySelector('#app');
 app.classList.remove('loading');
 app.innerHTML = `
   <header>
-    <h1>Where per-file vendoring runs out.</h1>
+    <h1>Where the npm artifact is the boundary.</h1>
     <p class="lede">
       Leaflet publishes 85 addressable modules. three.js publishes 374. These
-      eleven publish <strong>none</strong>, and ship
+      eleven publish <strong>zero</strong> modules, and ship
       <strong>${totalMaps} source maps</strong> between them.
     </p>
     <div class="namekey">
@@ -40,7 +40,7 @@ app.innerHTML = `
         github: 'ProseMirror/prosemirror-model',
       })}
       <p class="note">
-        Three names for one library, and on this page they disagree about
+        Three names for one library — and on this page they disagree about
         something that matters: the ${pill('github', 'ProseMirror/prosemirror-model')}
         repository is 14 TypeScript modules, the
         ${pill('npm', `prosemirror-model@${survey[0].version}`)} artifact is one

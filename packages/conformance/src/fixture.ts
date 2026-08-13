@@ -25,19 +25,16 @@ export interface FixtureFile {
 export function fixtureFiles(): FixtureFile[] {
   return [
     {
-      path: 'importmap.json',
+      path: 'package.json',
       bytes: Buffer.from(
         JSON.stringify(
           {
-            imports: {},
-            deck: {
-              packages: {
-                [FIXTURE_PACKAGE]: {
-                  version: FIXTURE_VERSION,
-                  entry: '$DECK/index.js',
-                  exports: { './alias.js': '$DECK/nested/deep.js' },
-                },
-              },
+            name: FIXTURE_PACKAGE,
+            version: FIXTURE_VERSION,
+            type: 'module',
+            exports: {
+              '.': './index.js',
+              './alias.js': './nested/deep.js',
             },
           },
           null,
@@ -88,12 +85,13 @@ export function fixtureFiles(): FixtureFile[] {
 // failing implementation pass:
 //   node -e "import('@cardstack/deck/tree-hash').then(async m => …)"
 //
-// Moved once, on purpose: the fixture's importmap.json used to write the tree
-// root as `$REALM/` and now writes `$DECK/`. Different bytes, different tree,
-// different hash — which is L1 doing its job, not a break in it. The previous
-// value was ae0aeb21336ab653….
+// Moved when the fixture's declaration became package.json (identity
+// used to live in importmap.json). Different bytes, different tree,
+// different hash — which is L1 doing its job. Previous values:
+//   ae0aeb21336ab653… ($REALM/ token)
+//   bdaf1081a608f0fd… (importmap.json as the package declaration)
 export const FIXTURE_TREE_HASH =
-  'bdaf1081a608f0fd97d3734ffb1a63b85c8a9f2061dfbabc2132cf809b298b32';
+  '40b7e80c1e254b8191743a82192f603b216d7d3aa6a0d26e34e0425142ccb6d4';
 
 // ---------------------------------------------------------------------------
 // The scoped-graph fixture.
@@ -124,18 +122,41 @@ export function graphModuleUrl(depot: string, pkg: string, file: string) {
   return `/${depot}/${GRAPH_PUBLISHER}/${pkg}@${GRAPH_VERSION}/${file}`;
 }
 
-function manifest(pkg: string, entry: string, rest: Record<string, unknown> = {}) {
+function packageManifest(pkg: string, entry: string) {
   return Buffer.from(
     JSON.stringify(
       {
-        ...rest,
-        deck: { packages: { [pkg]: { version: GRAPH_VERSION, entry: `$DECK/${entry}` } } },
+        name: pkg,
+        version: GRAPH_VERSION,
+        type: 'module',
+        exports: { '.': `./${entry}` },
       },
       null,
       2,
     ) + '\n',
     'utf8',
   );
+}
+
+export function graphDepotLock(depot: string): FixtureFile {
+  return {
+    path: 'importmap.json',
+    bytes: Buffer.from(
+      JSON.stringify(
+        {
+          imports: { dep: graphModuleUrl(depot, GRAPH_DEP, 'index.js') },
+          scopes: {
+            [`/${depot}/${GRAPH_PUBLISHER}/${GRAPH_DEP}@${GRAPH_VERSION}/`]: {
+              leaf: graphModuleUrl(depot, GRAPH_LEAF, 'index.js'),
+            },
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    ),
+  };
 }
 
 export function graphFixtureDecks(
@@ -146,17 +167,8 @@ export function graphFixtureDecks(
       pkg: GRAPH_APP,
       files: [
         {
-          path: 'importmap.json',
-          bytes: manifest(GRAPH_APP, 'app.js', {
-            imports: { dep: graphModuleUrl(depot, GRAPH_DEP, 'index.js') },
-            // The whole point: `leaf` is not in `imports`. It resolves only
-            // for modules living under dep's own prefix.
-            scopes: {
-              [`/${depot}/${GRAPH_PUBLISHER}/${GRAPH_DEP}@${GRAPH_VERSION}/`]: {
-                leaf: graphModuleUrl(depot, GRAPH_LEAF, 'index.js'),
-              },
-            },
-          }),
+          path: 'package.json',
+          bytes: packageManifest(GRAPH_APP, 'app.js'),
         },
         {
           path: 'page.html',
@@ -173,7 +185,7 @@ export function graphFixtureDecks(
     {
       pkg: GRAPH_DEP,
       files: [
-        { path: 'importmap.json', bytes: manifest(GRAPH_DEP, 'index.js') },
+        { path: 'package.json', bytes: packageManifest(GRAPH_DEP, 'index.js') },
         {
           path: 'index.js',
           bytes: Buffer.from("import 'leaf';\nexport const dep = 1;\n", 'utf8'),
@@ -183,7 +195,7 @@ export function graphFixtureDecks(
     {
       pkg: GRAPH_LEAF,
       files: [
-        { path: 'importmap.json', bytes: manifest(GRAPH_LEAF, 'index.js') },
+        { path: 'package.json', bytes: packageManifest(GRAPH_LEAF, 'index.js') },
         { path: 'index.js', bytes: Buffer.from('export const leaf = 1;\n', 'utf8') },
       ],
     },
@@ -207,5 +219,7 @@ export async function writeFixtureDepot(
       await writeFile(join(dir, ...file.path.split('/')), file.bytes);
     }
   }
+  let lock = graphDepotLock(depot);
+  await writeFile(join(depotDir, lock.path), lock.bytes);
   return depotDir;
 }

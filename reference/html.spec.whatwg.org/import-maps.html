@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en-US-x-hixie">
+<head>
+<meta charset="utf-8">
+<title>HTML Standard — Import maps (snapshot 2026-08-12)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<link rel=stylesheet href=https://resources.whatwg.org/standard-shared-with-dev.css crossorigin="">
+<link rel=stylesheet href=https://resources.whatwg.org/standard.css crossorigin="">
+<link rel=stylesheet href=https://resources.whatwg.org/spec.css crossorigin="">
+<link rel=icon href=https://resources.whatwg.org/logo.svg crossorigin="">
+<link rel=stylesheet href=https://html.spec.whatwg.org/styles.css crossorigin="">
+<style>
+  .snapshot-banner {
+    margin: 1em;
+    padding: 1em 1.2em;
+    border: 1px solid #888;
+    background: #fff8e0;
+    font: 1rem/1.4 sans-serif;
+  }
+</style>
+</head>
+<body>
+<p class="snapshot-banner">
+  Snapshot of the <a href="https://html.spec.whatwg.org/multipage/webappapis.html#import-maps">WHATWG HTML Standard, import maps</a>,
+  fetched 2026-08-12 from <code>https://html.spec.whatwg.org/multipage/webappapis.html</code>.
+  This is not the living standard. Algorithms: 8.1.4.8 Import map parse results,
+  8.1.5 Module specifier resolution (8.1.5.1 resolution algorithm, 8.1.5.2 Import maps,
+  8.1.5.3 Import map processing model). Full chapter: <a href="./webappapis.html">webappapis.html</a>.
+</p>
+<h5 id=import-map-parse-results><span class=secno>8.1.4.8</span> Import map parse results<a href=#import-map-parse-results class=self-link></a></h5>
+
+  <p>An <dfn id=import-map-parse-result>import map parse result</dfn> is a <a id=import-map-parse-results:struct href=https://infra.spec.whatwg.org/#struct data-x-internal=struct>struct</a> that is similar to a <a href=#concept-script id=import-map-parse-results:concept-script>script</a>, and also can be stored in a <code id=import-map-parse-results:the-script-element><a href=https://html.spec.whatwg.org/multipage/scripting.html#the-script-element>script</a></code> element's
+  <a href=https://html.spec.whatwg.org/multipage/scripting.html#concept-script-result id=import-map-parse-results:concept-script-result>result</a>, but is not counted as a <a href=#concept-script id=import-map-parse-results:concept-script-2>script</a> for other purposes. It has the following <a href=https://infra.spec.whatwg.org/#struct-item id=import-map-parse-results:struct-item data-x-internal=struct-item>items</a>:</p>
+
+  <dl><dt>An <dfn id=impr-import-map>import map</dfn><dd>An <a href=#import-map id=import-map-parse-results:import-map>import map</a> or null.<dt>An <dfn id=impr-error-to-rethrow>error to rethrow</dfn><dd>A JavaScript value representing an error that will prevent using this import map, when
+   non-null.</dl>
+
+  <div data-algorithm="">
+  <p>To <dfn id=create-an-import-map-parse-result>create an import map parse result</dfn> given a <a id=import-map-parse-results:string href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a> <var>input</var>
+  and a <a id=import-map-parse-results:url href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a> <var>baseURL</var>:</p>
+
+  <ol><li><p>Let <var>result</var> be an <a href=#import-map-parse-result id=import-map-parse-results:import-map-parse-result>import map parse result</a> whose <a href=#impr-import-map id=import-map-parse-results:impr-import-map>import map</a> is null and whose <a href=#impr-error-to-rethrow id=import-map-parse-results:impr-error-to-rethrow>error to rethrow</a> is null.<li><p><a href=#parse-an-import-map-string id=import-map-parse-results:parse-an-import-map-string>Parse an import map string</a> given <var>input</var> and <var>baseURL</var>,
+   catching any exceptions. If this threw an exception, then set <var>result</var>'s <a href=#impr-error-to-rethrow id=import-map-parse-results:impr-error-to-rethrow-2>error to rethrow</a> to that exception. Otherwise, set
+   <var>result</var>'s <a href=#impr-import-map id=import-map-parse-results:impr-import-map-2>import map</a> to the return
+   value.<li><p>Return <var>result</var>.</ol>
+  </div>
+
+  <div data-algorithm="">
+  <p>To <dfn id=register-an-import-map>register an import map</dfn> given a <code id=import-map-parse-results:window><a href=https://html.spec.whatwg.org/multipage/nav-history-apis.html#window>Window</a></code> <var>global</var> and an
+  <a href=#import-map-parse-result id=import-map-parse-results:import-map-parse-result-2>import map parse result</a> <var>result</var>:</p>
+
+  <ol><li><p>If <var>result</var>'s <a href=#impr-error-to-rethrow id=import-map-parse-results:impr-error-to-rethrow-3>error to rethrow</a> is
+   not null, then <a href=#report-an-exception id=import-map-parse-results:report-an-exception>report an exception</a> given by <var>result</var>'s <a href=#impr-error-to-rethrow id=import-map-parse-results:impr-error-to-rethrow-4>error to rethrow</a> for <var>global</var> and
+   return.<li><p><a href=#merge-existing-and-new-import-maps id=import-map-parse-results:merge-existing-and-new-import-maps>Merge existing and new import
+   maps</a>, given <var>global</var> and <var>result</var>'s <a href=#impr-import-map id=import-map-parse-results:impr-import-map-3>import map</a>.</ol>
+  </div>
+
+
+  <h5 id=speculation-rules-parse-results><span class=secno>8.1.4.9</span> Speculation rules parse results<a href=#speculation-rules-parse-results class=self-link></a></h5>
+
+  <p>A <dfn id=speculation-rules-parse-result>speculation rules parse result</dfn> is a <a id=speculation-rules-parse-results:struct href=https://infra.spec.whatwg.org/#struct data-x-internal=struct>struct</a> that is similar to a <a href=#concept-script id=speculation-rules-parse-results:concept-script>script</a>, and also can be stored in a <code id=speculation-rules-parse-results:the-script-element><a href=https://html.spec.whatwg.org/multipage/scripting.html#the-script-element>script</a></code> element's
+  <a href=https://html.spec.whatwg.org/multipage/scripting.html#concept-script-result id=speculation-rules-parse-results:concept-script-result>result</a>, but is not counted as a <a href=#concept-script id=speculation-rules-parse-results:concept-script-2>script</a> for other purposes. It has the following <a href=https://infra.spec.whatwg.org/#struct-item id=speculation-rules-parse-results:struct-item data-x-internal=struct-item>items</a>:</p>
+
+  <dl><dt>A <dfn id=srpr-sr-set>speculation rule set</dfn><dd>A <a id=speculation-rules-parse-results:speculation-rule-set href=speculative-loading.html#speculation-rule-set>speculation rule set</a> or null.<dt>An <dfn id=srpr-error-to-rethrow>error to rethrow</dfn><dd>A JavaScript value representing an error that will prevent using these speculation rules,
+   when non-null.</dl>
+
+  <div data-algorithm="">
+  <p>To <dfn id=create-a-speculation-rules-parse-result>create a speculation rules parse result</dfn> given a <a id=speculation-rules-parse-results:string href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a>
+  <var>input</var> and a <code id=speculation-rules-parse-results:document><a href=dom.html#document>Document</a></code> <var>document</var>:</p>
+
+  <ol><li><p>Let <var>result</var> be a <a href=#speculation-rules-parse-result id=speculation-rules-parse-results:speculation-rules-parse-result>speculation rules parse result</a> whose <a href=#srpr-sr-set id=speculation-rules-parse-results:srpr-sr-set>speculation rule set</a> is null and whose <a href=#srpr-error-to-rethrow id=speculation-rules-parse-results:srpr-error-to-rethrow>error to rethrow</a> is null.<li><p><a id=speculation-rules-parse-results:parse-a-speculation-rule-set-string href=speculative-loading.html#parse-a-speculation-rule-set-string>Parse a speculation rule set string</a> given <var>input</var>,
+   <var>document</var>, and <var>document</var>'s <a id=speculation-rules-parse-results:document-base-url href=https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url>document base URL</a>, catching any
+   exceptions. If this threw an exception, then set <var>result</var>'s <a href=#srpr-error-to-rethrow id=speculation-rules-parse-results:srpr-error-to-rethrow-2>error to rethrow</a> to that exception. Otherwise, set
+   <var>result</var>'s <a href=#srpr-sr-set id=speculation-rules-parse-results:srpr-sr-set-2>speculation rule set</a> to the return
+   value.<li><p>Return <var>result</var>.</ol>
+  </div>
+
+  <div data-algorithm="">
+  <p>To <dfn id=register-speculation-rules>register speculation rules</dfn> given a <code id=speculation-rules-parse-results:window><a href=https://html.spec.whatwg.org/multipage/nav-history-apis.html#window>Window</a></code> <var>global</var>, a
+  <a href=#speculation-rules-parse-result id=speculation-rules-parse-results:speculation-rules-parse-result-2>speculation rules parse result</a> <var>result</var>, and an optional boolean
+  <var>queueErrors</var> (default false):</p>
+
+  <ol><li>
+    <p>If <var>result</var>'s <a href=#srpr-error-to-rethrow id=speculation-rules-parse-results:srpr-error-to-rethrow-3>error to rethrow</a> is not
+    null:</p>
+
+    <ol><li>
+      <p>If <var>queueErrors</var> is true, then <a href=#queue-a-global-task id=speculation-rules-parse-results:queue-a-global-task>queue a global task</a> on the <a href=#dom-manipulation-task-source id=speculation-rules-parse-results:dom-manipulation-task-source>DOM
+      manipulation task source</a> given <var>global</var> to perform the following step:</p>
+
+      <ol><li><p><a href=#report-an-exception id=speculation-rules-parse-results:report-an-exception>Report an exception</a> given by <var>result</var>'s <a href=#srpr-error-to-rethrow id=speculation-rules-parse-results:srpr-error-to-rethrow-4>error to rethrow</a> for <var>global</var>.</ol>
+     <li><p>Otherwise, <a href=#report-an-exception id=speculation-rules-parse-results:report-an-exception-2>report an exception</a> given by <var>result</var>'s <a href=#srpr-error-to-rethrow id=speculation-rules-parse-results:srpr-error-to-rethrow-5>error to rethrow</a> for <var>global</var>.<li><p>Return.</ol>
+   <li><p><a href=https://infra.spec.whatwg.org/#list-append id=speculation-rules-parse-results:list-append data-x-internal=list-append>Append</a> <var>result</var>'s <a href=#srpr-sr-set id=speculation-rules-parse-results:srpr-sr-set-3>speculation rule set</a> to <var>global</var>'s <a href=https://html.spec.whatwg.org/multipage/nav-history-apis.html#concept-document-window id=speculation-rules-parse-results:concept-document-window>associated <code>Document</code></a>'s <a href=speculative-loading.html#document-sr-sets id=speculation-rules-parse-results:document-sr-sets>speculation rule sets</a>.<li><p><a id=speculation-rules-parse-results:consider-speculative-loads href=speculative-loading.html#consider-speculative-loads>Consider speculative loads</a> for <var>global</var>'s <a href=https://html.spec.whatwg.org/multipage/nav-history-apis.html#concept-document-window id=speculation-rules-parse-results:concept-document-window-2>associated <code>Document</code></a>.</ol>
+  </div>
+
+  <div data-algorithm="">
+  <p>To <dfn id=unregister-speculation-rules>unregister speculation rules</dfn> given a <code id=speculation-rules-parse-results:window-2><a href=https://html.spec.whatwg.org/multipage/nav-history-apis.html#window>Window</a></code> <var>global</var> and a
+  <a href=#speculation-rules-parse-result id=speculation-rules-parse-results:speculation-rules-parse-result-3>speculation rules parse result</a> <var>result</var>:</p>
+
+  <ol><li><p>If <var>result</var>'s <a href=#srpr-error-to-rethrow id=speculation-rules-parse-results:srpr-error-to-rethrow-6>error to rethrow</a> is not
+   null, then return.<li><p><a href=https://infra.spec.whatwg.org/#list-remove id=speculation-rules-parse-results:list-remove data-x-internal=list-remove>Remove</a> <var>result</var>'s <a href=#srpr-sr-set id=speculation-rules-parse-results:srpr-sr-set-4>speculation rule set</a> from <var>global</var>'s <a href=https://html.spec.whatwg.org/multipage/nav-history-apis.html#concept-document-window id=speculation-rules-parse-results:concept-document-window-3>associated <code>Document</code></a>'s <a href=speculative-loading.html#document-sr-sets id=speculation-rules-parse-results:document-sr-sets-2>speculation rule sets</a>.<li><p><a id=speculation-rules-parse-results:consider-speculative-loads-2 href=speculative-loading.html#consider-speculative-loads>Consider speculative loads</a> for <var>global</var>'s <a href=https://html.spec.whatwg.org/multipage/nav-history-apis.html#concept-document-window id=speculation-rules-parse-results:concept-document-window-4>associated <code>Document</code></a>.</ol>
+  </div>
+
+  <div data-algorithm="">
+  <p>To <dfn id=update-speculation-rules>update speculation rules</dfn> given a <code id=speculation-rules-parse-results:window-3><a href=https://html.spec.whatwg.org/multipage/nav-history-apis.html#window>Window</a></code> <var>global</var>, a
+  <a href=#speculation-rules-parse-result id=speculation-rules-parse-results:speculation-rules-parse-result-4>speculation rules parse result</a> <var>oldResult</var>, and a <a href=#speculation-rules-parse-result id=speculation-rules-parse-results:speculation-rules-parse-result-5>speculation rules
+  parse result</a> <var>newResult</var>:</p>
+
+  <ol><li><p><a href=https://infra.spec.whatwg.org/#list-remove id=speculation-rules-parse-results:list-remove-2 data-x-internal=list-remove>Remove</a> <var>oldResult</var>'s <a href=#srpr-sr-set id=speculation-rules-parse-results:srpr-sr-set-5>speculation rule set</a> from <var>global</var>'s <a href=https://html.spec.whatwg.org/multipage/nav-history-apis.html#concept-document-window id=speculation-rules-parse-results:concept-document-window-5>associated <code>Document</code></a>'s <a href=speculative-loading.html#document-sr-sets id=speculation-rules-parse-results:document-sr-sets-3>speculation rule sets</a>.<li>
+    <p><a href=#register-speculation-rules id=speculation-rules-parse-results:register-speculation-rules>Register speculation rules</a> given <var>global</var>, <var>newResult</var>, and
+    true.</p>
+
+    <p id=note-update-speculation-rules-queue-errors class=note><a href=#note-update-speculation-rules-queue-errors class=self-link></a>When updating speculation rules,
+    as opposed to registering them for the first time, we ensure that any <code id=speculation-rules-parse-results:event-error><a href=indices.html#event-error>error</a></code> events are queued as tasks, instead of synchronously fired.
+    Although synchronously executing <code id=speculation-rules-parse-results:event-error-2><a href=indices.html#event-error>error</a></code> event handlers is OK
+    when inserting <code id=speculation-rules-parse-results:the-script-element-2><a href=https://html.spec.whatwg.org/multipage/scripting.html#the-script-element>script</a></code> elements, it's best if other modifications do not cause such
+    synchronous script execution.</p>
+   </ol>
+  </div>
+
+  
+
+
+  <h4 id=module-specifier-resolution><span class=secno>8.1.5</span> Module specifier resolution<a href=#module-specifier-resolution class=self-link></a></h4>
+
+  <h5 id=the-resolution-algorithm><span class=secno>8.1.5.1</span> The resolution algorithm<a href=#the-resolution-algorithm class=self-link></a></h5>
+
+  <p>The <a href=#resolve-a-module-specifier id=the-resolution-algorithm:resolve-a-module-specifier>resolve a module specifier</a> algorithm is the primary entry point for
+  converting module specifier strings into <a href=https://url.spec.whatwg.org/#concept-url id=the-resolution-algorithm:url data-x-internal=url>URLs</a>. When no <a href=#import-map id=the-resolution-algorithm:import-map>import maps</a> are involved, it is relatively straightforward, and
+  reduces to <a href=#resolving-a-url-like-module-specifier id=the-resolution-algorithm:resolving-a-url-like-module-specifier>resolving a URL-like module specifier</a>.</p>
+
+  <p>When there is a non-empty <a href=#import-map id=the-resolution-algorithm:import-map-2>import map</a> present, the behavior is more complex. It
+  checks candidate entries from all applicable <a href=#module-specifier-map id=the-resolution-algorithm:module-specifier-map>module specifier
+  maps</a>, from most-specific to least-specific <a href=#concept-import-map-scopes id=the-resolution-algorithm:concept-import-map-scopes>scopes</a> (falling back to the top-level unscoped <a href=#concept-import-map-imports id=the-resolution-algorithm:concept-import-map-imports>imports</a>), and from most-specific to least-specific
+  prefixes. For each candidate, the <a href=#resolving-an-imports-match id=the-resolution-algorithm:resolving-an-imports-match>resolve
+  an imports match</a> algorithm will give one of the following results:</p>
+
+  <ul><li><p>Successful resolution of the specifier to a <a id=the-resolution-algorithm:url-2 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a>. Then the
+  <a href=#resolve-a-module-specifier id=the-resolution-algorithm:resolve-a-module-specifier-2>resolve a module specifier</a> algorithm will return that URL.<li><p>Throwing an exception. Then the <a href=#resolve-a-module-specifier id=the-resolution-algorithm:resolve-a-module-specifier-3>resolve a module specifier</a> algorithm will
+   rethrow that exception, without any further fallbacks.<li><p>Failing to resolve, without an error. In this case the outer <a href=#resolve-a-module-specifier id=the-resolution-algorithm:resolve-a-module-specifier-4>resolve a module
+   specifier</a> algorithm will move on to the next candidate.</ul>
+
+  <p>In the end, if no successful resolution is found via any of the candidate <a href=#module-specifier-map id=the-resolution-algorithm:module-specifier-map-2>module specifier maps</a>, <a href=#resolve-a-module-specifier id=the-resolution-algorithm:resolve-a-module-specifier-5>resolve a module specifier</a> will throw
+  an exception. Thus the result is always either a <a id=the-resolution-algorithm:url-3 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a> or a thrown exception.</p>
+
+  
+
+  <div data-algorithm="">
+  <p>To <dfn id=resolve-a-module-specifier>resolve a module specifier</dfn> given a <a id=the-resolution-algorithm:the-script-element href=https://html.spec.whatwg.org/multipage/scripting.html#the-script-element>script</a>-or-null
+  <var>referringScript</var> and a <a id=the-resolution-algorithm:string href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a> <var>specifier</var>:</p>
+
+  <ol><li><p>Let <var>settingsObject</var> and <var>baseURL</var> be null.<li>
+    <p>If <var>referringScript</var> is not null:</p>
+
+    <ol><li><p>Set <var>settingsObject</var> to <var>referringScript</var>'s
+     <a href=#settings-object id=the-resolution-algorithm:settings-object>settings object</a>.<li><p>Set <var>baseURL</var> to <var>referringScript</var>'s <a href=#concept-script-base-url id=the-resolution-algorithm:concept-script-base-url>base URL</a>.</ol>
+   <li>
+    <p>Otherwise:</p>
+
+    <ol><li><p><a id=the-resolution-algorithm:assert href=https://infra.spec.whatwg.org/#assert data-x-internal=assert>Assert</a>: there is a <a href=#current-settings-object id=the-resolution-algorithm:current-settings-object>current settings object</a>.<li><p>Set <var>settingsObject</var> to the <a href=#current-settings-object id=the-resolution-algorithm:current-settings-object-2>current settings object</a>.<li><p>Set <var>baseURL</var> to <var>settingsObject</var>'s <a href=#api-base-url id=the-resolution-algorithm:api-base-url>API base
+     URL</a>.</ol>
+   <li><p>Let <var>importMap</var> be an <a href=#empty-import-map id=the-resolution-algorithm:empty-import-map>empty import map</a>.<li><p>If <var>settingsObject</var>'s <a href=#concept-settings-object-global id=the-resolution-algorithm:concept-settings-object-global>global
+   object</a> implements <code id=the-resolution-algorithm:window><a href=https://html.spec.whatwg.org/multipage/nav-history-apis.html#window>Window</a></code>, then set <var>importMap</var> to
+   <var>settingsObject</var>'s <a href=#concept-settings-object-global id=the-resolution-algorithm:concept-settings-object-global-2>global object</a>'s
+   <a href=#concept-global-import-map id=the-resolution-algorithm:concept-global-import-map>import map</a>.<li><p>Let <var>serializedBaseURL</var> be <var>baseURL</var>, <a href=https://url.spec.whatwg.org/#concept-url-serializer id=the-resolution-algorithm:concept-url-serializer data-x-internal=concept-url-serializer>serialized</a>.<li><p>Let <var>asURL</var> be the result of <a href=#resolving-a-url-like-module-specifier id=the-resolution-algorithm:resolving-a-url-like-module-specifier-2>resolving a URL-like module specifier</a>
+   given <var>specifier</var> and <var>baseURL</var>.<li><p>Let <var>normalizedSpecifier</var> be the <a href=https://url.spec.whatwg.org/#concept-url-serializer id=the-resolution-algorithm:concept-url-serializer-2 data-x-internal=concept-url-serializer>serialization</a> of <var>asURL</var>, if <var>asURL</var> is
+   non-null; otherwise, <var>specifier</var>.<li><p>Let <var>result</var> be a <a id=the-resolution-algorithm:url-4 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a>-or-null, initially null.<li>
+    <p><a href=https://infra.spec.whatwg.org/#list-iterate id=the-resolution-algorithm:list-iterate data-x-internal=list-iterate>For each</a> <var>scopePrefix</var> → <var>scopeImports</var>
+    of <var>importMap</var>'s <a href=#concept-import-map-scopes id=the-resolution-algorithm:concept-import-map-scopes-2>scopes</a>:</p>
+
+    <ol><li>
+      <p>If <var>scopePrefix</var> is <var>serializedBaseURL</var>, or if <var>scopePrefix</var> ends
+      with U+002F (/) and <var>scopePrefix</var> is a <a id=the-resolution-algorithm:code-unit-prefix href=https://infra.spec.whatwg.org/#code-unit-prefix data-x-internal=code-unit-prefix>code unit prefix</a> of
+      <var>serializedBaseURL</var>:</p>
+
+      <ol><li><p>Let <var>scopeImportsMatch</var> be the result of <a href=#resolving-an-imports-match id=the-resolution-algorithm:resolving-an-imports-match-2>resolving an imports
+       match</a> given <var>normalizedSpecifier</var>, <var>asURL</var>, and
+       <var>scopeImports</var>.<li><p>If <var>scopeImportsMatch</var> is not null, then set <var>result</var> to
+       <var>scopeImportsMatch</var>, and <a id=the-resolution-algorithm:break href=https://infra.spec.whatwg.org/#iteration-break data-x-internal=break>break</a>.</ol>
+     </ol>
+   <li><p>If <var>result</var> is null, set <var>result</var> to the result of <a href=#resolving-an-imports-match id=the-resolution-algorithm:resolving-an-imports-match-3>resolving an
+   imports match</a> given <var>normalizedSpecifier</var>, <var>asURL</var>, and
+   <var>importMap</var>'s <a href=#concept-import-map-imports id=the-resolution-algorithm:concept-import-map-imports-2>imports</a>.<li>
+    <p>If <var>result</var> is null, set it to <var>asURL</var>.</p>
+
+    <p class=note>By this point, if <var>result</var> was null, <var>specifier</var> wasn't
+    remapped to anything by <var>importMap</var>, but it might have been able to be turned into a
+    URL.</p>
+   <li>
+    <p>If <var>result</var> is not null:</p>
+
+    <ol><li><p><a href=#add-module-to-resolved-module-set id=the-resolution-algorithm:add-module-to-resolved-module-set>Add module to resolved module set</a> given <var>settingsObject</var>,
+     <var>serializedBaseURL</var>, <var>normalizedSpecifier</var>, and <var>asURL</var>.<li><p>Return <var>result</var>.</ol>
+   <li><p>Throw a <code id=the-resolution-algorithm:typeerror><a data-x-internal=typeerror href=https://tc39.es/ecma262/#sec-native-error-types-used-in-this-standard-typeerror>TypeError</a></code> indicating that <var>specifier</var> was a bare specifier,
+   but was not remapped to anything by <var>importMap</var>.</ol>
+  </div>
+
+  <div data-algorithm="">
+  <p>To <dfn id=resolving-an-imports-match>resolve an imports match</dfn>, given a
+  <a id=the-resolution-algorithm:string-2 href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a> <var>normalizedSpecifier</var>, a <a id=the-resolution-algorithm:url-5 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a>-or-null <var>asURL</var>,
+  and a <a href=#module-specifier-map id=the-resolution-algorithm:module-specifier-map-3>module specifier map</a> <var>specifierMap</var>:</p>
+
+  <ol><li>
+    <p><a href=https://infra.spec.whatwg.org/#list-iterate id=the-resolution-algorithm:list-iterate-2 data-x-internal=list-iterate>For each</a> <var>specifierKey</var> →
+    <var>resolutionResult</var> of <var>specifierMap</var>:</p>
+
+    <ol><li>
+      <p>If <var>specifierKey</var> is <var>normalizedSpecifier</var>:</p>
+
+      <ol><li>
+        <p>If <var>resolutionResult</var> is null, then throw a <code id=the-resolution-algorithm:typeerror-2><a data-x-internal=typeerror href=https://tc39.es/ecma262/#sec-native-error-types-used-in-this-standard-typeerror>TypeError</a></code> indicating
+        that resolution of <var>specifierKey</var> was blocked by a null entry.</p>
+
+        <p class=note>This will terminate the entire <a href=#resolve-a-module-specifier id=the-resolution-algorithm:resolve-a-module-specifier-6>resolve a module specifier</a>
+        algorithm, without any further fallbacks.</p>
+       <li><p><a id=the-resolution-algorithm:assert-2 href=https://infra.spec.whatwg.org/#assert data-x-internal=assert>Assert</a>: <var>resolutionResult</var> is a <a id=the-resolution-algorithm:url-6 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a>.<li><p>Return <var>resolutionResult</var>.</ol>
+     <li>
+      <p>If all of the following are true:</p>
+
+      <ul><li><p><var>specifierKey</var> ends with U+002F (/);<li><p><var>specifierKey</var> is a <a id=the-resolution-algorithm:code-unit-prefix-2 href=https://infra.spec.whatwg.org/#code-unit-prefix data-x-internal=code-unit-prefix>code unit prefix</a> of
+       <var>normalizedSpecifier</var>; and<li><p>either <var>asURL</var> is null, or <var>asURL</var> <a id=the-resolution-algorithm:is-special href=https://url.spec.whatwg.org/#is-special data-x-internal=is-special>is special</a>,</ul>
+
+      <p>then:</p>
+
+      <ol><li>
+        <p>If <var>resolutionResult</var> is null, then throw a <code id=the-resolution-algorithm:typeerror-3><a data-x-internal=typeerror href=https://tc39.es/ecma262/#sec-native-error-types-used-in-this-standard-typeerror>TypeError</a></code> indicating
+        that the resolution of <var>specifierKey</var> was blocked by a null entry.</p>
+
+        <p class=note>This will terminate the entire <a href=#resolve-a-module-specifier id=the-resolution-algorithm:resolve-a-module-specifier-7>resolve a module specifier</a>
+        algorithm, without any further fallbacks.</p>
+       <li><p><a id=the-resolution-algorithm:assert-3 href=https://infra.spec.whatwg.org/#assert data-x-internal=assert>Assert</a>: <var>resolutionResult</var> is a <a id=the-resolution-algorithm:url-7 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a>.<li><p>Let <var>afterPrefix</var> be the portion of <var>normalizedSpecifier</var> after the
+       initial <var>specifierKey</var> prefix.<li><p><a id=the-resolution-algorithm:assert-4 href=https://infra.spec.whatwg.org/#assert data-x-internal=assert>Assert</a>: <var>resolutionResult</var>, <a href=https://url.spec.whatwg.org/#concept-url-serializer id=the-resolution-algorithm:concept-url-serializer-3 data-x-internal=concept-url-serializer>serialized</a>, ends with U+002F (/), as enforced during
+       <a href=#parse-an-import-map-string id=the-resolution-algorithm:parse-an-import-map-string>parsing</a>.<li><p>Let <var>url</var> be the result of <a href=https://url.spec.whatwg.org/#concept-url-parser id=the-resolution-algorithm:url-parser data-x-internal=url-parser>URL parsing</a>
+       <var>afterPrefix</var> with <var>resolutionResult</var>.<li>
+        <p>If <var>url</var> is failure, then throw a <code id=the-resolution-algorithm:typeerror-4><a data-x-internal=typeerror href=https://tc39.es/ecma262/#sec-native-error-types-used-in-this-standard-typeerror>TypeError</a></code> indicating that
+        resolution of <var>normalizedSpecifier</var> was blocked since the <var>afterPrefix</var>
+        portion could not be URL-parsed relative to the <var>resolutionResult</var> mapped to by
+        the <var>specifierKey</var> prefix.</p>
+
+        <p class=note>This will terminate the entire <a href=#resolve-a-module-specifier id=the-resolution-algorithm:resolve-a-module-specifier-8>resolve a module specifier</a>
+        algorithm, without any further fallbacks.</p>
+       <li><p><a id=the-resolution-algorithm:assert-5 href=https://infra.spec.whatwg.org/#assert data-x-internal=assert>Assert</a>: <var>url</var> is a <a id=the-resolution-algorithm:url-8 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a>.<li>
+        <p>If the <a href=https://url.spec.whatwg.org/#concept-url-serializer id=the-resolution-algorithm:concept-url-serializer-4 data-x-internal=concept-url-serializer>serialization</a> of
+        <var>resolutionResult</var> is not a <a id=the-resolution-algorithm:code-unit-prefix-3 href=https://infra.spec.whatwg.org/#code-unit-prefix data-x-internal=code-unit-prefix>code unit prefix</a> of the <a href=https://url.spec.whatwg.org/#concept-url-serializer id=the-resolution-algorithm:concept-url-serializer-5 data-x-internal=concept-url-serializer>serialization</a> of <var>url</var>, then throw a
+        <code id=the-resolution-algorithm:typeerror-5><a data-x-internal=typeerror href=https://tc39.es/ecma262/#sec-native-error-types-used-in-this-standard-typeerror>TypeError</a></code> indicating that the resolution of <var>normalizedSpecifier</var> was
+        blocked due to it backtracking above its prefix <var>specifierKey</var>.</p>
+
+        <p class=note>This will terminate the entire <a href=#resolve-a-module-specifier id=the-resolution-algorithm:resolve-a-module-specifier-9>resolve a module specifier</a>
+        algorithm, without any further fallbacks.</p>
+       <li><p>Return <var>url</var>.</ol>
+     </ol>
+   <li>
+    <p>Return null.</p>
+
+    <p class=note>The <a href=#resolve-a-module-specifier id=the-resolution-algorithm:resolve-a-module-specifier-10>resolve a module specifier</a> algorithm will fall back to a
+    less-specific scope, or to "<code>imports</code>", if possible.</p>
+   </ol>
+  </div>
+
+  <div data-algorithm="">
+  <p>To <dfn id=resolving-a-url-like-module-specifier>resolve a URL-like module
+  specifier</dfn>, given a <a id=the-resolution-algorithm:string-3 href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a> <var>specifier</var> and a <a id=the-resolution-algorithm:url-9 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a>
+  <var>baseURL</var>:</p>
+
+  <ol><li>
+    <p>If <var>specifier</var> <a id=the-resolution-algorithm:starts-with href=https://infra.spec.whatwg.org/#string-starts-with data-x-internal=starts-with>starts with</a> "<code>/</code>", "<code>./</code>", or "<code>../</code>":</p>
+
+    <ol><li><p>Let <var>url</var> be the result of <a href=https://url.spec.whatwg.org/#concept-url-parser id=the-resolution-algorithm:url-parser-2 data-x-internal=url-parser>URL parsing</a>
+     <var>specifier</var> with <var>baseURL</var>.<li>
+      <p>If <var>url</var> is failure, then return null.</p>
+
+      <p class=example>One way this could happen is if <var>specifier</var> is "<code>../foo</code>" and <var>baseURL</var> is a <code id=the-resolution-algorithm:data-protocol><a data-x-internal=data-protocol href=https://www.rfc-editor.org/rfc/rfc2397#section-2>data:</a></code> URL.</p>
+     <li><p>Return <var>url</var>.</ol>
+
+    <p class=note>This includes cases where <var>specifier</var> <a id=the-resolution-algorithm:starts-with-2 href=https://infra.spec.whatwg.org/#string-starts-with data-x-internal=starts-with>starts with</a> "<code>//</code>", i.e., scheme-relative URLs. Thus, <var>url</var> might end up with a
+    different <a href=https://url.spec.whatwg.org/#concept-url-host id=the-resolution-algorithm:concept-url-host data-x-internal=concept-url-host>host</a> than <var>baseURL</var>.</p>
+   <li><p>Let <var>url</var> be the result of <a href=https://url.spec.whatwg.org/#concept-url-parser id=the-resolution-algorithm:url-parser-3 data-x-internal=url-parser>URL parsing</a>
+   <var>specifier</var> (with no base URL).<li><p>If <var>url</var> is failure, then return null.<li><p>Return <var>url</var>.</p>
+  </ol>
+  </div>
+
+  
+
+
+  <h5 id=import-maps><span class=secno>8.1.5.2</span> Import maps<a href=#import-maps class=self-link></a></h5>
+
+  <p>An <a href=#import-map id=import-map-dev>import map</a> allows control over module specifier resolution. Import maps
+  are delivered via inline <code id=import-maps:the-script-element><a href=https://html.spec.whatwg.org/multipage/scripting.html#the-script-element>script</a></code> elements with their <code id=import-maps:attr-script-type><a href=https://html.spec.whatwg.org/multipage/scripting.html#attr-script-type>type</a></code> attribute set to "<code>importmap</code>", and
+  with their <a id=import-maps:child-text-content href=https://dom.spec.whatwg.org/#concept-child-text-content data-x-internal=child-text-content>child text content</a> containing a JSON representation of the import
+  map.</p>
+
+  <p>A <code id=import-maps:document><a href=dom.html#document>Document</a></code> can have multiple import maps processed, which can happen either
+  before or after any modules have been imported, e.g., via <code id=import-maps:import()><a data-x-internal=import() href=https://tc39.es/ecma262/#sec-import-calls>import()</a></code> expressions or
+  <code id=import-maps:the-script-element-2><a href=https://html.spec.whatwg.org/multipage/scripting.html#the-script-element>script</a></code> elements with their <code id=import-maps:attr-script-type-2><a href=https://html.spec.whatwg.org/multipage/scripting.html#attr-script-type>type</a></code> attribute set
+  to "<code>module</code>". The <a href=#merge-existing-and-new-import-maps id=import-maps:merge-existing-and-new-import-maps>merge existing and new import maps</a> algorithm
+  ensures that new import maps cannot define the module resolution for modules that were already
+  defined by past import maps, or for ones that were already resolved.</p>
+
+  <div id=example-import-map-bare-specifier class=example><a href=#example-import-map-bare-specifier class=self-link></a>
+   <p>The simplest use of import maps is to globally remap a bare module specifier:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;moment&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/moment/src/moment.js&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>This enables statements like <code class=js>import moment from "moment";</code>
+   to work, fetching and evaluating the JavaScript module at the <code>/node_modules/moment/src/moment.js</code> URL.</p>
+  </div>
+
+  <div id=example-import-map-trailing-slashes class=example><a href=#example-import-map-trailing-slashes class=self-link></a>
+   <p>An import map can remap a class of module specifiers into a class of URLs by using trailing
+   slashes, like so:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;moment/&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/moment/src/&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>This enables statements like <code class=js>import localeData from
+   "moment/locale/zh-cn.js";</code> to work, fetching and evaluating the JavaScript module at the
+   <code>/node_modules/moment/src/locale/zh-cn.js</code> URL. Such trailing-slash
+   mappings are often combined with bare-specifier mappings, e.g.</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;moment&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/moment/src/moment.js&quot;</c-><c- p>,</c->
+    <c- u>&quot;moment/&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/moment/src/&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>so that both the "main module" specified by "<code>moment</code>" and the
+   "submodules" specified by paths such as "<code>moment/locale/zh-cn.js</code>" are
+   available.</p>
+  </div>
+
+  <div id=example-import-map-url-like-specifier class=example><a href=#example-import-map-url-like-specifier class=self-link></a>
+   <p>Bare specifiers are not the only type of module specifiers which import maps can remap.
+   "URL-like" specifiers, i.e., those that are either parseable as absolute URLs or start with
+   "<code>/</code>", "<code>./</code>", or "<code>../</code>", can be
+   remapped as well:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;https://cdn.example.com/vue/dist/vue.runtime.esm.js&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/vue/dist/vue.runtime.esm.js&quot;</c-><c- p>,</c->
+    <c- u>&quot;/js/app.mjs&quot;</c-><c- o>:</c-> <c- u>&quot;/js/app-8e0d62a03.mjs&quot;</c-><c- p>,</c->
+    <c- u>&quot;../helpers/&quot;</c-><c- o>:</c-> <c- u>&quot;https://cdn.example/helpers/&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>Note how the URL to be remapped, as well as the URL being mapped to, can be specified either
+   as absolute URLs, or as relative URLs starting with "<code>/</code>", "<code>./</code>", or "<code>../</code>". (They cannot be specified as relative
+   URLs without those starting sigils, as those help distinguish from bare module specifiers.) Also
+   note how the <a href=#example-import-map-trailing-slashes>trailing slash mapping</a> works in
+   this context as well.</p>
+
+   <p>Such remappings operate on the post-canonicalization URL, and do not require a match between
+   the literal strings supplied in the import map key and the imported module specifier. So for
+   example, if this import map was included on <code>https://example.com/app.html</code>,
+   then not only would <code class=js>import "/js/app.mjs"</code> be remapped, but so
+   would <code class=js>import "./js/app.mjs"</code> and <code class=js>import "./foo/../js/app.mjs"</code>.</p>
+  </div>
+
+  <div id=example-import-map-scopes class=example><a href=#example-import-map-scopes class=self-link></a>
+   <p>All previous examples have globally remapped module specifiers, by using the top-level "<code>imports</code>" key in the import map. The top-level "<code>scopes</code>"
+   key can be used to provide localized remappings, which only apply when the referring module
+   matches a specific URL prefix. For example:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;scopes&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/a/&quot;</c-> <c- o>:</c-> <c- p>{</c->
+      <c- u>&quot;moment&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/moment/src/moment.js&quot;</c->
+    <c- p>},</c->
+    <c- u>&quot;/b/&quot;</c-> <c- o>:</c-> <c- p>{</c->
+      <c- u>&quot;moment&quot;</c-><c- o>:</c-> <c- u>&quot;https://cdn.example.com/moment/src/moment.js&quot;</c->
+    <c- p>}</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>With this import map, the statement <code>import "moment"</code> will have
+   different meanings depending on which referrer script contains the statement:</p>
+
+   <ul><li><p>Inside scripts located under <code>/a/</code>, this will import <code>/node_modules/moment/src/moment.js</code>.<li><p>Inside scripts located under <code>/b/</code>, this will import <code>https://cdn.example.com/moment/src/moment.js</code>.<li><p>Inside scripts located under <code>/c/</code>, this will fail to resolve and
+    thus throw an exception.</ul>
+
+   <p>A typical usage of scopes is to allow multiple versions of the "same" module to exist in a
+   web application, with some parts of the module graph importing one version, and other parts
+   importing another version.
+  </div>
+
+  <div id=example-import-map-scopes-overlapping class=example><a href=#example-import-map-scopes-overlapping class=self-link></a>
+   <p>Scopes can overlap each other, and overlap the global "<code>imports</code>"
+   specifier map. At resolution time, scopes are consulted in order of most- to least-specific,
+   where specificity is measured by sorting the scopes using the <a id=import-maps:code-unit-less-than href=https://infra.spec.whatwg.org/#code-unit-less-than data-x-internal=code-unit-less-than>code unit less than</a>
+   operation. So, for example, "<code>/scope2/scope3/</code>" is treated as more specific
+   than "<code>/scope2/</code>", which is treated as more specific than the top-level
+   (unscoped) mappings.</p>
+
+   <p>The following import map illustrates this:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;a&quot;</c-><c- o>:</c-> <c- u>&quot;/a-1.mjs&quot;</c-><c- p>,</c->
+    <c- u>&quot;b&quot;</c-><c- o>:</c-> <c- u>&quot;/b-1.mjs&quot;</c-><c- p>,</c->
+    <c- u>&quot;c&quot;</c-><c- o>:</c-> <c- u>&quot;/c-1.mjs&quot;</c->
+  <c- p>},</c->
+  <c- u>&quot;scopes&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/scope2/&quot;</c-><c- o>:</c-> <c- p>{</c->
+      <c- u>&quot;a&quot;</c-><c- o>:</c-> <c- u>&quot;/a-2.mjs&quot;</c->
+    <c- p>},</c->
+    <c- u>&quot;/scope2/scope3/&quot;</c-><c- o>:</c-> <c- p>{</c->
+      <c- u>&quot;b&quot;</c-><c- o>:</c-> <c- u>&quot;/b-3.mjs&quot;</c->
+    <c- p>}</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>This results in the following resolutions (using relative URLs for brevity):</p>
+
+   <table id=table-import-map-scopes-example><thead><tr><td colspan=2 rowspan=2>
+      <th colspan=3>Specifier
+     <tr><th>"<code>a</code>"
+      <th>"<code>b</code>"
+      <th>"<code>c</code>"
+    <tbody><tr><th rowspan=3>Referrer
+      <th><code>/scope1/r.mjs</code>
+      <td><code>/a-1.mjs</code>
+      <td><code>/b-1.mjs</code>
+      <td><code>/c-1.mjs</code>
+     <tr><th><code>/scope2/r.mjs</code>
+      <td><code>/a-2.mjs</code>
+      <td><code>/b-1.mjs</code>
+      <td><code>/c-1.mjs</code>
+     <tr><th><code>/scope2/scope3/r.mjs</code>
+      <td><code>/a-2.mjs</code>
+      <td><code>/b-3.mjs</code>
+      <td><code>/c-1.mjs</code>
+   </table>
+  </div>
+
+  <div id=example-import-map-integrity class=example><a href=#example-import-map-integrity class=self-link></a>
+   <p>Import maps can also be used to provide modules with integrity metadata to be used in
+   <cite>Subresource Integrity</cite> checks. <a href=references.html#refsSRI>[SRI]</a>
+   </p>
+
+   <p>The following import map illustrates this:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;a&quot;</c-><c- o>:</c-> <c- u>&quot;/a-1.mjs&quot;</c-><c- p>,</c->
+    <c- u>&quot;b&quot;</c-><c- o>:</c-> <c- u>&quot;/b-1.mjs&quot;</c-><c- p>,</c->
+    <c- u>&quot;c&quot;</c-><c- o>:</c-> <c- u>&quot;/c-1.mjs&quot;</c->
+  <c- p>},</c->
+  <c- u>&quot;integrity&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/a-1.mjs&quot;</c-><c- o>:</c-> <c- u>&quot;sha384-Li9vy3DqF8tnTXuiaAJuML3ky+er10rcgNR/VqsVpcw+ThHmYcwiB1pbOxEbzJr7&quot;</c-><c- p>,</c->
+    <c- u>&quot;/d-1.mjs&quot;</c-><c- o>:</c-> <c- u>&quot;sha384-MBO5IDfYaE6c6Aao94oZrIOiC6CGiSN2n4QUbHNPhzk5Xhm0djZLQqTpL0HzTUxk&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>The above example provides integrity metadata to be enforced on the modules <code>/a-1.mjs</code> and <code>/d-1.mjs</code>, even if the latter is not defined
+   as an import in the map.</p>
+  </div>
+
+  <hr>
+
+  <div data-algorithm="">
+  <p>The <a id=import-maps:child-text-content-2 href=https://dom.spec.whatwg.org/#concept-child-text-content data-x-internal=child-text-content>child text content</a> of a <code id=import-maps:the-script-element-3><a href=https://html.spec.whatwg.org/multipage/scripting.html#the-script-element>script</a></code> element representing an
+  <a href=#import-map id=import-maps:import-map>import map</a> must match the following <dfn id=import-map-authoring-requirements>import map authoring
+  requirements</dfn>:</p>
+
+  <ul><li><p>It must be valid JSON. <a href=references.html#refsJSON>[JSON]</a><li><p>The JSON must represent a JSON object, with at most the three keys "<code>imports</code>", "<code>scopes</code>", and "<code>integrity</code>".<li><p>The values corresponding to the "<code>imports</code>", "<code>scopes</code>", and "<code>integrity</code>" keys, if present,
+   must themselves be JSON objects.<li><p>The value corresponding to the "<code>imports</code>" key, if present, must be
+   a <a href=#valid-module-specifier-map id=import-maps:valid-module-specifier-map>valid module specifier map</a>.<li><p>The value corresponding to the "<code>scopes</code>" key, if present, must be a
+   JSON object, whose keys are <a href=https://url.spec.whatwg.org/#valid-url-string id=import-maps:valid-url-string data-x-internal=valid-url-string>valid URL strings</a> and whose
+   values are <a href=#valid-module-specifier-map id=import-maps:valid-module-specifier-map-2>valid module specifier
+   maps</a>.<li><p>The value corresponding to the "<code>integrity</code>" key, if present, must
+   be a JSON object, whose keys are <a href=https://url.spec.whatwg.org/#valid-url-string id=import-maps:valid-url-string-2 data-x-internal=valid-url-string>valid URL strings</a> and
+   whose values fit <a id=import-maps:the-requirements-of-the-integrity-attribute href=https://w3c.github.io/webappsec-subresource-integrity/#the-integrity-attribute data-x-internal=the-requirements-of-the-integrity-attribute>the requirements of the integrity attribute</a>.</ul>
+  </div>
+
+  <div data-algorithm="">
+  <p>A <dfn id=valid-module-specifier-map>valid module specifier map</dfn> is a JSON object that meets the following
+  requirements:</p>
+
+  <ul><li><p>All of its keys must be nonempty.<li><p>All of its values must be strings.<li><p>Each value must be either a <a href=https://url.spec.whatwg.org/#syntax-url-absolute id=import-maps:absolute-url data-x-internal=absolute-url>valid absolute URL</a> or a
+   <a id=import-maps:valid-url-string-3 href=https://url.spec.whatwg.org/#valid-url-string data-x-internal=valid-url-string>valid URL string</a> that <a id=import-maps:starts-with href=https://infra.spec.whatwg.org/#string-starts-with data-x-internal=starts-with>starts with</a> "<code>/</code>", "<code>./</code>", or "<code>../</code>".<li><p>If a given key <a id=import-maps:ends-with href=https://infra.spec.whatwg.org/#string-ends-with data-x-internal=ends-with>ends with</a> "<code>/</code>", then the corresponding
+   value must also.</ul>
+  </div>
+
+
+  
+
+  <h5 id=import-map-processing-model><span class=secno>8.1.5.3</span> Import map processing model<a href=#import-map-processing-model class=self-link></a></h5>
+
+  <p>Formally, an <dfn id=import-map>import map</dfn> is a <a id=import-map-processing-model:struct href=https://infra.spec.whatwg.org/#struct data-x-internal=struct>struct</a> with three <a href=https://infra.spec.whatwg.org/#struct-item id=import-map-processing-model:struct-item data-x-internal=struct-item>items</a>:</p>
+
+  <ul><li><p><dfn id=concept-import-map-imports>imports</dfn>, a <a href=#module-specifier-map id=import-map-processing-model:module-specifier-map>module specifier
+   map</a>;<li><p><dfn id=concept-import-map-scopes>scopes</dfn>, an <a id=import-map-processing-model:ordered-map href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a> of
+   <a href=https://url.spec.whatwg.org/#concept-url id=import-map-processing-model:url data-x-internal=url>URLs</a> to <a href=#module-specifier-map id=import-map-processing-model:module-specifier-map-2>module specifier
+   maps</a>; and<li><p><dfn id=concept-import-map-integrity>integrity</dfn>, a <a href=#module-integrity-map id=import-map-processing-model:module-integrity-map>module integrity
+   map</a>.</ul>
+
+  <p>A <dfn id=module-specifier-map>module specifier map</dfn> is an <a id=import-map-processing-model:ordered-map-2 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a> whose <a href=https://infra.spec.whatwg.org/#map-key id=import-map-processing-model:map-key data-x-internal=map-key>keys</a> are <a href=https://infra.spec.whatwg.org/#string id=import-map-processing-model:string data-x-internal=string>strings</a> and whose <a href=https://infra.spec.whatwg.org/#map-value id=import-map-processing-model:map-value data-x-internal=map-value>values</a> are either <a href=https://url.spec.whatwg.org/#concept-url id=import-map-processing-model:url-2 data-x-internal=url>URLs</a> or nulls.</p>
+
+  <p>A <dfn id=module-integrity-map>module integrity map</dfn> is an <a id=import-map-processing-model:ordered-map-3 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a> whose <a href=https://infra.spec.whatwg.org/#map-key id=import-map-processing-model:map-key-2 data-x-internal=map-key>keys</a> are <a href=https://url.spec.whatwg.org/#concept-url id=import-map-processing-model:url-3 data-x-internal=url>URLs</a> and whose <a href=https://infra.spec.whatwg.org/#map-value id=import-map-processing-model:map-value-2 data-x-internal=map-value>values</a> are <a href=https://infra.spec.whatwg.org/#string id=import-map-processing-model:string-2 data-x-internal=string>strings</a> that will be used as <a href=https://fetch.spec.whatwg.org/#concept-request-integrity-metadata id=import-map-processing-model:concept-request-integrity-metadata data-x-internal=concept-request-integrity-metadata>integrity metadata</a>.</p>
+
+  <p>An <dfn id=empty-import-map>empty import map</dfn> is an <a href=#import-map id=import-map-processing-model:import-map>import map</a> with its <a href=#concept-import-map-imports id=import-map-processing-model:concept-import-map-imports>imports</a> and <a href=#concept-import-map-scopes id=import-map-processing-model:concept-import-map-scopes>scopes</a> both being empty maps.</p>
+
+  <hr>
+
+  <p>A <dfn id=specifier-resolution-record>specifier resolution record</dfn> is a <a id=import-map-processing-model:struct-2 href=https://infra.spec.whatwg.org/#struct data-x-internal=struct>struct</a>. It has the following <a href=https://infra.spec.whatwg.org/#struct-item id=import-map-processing-model:struct-item-2 data-x-internal=struct-item>items</a>:</p>
+  <dl><dt>A <dfn id=specifier-resolution-record-serialized-base-url>serialized base
+   URL</dfn><dd>A <a id=import-map-processing-model:string-3 href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a>-or-null that represents the base URL of the specifier, when one
+   exists.<dt>A <dfn id=specifier-resolution-record-specifier>specifier</dfn><dd>A <a id=import-map-processing-model:string-4 href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a> representing the specifier.<dt>A <dfn id=specifier-resolution-record-as-url>specifier as a URL</dfn><dd>A <a id=import-map-processing-model:url-4 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a>-or-null that represents the URL in case of a URL-like module
+   specifier.</dl>
+
+  <p class=note>Implementations can replace
+  <a href=#specifier-resolution-record-as-url id=import-map-processing-model:specifier-resolution-record-as-url>specifier as a URL</a> with a boolean that
+  indicates that the specifier is either bare or URL-like that <a id=import-map-processing-model:is-special href=https://url.spec.whatwg.org/#is-special data-x-internal=is-special>is special</a>.</p>
+
+  <div data-algorithm="">
+  <p>To <dfn id=add-module-to-resolved-module-set>add module to resolved module set</dfn> given an <a href=#environment-settings-object id=import-map-processing-model:environment-settings-object>environment settings
+  object</a> <var>settingsObject</var>, a <a id=import-map-processing-model:string-5 href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a> <var>serializedBaseURL</var>, a
+  <a id=import-map-processing-model:string-6 href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a> <var>normalizedSpecifier</var>, and a <a id=import-map-processing-model:url-5 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a>-or-null
+  <var>asURL</var>:</p>
+
+  <ol><li><p>Let <var>global</var> be <var>settingsObject</var>'s <a href=#concept-settings-object-global id=import-map-processing-model:concept-settings-object-global>global object</a>.<li><p>If <var>global</var> does not implement <code id=import-map-processing-model:window><a href=https://html.spec.whatwg.org/multipage/nav-history-apis.html#window>Window</a></code>, then return.<li><p>Let <var>record</var> be a new <a href=#specifier-resolution-record id=import-map-processing-model:specifier-resolution-record>specifier resolution record</a>, with <a href=#specifier-resolution-record-serialized-base-url id=import-map-processing-model:specifier-resolution-record-serialized-base-url>serialized base URL</a> set to
+   <var>serializedBaseURL</var>, <a href=#specifier-resolution-record-specifier id=import-map-processing-model:specifier-resolution-record-specifier>specifier</a> set to
+   <var>normalizedSpecifier</var>, and <a href=#specifier-resolution-record-as-url id=import-map-processing-model:specifier-resolution-record-as-url-2>specifier as a URL</a> set to
+   <var>asURL</var>.<li><p><a href=https://infra.spec.whatwg.org/#set-append id=import-map-processing-model:set-append data-x-internal=set-append>Append</a> <var>record</var> to <var>global</var>'s
+   <a href=#resolved-module-set id=import-map-processing-model:resolved-module-set>resolved module set</a>.</ol>
+  </div>
+  <hr>
+
+  <div data-algorithm="">
+  <p>To <dfn id=parse-an-import-map-string>parse an import map string</dfn>, given a <a id=import-map-processing-model:string-7 href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a> <var>input</var> and a
+  <a id=import-map-processing-model:url-6 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a> <var>baseURL</var>:</p>
+
+  <ol><li><p>Let <var>parsed</var> be the result of <a href=https://infra.spec.whatwg.org/#parse-a-json-string-to-an-infra-value id=import-map-processing-model:parse-a-json-string-to-an-infra-value data-x-internal=parse-a-json-string-to-an-infra-value>parsing a JSON string to an Infra value</a> given <var>input</var>.<li><p>If <var>parsed</var> is not an <a id=import-map-processing-model:ordered-map-4 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a>, then throw a
+   <code id=import-map-processing-model:typeerror><a data-x-internal=typeerror href=https://tc39.es/ecma262/#sec-native-error-types-used-in-this-standard-typeerror>TypeError</a></code> indicating that the top-level value needs to be a JSON object.<li><p>Let <var>sortedAndNormalizedImports</var> be an empty <a id=import-map-processing-model:ordered-map-5 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a>.<li>
+    <p>If <var>parsed</var>["<code>imports</code>"] <a href=https://infra.spec.whatwg.org/#map-exists id=import-map-processing-model:map-exists data-x-internal=map-exists>exists</a>:</p>
+
+    <ol><li><p>If <var>parsed</var>["<code>imports</code>"] is not an <a id=import-map-processing-model:ordered-map-6 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered
+     map</a>, then throw a <code id=import-map-processing-model:typeerror-2><a data-x-internal=typeerror href=https://tc39.es/ecma262/#sec-native-error-types-used-in-this-standard-typeerror>TypeError</a></code> indicating that the value for the "<code>imports</code>" top-level key needs to be a JSON object.<li><p>Set <var>sortedAndNormalizedImports</var> to the result of <a href=#sorting-and-normalizing-a-module-specifier-map id=import-map-processing-model:sorting-and-normalizing-a-module-specifier-map>sorting and
+     normalizing a module specifier map</a> given <var>parsed</var>["<code>imports</code>"] and <var>baseURL</var>.</ol>
+   <li><p>Let <var>sortedAndNormalizedScopes</var> be an empty <a id=import-map-processing-model:ordered-map-7 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a>.<li>
+    <p>If <var>parsed</var>["<code>scopes</code>"] <a href=https://infra.spec.whatwg.org/#map-exists id=import-map-processing-model:map-exists-2 data-x-internal=map-exists>exists</a>:</p>
+
+    <ol><li><p>If <var>parsed</var>["<code>scopes</code>"] is not an <a id=import-map-processing-model:ordered-map-8 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered
+     map</a>, then throw a <code id=import-map-processing-model:typeerror-3><a data-x-internal=typeerror href=https://tc39.es/ecma262/#sec-native-error-types-used-in-this-standard-typeerror>TypeError</a></code> indicating that the value for the "<code>scopes</code>" top-level key needs to be a JSON object.<li><p>Set <var>sortedAndNormalizedScopes</var> to the result of <a href=#sorting-and-normalizing-scopes id=import-map-processing-model:sorting-and-normalizing-scopes>sorting and normalizing
+     scopes</a> given <var>parsed</var>["<code>scopes</code>"] and
+     <var>baseURL</var>.</ol>
+   <li><p>Let <var>normalizedIntegrity</var> be an empty <a id=import-map-processing-model:ordered-map-9 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a>.<li>
+    <p>If <var>parsed</var>["<code>integrity</code>"] <a href=https://infra.spec.whatwg.org/#map-exists id=import-map-processing-model:map-exists-3 data-x-internal=map-exists>exists</a>:</p>
+
+    <ol><li><p>If <var>parsed</var>["<code>integrity</code>"] is not an <a id=import-map-processing-model:ordered-map-10 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered
+     map</a>, then throw a <code id=import-map-processing-model:typeerror-4><a data-x-internal=typeerror href=https://tc39.es/ecma262/#sec-native-error-types-used-in-this-standard-typeerror>TypeError</a></code> indicating that the value for the "<code>integrity</code>" top-level key needs to be a JSON object.<li><p>Set <var>normalizedIntegrity</var> to the result of <a href=#normalizing-a-module-integrity-map id=import-map-processing-model:normalizing-a-module-integrity-map>normalizing a module
+     integrity map</a> given <var>parsed</var>["<code>integrity</code>"] and
+     <var>baseURL</var>.</ol>
+   <li>
+    <p>If <var>parsed</var>'s <a href=https://infra.spec.whatwg.org/#map-key id=import-map-processing-model:map-key-3 data-x-internal=map-key>keys</a> <a href=https://infra.spec.whatwg.org/#list-contain id=import-map-processing-model:list-contains data-x-internal=list-contains>contains</a> any items besides "<code>imports</code>", "<code>scopes</code>", or "<code>integrity</code>", then the user agent should
+    <a id=import-map-processing-model:report-a-warning-to-the-console href=https://console.spec.whatwg.org/#report-a-warning-to-the-console data-x-internal=report-a-warning-to-the-console>report a warning to the console</a> indicating that an invalid top-level key was
+    present in the import map.</p>
+
+    <p class=note>This can help detect typos. It is not an error, because that would prevent any
+    future extensions from being added backward-compatibly.</p>
+   <li><p>Return an <a href=#import-map id=import-map-processing-model:import-map-2>import map</a> whose <a href=#concept-import-map-imports id=import-map-processing-model:concept-import-map-imports-2>imports</a> are <var>sortedAndNormalizedImports</var>,
+   whose <a href=#concept-import-map-scopes id=import-map-processing-model:concept-import-map-scopes-2>scopes</a> are
+   <var>sortedAndNormalizedScopes</var>, and whose <a href=#concept-import-map-integrity id=import-map-processing-model:concept-import-map-integrity>integrity</a> are
+   <var>normalizedIntegrity</var>.</ol>
+  </div>
+
+  <div id=example-import-map-normalization class=example><a href=#example-import-map-normalization class=self-link></a>
+   <p>The <a href=#import-map id=import-map-processing-model:import-map-3>import map</a> that results from this parsing algorithm is highly normalized.
+   For example, given a base URL of <code>https://example.com/base/page.html</code>, the
+   input</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/app/helper&quot;</c-><c- o>:</c-> <c- u>&quot;node_modules/helper/index.mjs&quot;</c-><c- p>,</c->
+    <c- u>&quot;lodash&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/lodash-es/lodash.js&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>will generate an <a href=#import-map id=import-map-processing-model:import-map-4>import map</a> with <a href=#concept-import-map-imports id=import-map-processing-model:concept-import-map-imports-3>imports</a> of</p>
+
+   <pre><code>«[
+  "https://example.com/app/helper" → https://example.com/base/node_modules/helper/index.mjs
+  "lodash" → https://example.com/node_modules/lodash-es/lodash.js
+]»</code></pre>
+
+   <p>and (despite nothing being present in the input string) an empty <a id=import-map-processing-model:ordered-map-11 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a> for
+   its <a href=#concept-import-map-scopes id=import-map-processing-model:concept-import-map-scopes-3>scopes</a>.</p>
+  </div>
+
+  <hr>
+
+  <div data-algorithm="">
+  <p>To <dfn id=merge-module-specifier-maps>merge module specifier maps</dfn>, given a <a href=#module-specifier-map id=import-map-processing-model:module-specifier-map-3>module specifier map</a>
+  <var>newMap</var> and a <a href=#module-specifier-map id=import-map-processing-model:module-specifier-map-4>module specifier map</a> <var>oldMap</var>:</p>
+
+  <ol><li><p>Let <var>mergedMap</var> be a deep copy of <var>oldMap</var>.<li>
+    <p><a href=https://infra.spec.whatwg.org/#map-iterate id=import-map-processing-model:map-iterate data-x-internal=map-iterate>For each</a> <var>specifier</var> →
+    <var>url</var> of <var>newMap</var>:</p>
+
+    <ol><li>
+      <p>If <var>specifier</var> <a href=https://infra.spec.whatwg.org/#map-exists id=import-map-processing-model:map-exists-4 data-x-internal=map-exists>exists</a> in
+      <var>oldMap</var>:</p>
+
+      <ol><li><p>The user agent may <a id=import-map-processing-model:report-a-warning-to-the-console-2 href=https://console.spec.whatwg.org/#report-a-warning-to-the-console data-x-internal=report-a-warning-to-the-console>report a warning to the console</a> indicating the
+       ignored rule. They may choose to avoid reporting if the rule is identical to an existing
+       one.<li><p><a id=import-map-processing-model:continue href=https://infra.spec.whatwg.org/#iteration-continue data-x-internal=continue>Continue</a>.</ol>
+     <li><p>Set <var>mergedMap</var>[<var>specifier</var>] to <var>url</var>.</ol>
+   <li><p>Return <var>mergedMap</var>.</ol>
+  </div>
+
+  <div data-algorithm="">
+  <p>To <dfn id=merge-existing-and-new-import-maps>merge existing and new import maps</dfn>,
+  given a <a href=#concept-settings-object-global id=import-map-processing-model:concept-settings-object-global-2>global object</a> <var>global</var> and
+  an <a href=#import-map id=import-map-processing-model:import-map-5>import map</a> <var>newImportMap</var>:</p>
+
+  <ol><li>
+    <p>Let <var>newImportMapScopes</var> be a deep copy of <var>newImportMap</var>'s <a href=#concept-import-map-scopes id=import-map-processing-model:concept-import-map-scopes-4>scopes</a>.</p>
+
+    <p class=note>We're mutating these copies and removing items from them when they are used to
+    ignore scope-specific rules. This is true for <var>newImportMapScopes</var>, as well as to
+    <var>newImportMapImports</var> below.</p>
+   <li><p>Let <var>oldImportMap</var> be <var>global</var>'s <a href=#concept-global-import-map id=import-map-processing-model:concept-global-import-map>import map</a>.<li><p>Let <var>newImportMapImports</var> be a deep copy of <var>newImportMap</var>'s <a href=#concept-import-map-imports id=import-map-processing-model:concept-import-map-imports-4>imports</a>.<li>
+    <p><a href=https://infra.spec.whatwg.org/#map-iterate id=import-map-processing-model:map-iterate-2 data-x-internal=map-iterate>For each</a> <var>scopePrefix</var> →
+    <var>scopeImports</var> of <var>newImportMapScopes</var>:</p>
+
+    <ol><li>
+      <p><a href=https://infra.spec.whatwg.org/#list-iterate id=import-map-processing-model:list-iterate data-x-internal=list-iterate>For each</a> <var>record</var> of <var>global</var>'s
+      <a href=#resolved-module-set id=import-map-processing-model:resolved-module-set-2>resolved module set</a>:</p>
+
+      <ol><li>
+        <p>If <var>scopePrefix</var> is <var>record</var>'s <a href=#specifier-resolution-record-serialized-base-url id=import-map-processing-model:specifier-resolution-record-serialized-base-url-2>serialized base URL</a>, or if
+        <var>scopePrefix</var> ends with U+002F (/) and <var>scopePrefix</var> is a <a id=import-map-processing-model:code-unit-prefix href=https://infra.spec.whatwg.org/#code-unit-prefix data-x-internal=code-unit-prefix>code unit
+        prefix</a> of <var>record</var>'s <a href=#specifier-resolution-record-serialized-base-url id=import-map-processing-model:specifier-resolution-record-serialized-base-url-3>serialized base URL</a>:</p>
+
+        <ol><li>
+          <p><a href=https://infra.spec.whatwg.org/#list-iterate id=import-map-processing-model:list-iterate-2 data-x-internal=list-iterate>For each</a> <var>specifierKey</var> →
+          <var>resolutionResult</var> of <var>scopeImports</var>:</p>
+
+          <ol><li>
+            <p>If <var>specifierKey</var> is <var>record</var>'s <a href=#specifier-resolution-record-specifier id=import-map-processing-model:specifier-resolution-record-specifier-2>specifier</a>, or if all of the
+            following conditions are true:</p>
+
+            <ul><li><p><var>specifierKey</var> ends with U+002F (/);<li><p><var>specifierKey</var> is a <a id=import-map-processing-model:code-unit-prefix-2 href=https://infra.spec.whatwg.org/#code-unit-prefix data-x-internal=code-unit-prefix>code unit prefix</a> of
+             <var>record</var>'s <a href=#specifier-resolution-record-specifier id=import-map-processing-model:specifier-resolution-record-specifier-3>specifier</a>;<li><p>either <var>record</var>'s <a href=#specifier-resolution-record-as-url id=import-map-processing-model:specifier-resolution-record-as-url-3>specifier as a URL</a> is null or
+             <a id=import-map-processing-model:is-special-2 href=https://url.spec.whatwg.org/#is-special data-x-internal=is-special>is special</a>,</ul>
+
+            <p>then:</p>
+
+            <ol><li><p>The user agent may <a id=import-map-processing-model:report-a-warning-to-the-console-3 href=https://console.spec.whatwg.org/#report-a-warning-to-the-console data-x-internal=report-a-warning-to-the-console>report a warning to the console</a> indicating the
+             ignored rule. They may choose to avoid reporting if the rule is identical to an existing
+             one.<li><p>Remove <var>scopeImports</var>[<var>specifierKey</var>].</ol>
+           </ol>
+         </ol>
+       </ol>
+
+      <p class=note>Implementers are encouraged to implement a more efficient matching
+      algorithm when working with the <a href=#resolved-module-set id=import-map-processing-model:resolved-module-set-3>resolved module set</a>. As guidance, the number of
+      resolved/mapped modules in a large application can be on the order of thousands.</p>
+     <li><p>If <var>scopePrefix</var> <a href=https://infra.spec.whatwg.org/#map-exists id=import-map-processing-model:map-exists-5 data-x-internal=map-exists>exists</a> in
+     <var>oldImportMap</var>'s <a href=#concept-import-map-scopes id=import-map-processing-model:concept-import-map-scopes-5>scopes</a>, then
+     set <var>oldImportMap</var>'s <a href=#concept-import-map-scopes id=import-map-processing-model:concept-import-map-scopes-6>scopes</a>[<var>scopePrefix</var>] to the result of
+     <a href=#merge-module-specifier-maps id=import-map-processing-model:merge-module-specifier-maps>merging module specifier maps</a>, given
+     <var>scopeImports</var> and <var>oldImportMap</var>'s <a href=#concept-import-map-scopes id=import-map-processing-model:concept-import-map-scopes-7>scopes</a>[<var>scopePrefix</var>].<li><p>Otherwise, set <var>oldImportMap</var>'s <a href=#concept-import-map-scopes id=import-map-processing-model:concept-import-map-scopes-8>scopes</a>[<var>scopePrefix</var>] to
+     <var>scopeImports</var>.</ol>
+   <li>
+    <p><a href=https://infra.spec.whatwg.org/#map-iterate id=import-map-processing-model:map-iterate-3 data-x-internal=map-iterate>For each</a> <var>url</var> →
+    <var>integrity</var> of <var>newImportMap</var>'s <a href=#concept-import-map-integrity id=import-map-processing-model:concept-import-map-integrity-2>integrity</a>:</p>
+
+    <ol><li>
+      <p>If <var>url</var> <a href=https://infra.spec.whatwg.org/#map-exists id=import-map-processing-model:map-exists-6 data-x-internal=map-exists>exists</a> in <var>oldImportMap</var>'s
+      <a href=#concept-import-map-integrity id=import-map-processing-model:concept-import-map-integrity-3>integrity</a>:</p>
+
+      <ol><li><p>The user agent may <a id=import-map-processing-model:report-a-warning-to-the-console-4 href=https://console.spec.whatwg.org/#report-a-warning-to-the-console data-x-internal=report-a-warning-to-the-console>report a warning to the console</a> indicating the
+       ignored rule. They may choose to avoid reporting if the rule is identical to an existing
+       one.<li><p><a id=import-map-processing-model:continue-2 href=https://infra.spec.whatwg.org/#iteration-continue data-x-internal=continue>Continue</a>.</ol>
+     <li><p>Set <var>oldImportMap</var>'s <a href=#concept-import-map-integrity id=import-map-processing-model:concept-import-map-integrity-4>integrity</a>[<var>url</var>] to
+     <var>integrity</var>.</ol>
+   <li>
+    <p><a href=https://infra.spec.whatwg.org/#list-iterate id=import-map-processing-model:list-iterate-3 data-x-internal=list-iterate>For each</a> <var>record</var> of <var>global</var>'s
+    <a href=#resolved-module-set id=import-map-processing-model:resolved-module-set-4>resolved module set</a>:</p>
+
+    <ol><li>
+      <p><a href=https://infra.spec.whatwg.org/#list-iterate id=import-map-processing-model:list-iterate-4 data-x-internal=list-iterate>For each</a> <var>specifier</var> → <var>url</var> of
+      <var>newImportMapImports</var>:</p>
+
+      <ol><li>
+        <p>If <var>specifier</var> <a id=import-map-processing-model:starts-with href=https://infra.spec.whatwg.org/#string-starts-with data-x-internal=starts-with>starts with</a> <var>record</var>'s <a href=#specifier-resolution-record-specifier id=import-map-processing-model:specifier-resolution-record-specifier-4>specifier</a>:</p>
+
+        <ol><li><p>The user agent may <a id=import-map-processing-model:report-a-warning-to-the-console-5 href=https://console.spec.whatwg.org/#report-a-warning-to-the-console data-x-internal=report-a-warning-to-the-console>report a warning to the console</a> indicating the
+         ignored rule. They may choose to avoid reporting if the rule is identical to an existing
+         one.<li><p>Remove <var>newImportMapImports</var>[<var>specifier</var>].</ol>
+       </ol>
+     </ol>
+   <li><p>Set <var>oldImportMap</var>'s <a href=#concept-import-map-imports id=import-map-processing-model:concept-import-map-imports-5>imports</a> to
+   the result of <a href=#merge-module-specifier-maps id=import-map-processing-model:merge-module-specifier-maps-2>merge module specifier maps</a>,
+   given <var>newImportMapImports</var> and <var>oldImportMap</var>'s <a href=#concept-import-map-imports id=import-map-processing-model:concept-import-map-imports-6>imports</a>.</ol>
+  </div>
+
+  <p>The above algorithm merges a new import map into the given <a href=#environment-settings-object id=import-map-processing-model:environment-settings-object-2>environment settings
+  object</a>'s <a href=#global-object id=import-map-processing-model:global-object>global object</a>'s <a href=#import-map id=import-map-processing-model:import-map-6>import map</a>. Let's examine a few
+  examples:</p>
+
+  <div id=example-import-map-merge-unrelated class=example><a href=#example-import-map-merge-unrelated class=self-link></a>
+   <p>There are two cases when rules of the new import map don't get merged into the existing
+   one.</p>
+
+   <ol><li><p>The new import map rule has the exact same scope and specifier as a rule in the existing
+    import map. We'll call that "conflicting rule".<li><p>The new import map rule may impact the resolution of an already resolved module. We'll
+    call that "impacted already resolved module".</ol>
+
+   <p>When the new import map has no conflicting rules, and there are no impacted resolved modules,
+   the resulting map would be a combination of the new and existing maps. Rules that would have
+   individually impacted similar modules (e.g. "/app/" and "/app/helper") but are not an exact
+   match are not conflicting, and all make it to the merged map.</p>
+
+   <p>So, the following existing and new import maps:</p>
+
+   <pre><code class='json'><c- p>{</c->
+   <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/app/&quot;</c-><c- o>:</c-> <c- u>&quot;./original-app/&quot;</c-><c- p>,</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/app/helper&quot;</c-><c- o>:</c-> <c- u>&quot;./helper/index.mjs&quot;</c->
+  <c- p>},</c->
+  <c- u>&quot;scopes&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/js&quot;</c-><c- o>:</c-> <c- p>{</c->
+      <c- u>&quot;/app/&quot;</c-><c- o>:</c-> <c- u>&quot;./js-app/&quot;</c->
+    <c- p>}</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>Would be equivalent to the following single import map:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/app/&quot;</c-><c- o>:</c-> <c- u>&quot;./original-app/&quot;</c-><c- p>,</c->
+    <c- u>&quot;/app/helper&quot;</c-><c- o>:</c-> <c- u>&quot;./helper/index.mjs&quot;</c->
+  <c- p>},</c->
+  <c- u>&quot;scopes&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/js&quot;</c-><c- o>:</c-> <c- p>{</c->
+      <c- u>&quot;/app/&quot;</c-><c- o>:</c-> <c- u>&quot;./js-app/&quot;</c->
+    <c- p>}</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+  </div>
+
+  <div id=example-import-map-merge-conflict-imports class=example><a href=#example-import-map-merge-conflict-imports class=self-link></a>
+   <p>When the new import map impacts an already resolved module, that rule gets dropped from the
+   import map.</p>
+
+   <p>So, if the <a href=#resolved-module-set id=import-map-processing-model:resolved-module-set-5>resolved module set</a> already contains the "<code>/app/helper</code>", the following new import map:</p>
+
+   <pre><code class='json'><c- p>{</c->
+   <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/app/helper&quot;</c-><c- o>:</c-> <c- u>&quot;./helper/index.mjs&quot;</c-><c- p>,</c->
+    <c- u>&quot;lodash&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/lodash-es/lodash.js&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>Would be equivalent to the following one:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;lodash&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/lodash-es/lodash.js&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+  </div>
+
+  <div id=example-import-map-merge-conflict-scopes class=example><a href=#example-import-map-merge-conflict-scopes class=self-link></a>
+   <p>The same is true for rules that impact already resolved modules defined in specific scopes.
+   If we already resolved "<code>/app/helper</code>" from "<code>/app/main.mjs</code>" the following new import map:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;scopes&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/app/&quot;</c-><c- o>:</c-> <c- p>{</c->
+      <c- u>&quot;/app/helper&quot;</c-><c- o>:</c-> <c- u>&quot;./helper/index.mjs&quot;</c->
+    <c- p>}</c->
+  <c- p>},</c->
+   <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;lodash&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/lodash-es/lodash.js&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>Would similarly be equivalent to:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;lodash&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/lodash-es/lodash.js&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+  </div>
+
+  <div id=example-import-map-merge-conflict-imports-and-scopes class=example><a href=#example-import-map-merge-conflict-imports-and-scopes class=self-link></a>
+   <p>We could also have cases where a single already-resolved module specifier has multiple rules
+   for its resolution, depending on the referring script. In such cases, only the relevant rules
+   would not be added to the map.</p>
+   <p>For example, if we already resolved "<code>/app/helper</code>" from "<code>/app/vendor/main.mjs</code>", the following new import map:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;scopes&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/app/&quot;</c-><c- o>:</c-> <c- p>{</c->
+      <c- u>&quot;/app/helper&quot;</c-><c- o>:</c-> <c- u>&quot;./helper/index.mjs&quot;</c->
+    <c- p>},</c->
+    <c- u>&quot;/app/vendor/&quot;</c-><c- o>:</c-> <c- p>{</c->
+      <c- u>&quot;/app/&quot;</c-><c- o>:</c-> <c- u>&quot;./vendor_helper/&quot;</c->
+    <c- p>},</c->
+    <c- u>&quot;/vendor/&quot;</c-><c- o>:</c-> <c- p>{</c->
+      <c- u>&quot;/app/helper&quot;</c-><c- o>:</c-> <c- u>&quot;./helper/vendor_index.mjs&quot;</c->
+    <c- p>}</c->
+  <c- p>},</c->
+   <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;lodash&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/lodash-es/lodash.js&quot;</c->
+    <c- u>&quot;/app/&quot;</c-><c- o>:</c-> <c- u>&quot;./general_app_path/&quot;</c->
+    <c- u>&quot;/app/helper&quot;</c-><c- o>:</c-> <c- u>&quot;./other_path/helper/index.mjs&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>Would be equivalent to:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;scopes&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/vendor/&quot;</c-><c- o>:</c-> <c- p>{</c->
+      <c- u>&quot;/app/helper&quot;</c-><c- o>:</c-> <c- u>&quot;./helper/vendor_index.mjs&quot;</c->
+    <c- p>}</c->
+  <c- p>},</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;lodash&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/lodash-es/lodash.js&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+  <p>This is achieved by the fact that the merge algorithm tracks already resolved modules
+  and removes rules affecting them from new import maps before they are merged into the existing
+  one.</p>
+  </div>
+
+  <div id=example-import-map-merge-two-map-conflict class=example><a href=#example-import-map-merge-two-map-conflict class=self-link></a>
+   <p>When the new import map has conflicting rules to the existing import map, with no impacted
+   already resolved modules, the existing import map rules persist.</p>
+
+   <p>For example, the following existing and new import maps:</p>
+
+   <pre><code class='json'><c- p>{</c->
+   <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/app/helper&quot;</c-><c- o>:</c-> <c- u>&quot;./helper/index.mjs&quot;</c-><c- p>,</c->
+    <c- u>&quot;lodash&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/lodash-es/lodash.js&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/app/helper&quot;</c-><c- o>:</c-> <c- u>&quot;./main/helper/index.mjs&quot;</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+
+   <p>Would be equivalent to the following single import map:</p>
+
+   <pre><code class='json'><c- p>{</c->
+  <c- u>&quot;imports&quot;</c-><c- o>:</c-> <c- p>{</c->
+    <c- u>&quot;/app/helper&quot;</c-><c- o>:</c-> <c- u>&quot;./helper/index.mjs&quot;</c-><c- p>,</c->
+    <c- u>&quot;lodash&quot;</c-><c- o>:</c-> <c- u>&quot;/node_modules/lodash-es/lodash.js&quot;</c-><c- p>,</c->
+  <c- p>}</c->
+<c- p>}</c-></code></pre>
+  </div>
+
+  <div data-algorithm="">
+  <p>To <dfn id=sorting-and-normalizing-a-module-specifier-map>sort and normalize a module
+  specifier map</dfn>, given an <a id=import-map-processing-model:ordered-map-12 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a> <var>originalMap</var> and a
+  <a id=import-map-processing-model:url-7 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a> <var>baseURL</var>:</p>
+
+  <ol><li><p>Let <var>normalized</var> be an empty <a id=import-map-processing-model:ordered-map-13 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a>.<li>
+    <p><a href=https://infra.spec.whatwg.org/#list-iterate id=import-map-processing-model:list-iterate-5 data-x-internal=list-iterate>For each</a> <var>specifierKey</var> → <var>value</var> of
+    <var>originalMap</var>:</p>
+
+    <ol><li><p>Let <var>normalizedSpecifierKey</var> be the result of <a href=#normalizing-a-specifier-key id=import-map-processing-model:normalizing-a-specifier-key>normalizing a specifier
+     key</a> given <var>specifierKey</var> and <var>baseURL</var>.<li><p>If <var>normalizedSpecifierKey</var> is null, then <a id=import-map-processing-model:continue-3 href=https://infra.spec.whatwg.org/#iteration-continue data-x-internal=continue>continue</a>.<li>
+      <p>If <var>value</var> is not a <a id=import-map-processing-model:string-8 href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a>:</p>
+
+      <ol><li><p>The user agent may <a id=import-map-processing-model:report-a-warning-to-the-console-6 href=https://console.spec.whatwg.org/#report-a-warning-to-the-console data-x-internal=report-a-warning-to-the-console>report a warning to the console</a> indicating that
+       addresses need to be strings.<li><p>Set <var>normalized</var>[<var>normalizedSpecifierKey</var>] to null.<li><p><a id=import-map-processing-model:continue-4 href=https://infra.spec.whatwg.org/#iteration-continue data-x-internal=continue>Continue</a>.</ol>
+     <li><p>Let <var>addressURL</var> be the result of <a href=#resolving-a-url-like-module-specifier id=import-map-processing-model:resolving-a-url-like-module-specifier>resolving a URL-like module
+     specifier</a> given <var>value</var> and <var>baseURL</var>.<li>
+      <p>If <var>addressURL</var> is null:</p>
+
+      <ol><li><p>The user agent may <a id=import-map-processing-model:report-a-warning-to-the-console-7 href=https://console.spec.whatwg.org/#report-a-warning-to-the-console data-x-internal=report-a-warning-to-the-console>report a warning to the console</a> indicating that the
+       address was invalid.<li><p>Set <var>normalized</var>[<var>normalizedSpecifierKey</var>] to null.<li><p><a id=import-map-processing-model:continue-5 href=https://infra.spec.whatwg.org/#iteration-continue data-x-internal=continue>Continue</a>.</ol>
+     <li>
+      <p>If <var>specifierKey</var> ends with U+002F (/), and the <a href=https://url.spec.whatwg.org/#concept-url-serializer id=import-map-processing-model:concept-url-serializer data-x-internal=concept-url-serializer>serialization</a> of <var>addressURL</var> does not end
+      with U+002F (/):</p>
+
+      <ol><li><p>The user agent may <a id=import-map-processing-model:report-a-warning-to-the-console-8 href=https://console.spec.whatwg.org/#report-a-warning-to-the-console data-x-internal=report-a-warning-to-the-console>report a warning to the console</a> indicating that an
+       invalid address was given for the specifier key <var>specifierKey</var>; since
+       <var>specifierKey</var> ends with a slash, the address needs to as well.<li><p>Set <var>normalized</var>[<var>normalizedSpecifierKey</var>] to null.<li><p><a id=import-map-processing-model:continue-6 href=https://infra.spec.whatwg.org/#iteration-continue data-x-internal=continue>Continue</a>.</ol>
+     <li><p>Set <var>normalized</var>[<var>normalizedSpecifierKey</var>] to
+     <var>addressURL</var>.</ol>
+   <li><p>Return the result of <a href=https://infra.spec.whatwg.org/#map-sort-in-descending-order id=import-map-processing-model:map-sort-descending data-x-internal=map-sort-descending>sorting in descending order</a>
+   <var>normalized</var>, with an entry <var>a</var> being less than an entry <var>b</var> if
+   <var>a</var>'s <a href=https://infra.spec.whatwg.org/#map-key id=import-map-processing-model:map-key-4 data-x-internal=map-key>key</a> is <a id=import-map-processing-model:code-unit-less-than href=https://infra.spec.whatwg.org/#code-unit-less-than data-x-internal=code-unit-less-than>code unit less than</a>
+   <var>b</var>'s <a href=https://infra.spec.whatwg.org/#map-key id=import-map-processing-model:map-key-5 data-x-internal=map-key>key</a>.</ol>
+  </div>
+
+  <div data-algorithm="">
+  <p>To <dfn id=sorting-and-normalizing-scopes>sort and normalize scopes</dfn>, given an
+  <a id=import-map-processing-model:ordered-map-14 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a> <var>originalMap</var> and a <a id=import-map-processing-model:url-8 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a> <var>baseURL</var>:</p>
+
+  <ol><li><p>Let <var>normalized</var> be an empty <a id=import-map-processing-model:ordered-map-15 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a>.<li>
+    <p><a href=https://infra.spec.whatwg.org/#list-iterate id=import-map-processing-model:list-iterate-6 data-x-internal=list-iterate>For each</a> <var>scopePrefix</var> →
+    <var>potentialSpecifierMap</var> of <var>originalMap</var>:</p>
+
+    <ol><li><p>If <var>potentialSpecifierMap</var> is not an <a id=import-map-processing-model:ordered-map-16 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a>, then throw a
+     <code id=import-map-processing-model:typeerror-5><a data-x-internal=typeerror href=https://tc39.es/ecma262/#sec-native-error-types-used-in-this-standard-typeerror>TypeError</a></code> indicating that the value of the scope with prefix
+     <var>scopePrefix</var> needs to be a JSON object.<li><p>Let <var>scopePrefixURL</var> be the result of <a href=https://url.spec.whatwg.org/#concept-url-parser id=import-map-processing-model:url-parser data-x-internal=url-parser>URL
+     parsing</a> <var>scopePrefix</var> with <var>baseURL</var>.<li>
+      <p>If <var>scopePrefixURL</var> is failure:</p>
+
+      <ol><li><p>The user agent may <a id=import-map-processing-model:report-a-warning-to-the-console-9 href=https://console.spec.whatwg.org/#report-a-warning-to-the-console data-x-internal=report-a-warning-to-the-console>report a warning to the console</a> that the scope prefix
+       URL was not parseable.<li><p><a id=import-map-processing-model:continue-7 href=https://infra.spec.whatwg.org/#iteration-continue data-x-internal=continue>Continue</a>.</ol>
+     <li><p>Let <var>normalizedScopePrefix</var> be the <a href=https://url.spec.whatwg.org/#concept-url-serializer id=import-map-processing-model:concept-url-serializer-2 data-x-internal=concept-url-serializer>serialization</a> of <var>scopePrefixURL</var>.<li><p>Set <var>normalized</var>[<var>normalizedScopePrefix</var>] to the result of
+     <a href=#sorting-and-normalizing-a-module-specifier-map id=import-map-processing-model:sorting-and-normalizing-a-module-specifier-map-2>sorting and normalizing a module specifier map</a> given
+     <var>potentialSpecifierMap</var> and <var>baseURL</var>.</ol>
+   <li><p>Return the result of <a href=https://infra.spec.whatwg.org/#map-sort-in-descending-order id=import-map-processing-model:map-sort-descending-2 data-x-internal=map-sort-descending>sorting in descending
+   order</a> <var>normalized</var>, with an entry <var>a</var> being less than an entry
+   <var>b</var> if <var>a</var>'s <a href=https://infra.spec.whatwg.org/#map-key id=import-map-processing-model:map-key-6 data-x-internal=map-key>key</a> is <a id=import-map-processing-model:code-unit-less-than-2 href=https://infra.spec.whatwg.org/#code-unit-less-than data-x-internal=code-unit-less-than>code unit less
+   than</a> <var>b</var>'s <a href=https://infra.spec.whatwg.org/#map-key id=import-map-processing-model:map-key-7 data-x-internal=map-key>key</a>.</ol>
+  </div>
+
+  <p class=note>In the above two algorithms, sorting keys and scopes in descending order has the
+  effect of putting "<code>foo/bar/</code>" before "<code>foo/</code>". This in
+  turn gives "<code>foo/bar/</code>" a higher priority than "<code>foo/</code>"
+  during <a href=#resolve-a-module-specifier id=import-map-processing-model:resolve-a-module-specifier>module specifier resolution</a>.</p>
+
+  <div data-algorithm="">
+  <p>To <dfn id=normalizing-a-module-integrity-map>normalize a module integrity map</dfn>,
+  given an <a id=import-map-processing-model:ordered-map-17 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a> <var>originalMap</var>:</p>
+
+  <ol><li><p>Let <var>normalized</var> be an empty <a id=import-map-processing-model:ordered-map-18 href=https://infra.spec.whatwg.org/#ordered-map data-x-internal=ordered-map>ordered map</a>.<li>
+    <p><a href=https://infra.spec.whatwg.org/#list-iterate id=import-map-processing-model:list-iterate-7 data-x-internal=list-iterate>For each</a> <var>key</var> → <var>value</var> of
+    <var>originalMap</var>:</p>
+
+    <ol><li>
+      <p>Let <var>resolvedURL</var> be the result of <a href=#resolving-a-url-like-module-specifier id=import-map-processing-model:resolving-a-url-like-module-specifier-2>resolving a URL-like module
+      specifier</a> given <var>key</var> and <var>baseURL</var>.</p>
+
+      <p class=note>Unlike "<code>imports</code>", keys of the integrity map are treated
+      as URLs, not module specifiers. However, we use the <a href=#resolving-a-url-like-module-specifier id=import-map-processing-model:resolving-a-url-like-module-specifier-3>resolve a URL-like module specifier</a> algorithm to prohibit "bare" relative
+      URLs like <code>foo</code>, which could be mistaken for module specifiers.</p>
+     <li>
+      <p>If <var>resolvedURL</var> is null:</p>
+
+      <ol><li><p>The user agent may <a id=import-map-processing-model:report-a-warning-to-the-console-10 href=https://console.spec.whatwg.org/#report-a-warning-to-the-console data-x-internal=report-a-warning-to-the-console>report a warning to the console</a> indicating that
+       the key failed to resolve.<li><p><a id=import-map-processing-model:continue-8 href=https://infra.spec.whatwg.org/#iteration-continue data-x-internal=continue>Continue</a>.</ol>
+     <li>
+      <p>If <var>value</var> is not a <a id=import-map-processing-model:string-9 href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a>:</p>
+
+      <ol><li><p>The user agent may <a id=import-map-processing-model:report-a-warning-to-the-console-11 href=https://console.spec.whatwg.org/#report-a-warning-to-the-console data-x-internal=report-a-warning-to-the-console>report a warning to the console</a> indicating that
+       <a href=https://fetch.spec.whatwg.org/#concept-request-integrity-metadata id=import-map-processing-model:concept-request-integrity-metadata-2 data-x-internal=concept-request-integrity-metadata>integrity metadata</a> values need to
+       be <a href=https://infra.spec.whatwg.org/#string id=import-map-processing-model:string-10 data-x-internal=string>strings</a>.<li><p><a id=import-map-processing-model:continue-9 href=https://infra.spec.whatwg.org/#iteration-continue data-x-internal=continue>Continue</a>.</ol>
+     <li><p>Set <var>normalized</var>[<var>resolvedURL</var>] to <var>value</var>.</ol>
+   <li><p>Return <var>normalized</var>.</ol>
+  </div>
+
+  <div data-algorithm="">
+  <p>To <dfn id=normalizing-a-specifier-key>normalize a specifier key</dfn>, given a <a id=import-map-processing-model:string-11 href=https://infra.spec.whatwg.org/#string data-x-internal=string>string</a> <var>specifierKey</var> and a <a id=import-map-processing-model:url-9 href=https://url.spec.whatwg.org/#concept-url data-x-internal=url>URL</a> <var>baseURL</var>:</p>
+
+  <ol><li>
+    <p>If <var>specifierKey</var> is the empty string:</p>
+
+    <ol><li><p>The user agent may <a id=import-map-processing-model:report-a-warning-to-the-console-12 href=https://console.spec.whatwg.org/#report-a-warning-to-the-console data-x-internal=report-a-warning-to-the-console>report a warning to the console</a> indicating that specifier keys may not be the empty string.<li><p>Return null.</ol>
+   <li><p>Let <var>url</var> be the result of <a href=#resolving-a-url-like-module-specifier id=import-map-processing-model:resolving-a-url-like-module-specifier-4>resolving a URL-like module specifier</a>, given <var>specifierKey</var> and <var>baseURL</var>.<li><p>If <var>url</var> is not null, then return the <a href=https://url.spec.whatwg.org/#concept-url-serializer id=import-map-processing-model:concept-url-serializer-3 data-x-internal=concept-url-serializer>serialization</a> of <var>url</var>.<li><p>Return <var>specifierKey</var>.</ol>
+  </div>
+
+
+  
+</body>
+</html>

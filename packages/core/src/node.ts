@@ -39,7 +39,7 @@ export type {
   PrunedRecord,
 } from './packlist.ts';
 
-export { packagesFromPack } from './import-map-pack.ts';
+export { packagesFromPack, packageJsonFromPack, dependenciesFromPack } from './import-map-pack.ts';
 
 // Hermetic carriage: the half of `planPack` that fetches. On `/node` rather
 // than the root because it reaches the filesystem-side modules, and because
@@ -87,18 +87,32 @@ export type { WriteTreeResult } from './tree.ts';
 // reimplementing range resolution against dist-tags and prereleases.
 export {
   LIVE_SPEC,
+  DEPOT_LOCK_PATH,
   applyLock,
+  inventoryLocations,
   lockDeck,
+  lockDepot,
+  parseDepotLock,
   parseDependencyValue,
   resolveDependencies,
   resolveScopes,
+  rewriteImportMapIntoStep,
+  rewriteLiveTargetsIntoStep,
+  decksFromTreePaths,
+  unfrozenBindingsFromDepot,
+  unfrozenBindingsFromTree,
+  unfrozenKeysMissingFromLock,
 } from './lock.ts';
 export type {
   DependencyResolution,
   DependencyValue,
+  DepotLockOptions,
+  DepotLockResult,
   LockResult,
+  PackageLocation,
   ResolveOptions,
   ScopedResolution,
+  TreeFileReader,
 } from './lock.ts';
 
 export { forkDeck } from './fork.ts';

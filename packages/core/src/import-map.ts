@@ -1,6 +1,8 @@
-// The import map is a tree file (importmap.json at the root) — the deck's
-// manifest. The vendor key is `deck`; `boxel` is honored for content
-// authored in Boxel realms. Same shape, one namespace per ecosystem.
+// The import map is a tree file (importmap.json). At the depot root it is
+// the lock. A thin per-pack copy may carry lineage (`forkedFrom`,
+// `vendoredFrom`). Identity, ranges, and exports live in package.json.
+// The vendor key is `deck`; `boxel` is honored for content authored in
+// Boxel realms. Same shape, one namespace per ecosystem.
 //
 // Part of the browser-safe surface (see `resolve.ts`): no `node:` import
 // here, or in anything this file reaches. Reading a manifest out of a pack
@@ -14,6 +16,14 @@ export interface PackageMapEntry {
   entry?: string;
   exports?: Record<string, string>;
   baseApi?: string;
+  // Lineage only — identity and ranges live in package.json. A thin
+  // per-pack import map may still carry these so a fork, a vendor, or a
+  // derivation stays self-describing.
+  forkedFrom?: unknown;
+  derivedFrom?: string;
+  derivation?: unknown;
+  sourceOnly?: boolean;
+  recoveredFrom?: unknown;
   // The canonical identity of what was pulled in, when this deck is a
   // vendored copy of something else. A plain string for a CDN vendor; the
   // full provenance record (registry, integrity, repo, commit, cooldown

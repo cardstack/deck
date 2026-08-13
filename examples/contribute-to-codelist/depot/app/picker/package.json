@@ -1,0 +1,12 @@
+{
+  "name": "picker",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./picker.js"
+  },
+  "dependencies": {
+    "std/currencies": "^1.4.0",
+    "ui/pills": "^1.0.0"
+  }
+}

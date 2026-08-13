@@ -18,11 +18,11 @@ import { ActivityIndex } from './activity.ts';
 import { DECKBOOK_PATHS, loadDeckbookHtml } from './deckbook.ts';
 import { readZipEntry } from '@cardstack/deck/canonical-zip';
 import {
-  parsePackages,
   type PackageMapEntry,
   treePathFromMapValue,
   IMPORT_MAP_PATH,
   MOUNT_SEPARATOR,
+  parsePackages,
 } from '@cardstack/deck/import-map';
 import { peekPacklist } from '@cardstack/deck/pack';
 import type { Packlist } from '@cardstack/deck/packlist';
@@ -43,11 +43,25 @@ import {
   readStoreMeta,
   resolveVersionSpec,
 } from '@cardstack/deck/store';
-import { resolveDependencies, resolveScopes } from '@cardstack/deck/lock';
+import {
+  resolveDependencies,
+  resolveScopes,
+  parseDepotLock,
+  unfrozenBindingsFromDepot,
+  unfrozenBindingsFromTree,
+  unfrozenKeysMissingFromLock,
+  decksFromTreePaths,
+  rewriteImportMapIntoStep,
+} from '@cardstack/deck/lock';
+import {
+  PACKAGE_JSON_PATH,
+  parsePackageJson,
+  entryFromPackageJson,
+  subpathExports,
+} from '@cardstack/deck/package-json';
 import {
   parseLink,
   resolveInheritance,
-  type DecklistLink,
 } from '@cardstack/deck/inherit';
 import { isValidTreePath, treeHashFromDir } from '@cardstack/deck/tree-hash';
 import {
@@ -214,6 +228,8 @@ export type DeckServer = (Server | Http2SecureServer) & {
   liveBus: LiveBus;
   // 'https' always means HTTP/2 is offered (HTTP/1.1 still accepted).
   protocol: 'http' | 'https';
+  /** Prefetch `/_activity` so the first browser hit is not a cold seal walk. */
+  warmActivity: () => Promise<void>;
 };
 
 // Resolve a possibly-mounted path against a pack: `a/b.js` reads directly;
@@ -252,6 +268,8 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   // working here" can never be answered about a depot this server does not
   // actually hold.
   let activity = new ActivityIndex(depots);
+  // Do not await — listen should not block on jj log across every depot.
+  void activity.warm().catch(() => {});
   // Stored packs are immutable (published versions never change), so this
   // cache never invalidates; the cap only bounds memory.
   let packCache = new Map<string, CachedPack>();
@@ -400,35 +418,83 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   async function packageMapOf(
     pack: CachedPack,
   ): Promise<Record<string, PackageMapEntry> | undefined> {
-    let raw = await pack.read(IMPORT_MAP_PATH);
-    return raw ? parsePackages(raw.toString('utf8')) : undefined;
+    let raw = await pack.read(PACKAGE_JSON_PATH);
+    if (!raw) {
+      return undefined;
+    }
+    let pkg = parsePackageJson(raw.toString('utf8'));
+    if (!pkg) {
+      return undefined;
+    }
+    let entryPath = entryFromPackageJson(pkg);
+    let exports = subpathExports(pkg);
+    let mapRaw = await pack.read(IMPORT_MAP_PATH);
+    let fromMap = mapRaw
+      ? parsePackages(mapRaw.toString('utf8'))
+      : undefined;
+    let mapEntry =
+      (pkg.name ? fromMap?.[pkg.name] : undefined) ??
+      (pkg.name
+        ? fromMap?.[pkg.name.replace(/^@[^/]+\//, '')]
+        : undefined) ??
+      (fromMap ? Object.values(fromMap)[0] : undefined);
+    let entry: PackageMapEntry = {
+      version: pkg.version,
+      ...(entryPath ? { entry: `$DECK/${entryPath}` } : {}),
+      ...(Object.keys(exports).length > 0
+        ? {
+            exports: Object.fromEntries(
+              Object.entries(exports).map(([alias, path]) => [
+                `./${alias}`,
+                `$DECK/${path}`,
+              ]),
+            ),
+          }
+        : {}),
+      ...(mapEntry?.vendoredFrom
+        ? { vendoredFrom: mapEntry.vendoredFrom }
+        : {}),
+      ...(mapEntry?.forkedFrom ? { forkedFrom: mapEntry.forkedFrom } : {}),
+      ...(mapEntry?.derivedFrom ? { derivedFrom: mapEntry.derivedFrom } : {}),
+      ...(mapEntry?.derivation ? { derivation: mapEntry.derivation } : {}),
+      ...(mapEntry?.baseApi ? { baseApi: mapEntry.baseApi } : {}),
+    };
+    let out: Record<string, PackageMapEntry> = {};
+    if (pkg.name) {
+      out[pkg.name] = entry;
+      let unscoped = pkg.name.replace(/^@[^/]+\//, '');
+      if (unscoped !== pkg.name) {
+        out[unscoped] = entry;
+      }
+    }
+    return out;
   }
 
   function historyCapability(): Record<string, unknown> {
     let kinds = new Set(
       depots
         .map((depot) => depot.history?.kind)
-        .filter((kind): kind is 'jj' | 'historyd' => kind !== undefined),
+        .filter(
+          (kind): kind is 'historyd' | 'deckd' => kind !== undefined,
+        ),
     );
     if (kinds.size === 0) {
       return {
         tier: 1,
         kind: 'content-addressed-packs',
-        jj: false,
-        historyd: false,
-        note: 'Versions are pointers in meta.json → a tree in _trees/, whose files live once each in _objects/. No seals between publishes: attach a history backend for /<depot>/_history/<changeId>.',
+        deckd: false,
+        note: 'Versions are pointers in meta.json → a tree in _trees/, whose files live once each in _objects/. No seals between publishes: attach deckd for /<depot>/_history/<changeId>.',
       };
     }
     return {
       tier: 2,
       kind: 'sealed-tree',
-      jj: kinds.has('jj'),
-      historyd: kinds.has('historyd'),
+      deckd: kinds.has('deckd') || kinds.has('historyd'),
       depots: depots
         .filter((depot) => depot.history)
         .map((depot) => depot.name)
         .sort(),
-      note: 'Every save is sealed. GET /<depot>/_history lists seals; /<depot>/_history/<changeId>/<path> serves any of them, published or not.',
+      note: 'Every save is sealed by deckd. GET /<depot>/_history lists seals; /<depot>/_history/<changeId>/<path> serves any of them, published or not.',
     };
   }
 
@@ -530,92 +596,198 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     publisher: string,
     pkg: string,
   ): Promise<string | undefined> {
+    let dir = join(depot.dir, publisher, pkg);
     try {
-      let map = parsePackages(
-        await readFile(
-          join(depot.dir, publisher, pkg, IMPORT_MAP_PATH),
-          'utf8',
-        ),
+      let pkgJson = parsePackageJson(
+        await readFile(join(dir, PACKAGE_JSON_PATH), 'utf8'),
       );
-      let value = map?.[pkg]?.entry;
-      return value ? treePathFromMapValue(value) : undefined;
+      return pkgJson ? entryFromPackageJson(pkgJson) : undefined;
     } catch {
       return undefined;
     }
   }
 
-  // Loading a parent named by `deck.extends`.
-  //
-  // A parent is always an exact version (L4), so it is always a sealed pack
-  // in this depot's store — never a live tree, which could move underneath
-  // the children inheriting from it.
-  function parentLoader(depot: DepotMount) {
-    return async (parent: string): Promise<DecklistLink | undefined> => {
-      let at = parent.lastIndexOf('@');
-      if (at <= 0) {
-        return undefined;
+  async function readDepotLock(depot: DepotMount): Promise<{
+    imports: Record<string, string>;
+    scopes: Record<string, Record<string, string>>;
+    integrity: Record<string, string>;
+  } | undefined> {
+    try {
+      let text = await readFile(join(depot.dir, IMPORT_MAP_PATH), 'utf8');
+      let lock = parseDepotLock(text);
+      if (
+        Object.keys(lock.imports).length > 0 ||
+        Object.keys(lock.scopes).length > 0
+      ) {
+        return lock;
       }
-      let pack = await loadPack(
-        depot,
-        parent.slice(0, at),
-        parent.slice(at + 1),
-      );
-      let bytes = await pack?.read(IMPORT_MAP_PATH);
-      return bytes ? parseLink(bytes.toString('utf8')) : undefined;
-    };
+    } catch {
+      // no depot lock yet
+    }
+    return undefined;
   }
 
-  // The `imports` a document should carry: whatever the deck's own map
-  // declares, plus whatever it inherits. `deck lock` is what puts resolved
-  // pins there; `deck.extends` is what lets a deck state only its
-  // differences from a published parent.
+  // The `imports` a live document should carry: this depot's lock, overlaid
+  // with unfrozen edges from every live package.json (workspace:* and
+  // dist-tags) **only when the lock has no pin for that specifier**. Those
+  // edges skip the freeze — trying a sibling or chasing `latest` does not
+  // require `deck lock`. Ranges stay on the lock. A compiled depot lock
+  // (section A) makes the expensive store walk the uncommon path.
+  //
+  // CACHE, NOT AN INDEX. Building unfrozen bindings walks every live
+  // package.json and opens store packs to learn npm names — hundreds of
+  // milliseconds per HTML document. Without a cache, every Hub navigation
+  // pays that again; with six parallel HTML requests the browser starves
+  // (same failure ActivityIndex documents). TTL + single-flight; dropped on
+  // any live-tree change so a save still shows up on the next paint.
+  type LiveImportMap = {
+    imports: Record<string, string>;
+    scopes: Record<string, Record<string, string>>;
+    integrity: Record<string, string>;
+  };
+  const LIVE_IMPORTS_TTL_MS = 5000;
+  let liveImportsCache = new Map<
+    string,
+    { at: number; lockFp: string; value: LiveImportMap }
+  >();
+  let liveImportsInFlight = new Map<string, Promise<LiveImportMap>>();
+
+  function invalidateLiveImports() {
+    liveImportsCache.clear();
+    activity.invalidate();
+  }
+
+  liveBus.subscribe(() => {
+    invalidateLiveImports();
+  });
+
+  async function depotLockFingerprint(depot: DepotMount): Promise<string> {
+    try {
+      let info = await stat(join(depot.dir, IMPORT_MAP_PATH));
+      return `${info.mtimeMs}:${info.size}`;
+    } catch {
+      return 'none';
+    }
+  }
+
+  /**
+   * Live pins (`/hub/ui/nav/nav.js`) change on every save. Lock-time SRI
+   * hashes go stale the moment an agent edits the file — the browser then
+   * refuses the module and the Hub sticks on a blank page. Versioned URLs
+   * keep the lock's integrity (immutable). Live URLs are rehashed from disk
+   * at serve time (or dropped if the file is gone) so development never
+   * requires a manual `deck lock` just to keep integrity honest.
+   */
+  async function refreshLiveIntegrity(
+    depot: DepotMount,
+    integrity: Record<string, string>,
+  ): Promise<Record<string, string>> {
+    let prefix = `/${depot.name}/`;
+    let out: Record<string, string> = {};
+    for (let [url, hash] of Object.entries(integrity)) {
+      if (!url.startsWith(prefix)) {
+        out[url] = hash;
+        continue;
+      }
+      let rest = url.slice(prefix.length);
+      // publisher/package@ver/... is sealed — trust the lock.
+      if (/^[^/]+\/[^/]+@/.test(rest)) {
+        out[url] = hash;
+        continue;
+      }
+      try {
+        let bytes = await readFile(join(depot.dir, rest));
+        out[url] =
+          `sha256-${createHash('sha256').update(bytes).digest('base64')}`;
+      } catch {
+        // Omit rather than inject a stale hash that blocks the module.
+      }
+    }
+    return out;
+  }
+
   async function liveImports(
     depot: DepotMount,
-    treePath: string,
-  ): Promise<{
-    imports: Record<string, string>;
-    scopes: Record<string, Record<string, string>>;
-  }> {
-    let segments = treePath.split('/');
-    if (segments.length < 3) {
-      return { imports: {}, scopes: {} };
-    }
-    let text: string;
-    try {
-      text = await readFile(
-        join(depot.dir, segments[0], segments[1], IMPORT_MAP_PATH),
-        'utf8',
-      );
-    } catch {
-      return { imports: {}, scopes: {} };
-    }
-    // An unreadable map still means "no map", as it always did. A map that
-    // names a parent it cannot reach does NOT — that is a broken deck, and
-    // serving it with two hundred entries missing would surface as unrelated
-    // import errors on the page (L11).
-    return flattenLink(text, depot);
-  }
-
-  async function flattenLink(
-    text: string,
-    depot: DepotMount,
-  ): Promise<{
-    imports: Record<string, string>;
-    scopes: Record<string, Record<string, string>>;
-  }> {
-    let link = parseLink(text);
-    if (!link.extends) {
-      // The overwhelmingly common case, and it must cost nothing: no store
-      // reads, no promises, the same object shape as before.
+    _treePath: string,
+  ): Promise<LiveImportMap> {
+    let key = depot.name;
+    let lockFp = await depotLockFingerprint(depot);
+    let hit = liveImportsCache.get(key);
+    let now = Date.now();
+    if (hit && hit.lockFp === lockFp && now - hit.at < LIVE_IMPORTS_TTL_MS) {
       return {
-        imports: (link.imports ?? {}) as Record<string, string>,
-        scopes: (link.scopes ?? {}) as Record<
-          string,
-          Record<string, string>
-        >,
+        imports: hit.value.imports,
+        scopes: hit.value.scopes,
+        integrity: await refreshLiveIntegrity(depot, hit.value.integrity),
       };
     }
-    return resolveInheritance({ start: link, load: parentLoader(depot) });
+    let pending = liveImportsInFlight.get(key);
+    if (pending) {
+      return pending.then(async (value) => ({
+        imports: value.imports,
+        scopes: value.scopes,
+        integrity: await refreshLiveIntegrity(depot, value.integrity),
+      }));
+    }
+    let build = (async (): Promise<LiveImportMap> => {
+      let lock = (await readDepotLock(depot)) ?? {
+        imports: {},
+        scopes: {},
+        integrity: {},
+      };
+      let gaps = await unfrozenKeysMissingFromLock({
+        depotDir: depot.dir,
+        lockImports: lock.imports,
+      });
+      if (gaps.length === 0) {
+        // Lock already compiled every unfrozen edge — Hub's common case.
+        let value: LiveImportMap = {
+          imports: lock.imports,
+          scopes: lock.scopes,
+          integrity: lock.integrity,
+        };
+        liveImportsCache.set(key, {
+          at: Date.now(),
+          lockFp,
+          value,
+        });
+        return value;
+      }
+      let unfrozen = await unfrozenBindingsFromDepot({
+        depotDir: depot.dir,
+        depotName: depot.name,
+        storeDir: depot.storeDir,
+      });
+      let imports = { ...lock.imports };
+      for (let [specifier, target] of Object.entries(unfrozen.imports)) {
+        if (!(specifier in imports)) {
+          imports[specifier] = target;
+        }
+      }
+      let scopes = { ...lock.scopes };
+      for (let [prefix, table] of Object.entries(unfrozen.scopes)) {
+        scopes[prefix] = { ...(scopes[prefix] ?? {}), ...table };
+      }
+      let value: LiveImportMap = {
+        imports,
+        scopes,
+        integrity: lock.integrity,
+      };
+      liveImportsCache.set(key, {
+        at: Date.now(),
+        lockFp,
+        value,
+      });
+      return value;
+    })().finally(() => {
+      liveImportsInFlight.delete(key);
+    });
+    liveImportsInFlight.set(key, build);
+    return build.then(async (value) => ({
+      imports: value.imports,
+      scopes: value.scopes,
+      integrity: await refreshLiveIntegrity(depot, value.integrity),
+    }));
   }
 
   // TRY-BY-URL.
@@ -1005,7 +1177,9 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       }
       let name = `${publisher}/${pkg}`;
       let meta = await readStoreMeta(depot.storeDir, name);
-      let isLive = await stat(join(depot.dir, publisher, pkg, IMPORT_MAP_PATH))
+      let isLive = await stat(
+        join(depot.dir, publisher, pkg, PACKAGE_JSON_PATH),
+      )
         .then(() => true)
         .catch(() => false);
       if ((!meta || Object.keys(meta.versions).length === 0) && !isLive) {
@@ -1369,17 +1543,43 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       if (revision === undefined) {
         // The seal log: every state this depot has been in, newest first.
         // It grows with every save, so nothing caches it.
-        let seals = await backend.list(depot.dir);
+        // `?limit=` keeps /track's first paint off multi-megabyte jj logs.
+        let rawLimit = Number(url.searchParams.get('limit'));
+        let limit =
+          Number.isFinite(rawLimit) && rawLimit > 0
+            ? Math.min(Math.floor(rawLimit), 500)
+            : undefined;
+        let seals = await backend.list(depot.dir, limit ? { limit } : undefined);
+        // Limited lists are for /track first paint. Fat demos ship megabytes
+        // of filesSummary per seal (vendor trees); the feed only needs a
+        // short subject line, so cap the summary when paginating.
+        const SUMMARY_CAP = 32;
         respondJson(
           req,
           res,
           {
-            meta: { backend: backend.kind, tier: 2, depot: depot.name },
+            meta: {
+              backend: backend.kind,
+              tier: 2,
+              depot: depot.name,
+              ...(limit
+                ? {
+                    limit,
+                    // Client may ask again with a higher limit; truncated
+                    // means "there may be more", not an exact remaining count.
+                    truncated: seals.length >= limit,
+                    filesSummaryCap: SUMMARY_CAP,
+                  }
+                : {}),
+            },
             data: seals.map((seal) => ({
               type: 'seal',
               id: seal.changeId,
               attributes: {
                 ...seal,
+                filesSummary: limit
+                  ? (seal.filesSummary ?? []).slice(0, SUMMARY_CAP)
+                  : seal.filesSummary,
                 filesUrl: `/${depot.name}/_history/${seal.changeId}`,
               },
             })),
@@ -1480,67 +1680,93 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       }
       // A STEP HAS TO BE RUNNABLE, OR IT IS ONLY READABLE.
       //
-      // This served the bytes and injected nothing, so framing a page from
-      // three steps ago produced a document whose every import 404'd — a
-      // blank iframe, the exact failure this codebase spent a morning
-      // removing. Stepping back through a timeline is only a time dimension
-      // if the thing you step to still runs.
+      // Resolution for a historical page:
+      //   1. That Step's depot lock (exact pins from that moment), if any
+      //   2. Unfrozen edges from that Step's package.json files
+      //      (workspace:* / dist-tags) — even when there is no lock
+      //   3. Live (versionless) targets rewritten into
+      //      `/_history/<rev>/…` so siblings bind THIS Step, not today
       //
-      // The map comes from THAT step, not from the working tree, which is
-      // the more correct reading anyway: a page from three steps ago should
-      // resolve with the pins it had three steps ago. Taking today's pins
-      // would silently show you a hybrid that never existed.
+      // Taking today's live pins would silently show a hybrid that never
+      // existed. Per-pack maps are lineage, not the lock.
       let injected = false;
       if (rest.endsWith('.html')) {
-        let segments = rest.split('/');
-        if (segments.length >= 3) {
-          let mapPath = `${segments[0]}/${segments[1]}/${IMPORT_MAP_PATH}`;
-          let mapBytes = await backend.fileAt(depot.dir, revision, mapPath);
-          if (mapBytes) {
-            try {
-              let parsed = JSON.parse(mapBytes.toString('utf8'));
-              // AND ITS LIVE PINS RESOLVE INSIDE THE STEP.
-              //
-              // `deck lock` writes a versionless target for a dependency
-              // declared `live` — `/hub/ui/nav/nav.js`. Left alone, a page
-              // from three steps ago would load its own old bytes wired to
-              // TODAY's dependencies: a hybrid that never ran, presented as
-              // history. Worse than not offering the step at all.
-              //
-              // A step is a whole-depot snapshot, so every live pin has a
-              // state inside it. Rewriting only the versionless targets is
-              // exact — an `@1.4.0` pin is immutable and already means the
-              // same bytes at any point on the timeline.
-              let intoStep = (target: string) =>
-                target.startsWith(`/${depot.name}/`) &&
-                !target.includes('@') &&
-                !target.startsWith(`/${depot.name}/_history/`)
-                  ? `/${depot.name}/_history/${revision}/${target.slice(
-                      depot.name.length + 2,
-                    )}`
-                  : target;
-              let atStep = (table: Record<string, string>) =>
-                Object.fromEntries(
-                  Object.entries(table ?? {}).map(([key, value]) => [
-                    key,
-                    intoStep(value),
-                  ]),
-                );
-              ({ bytes, injected } = injectImportMap(
-                bytes,
-                atStep(parsed.imports ?? {}),
-                Object.fromEntries(
-                  Object.entries(
-                    (parsed.scopes ?? {}) as Record<string, Record<string, string>>,
-                  ).map(([scope, table]) => [intoStep(scope), atStep(table)]),
-                ),
-              ));
-            } catch {
-              // A step whose import map does not parse is a step that was
-              // saved mid-edit. Serve the page as it was — unresolved and
-              // honest — rather than refusing to show it at all.
+        let imports: Record<string, string> = {};
+        let scopes: Record<string, Record<string, string>> = {};
+        let integrity: Record<string, string> = {};
+        let mapBytes = await backend.fileAt(
+          depot.dir,
+          revision,
+          IMPORT_MAP_PATH,
+        );
+        if (mapBytes) {
+          try {
+            let lock = parseDepotLock(mapBytes.toString('utf8'));
+            imports = { ...lock.imports };
+            scopes = { ...lock.scopes };
+            integrity = { ...lock.integrity };
+          } catch {
+            // A step whose import map does not parse is a step that was
+            // saved mid-edit. Fall through to unfrozen edges only.
+          }
+        }
+        let readAtStep = async (path: string) =>
+          backend.fileAt(depot.dir, revision, path);
+        let decks: Array<{
+          publisher: string;
+          package: string;
+          name: string;
+        }> = [];
+        if (backend.fileListAt) {
+          let files = await backend.fileListAt(depot.dir, revision);
+          if (files) {
+            decks = decksFromTreePaths(files);
+          }
+        }
+        if (decks.length === 0) {
+          // Backends without file-list-at: probe every live deck path at
+          // this Step. Decks that only existed then are missed — prefer
+          // fileListAt when available.
+          for (let deck of await discoverDecks(depot.dir)) {
+            if (await readAtStep(`${deck.name}/${PACKAGE_JSON_PATH}`)) {
+              decks.push({
+                publisher: deck.publisher,
+                package: deck.package,
+                name: deck.name,
+              });
             }
           }
+        }
+        if (decks.length > 0) {
+          let unfrozen = await unfrozenBindingsFromTree({
+            depotName: depot.name,
+            storeDir: depot.storeDir,
+            depotDir: depot.dir,
+            decks,
+            readTreeFile: readAtStep,
+          });
+          imports = { ...imports, ...unfrozen.imports };
+          for (let [prefix, table] of Object.entries(unfrozen.scopes)) {
+            scopes[prefix] = { ...(scopes[prefix] ?? {}), ...table };
+          }
+        }
+        if (
+          Object.keys(imports).length > 0 ||
+          Object.keys(scopes).length > 0
+        ) {
+          let atStep = rewriteImportMapIntoStep(
+            depot.name,
+            revision,
+            imports,
+            scopes,
+            integrity,
+          );
+          ({ bytes, injected } = injectImportMap(
+            bytes,
+            atStep.imports,
+            atStep.scopes,
+            atStep.integrity,
+          ));
         }
       }
       // A sealed state never changes — the same caching promise an exact
@@ -1712,6 +1938,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         bytes,
         { ...live.imports, ...override.imports },
         { ...rebindScopes(live.scopes, override.imports), ...override.scopes },
+        live.integrity,
       ));
     }
     // The whole point: every save is visible on the next request.
@@ -1810,7 +2037,9 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
       return;
     }
 
-    let mapEntry = (await packageMapOf(pack))?.[groups.pkg!];
+    let map = await packageMapOf(pack);
+    let mapEntry =
+      map?.[groups.pkg!] ?? (map ? Object.values(map)[0] : undefined);
     let canonicalRest: string | undefined;
     if (wantsMeta || wantsPack) {
       canonicalRest = undefined;
@@ -1824,7 +2053,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           res,
           404,
           'no-entry-module',
-          `${name}@${version} declares no entry module in importmap.json`,
+          `${name}@${version} declares no entry module in package.json`,
         );
         return;
       }
@@ -1984,32 +2213,61 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     let trying: string[] = [];
     let preload: Closure | undefined;
     if (rest!.endsWith('.html')) {
-      let sealedMap = await pack.read(IMPORT_MAP_PATH);
+      let depotLock = await readDepotLock(depot);
+      // Sealed pages carry their own graph in the pack's importmap.json
+      // (remix `extends`, preview's `app/gallery`, …). The depot lock is the
+      // depot-wide authority and overlays that graph — it must not erase it
+      // when empty, which left external `<script type=importmap src>` tags
+      // inert and every sealed demo blank.
       let imports: Record<string, string> = {};
-      // Scopes are part of the sealed map too. Dropping them would leave a
-      // vendored graph's bare specifiers unresolved on exactly the pages
-      // that need them most — the sealed ones.
       let scopes: Record<string, Record<string, string>> = {};
-      try {
-        // A sealed deck may inherit too, and its parent is sealed by
-        // definition, so the flattened result is as immutable as the deck
-        // itself.
-        ({ imports, scopes } = sealedMap
-          ? await flattenLink(sealedMap.toString('utf8'), depot)
-          : { imports: {}, scopes: {} });
-      } catch {
-        imports = {};
+      let integrity: Record<string, string> = {};
+      let packMapBytes = await pack.read(IMPORT_MAP_PATH);
+      if (packMapBytes) {
+        try {
+          let start = parseLink(packMapBytes.toString('utf8'));
+          let flat = await resolveInheritance({
+            start,
+            load: async (parent) => {
+              let match = /^([^@/\s]+\/[^@/\s]+)@([^@/\s]+)$/.exec(parent);
+              if (!match) return undefined;
+              let parentBytes = await readStoredPack(
+                depot.storeDir,
+                match[1],
+                match[2],
+              );
+              if (!parentBytes) return undefined;
+              let raw = readZipEntry(parentBytes, IMPORT_MAP_PATH);
+              return raw ? parseLink(raw.toString('utf8')) : undefined;
+            },
+          });
+          imports = flat.imports;
+          scopes = flat.scopes;
+        } catch {
+          // Malformed extends fails closed at lock time; at serve time keep
+          // the depot lock so a broken pack does not take the page down.
+        }
+      }
+      if (depotLock) {
+        imports = { ...imports, ...depotLock.imports };
+        for (let [prefix, table] of Object.entries(depotLock.scopes)) {
+          scopes[prefix] = { ...(scopes[prefix] ?? {}), ...table };
+        }
+        integrity = depotLock.integrity;
       }
       let override = await overrideImports(url, depot, imports);
       trying = Object.keys(override.imports).sort();
-      // From the SAME seal — a sealed document and its map move together —
-      // unless the caller is deliberately trying something else.
       let resolved = { ...imports, ...override.imports };
       let resolvedScopes = {
         ...rebindScopes(scopes, override.imports),
         ...override.scopes,
       };
-      ({ bytes, injected } = injectImportMap(bytes, resolved, resolvedScopes));
+      ({ bytes, injected } = injectImportMap(
+        bytes,
+        resolved,
+        resolvedScopes,
+        integrity,
+      ));
       // The closure is advertised only for a SEALED document. A trial has
       // substituted dependencies, so its graph is not the one the seal
       // describes, and preloading the sealed closure would fetch bytes the
@@ -2098,5 +2356,6 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
   ) as DeckServer;
   server.liveBus = liveBus;
   server.protocol = tls ? 'https' : 'http';
+  server.warmActivity = () => activity.warm();
   return server;
 }

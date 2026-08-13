@@ -1,41 +1,66 @@
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import semver from 'semver';
 import {
-  parseDependencies,
-  parsePackages,
   treePathFromMapValue,
   IMPORT_MAP_PATH,
+  parsePackages,
 } from './import-map.ts';
-import { packagesFromPack } from './import-map-pack.ts';
-import { readStoreMeta, readStoredPack } from './store.ts';
+import {
+  dependenciesFromPack,
+  packagesFromPack,
+} from './import-map-pack.ts';
+import {
+  PACKAGE_JSON_PATH,
+  isLiveSpec,
+  parseNpmAlias,
+  parsePackageJson,
+  suggestedDependencies,
+  entryFromPackageJson,
+} from './package-json.ts';
+import { discoverDecks } from './deck-scan.ts';
+import {
+  isValidDistTag,
+  listStorePackages,
+  readStoreMeta,
+  readStoredFile,
+  readStoredPack,
+} from './store.ts';
 import { readZipEntry } from './canonical-zip.ts';
 
 // The decklist lock.
 //
-// A deck declares what it depends on as RANGES — `"acme/confetti": "^1.0.0"` —
-// because that is what the author means. What its users get must not be a
-// range: a consumer of a published deck should never be exposed to the
-// volatility of somebody else's working tree. So publishing resolves every
-// range to one exact version and writes those pins into the deck's own
-// import map, where the browser reads them.
+// package.json holds RANGES — suggestions. The depot-root importmap.json is
+// the only authority (docs/deck-package-json-and-depot-lock.md). `deck lock`
+// writes that file; `deck lock --update` refreshes it. Nothing upstream
+// changes what this depot runs until the owner asks.
 //
-// The pins go INTO THE TREE, as an ordinary edit. That keeps three things
-// true at once: packs stay faithful (nothing is rewritten at pack time or
-// serve time), the lock is visible in `cat importmap.json`, and moving a
-// dependency forward is just another save — which auto-publishes, seals,
-// and can be reverted like any other.
+// The file is a web import map. Algorithms, authoring requirements, and the
+// three members (`imports`, `scopes`, `integrity`) are the HTML Standard:
+// reference/html.spec.whatwg.org/import-maps.html (snapshot of
+// https://html.spec.whatwg.org/multipage/webappapis.html#import-maps).
+// Extra top-level keys are a console warning, not an error — that is how
+// `deck` (continuous, overrides) rides along without breaking the browser.
+// A specifier key that ends in `/` must map to a value that ends in `/`.
 //
-// Three levels of volatility, all expressible, all just URLs:
+// pnpm lockfile v9 is the *policy* we emulate when filling those members
+// (importers → scopes, packages/snapshots → pins, overrides, install vs
+// update). The browser never sees YAML; it sees this map.
 //
-//   "live"      → /<depot>/<pub>/<pkg>/…        every save, instantly (YOLO)
-//   "dev"       → /<depot>/<pub>/<pkg>@0.2.0-dev.7/…  the freshest seal
-//   "^1.0.0"    → /<depot>/<pub>/<pkg>@1.2.0/…  dependable; moves when you say
+// Three levels of volatility, all expressible, all just URLs
+// (docs/deck-unfrozen-mode.md):
 //
-// Prereleases are excluded from range matching (the npm rule), so a `^1.0.0`
-// dependency never silently picks up somebody's auto-published dev line.
+//   workspace:* / you/pkg@live  → /<depot>/<pub>/<pkg>/…        every save
+//   "latest" / "dev"            → /<depot>/<pub>/<pkg>@latest/…  floating tag
+//   "^1.0.0"                    → /<depot>/<pub>/<pkg>@1.2.0/…   exact pin
+//
+// Dist-tags stay tags in the lock (the browser 302s). Ranges pin. Prereleases
+// are excluded from range matching (the npm rule), so a `^1.0.0` dependency
+// never silently picks up somebody's auto-published dev line.
 
 export const LIVE_SPEC = 'live';
+export const DEPOT_LOCK_PATH = IMPORT_MAP_PATH;
 
 export interface DependencyResolution {
   // The declared key: `<publisher>/<package>` or `<depot>/<publisher>/<package>`.
@@ -57,6 +82,19 @@ export interface DependencyResolution {
   previous?: string;
 }
 
+export interface PackageLocation {
+  publisher: string;
+  package: string;
+  npmName?: string;
+}
+
+// Read a path relative to a tree root (live depot or a Timeline Step).
+// Returns undefined when the path is absent — same contract as history
+// `fileAt`.
+export type TreeFileReader = (
+  path: string,
+) => Promise<Buffer | string | undefined>;
+
 export interface ResolveOptions {
   depotDir: string;
   depotName: string;
@@ -64,17 +102,25 @@ export interface ResolveOptions {
   dependencies: Record<string, string>;
   // The map being locked, so the report can say what moved.
   currentImports?: Record<string, string>;
+  // npm name → layout. Built automatically when omitted.
+  locate?: Map<string, PackageLocation>;
+  // When set, live (versionless) entry resolution reads package.json from
+  // this tree instead of `depotDir` — how a Timeline Step binds siblings
+  // to that Step's own bytes.
+  readTreeFile?: TreeFileReader;
 }
+
+const SEGMENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 function parseKey(
   key: string,
   defaultDepot: string,
 ): { depot: string; publisher: string; package: string } | undefined {
   let segments = key.split('/');
-  if (segments.length === 2) {
+  if (segments.length === 2 && segments.every((s) => SEGMENT.test(s))) {
     return { depot: defaultDepot, publisher: segments[0], package: segments[1] };
   }
-  if (segments.length === 3) {
+  if (segments.length === 3 && segments.every((s) => SEGMENT.test(s))) {
     return { depot: segments[0], publisher: segments[1], package: segments[2] };
   }
   return undefined;
@@ -94,15 +140,47 @@ export interface DependencyValue {
 }
 
 export function parseDependencyValue(value: string): DependencyValue {
+  if (isLiveSpec(value)) {
+    return { spec: LIVE_SPEC };
+  }
+  let aliased = parseNpmAlias(value);
+  if (aliased) {
+    return { target: aliased.name, spec: aliased.range };
+  }
   if (!value.includes('/')) {
     return { spec: value };
   }
   let at = value.lastIndexOf('@');
-  // A bare `you/three` means live, the same default a fork wants.
+  // A bare `you/three` is omitted-spec, defaulting to live — convenience,
+  // not a fourth word for live. Canonical write is `you/three@live`.
   if (at <= 0) {
     return { target: value, spec: LIVE_SPEC };
   }
   return { target: value.slice(0, at), spec: value.slice(at + 1) || LIVE_SPEC };
+}
+
+// The `@` segment written into the lock URL. Live has none; a dist-tag
+// keeps its name so the pin floats; a range or exact version is frozen.
+function pinSegment(
+  spec: string,
+  version: string | undefined,
+): string | undefined {
+  if (spec === LIVE_SPEC) {
+    return undefined;
+  }
+  if (isValidDistTag(spec)) {
+    return spec;
+  }
+  return version;
+}
+
+function versionedBase(
+  base: string,
+  spec: string,
+  version: string | undefined,
+): string {
+  let segment = pinSegment(spec, version);
+  return segment === undefined ? base : `${base}@${segment}`;
 }
 
 // npm's rule: a range never matches a prerelease. An exact prerelease pin or
@@ -129,25 +207,60 @@ function resolveSpec(
   return undefined;
 }
 
+async function readTreeText(
+  readTreeFile: TreeFileReader | undefined,
+  path: string,
+): Promise<string | undefined> {
+  if (!readTreeFile) {
+    return undefined;
+  }
+  let raw = await readTreeFile(path);
+  if (raw === undefined) {
+    return undefined;
+  }
+  return typeof raw === 'string' ? raw : raw.toString('utf8');
+}
+
+function entryFromImportMapText(
+  mapText: string,
+  packageName: string,
+): string | undefined {
+  let packages = parsePackages(mapText);
+  if (!packages) return undefined;
+  let value =
+    packages[packageName]?.entry ?? Object.values(packages)[0]?.entry;
+  return value ? treePathFromMapValue(value) : undefined;
+}
+
 async function entryOf(
   options: ResolveOptions,
   target: { depot: string; publisher: string; package: string },
   version: string | undefined,
 ): Promise<string | undefined> {
   if (version === undefined) {
-    // Live: the entry is whatever the working tree declares right now.
+    let pkgPath = `${target.publisher}/${target.package}/${PACKAGE_JSON_PATH}`;
+    let fromTree = await readTreeText(options.readTreeFile, pkgPath);
+    if (fromTree !== undefined) {
+      let entry = entryFromPackageJson(parsePackageJson(fromTree) ?? {});
+      if (entry) return entry;
+    }
+    let dir = join(options.depotDir, target.publisher, target.package);
     try {
-      let text = await readFile(
-        join(
-          options.depotDir,
-          target.publisher,
-          target.package,
-          IMPORT_MAP_PATH,
-        ),
-        'utf8',
-      );
-      let value = parsePackages(text)?.[target.package]?.entry;
-      return value ? treePathFromMapValue(value) : undefined;
+      let pkgText = await readFile(join(dir, PACKAGE_JSON_PATH), 'utf8');
+      let entry = entryFromPackageJson(parsePackageJson(pkgText) ?? {});
+      if (entry) return entry;
+    } catch {
+      // fall through to importmap.json
+    }
+    // Pre-package.json live decks still declare entry on importmap.json.
+    let mapPath = `${target.publisher}/${target.package}/${IMPORT_MAP_PATH}`;
+    let mapFromTree = await readTreeText(options.readTreeFile, mapPath);
+    if (mapFromTree !== undefined) {
+      return entryFromImportMapText(mapFromTree, target.package);
+    }
+    try {
+      let mapText = await readFile(join(dir, IMPORT_MAP_PATH), 'utf8');
+      return entryFromImportMapText(mapText, target.package);
     } catch {
       return undefined;
     }
@@ -160,38 +273,175 @@ async function entryOf(
   if (!bytes) {
     return undefined;
   }
-  let value = packagesFromPack(bytes)?.[target.package]?.entry;
+  let fromPack = packagesFromPack(bytes);
+  let value =
+    fromPack?.[target.package]?.entry ??
+    fromPack?.[Object.keys(fromPack ?? {})[0] ?? '']?.entry;
   return value ? treePathFromMapValue(value) : undefined;
+}
+
+function remember(
+  index: Map<string, PackageLocation>,
+  key: string,
+  location: PackageLocation,
+): void {
+  if (!index.has(key)) {
+    index.set(key, location);
+  }
+}
+
+export async function inventoryLocations(options: {
+  depotDir: string;
+  storeDir: string;
+}): Promise<Map<string, PackageLocation>> {
+  let index = new Map<string, PackageLocation>();
+  if (options.depotDir) {
+    for (let deck of await discoverDecks(options.depotDir)) {
+      let location: PackageLocation = {
+        publisher: deck.publisher,
+        package: deck.package,
+      };
+      remember(index, deck.name, location);
+      remember(index, deck.package, location);
+      try {
+        let pkg = parsePackageJson(
+          await readFile(join(deck.dir, PACKAGE_JSON_PATH), 'utf8'),
+        );
+        if (pkg?.name) {
+          location.npmName = pkg.name;
+          remember(index, pkg.name, location);
+          remember(index, pkg.name.replace(/^@[^/]+\//, ''), location);
+        }
+      } catch {
+        // live tree without package.json — layout name is enough
+      }
+    }
+  }
+  await rememberStorePackages(index, options.storeDir);
+  return index;
+}
+
+async function rememberStorePackages(
+  index: Map<string, PackageLocation>,
+  storeDir: string,
+): Promise<void> {
+  for (let meta of await listStorePackages(storeDir)) {
+    let [publisher, pkg] = meta.name.includes('/')
+      ? meta.name.split('/')
+      : ['', meta.name];
+    if (!publisher || !pkg) {
+      continue;
+    }
+    let location: PackageLocation = { publisher, package: pkg };
+    remember(index, meta.name, location);
+    remember(index, pkg, location);
+    let latest =
+      meta.tags.latest ??
+      semver.maxSatisfying(
+        Object.keys(meta.versions).filter(
+          (version) => semver.prerelease(version) === null,
+        ),
+        '*',
+      ) ??
+      Object.values(meta.tags)[0] ??
+      Object.keys(meta.versions)[0];
+    if (!latest) {
+      continue;
+    }
+    let bytes = await readStoredPack(storeDir, meta.name, latest);
+    if (!bytes) {
+      continue;
+    }
+    let fromPack = packagesFromPack(bytes);
+    let npmName =
+      fromPack?.[pkg]?.vendoredFrom &&
+      typeof fromPack[pkg].vendoredFrom === 'object'
+        ? (fromPack[pkg].vendoredFrom as { name?: string }).name
+        : undefined;
+    // package.json name is the specifier of record when present.
+    let pkgJson = (() => {
+      let raw = readZipEntry(bytes, PACKAGE_JSON_PATH);
+      return raw ? parsePackageJson(raw.toString('utf8')) : undefined;
+    })();
+    let name = pkgJson?.name ?? npmName;
+    if (name) {
+      location.npmName = name;
+      remember(index, name, location);
+      remember(index, name.replace(/^@[^/]+\//, ''), location);
+    }
+  }
+}
+
+function locateTarget(
+  key: string,
+  alias: string | undefined,
+  depotName: string,
+  index: Map<string, PackageLocation> | undefined,
+): { depot: string; publisher: string; package: string } | undefined {
+  if (alias) {
+    let fromAlias = parseKey(alias, depotName);
+    if (fromAlias) {
+      return fromAlias;
+    }
+    let found = index?.get(alias);
+    if (found) {
+      return {
+        depot: depotName,
+        publisher: found.publisher,
+        package: found.package,
+      };
+    }
+    return undefined;
+  }
+  let fromKey = parseKey(key, depotName);
+  if (fromKey) {
+    return fromKey;
+  }
+  let found = index?.get(key);
+  if (found) {
+    return {
+      depot: depotName,
+      publisher: found.publisher,
+      package: found.package,
+    };
+  }
+  return undefined;
 }
 
 export async function resolveDependencies(
   options: ResolveOptions,
 ): Promise<DependencyResolution[]> {
+  let locate =
+    options.locate ??
+    (await inventoryLocations({
+      depotDir: options.depotDir,
+      storeDir: options.storeDir,
+    }));
   let resolutions: DependencyResolution[] = [];
   for (let [key, declared] of Object.entries(options.dependencies)) {
     let { target: alias, spec } = parseDependencyValue(declared);
-    // The KEY is always the import specifier. Without an alias it must also
-    // BE the deck name, because nothing else says which deck to resolve.
-    // With one, the key is free — which is what lets a vendored package's
-    // bare npm specifier (`three`, `tslib`) point at a deck.
-    if (alias === undefined && parseKey(key, options.depotName) === undefined) {
-      throw new Error(
-        `dependency "${key}" is not <publisher>/<package> or <depot>/<publisher>/<package>`,
-      );
-    }
-    let target = parseKey(alias ?? key, options.depotName);
+    let target = locateTarget(key, alias, options.depotName, locate);
     if (!target) {
+      if (alias) {
+        throw new Error(
+          `dependency "${key}" aliases "${alias}", which is not <publisher>/<package> or <depot>/<publisher>/<package>`,
+        );
+      }
       throw new Error(
-        `dependency "${key}" aliases "${alias}", which is not <publisher>/<package> or <depot>/<publisher>/<package>`,
+        `dependency "${key}" is not an npm name, <publisher>/<package>, or <depot>/<publisher>/<package>`,
       );
     }
     if (target.depot !== options.depotName) {
-      // Cross-depot dependencies need that depot's store, which this depot
-      // does not have. Refusing beats writing a pin nobody can serve.
       throw new Error(
         `dependency "${key}" is in depot ${target.depot}; only ${options.depotName} can be locked from here`,
       );
     }
+    let resolvedAlias =
+      alias && `${target.publisher}/${target.package}` !== key
+        ? `${target.publisher}/${target.package}`
+        : `${target.publisher}/${target.package}` !== key
+          ? `${target.publisher}/${target.package}`
+          : alias;
     let base = `/${target.depot}/${target.publisher}/${target.package}`;
     let version: string | undefined;
     if (spec !== LIVE_SPEC) {
@@ -209,7 +459,7 @@ export async function resolveDependencies(
         );
       }
     }
-    let versioned = version === undefined ? base : `${base}@${version}`;
+    let versioned = versionedBase(base, spec, version);
     let entry = await entryOf(options, target, version);
     let imports: Record<string, string> = { [`${key}/`]: `${versioned}/` };
     if (entry) {
@@ -221,7 +471,9 @@ export async function resolveDependencies(
       publisher: target.publisher,
       package: target.package,
       spec,
-      ...(alias ? { alias } : {}),
+      ...(resolvedAlias && resolvedAlias !== key
+        ? { alias: resolvedAlias }
+        : {}),
       version,
       entry,
       imports,
@@ -258,8 +510,7 @@ async function sealedDependencies(
   if (!bytes) {
     return {};
   }
-  let raw = readZipEntry(bytes, IMPORT_MAP_PATH);
-  return raw ? (parseDependencies(raw.toString('utf8')) ?? {}) : {};
+  return dependenciesFromPack(bytes);
 }
 
 // Walk what the resolved decks themselves depend on, breadth-first, and emit
@@ -269,8 +520,15 @@ export async function resolveScopes(options: {
   storeDir: string;
   roots: readonly DependencyResolution[];
   maxDepth?: number;
+  locate?: Map<string, PackageLocation>;
+  depotDir?: string;
 }): Promise<ScopedResolution[]> {
   let { depotName, storeDir, roots, maxDepth = 8 } = options;
+  let locate =
+    options.locate ??
+    (options.depotDir
+      ? await inventoryLocations({ depotDir: options.depotDir, storeDir })
+      : undefined);
   let scopes = new Map<string, Record<string, string>>();
   let visited = new Set<string>();
   let queue = roots
@@ -292,29 +550,32 @@ export async function resolveScopes(options: {
     let scope = `/${depotName}/${job.deck}@${job.version}/`;
     for (let [specifier, declared] of Object.entries(dependencies)) {
       let { target, spec } = parseDependencyValue(declared);
-      // Without an alias the KEY is the deck name — the same default
-      // `resolveDependencies` applies one function up. Treating an
-      // un-aliased dependency as "nothing to scope" was wrong, and quietly
-      // so: a deck that depends on another deck by its own name
-      // (`"std/tokens": "^1.0.0"`, the ordinary spelling) got no scope at
-      // all, so its bare specifiers went unresolved in the browser on every
-      // page that imported it indirectly. Only the aliased shape — a
-      // vendored library — happened to work, which is why the demos that
-      // vendor found nothing wrong.
-      let child = parseKey(target ?? specifier, depotName);
+      let child = locateTarget(
+        specifier,
+        target,
+        depotName,
+        locate,
+      );
       if (!child) {
         continue;
       }
       let childDeck = `${child.publisher}/${child.package}`;
-      let version = semver.valid(spec) === spec ? spec : undefined;
-      if (!version) {
+      // A live edge has no sealed state to put under a Version prefix.
+      // Unfrozen live binds are injected at serve time from package.json.
+      if (spec === LIVE_SPEC) {
+        continue;
+      }
+      let version: string | undefined;
+      if (semver.valid(spec) === spec) {
+        version = spec;
+      } else {
         let meta = await readStoreMeta(storeDir, childDeck);
         version = meta ? resolveSpec(spec, meta) : undefined;
       }
       if (!version) {
         continue;
       }
-      let base = `/${child.depot}/${childDeck}@${version}`;
+      let base = versionedBase(`/${child.depot}/${childDeck}`, spec, version);
       let { entry, exports } = await entryAndExportsOf(
         storeDir,
         childDeck,
@@ -325,13 +586,9 @@ export async function resolveScopes(options: {
       if (entry) {
         record[specifier] = `${base}/${entry}`;
       }
-      // A subpath a consumer writes may not be the path the package
-      // publishes — dayjs's `plugin/quarterOfYear.js` is really
-      // `esm/plugin/quarterOfYear/index.js` — so the deck's exports become
-      // explicit scope entries rather than relying on the prefix mapping.
-      for (let [alias, target] of Object.entries(exports)) {
+      for (let [alias, targetPath] of Object.entries(exports)) {
         record[`${specifier}/${alias.replace(/^\.\//, '')}`] =
-          `${base}/${target}`;
+          `${base}/${targetPath}`;
       }
       scopes.set(scope, record);
       queue.push({ deck: childDeck, version, depth: job.depth + 1 });
@@ -351,7 +608,14 @@ async function entryAndExportsOf(
   if (!bytes) {
     return { exports: {} };
   }
-  let mapEntry = packagesFromPack(bytes)?.[deck.split('/').at(-1)!];
+  // packagesFromPack is keyed by npm name (`@tanstack/store`, `store`), not
+  // the depot layout segment (`tanstack-store`). Fall back to the sole
+  // merged entry when the layout name is not one of those keys.
+  let fromPack = packagesFromPack(bytes);
+  let layoutName = deck.split('/').at(-1)!;
+  let mapEntry =
+    fromPack?.[layoutName] ??
+    (fromPack ? Object.values(fromPack)[0] : undefined);
   let exports: Record<string, string> = {};
   for (let [alias, value] of Object.entries(mapEntry?.exports ?? {})) {
     let treePath = treePathFromMapValue(value);
@@ -451,6 +715,33 @@ function isPin(
   ).test(target);
 }
 
+async function dependenciesFromDir(
+  deckDir: string,
+): Promise<Record<string, string>> {
+  try {
+    let pkg = parsePackageJson(
+      await readFile(join(deckDir, PACKAGE_JSON_PATH), 'utf8'),
+    );
+    if (pkg) {
+      let fromPkg = suggestedDependencies(pkg);
+      if (Object.keys(fromPkg).length > 0) {
+        return fromPkg;
+      }
+    }
+  } catch {
+    // fall through — many demos still declare deps only on importmap.json
+  }
+  // Pre-package.json decks: `deck.dependencies` on the deck's importmap.
+  try {
+    let map = JSON.parse(
+      await readFile(join(deckDir, IMPORT_MAP_PATH), 'utf8'),
+    ) as { deck?: { dependencies?: Record<string, string> } };
+    return map.deck?.dependencies ?? {};
+  } catch {
+    return {};
+  }
+}
+
 export async function lockDeck(options: {
   depotDir: string;
   depotName: string;
@@ -458,23 +749,30 @@ export async function lockDeck(options: {
   deckDir: string;
 }): Promise<{ resolutions: DependencyResolution[]; text: string; changed: boolean }> {
   let mapPath = join(options.deckDir, IMPORT_MAP_PATH);
-  let mapText = await readFile(mapPath, 'utf8');
-  let dependencies = parseDependencies(mapText) ?? {};
+  let mapText = await readFile(mapPath, 'utf8').catch(() => '{\n  "imports": {}\n}\n');
+  let dependencies = await dependenciesFromDir(options.deckDir);
   let currentImports = (JSON.parse(mapText).imports ?? {}) as Record<
     string,
     string
   >;
+  let locate = await inventoryLocations({
+    depotDir: options.depotDir,
+    storeDir: options.storeDir,
+  });
   let resolutions = await resolveDependencies({
     depotDir: options.depotDir,
     depotName: options.depotName,
     storeDir: options.storeDir,
     dependencies,
     currentImports,
+    locate,
   });
   let scoped = await resolveScopes({
     depotName: options.depotName,
     storeDir: options.storeDir,
     roots: resolutions,
+    locate,
+    depotDir: options.depotDir,
   });
   let { text, changed } = applyLock(
     mapText,
@@ -483,4 +781,522 @@ export async function lockDeck(options: {
     options.depotName,
   );
   return { resolutions, text, changed };
+}
+
+export interface DepotLockOptions {
+  depotDir: string;
+  depotName: string;
+  storeDir: string;
+  // Refresh every pin to the newest version still in range.
+  update?: boolean;
+  // Opt-in continuous refresh; written into the lock's `deck.continuous`.
+  continuous?: boolean;
+  // Specifier → exact version or range the owner wants, beating suggestion.
+  overrides?: Record<string, string>;
+}
+
+export interface DepotLockResult {
+  resolutions: DependencyResolution[];
+  scoped: ScopedResolution[];
+  text: string;
+  changed: boolean;
+  integrity: Record<string, string>;
+}
+
+function sriSha256(bytes: Buffer): string {
+  return `sha256-${createHash('sha256').update(bytes).digest('base64')}`;
+}
+
+function pinVersion(target: string): string | undefined {
+  let match = /@([^/]+)\//.exec(target);
+  return match?.[1];
+}
+
+function stillSatisfies(target: string | undefined, spec: string): boolean {
+  if (!target || spec === LIVE_SPEC) {
+    return false;
+  }
+  let version = pinVersion(target.endsWith('/') ? target : `${target}/`);
+  if (!version) {
+    return false;
+  }
+  if (isValidDistTag(spec)) {
+    return version === spec;
+  }
+  if (semver.valid(spec) === spec) {
+    return version === spec;
+  }
+  if (semver.validRange(spec)) {
+    return semver.satisfies(version, spec, { includePrerelease: false });
+  }
+  return false;
+}
+
+async function integrityFor(
+  storeDir: string,
+  depotDir: string,
+  depotName: string,
+  imports: Record<string, string>,
+): Promise<Record<string, string>> {
+  let integrity: Record<string, string> = {};
+  let prefix = `/${depotName}/`;
+  for (let [specifier, target] of Object.entries(imports)) {
+    if (specifier.endsWith('/') || !target.startsWith(prefix)) {
+      continue;
+    }
+    let rest = target.slice(prefix.length);
+    let versioned = /^([^/]+\/[^/]+)@([^/]+)\/(.*)$/.exec(rest);
+    if (versioned) {
+      let bytes = await readStoredFile(
+        storeDir,
+        versioned[1],
+        versioned[2],
+        versioned[3],
+      );
+      if (bytes) {
+        integrity[target] = sriSha256(bytes);
+      }
+      continue;
+    }
+    let live = /^([^/]+)\/([^/]+)\/(.*)$/.exec(rest);
+    if (live) {
+      try {
+        let bytes = await readFile(
+          join(depotDir, live[1], live[2], live[3]),
+        );
+        integrity[target] = sriSha256(bytes);
+      } catch {
+        // missing live file — omit rather than lie
+      }
+    }
+  }
+  return integrity;
+}
+
+export async function lockDepot(
+  options: DepotLockOptions,
+): Promise<DepotLockResult> {
+  let lockPath = join(options.depotDir, DEPOT_LOCK_PATH);
+  let existingText = await readFile(lockPath, 'utf8').catch(() => '');
+  let existing: {
+    imports?: Record<string, string>;
+    scopes?: Record<string, Record<string, string>>;
+    integrity?: Record<string, string>;
+    deck?: { continuous?: boolean; overrides?: Record<string, string> };
+  } = {};
+  if (existingText) {
+    try {
+      existing = JSON.parse(existingText);
+    } catch {
+      existing = {};
+    }
+  }
+  let overrides = {
+    ...(existing.deck?.overrides ?? {}),
+    ...(options.overrides ?? {}),
+  };
+  let locate = await inventoryLocations({
+    depotDir: options.depotDir,
+    storeDir: options.storeDir,
+  });
+  let decks = await discoverDecks(options.depotDir);
+  let allResolutions: DependencyResolution[] = [];
+  let importerScopes: ScopedResolution[] = [];
+
+  for (let deck of decks) {
+    let dependencies = await dependenciesFromDir(deck.dir);
+    for (let [key, value] of Object.entries(overrides)) {
+      if (key in dependencies || Object.keys(dependencies).length === 0) {
+        dependencies[key] = value;
+      }
+    }
+    if (Object.keys(dependencies).length === 0) {
+      continue;
+    }
+    if (!options.update && existing.imports) {
+      for (let [key, spec] of Object.entries(dependencies)) {
+        let { spec: range, target } = parseDependencyValue(spec);
+        let current = existing.imports[key];
+        let version = current
+          ? pinVersion(current.endsWith('/') ? current : `${current}/`)
+          : undefined;
+        if (version && stillSatisfies(current, range)) {
+          dependencies[key] = target ? `${target}@${version}` : version;
+        }
+      }
+    }
+    let resolutions = await resolveDependencies({
+      depotDir: options.depotDir,
+      depotName: options.depotName,
+      storeDir: options.storeDir,
+      dependencies,
+      currentImports: existing.imports,
+      locate,
+    });
+    allResolutions.push(...resolutions);
+    let liveScope = `/${options.depotName}/${deck.name}/`;
+    let liveImports: Record<string, string> = {};
+    for (let resolution of resolutions) {
+      Object.assign(liveImports, resolution.imports);
+    }
+    if (Object.keys(liveImports).length > 0) {
+      importerScopes.push({ scope: liveScope, imports: liveImports });
+    }
+  }
+
+  let sealedScopes = await resolveScopes({
+    depotName: options.depotName,
+    storeDir: options.storeDir,
+    roots: allResolutions,
+    locate,
+    depotDir: options.depotDir,
+  });
+  let scoped = [...importerScopes, ...sealedScopes].sort((a, b) =>
+    a.scope.localeCompare(b.scope),
+  );
+
+  let imports: Record<string, string> = {};
+  for (let resolution of allResolutions) {
+    Object.assign(imports, resolution.imports);
+  }
+  let integrity = await integrityFor(
+    options.storeDir,
+    options.depotDir,
+    options.depotName,
+    {
+      ...imports,
+      ...Object.assign({}, ...scoped.map((entry) => entry.imports)),
+    },
+  );
+
+  let continuous = options.continuous ?? existing.deck?.continuous ?? false;
+  let parsed: Record<string, unknown> = {
+    imports: Object.fromEntries(
+      Object.entries(imports).sort(([a], [b]) => a.localeCompare(b)),
+    ),
+  };
+  if (scoped.length > 0) {
+    parsed.scopes = Object.fromEntries(
+      scoped.map((entry) => [
+        entry.scope,
+        Object.fromEntries(
+          Object.entries(entry.imports).sort(([a], [b]) => a.localeCompare(b)),
+        ),
+      ]),
+    );
+  }
+  if (Object.keys(integrity).length > 0) {
+    parsed.integrity = Object.fromEntries(
+      Object.entries(integrity).sort(([a], [b]) => a.localeCompare(b)),
+    );
+  }
+  let deckMeta: Record<string, unknown> = {};
+  if (continuous) {
+    deckMeta.continuous = true;
+  }
+  if (Object.keys(overrides).length > 0) {
+    deckMeta.overrides = overrides;
+  }
+  if (Object.keys(deckMeta).length > 0) {
+    parsed.deck = deckMeta;
+  }
+  let text = JSON.stringify(parsed, null, 2) + '\n';
+  let changed = text !== (existingText.endsWith('\n') ? existingText : existingText + '\n') &&
+    text !== existingText;
+  return {
+    resolutions: allResolutions,
+    scoped,
+    text,
+    changed,
+    integrity,
+  };
+}
+
+export function parseDepotLock(jsonText: string): {
+  imports: Record<string, string>;
+  scopes: Record<string, Record<string, string>>;
+  integrity: Record<string, string>;
+  continuous: boolean;
+  overrides: Record<string, string>;
+} {
+  try {
+    let parsed = JSON.parse(jsonText);
+    return {
+      imports: (parsed.imports ?? {}) as Record<string, string>,
+      scopes: (parsed.scopes ?? {}) as Record<string, Record<string, string>>,
+      integrity: (parsed.integrity ?? {}) as Record<string, string>,
+      continuous: parsed.deck?.continuous === true,
+      overrides: (parsed.deck?.overrides ?? {}) as Record<string, string>,
+    };
+  } catch {
+    return {
+      imports: {},
+      scopes: {},
+      integrity: {},
+      continuous: false,
+      overrides: {},
+    };
+  }
+}
+
+function isUnfrozenSpec(spec: string): boolean {
+  return spec === LIVE_SPEC || isValidDistTag(spec);
+}
+
+function mergeScopeTables(
+  into: Record<string, Record<string, string>>,
+  prefix: string,
+  table: Record<string, string>,
+): void {
+  into[prefix] = { ...(into[prefix] ?? {}), ...table };
+}
+
+// A deck in a tree listing: `publisher/package/package.json` at depth two.
+// The depot-root lock is never a deck.
+export function decksFromTreePaths(
+  paths: readonly string[],
+): Array<{ publisher: string; package: string; name: string }> {
+  let decks: Array<{ publisher: string; package: string; name: string }> = [];
+  let seen = new Set<string>();
+  for (let path of paths) {
+    let parts = path.split('/');
+    if (parts.length !== 3 || parts[2] !== PACKAGE_JSON_PATH) {
+      continue;
+    }
+    let [publisher, pkg] = parts;
+    if (!SEGMENT.test(publisher) || !SEGMENT.test(pkg)) {
+      continue;
+    }
+    let name = `${publisher}/${pkg}`;
+    if (seen.has(name)) {
+      continue;
+    }
+    seen.add(name);
+    decks.push({ publisher, package: pkg, name });
+  }
+  return decks.sort((a, b) => (a.name < b.name ? -1 : 1));
+}
+
+async function dependenciesFromTreeFile(
+  readTreeFile: TreeFileReader,
+  deckName: string,
+): Promise<Record<string, string>> {
+  let text = await readTreeText(
+    readTreeFile,
+    `${deckName}/${PACKAGE_JSON_PATH}`,
+  );
+  if (text === undefined) {
+    return {};
+  }
+  let pkg = parsePackageJson(text);
+  return pkg ? suggestedDependencies(pkg) : {};
+}
+
+async function locateFromTree(options: {
+  decks: readonly { publisher: string; package: string; name: string }[];
+  storeDir: string;
+  readTreeFile: TreeFileReader;
+}): Promise<Map<string, PackageLocation>> {
+  let index = new Map<string, PackageLocation>();
+  for (let deck of options.decks) {
+    let location: PackageLocation = {
+      publisher: deck.publisher,
+      package: deck.package,
+    };
+    remember(index, deck.name, location);
+    remember(index, deck.package, location);
+    let text = await readTreeText(
+      options.readTreeFile,
+      `${deck.name}/${PACKAGE_JSON_PATH}`,
+    );
+    if (text) {
+      let pkg = parsePackageJson(text);
+      if (pkg?.name) {
+        location.npmName = pkg.name;
+        remember(index, pkg.name, location);
+        remember(index, pkg.name.replace(/^@[^/]+\//, ''), location);
+      }
+    }
+  }
+  // Store packages fill npm names the tree does not hold as live decks.
+  await rememberStorePackages(index, options.storeDir);
+  return index;
+}
+
+// Rewrite versionless (live) import-map targets into a Timeline Step URL.
+// Dist-tags and exact Versions keep their `@` segment and are not rewritten
+// — they already name store identity. A Step page that said workspace:*
+// must bind the sibling *at that Step*, not today's working tree.
+export function rewriteLiveTargetsIntoStep(
+  depotName: string,
+  revision: string,
+  target: string,
+): string {
+  let prefix = `/${depotName}/`;
+  let historyPrefix = `/${depotName}/_history/`;
+  if (!target.startsWith(prefix) || target.startsWith(historyPrefix)) {
+    return target;
+  }
+  let rest = target.slice(prefix.length);
+  // `/depot/pub/pkg@1.2.0/…` and `/depot/pub/pkg@latest/…` keep their pin.
+  if (/^[^/]+\/[^/]+@/.test(rest)) {
+    return target;
+  }
+  return `${historyPrefix}${revision}/${rest}`;
+}
+
+export function rewriteImportMapIntoStep(
+  depotName: string,
+  revision: string,
+  imports: Record<string, string>,
+  scopes: Record<string, Record<string, string>> = {},
+  integrity: Record<string, string> = {},
+): {
+  imports: Record<string, string>;
+  scopes: Record<string, Record<string, string>>;
+  integrity: Record<string, string>;
+} {
+  let rewrite = (target: string) =>
+    rewriteLiveTargetsIntoStep(depotName, revision, target);
+  let atStep = (table: Record<string, string>) =>
+    Object.fromEntries(
+      Object.entries(table).map(([key, value]) => [key, rewrite(value)]),
+    );
+  return {
+    imports: atStep(imports),
+    scopes: Object.fromEntries(
+      Object.entries(scopes).map(([scope, table]) => [
+        rewrite(scope),
+        atStep(table),
+      ]),
+    ),
+    integrity: Object.fromEntries(
+      Object.entries(integrity).map(([url, hash]) => [rewrite(url), hash]),
+    ),
+  };
+}
+
+// Unfrozen edges from any tree — live depot or Timeline Step — given its
+// decks and a file reader. workspace:* and dist-tags skip the freeze;
+// ranges do not appear here.
+export async function unfrozenBindingsFromTree(options: {
+  depotName: string;
+  storeDir: string;
+  // Used only as a fallback for live entry reads when readTreeFile misses.
+  depotDir?: string;
+  decks: readonly { publisher: string; package: string; name: string }[];
+  readTreeFile: TreeFileReader;
+  locate?: Map<string, PackageLocation>;
+}): Promise<{
+  imports: Record<string, string>;
+  scopes: Record<string, Record<string, string>>;
+}> {
+  let locate =
+    options.locate ??
+    (await locateFromTree({
+      decks: options.decks,
+      storeDir: options.storeDir,
+      readTreeFile: options.readTreeFile,
+    }));
+  let imports: Record<string, string> = {};
+  let scopes: Record<string, Record<string, string>> = {};
+  for (let deck of options.decks) {
+    let dependencies = await dependenciesFromTreeFile(
+      options.readTreeFile,
+      deck.name,
+    );
+    let scopeImports: Record<string, string> = {};
+    for (let [key, declared] of Object.entries(dependencies)) {
+      let { spec } = parseDependencyValue(declared);
+      if (!isUnfrozenSpec(spec)) {
+        continue;
+      }
+      try {
+        let resolutions = await resolveDependencies({
+          depotDir: options.depotDir ?? '',
+          depotName: options.depotName,
+          storeDir: options.storeDir,
+          dependencies: { [key]: declared },
+          locate,
+          readTreeFile: options.readTreeFile,
+        });
+        for (let resolution of resolutions) {
+          Object.assign(imports, resolution.imports);
+          Object.assign(scopeImports, resolution.imports);
+        }
+      } catch {
+        // Unpublished tag or unknown name: the page still serves; that
+        // import fails at runtime rather than taking the document down.
+      }
+    }
+    if (Object.keys(scopeImports).length > 0) {
+      mergeScopeTables(
+        scopes,
+        `/${options.depotName}/${deck.name}/`,
+        scopeImports,
+      );
+    }
+  }
+  return { imports, scopes };
+}
+
+// Phase 3: the edges that skip the freeze on the LIVE tree. Live pages
+// inject these from package.json even when the depot lock has no pin —
+// workspace:* and dist-tags (`latest`, `dev`) — so trying a sibling or
+// chasing a tag does not require `deck lock`. Ranges stay locked.
+export async function unfrozenBindingsFromDepot(options: {
+  depotDir: string;
+  depotName: string;
+  storeDir: string;
+}): Promise<{
+  imports: Record<string, string>;
+  scopes: Record<string, Record<string, string>>;
+}> {
+  let decks = (await discoverDecks(options.depotDir)).map((deck) => ({
+    publisher: deck.publisher,
+    package: deck.package,
+    name: deck.name,
+  }));
+  return unfrozenBindingsFromTree({
+    depotDir: options.depotDir,
+    depotName: options.depotName,
+    storeDir: options.storeDir,
+    decks,
+    readTreeFile: async (path) => {
+      try {
+        return await readFile(join(options.depotDir, path));
+      } catch {
+        return undefined;
+      }
+    },
+  });
+}
+
+// Cheap gap check before the expensive unfrozen resolve. Reading every
+// package.json for workspace:*/dist-tag keys is milliseconds; opening the
+// store to resolve them is hundreds. When `deck lock` has already compiled
+// those edges into the depot import map, serve should skip the walk.
+export async function unfrozenKeysMissingFromLock(options: {
+  depotDir: string;
+  lockImports: Record<string, string>;
+}): Promise<string[]> {
+  let missing: string[] = [];
+  let seen = new Set<string>();
+  for (let deck of await discoverDecks(options.depotDir)) {
+    let dependencies = await dependenciesFromDir(deck.dir);
+    for (let [key, declared] of Object.entries(dependencies)) {
+      let { spec } = parseDependencyValue(declared);
+      if (!isUnfrozenSpec(spec) || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      if (
+        !(key in options.lockImports) &&
+        !(`${key}/` in options.lockImports)
+      ) {
+        missing.push(key);
+      }
+    }
+  }
+  return missing.sort();
 }

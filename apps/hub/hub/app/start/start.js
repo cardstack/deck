@@ -14,15 +14,19 @@
 // that could be checked and was not is a sentence nobody has to believe.
 //
 // WHAT THIS PAGE IS NOT.
-// A tour. Every section here is short and ends in a link into /browse, /run
-// or /track, because reading about a runnable thing when the runnable thing
-// is one click away is the worst of both.
+// A self-contained tutorial. Every section here is short and ends in a link
+// into /browse, /run or /track, because reading about a runnable thing when
+// the runnable thing is one click away is the worst of both. The interactive
+// protocol stories (ui/tour) launch from the hero — live demos, not a Hub UI tutorial —
+// captions live in the bottom bar; it does not replace the live numbers
+// or the doctrine below.
 //
 // The long-form book still exists at /deckbook — captured transcripts, worked
 // use cases, the full CLI walkthrough. That page is a document. This one is
 // an instrument, and it is the one that has to be true right now.
 import 'ui/nav';
 import { installNavStyles, wrapTables } from 'ui/nav';
+import { mountTourButton, resumeHubTour } from 'ui/tour';
 import hljs from 'highlight-js';
 import bash from 'highlight-js/es/languages/bash.js';
 
@@ -92,42 +96,23 @@ function ago(when) {
 //     which is the claim, and this is the test of it
 // ---------------------------------------------------------------------------
 
+/**
+ * First paint — `/_packages` only.
+ *
+ * Activity and per-depot `/_history` used to sit on the critical path and
+ * turned this panel into a multi-second wait behind seal-log walks. Claims
+ * arrive in `enrichNow`; step totals are no longer fetched here (the Timeline
+ * link is enough — counting every seal on start was the expensive lie).
+ */
 async function now() {
-  let [packages, activity] = await Promise.all([
-    getJson('/_packages').catch(() => ({ data: [] })),
-    getJson('/_activity?top=200&grain=file').catch(() => ({ foci: [] })),
-  ]);
+  let packages = await getJson('/_packages').catch(() => ({ data: [] }));
   let depots = packages.data ?? [];
-
-  // Steps come per depot and only where a history backend attached. A depot
-  // without one is not broken — its Versions ARE its history — so
-  // it reports no Timeline rather than zero Steps, which would be a lie
-  // about a tape that does not exist.
-  //
-  // ONE AT A TIME, not `Promise.all`. Twelve depots is twelve requests, a
-  // browser allows six per origin, and one of those six is already spent on
-  // the SSE stream that makes this page live. Firing them together does not
-  // make them finish sooner — they queue in the browser instead of on the
-  // server — and it takes every connection the page has, so anything else it
-  // needs is stuck behind a fan-out that exists only to fill a table.
-  //
-  // Sequential is slower in the best case and the only one that cannot starve
-  // the page in the worst.
-  let timelines = [];
-  for (let depot of depots) {
-    if (!depot.history) {
-      timelines.push({ depot: depot.name, steps: undefined });
-      continue;
-    }
-    let body = await getJson(`/${depot.name}/_history`).catch(() => undefined);
-    let steps = body?.data?.map((step) => step.attributes) ?? [];
-    timelines.push({
-      depot: depot.name,
-      steps: steps.length,
-      newest: steps[0]?.timestamp,
-    });
-  }
-  let tape = new Map(timelines.map((row) => [row.depot, row]));
+  let tape = new Map(
+    depots.map((depot) => [
+      depot.name,
+      { depot: depot.name, steps: undefined, newest: undefined },
+    ]),
+  );
 
   let decks = 0;
   let versions = 0;
@@ -148,12 +133,29 @@ async function now() {
       }
     }
   }
-  let claims = (activity.foci ?? []).flatMap((focus) =>
+
+  return {
+    depots,
+    tape,
+    decks,
+    versions,
+    vendored,
+    live,
+    claims: [],
+    steps: undefined,
+    newestVersion,
+  };
+}
+
+/** Claims only — after the depot table is already on screen. */
+async function enrichNow(state) {
+  let activity = await getJson('/_activity?top=200&grain=package').catch(() => ({
+    foci: [],
+  }));
+  state.claims = (activity.foci ?? []).flatMap((focus) =>
     (focus.claims ?? []).map((claim) => ({ ...claim, at: focus.id })),
   );
-  let steps = timelines.reduce((sum, row) => sum + (row.steps ?? 0), 0);
-
-  return { depots, tape, decks, versions, vendored, live, claims, steps, newestVersion };
+  return state;
 }
 
 function statLine(state) {
@@ -185,11 +187,14 @@ function statLine(state) {
   return (
     `<div class="stats" data-role="stats">` +
     cells
-      .map(
-        ([value, label, href]) =>
+      .map(([value, label, href]) => {
+        let shown = value === undefined || value === null ? '—' : value;
+        return (
           `<a class="stat" href="${esc(href)}">` +
-          `<b>${value}</b><span>${esc(label)}</span></a>`,
-      )
+          `<b${value === undefined || value === null ? ' class="dim"' : ''}>${shown}</b>` +
+          `<span>${esc(label)}</span></a>`
+        );
+      })
       .join('') +
     `</div>`
   );
@@ -208,7 +213,10 @@ function depotTable(state) {
         `<td>${
           depot.history
             ? `<a class="s-seal" href="/browse?at=/${esc(depot.name)}/_history">` +
-              `${tape?.steps ?? 0} Step${tape?.steps === 1 ? '' : 's'}</a>` +
+              (tape?.steps == null
+                ? `Timeline`
+                : `${tape.steps} Step${tape.steps === 1 ? '' : 's'}`) +
+              `</a>` +
               (tape?.newest ? ` <span class="dim">· ${esc(ago(tape.newest))}</span>` : '')
             : `<span class="dim">Versions only — no Timeline</span>`
         }</td>` +
@@ -264,7 +272,7 @@ Run Deck from this repository.</p>
 node packages/cli/bin/deck.js hello ./playground
 
 # or serve a directory that exists
-node packages/cli/bin/deck.js serve --root ./work --history auto</code></pre>
+node packages/cli/bin/deck.js serve --root ./work --history deckd</code></pre>
 
 <p>Open the URL that the command prints. Then change a file in a deck
 directory. The server does these steps for each change:</p>
@@ -661,7 +669,7 @@ const BOOK = [
      <tr><td><b>Closure</b></td><td class="says">Every module that a page reaches, directly or through another module.</td></tr>
      <tr><td><b>Deck Pack</b></td><td class="says">One tree and its packlist in one file. The file form is <code>.pack.zip</code>, and any zip tool opens it.</td></tr>
      <tr><td><b>depot</b></td><td class="says">A directory that is also a URL space.</td></tr>
-     <tr><td><b>deck</b></td><td class="says">A package. It is <code>&lt;publisher&gt;/&lt;name&gt;</code>, and it has an <code>importmap.json</code>.</td></tr>
+     <tr><td><b>deck</b></td><td class="says">A package. It is <code>&lt;publisher&gt;/&lt;name&gt;</code>, and it has a <code>package.json</code>.</td></tr>
      <tr><td><b>publisher</b></td><td class="says">The first segment of a deck name. It is the boundary at which a fork occurs.</td></tr>
      <tr><td><b>offer</b></td><td class="says">A fork that records the tree it came from. You can run an offer.</td></tr>
      <tr><td><b>tree hash</b></td><td class="says">The identity of a whole tree, calculated from its content. The code calls it <code>treeHash</code>.</td></tr>
@@ -760,16 +768,17 @@ const BOOK = [
      hit.</p>
 
      <p>The automatic publish chooses the next name for you. It reads the
-     version in your import map, and it adds the next number:</p>
-     <pre class="term"><code># importmap.json declares 1.5.0
+     version in your <code>package.json</code>, and it adds the next number:</p>
+     <pre class="term"><code># package.json declares 1.5.0
 # the store holds 1.5.0-dev.1 and 1.5.0-dev.2
 # the next save publishes:
 1.5.0-dev.3</code></pre>
      <p>To make the stable Version from that work, use
-     <code>deck release</code>. The stable Version must agree with the import
-     map: if the map declares <code>1.5.0</code>, you can release
-     <code>1.5.0</code>. To release <code>1.6.0</code>, first change the map.
-     That change is one line, and it is part of the tree that you seal.</p>`,
+     <code>deck release</code>. The stable Version must agree with
+     <code>package.json</code>: if it declares <code>1.5.0</code>, you can
+     release <code>1.5.0</code>. To release <code>1.6.0</code>, first change
+     the file. That change is one line, and it is part of the tree that you
+     seal.</p>`,
   ],
   [
     'The store',
@@ -1207,12 +1216,21 @@ async function fillNow() {
     }
     return;
   }
-  let stats = app.querySelector('[data-role="stats"]');
-  if (stats) stats.outerHTML = statLine(state);
-  let slot = app.querySelector('[data-role="now"]');
-  if (slot) slot.innerHTML = depotTable(state) + activeNote(state);
-  // The depot table is new HTML, so it arrives without a scroll port.
-  wrapTables(app);
+  let paint = () => {
+    let stats = app.querySelector('[data-role="stats"]');
+    if (stats) stats.outerHTML = statLine(state);
+    let slot = app.querySelector('[data-role="now"]');
+    if (slot) slot.innerHTML = depotTable(state) + activeNote(state);
+    wrapTables(app);
+  };
+  // Packages first — table on screen — then claims without blocking.
+  paint();
+  try {
+    await enrichNow(state);
+    paint();
+  } catch {
+    // Claims are decoration; the table already answered "what is mounted".
+  }
 }
 
 addEventListener('keydown', (event) => {
@@ -1248,6 +1266,8 @@ async function refresh() {
 }
 
 paint();
+mountTourButton(app.querySelector('.hero'));
+resumeHubTour({ waitMs: 120 });
 refresh();
 setInterval(refresh, REFRESH_MS);
 
@@ -1280,6 +1300,7 @@ const START_CSS = `
    theme.css and is specified in docs/deck-hub-typography.md. If a rule here
    is about type, it is in the wrong file. */
 
+.tour-launch { margin: 0 0 var(--s3, 1.5rem); }
 .hero { padding: var(--s2) 0 var(--s4); }
 /* "Deck is" — THE SAME MARK AS THE ONE IN THE NAV.
    The name appeared twice on the first screen in two different typefaces:

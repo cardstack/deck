@@ -5,8 +5,9 @@
 //
 // This is a rendering of sealed content, not a change to it: the bytes in
 // the pack stay exactly what was sealed (`?format=pack` and the tree hash
-// are untouched), and the injected map is a pure function of the same
-// version's own importmap.json — so an immutable response stays honest.
+// are untouched). The injected map is this depot's lock — the same
+// authority live pages use — so an immutable response stays honest about
+// what THIS depot runs.
 
 // A whole `<script type="importmap" …>…</script>`, so an external one can be
 // replaced rather than left to do nothing.
@@ -25,14 +26,22 @@ export function injectImportMap(
   // becoming a global name the app has to know about. Dropping them here
   // was the difference between a page that loads and one that does not.
   scopes: Record<string, Record<string, string>> = {},
+  integrity: Record<string, string> = {},
 ): { bytes: Buffer; injected: boolean } {
-  if (Object.keys(imports).length === 0 && Object.keys(scopes).length === 0) {
+  if (
+    Object.keys(imports).length === 0 &&
+    Object.keys(scopes).length === 0 &&
+    Object.keys(integrity).length === 0
+  ) {
     return { bytes: html, injected: false };
   }
   let text = html.toString('utf8');
   let map: Record<string, unknown> = { imports };
   if (Object.keys(scopes).length > 0) {
     map.scopes = scopes;
+  }
+  if (Object.keys(integrity).length > 0) {
+    map.integrity = integrity;
   }
   let tag = `<script type="importmap">${JSON.stringify(map)}</script>`;
   let existing = text.match(IMPORTMAP_TAG);

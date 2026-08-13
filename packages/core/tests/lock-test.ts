@@ -8,9 +8,17 @@ import { publishToStore } from '../src/store.ts';
 import {
   applyLock,
   lockDeck,
+  lockDepot,
+  parseDepotLock,
   parseDependencyValue,
   resolveDependencies,
   resolveScopes,
+  decksFromTreePaths,
+  rewriteLiveTargetsIntoStep,
+  rewriteImportMapIntoStep,
+  unfrozenBindingsFromDepot,
+  unfrozenBindingsFromTree,
+  unfrozenKeysMissingFromLock,
 } from '../src/lock.ts';
 import { resolveSpecifier } from '../src/resolve.ts';
 
@@ -20,14 +28,13 @@ let storeDir: string;
 function confetti(version: string) {
   return pack([
     {
-      path: 'importmap.json',
+      path: 'package.json',
       bytes: Buffer.from(
         JSON.stringify({
-          deck: {
-            packages: {
-              confetti: { version, entry: '$DECK/confetti.js' },
-            },
-          },
+          name: 'confetti',
+          version,
+          type: 'module',
+          exports: { '.': './confetti.js' },
         }),
       ),
     },
@@ -38,16 +45,16 @@ function confetti(version: string) {
   ]);
 }
 
-async function writeAppMap(dependencies: Record<string, string>) {
+async function writeAppPackage(dependencies: Record<string, string>) {
   await writeFile(
-    join(depotDir, 'me', 'app', 'importmap.json'),
+    join(depotDir, 'me', 'app', 'package.json'),
     JSON.stringify(
       {
-        imports: { 'some-other/': '/elsewhere/' },
-        deck: {
-          packages: { app: { version: '0.1.0', entry: '$DECK/app.js' } },
-          dependencies,
-        },
+        name: 'app',
+        version: '0.1.0',
+        type: 'module',
+        exports: { '.': './app.js' },
+        dependencies,
       },
       null,
       2,
@@ -62,13 +69,12 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     await mkdir(join(depotDir, 'me', 'app'), { recursive: true });
     await mkdir(join(depotDir, 'acme', 'confetti'), { recursive: true });
     await writeFile(
-      join(depotDir, 'acme', 'confetti', 'importmap.json'),
+      join(depotDir, 'acme', 'confetti', 'package.json'),
       JSON.stringify({
-        deck: {
-          packages: {
-            confetti: { version: '2.0.0', entry: '$DECK/confetti.js' },
-          },
-        },
+        name: 'confetti',
+        version: '2.0.0',
+        type: 'module',
+        exports: { '.': './confetti.js' },
       }),
     );
     await publishToStore(storeDir, 'acme/confetti', '1.0.0', confetti('1.0.0'));
@@ -90,7 +96,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
   });
 
   test('a range resolves to the highest STABLE that satisfies it', async function (assert) {
-    await writeAppMap({ 'acme/confetti': '^1.0.0' });
+    await writeAppPackage({ 'acme/confetti': '^1.0.0' });
     let { resolutions, text, changed } = await lockDeck({
       depotDir,
       depotName: 'demo',
@@ -109,20 +115,17 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       '/demo/acme/confetti@1.2.0/confetti.js',
       'the pin is a plain URL — the browser needs no deck-specific logic',
     );
-    assert.strictEqual(
-      map.imports['some-other/'],
-      '/elsewhere/',
-      'unrelated import entries are left alone',
-    );
     assert.deepEqual(
-      map.deck.dependencies,
+      JSON.parse(
+        await readFile(join(depotDir, 'me', 'app', 'package.json'), 'utf8'),
+      ).dependencies,
       { 'acme/confetti': '^1.0.0' },
-      'the RANGE survives: intent is not overwritten by what it resolved to',
+      'the RANGE stays in package.json: intent is not overwritten by what it resolved to',
     );
   });
 
   test('a range never picks up a prerelease; the dev tag is how you opt in', async function (assert) {
-    await writeAppMap({ 'acme/confetti': '^1.0.0' });
+    await writeAppPackage({ 'acme/confetti': '^1.0.0' });
     let ranged = await lockDeck({
       depotDir,
       depotName: 'demo',
@@ -135,7 +138,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       '1.3.0-dev.4 satisfies ^1.0.0 numerically, and is still not chosen',
     );
 
-    await writeAppMap({ 'acme/confetti': 'dev' });
+    await writeAppPackage({ 'acme/confetti': 'dev' });
     let tagged = await lockDeck({
       depotDir,
       depotName: 'demo',
@@ -143,26 +146,38 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       deckDir: join(depotDir, 'me', 'app'),
     });
     assert.strictEqual(tagged.resolutions[0].version, '1.3.0-dev.4');
+    assert.deepEqual(tagged.resolutions[0].imports, {
+      'acme/confetti': '/demo/acme/confetti@dev/confetti.js',
+      'acme/confetti/': '/demo/acme/confetti@dev/',
+    });
   });
 
-  test('"live" pins to the working tree — the YOLO end of the dial', async function (assert) {
-    await writeAppMap({ 'acme/confetti': 'live' });
-    let { resolutions } = await lockDeck({
+  test('"workspace:*" pins to the working tree; "live" is a read synonym', async function (assert) {
+    await writeAppPackage({ 'acme/confetti': 'workspace:*' });
+    let canonical = await lockDeck({
       depotDir,
       depotName: 'demo',
       storeDir,
       deckDir: join(depotDir, 'me', 'app'),
     });
-    assert.strictEqual(resolutions[0].version, undefined);
-    assert.deepEqual(resolutions[0].imports, {
+    assert.strictEqual(canonical.resolutions[0].version, undefined);
+    assert.deepEqual(canonical.resolutions[0].imports, {
       'acme/confetti': '/demo/acme/confetti/confetti.js',
       'acme/confetti/': '/demo/acme/confetti/',
-      // no @version: every save of the dependency is picked up on reload
     });
+
+    await writeAppPackage({ 'acme/confetti': 'live' });
+    let synonym = await lockDeck({
+      depotDir,
+      depotName: 'demo',
+      storeDir,
+      deckDir: join(depotDir, 'me', 'app'),
+    });
+    assert.deepEqual(synonym.resolutions[0].imports, canonical.resolutions[0].imports);
   });
 
   test('an exact pin, and a tag, resolve as themselves', async function (assert) {
-    await writeAppMap({ 'acme/confetti': '2.0.0' });
+    await writeAppPackage({ 'acme/confetti': '2.0.0' });
     let exact = await lockDeck({
       depotDir,
       depotName: 'demo',
@@ -171,7 +186,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     });
     assert.strictEqual(exact.resolutions[0].version, '2.0.0');
 
-    await writeAppMap({ 'acme/confetti': 'latest' });
+    await writeAppPackage({ 'acme/confetti': 'latest' });
     let tagged = await lockDeck({
       depotDir,
       depotName: 'demo',
@@ -179,10 +194,18 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       deckDir: join(depotDir, 'me', 'app'),
     });
     assert.strictEqual(tagged.resolutions[0].version, '1.2.0');
+    assert.deepEqual(
+      tagged.resolutions[0].imports,
+      {
+        'acme/confetti': '/demo/acme/confetti@latest/confetti.js',
+        'acme/confetti/': '/demo/acme/confetti@latest/',
+      },
+      'a dist-tag stays a tag in the lock — the browser 302s; the pin floats',
+    );
   });
 
   test('locking twice is a no-op; moving the range moves the pin', async function (assert) {
-    await writeAppMap({ 'acme/confetti': '^1.0.0' });
+    await writeAppPackage({ 'acme/confetti': '^1.0.0' });
     let first = await lockDeck({
       depotDir,
       depotName: 'demo',
@@ -199,15 +222,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     });
     assert.false(again.changed, 'a settled lock writes nothing');
 
-    // The publisher moves the dependency forward deliberately.
-    let map = JSON.parse(
-      await readFile(join(depotDir, 'me', 'app', 'importmap.json'), 'utf8'),
-    );
-    map.deck.dependencies['acme/confetti'] = '^2.0.0';
-    await writeFile(
-      join(depotDir, 'me', 'app', 'importmap.json'),
-      JSON.stringify(map, null, 2) + '\n',
-    );
+    await writeAppPackage({ 'acme/confetti': '^2.0.0' });
     let moved = await lockDeck({
       depotDir,
       depotName: 'demo',
@@ -246,16 +261,15 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
   test('an alias repoints a specifier without renaming it', async function (assert) {
     await mkdir(join(depotDir, 'you', 'confetti'), { recursive: true });
     await writeFile(
-      join(depotDir, 'you', 'confetti', 'importmap.json'),
+      join(depotDir, 'you', 'confetti', 'package.json'),
       JSON.stringify({
-        deck: {
-          packages: {
-            confetti: { version: '1.2.0', entry: '$DECK/confetti.js' },
-          },
-        },
+        name: 'confetti',
+        version: '1.2.0',
+        type: 'module',
+        exports: { '.': './confetti.js' },
       }),
     );
-    await writeAppMap({ 'acme/confetti': 'you/confetti@live' });
+    await writeAppPackage({ 'acme/confetti': 'you/confetti@live' });
     let { resolutions, text } = await lockDeck({
       depotDir,
       depotName: 'demo',
@@ -280,7 +294,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
 
   test('an alias to a published fork resolves its range', async function (assert) {
     await publishToStore(storeDir, 'you/confetti', '1.5.0', confetti('1.5.0'));
-    await writeAppMap({ 'acme/confetti': 'you/confetti@^1.0.0' });
+    await writeAppPackage({ 'acme/confetti': 'you/confetti@^1.0.0' });
     let { resolutions } = await lockDeck({
       depotDir,
       depotName: 'demo',
@@ -295,7 +309,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
   });
 
   test('an alias to a deck that does not parse is refused', async function (assert) {
-    await writeAppMap({ 'acme/confetti': 'a/b/c/d@live' });
+    await writeAppPackage({ 'acme/confetti': 'a/b/c/d@live' });
     await assert.rejects(
       lockDeck({
         depotDir,
@@ -341,9 +355,9 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
         depotDir,
         depotName: 'demo',
         storeDir,
-        dependencies: { confetti: '^1.0.0' },
+        dependencies: { 'definitely-not-a-package': '^1.0.0' },
       }),
-      /is not <publisher>\/<package>/,
+      /is not an npm name/,
     );
   });
 
@@ -390,14 +404,14 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       '1.0.0',
       pack([
         {
-          path: 'importmap.json',
+          path: 'package.json',
           bytes: Buffer.from(
             JSON.stringify({
-              deck: {
-                packages: { widget: { version: '1.0.0', entry: '$DECK/w.js' } },
-                // No alias: the key IS the deck name.
-                dependencies: { 'acme/confetti': '^1.0.0' },
-              },
+              name: 'widget',
+              version: '1.0.0',
+              type: 'module',
+              exports: { '.': './w.js' },
+              dependencies: { 'acme/confetti': '^1.0.0' },
             }),
           ),
         },
@@ -405,7 +419,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       ]),
       { tag: 'latest' },
     );
-    await writeAppMap({ 'me/widget': '^1.0.0' });
+    await writeAppPackage({ 'me/widget': '^1.0.0' });
     let resolutions = await resolveDependencies({
       depotDir,
       depotName: 'demo',
@@ -447,14 +461,14 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       '1.0.0',
       pack([
         {
-          path: 'importmap.json',
+          path: 'package.json',
           bytes: Buffer.from(
             JSON.stringify({
-              deck: {
-                packages: { widget: { version: '1.0.0', entry: '$DECK/w.js' } },
-                // The widget was built against 1.x and stays there.
-                dependencies: { 'acme/confetti': '^1.0.0' },
-              },
+              name: 'widget',
+              version: '1.0.0',
+              type: 'module',
+              exports: { '.': './w.js' },
+              dependencies: { 'acme/confetti': '^1.0.0' },
             }),
           ),
         },
@@ -464,7 +478,7 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
     );
     // The app is on 2.x, and also uses the widget.
     let dependencies = { 'me/widget': '^1.0.0', 'acme/confetti': '^2.0.0' };
-    await writeAppMap(dependencies);
+    await writeAppPackage(dependencies);
     let resolutions = await resolveDependencies({
       depotDir,
       depotName: 'demo',
@@ -530,13 +544,14 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       '1.0.0',
       pack([
         {
-          path: 'importmap.json',
+          path: 'package.json',
           bytes: Buffer.from(
             JSON.stringify({
-              deck: {
-                packages: { widget: { version: '1.0.0', entry: '$DECK/w.js' } },
-                dependencies: { 'acme/confetti': 'live' },
-              },
+              name: 'widget',
+              version: '1.0.0',
+              type: 'module',
+              exports: { '.': './w.js' },
+              dependencies: { 'acme/confetti': 'workspace:*' },
             }),
           ),
         },
@@ -574,5 +589,374 @@ module('the decklist lock: ranges in, pins out', function (hooks) {
       'a/': '/a/',
       'acme/confetti/': '/demo/acme/confetti@1.2.0/',
     });
+  });
+});
+
+module('the depot lock: package.json suggests, importmap decides', function (hooks) {
+  hooks.beforeEach(async function () {
+    depotDir = join(await mkdtemp(join(tmpdir(), 'deck-depot-lock-')), 'demo');
+    storeDir = join(depotDir, '.deck', 'store');
+    await mkdir(join(depotDir, 'me', 'app'), { recursive: true });
+    await writeFile(
+      join(depotDir, 'me', 'app', 'package.json'),
+      JSON.stringify({
+        name: 'app',
+        version: '0.1.0',
+        exports: { '.': './app.js' },
+        dependencies: { confetti: '^1.0.0' },
+      }) + '\n',
+    );
+    await writeFile(join(depotDir, 'me', 'app', 'app.js'), 'export {}\n');
+    await publishToStore(
+      storeDir,
+      'acme/confetti',
+      '1.0.0',
+      pack([
+        {
+          path: 'package.json',
+          bytes: Buffer.from(
+            JSON.stringify({
+              name: 'confetti',
+              version: '1.0.0',
+              exports: { '.': './confetti.js' },
+            }),
+          ),
+        },
+        { path: 'confetti.js', bytes: Buffer.from(`export const V = '1.0.0';\n`) },
+      ]),
+    );
+    await publishToStore(
+      storeDir,
+      'acme/confetti',
+      '1.2.0',
+      pack([
+        {
+          path: 'package.json',
+          bytes: Buffer.from(
+            JSON.stringify({
+              name: 'confetti',
+              version: '1.2.0',
+              exports: { '.': './confetti.js' },
+            }),
+          ),
+        },
+        { path: 'confetti.js', bytes: Buffer.from(`export const V = '1.2.0';\n`) },
+      ]),
+      { tag: 'latest' },
+    );
+    await publishToStore(
+      storeDir,
+      'acme/confetti',
+      '2.0.0',
+      pack([
+        {
+          path: 'package.json',
+          bytes: Buffer.from(
+            JSON.stringify({
+              name: 'confetti',
+              version: '2.0.0',
+              exports: { '.': './confetti.js' },
+            }),
+          ),
+        },
+        { path: 'confetti.js', bytes: Buffer.from(`export const V = '2.0.0';\n`) },
+      ]),
+    );
+  });
+
+  hooks.afterEach(async function () {
+    await rm(join(depotDir, '..'), { recursive: true, force: true });
+  });
+
+  test('create lock picks the newest version that satisfies the range', async function (assert) {
+    let { resolutions, text, changed, integrity } = await lockDepot({
+      depotDir,
+      depotName: 'demo',
+      storeDir,
+    });
+    assert.true(changed);
+    assert.strictEqual(resolutions[0].version, '1.2.0');
+    assert.strictEqual(
+      resolutions[0].imports.confetti,
+      '/demo/acme/confetti@1.2.0/confetti.js',
+    );
+    let lock = parseDepotLock(text);
+    assert.strictEqual(lock.imports.confetti, '/demo/acme/confetti@1.2.0/confetti.js');
+    assert.true(
+      lock.integrity['/demo/acme/confetti@1.2.0/confetti.js']?.startsWith(
+        'sha256-',
+      ),
+      'integrity is SRI of the pinned entry',
+    );
+    assert.ok(integrity['/demo/acme/confetti@1.2.0/confetti.js']);
+  });
+
+  test('a second lock without --update keeps the pin even if a newer in-range version appears', async function (assert) {
+    let first = await lockDepot({ depotDir, depotName: 'demo', storeDir });
+    await writeFile(join(depotDir, 'importmap.json'), first.text);
+    await publishToStore(
+      storeDir,
+      'acme/confetti',
+      '1.9.0',
+      pack([
+        {
+          path: 'package.json',
+          bytes: Buffer.from(
+            JSON.stringify({
+              name: 'confetti',
+              version: '1.9.0',
+              exports: { '.': './confetti.js' },
+            }),
+          ),
+        },
+        { path: 'confetti.js', bytes: Buffer.from(`export const V = '1.9.0';\n`) },
+      ]),
+    );
+    let again = await lockDepot({ depotDir, depotName: 'demo', storeDir });
+    assert.strictEqual(again.resolutions[0].version, '1.2.0');
+    let updated = await lockDepot({
+      depotDir,
+      depotName: 'demo',
+      storeDir,
+      update: true,
+    });
+    assert.strictEqual(updated.resolutions[0].version, '1.9.0');
+  });
+
+  test('widening the range without --update keeps the existing pin', async function (assert) {
+    let first = await lockDepot({ depotDir, depotName: 'demo', storeDir });
+    await writeFile(join(depotDir, 'importmap.json'), first.text);
+    await writeFile(
+      join(depotDir, 'me', 'app', 'package.json'),
+      JSON.stringify({
+        name: 'app',
+        version: '0.1.0',
+        exports: { '.': './app.js' },
+        dependencies: { confetti: '*' },
+      }) + '\n',
+    );
+    let stale = await lockDepot({ depotDir, depotName: 'demo', storeDir });
+    assert.strictEqual(
+      stale.resolutions[0].version,
+      '1.2.0',
+      'the owner has not asked to update, so 1.2.0 stays even though 2.0.0 matches *',
+    );
+  });
+
+  test('overrides beat the suggestion', async function (assert) {
+    let locked = await lockDepot({
+      depotDir,
+      depotName: 'demo',
+      storeDir,
+      overrides: { confetti: '2.0.0' },
+    });
+    assert.strictEqual(locked.resolutions[0].version, '2.0.0');
+    assert.deepEqual(parseDepotLock(locked.text).overrides, {
+      confetti: '2.0.0',
+    });
+  });
+
+  test('continuous is recorded on the lock', async function (assert) {
+    let locked = await lockDepot({
+      depotDir,
+      depotName: 'demo',
+      storeDir,
+      continuous: true,
+    });
+    assert.true(parseDepotLock(locked.text).continuous);
+  });
+
+  test('unfrozenKeysMissingFromLock is empty when the depot lock already pins', async function (assert) {
+    await writeFile(
+      join(depotDir, 'me', 'app', 'package.json'),
+      JSON.stringify({
+        name: 'app',
+        version: '0.1.0',
+        exports: { '.': './app.js' },
+        dependencies: {
+          confetti: 'latest',
+          'acme/palette': 'workspace:*',
+        },
+      }) + '\n',
+    );
+    assert.deepEqual(
+      await unfrozenKeysMissingFromLock({
+        depotDir,
+        lockImports: {},
+      }),
+      ['acme/palette', 'confetti'],
+      'no lock → every unfrozen key is a gap',
+    );
+    assert.deepEqual(
+      await unfrozenKeysMissingFromLock({
+        depotDir,
+        lockImports: {
+          confetti: '/demo/acme/confetti@latest/confetti.js',
+          'acme/palette': '/demo/acme/palette/palette.js',
+        },
+      }),
+      [],
+      'compiled lock → serve skips the store walk',
+    );
+    assert.deepEqual(
+      await unfrozenKeysMissingFromLock({
+        depotDir,
+        lockImports: {
+          confetti: '/demo/acme/confetti@latest/confetti.js',
+        },
+      }),
+      ['acme/palette'],
+      'partial lock → only the missing unfrozen key',
+    );
+  });
+
+  test('unfrozenBindingsFromDepot skips ranges and floats tags and workspace:*', async function (assert) {
+    await writeFile(
+      join(depotDir, 'me', 'app', 'package.json'),
+      JSON.stringify({
+        name: 'app',
+        version: '0.1.0',
+        exports: { '.': './app.js' },
+        dependencies: {
+          confetti: 'latest',
+          'acme/confetti': 'workspace:*',
+        },
+      }) + '\n',
+    );
+    await mkdir(join(depotDir, 'acme', 'confetti'), { recursive: true });
+    await writeFile(
+      join(depotDir, 'acme', 'confetti', 'package.json'),
+      JSON.stringify({
+        name: 'confetti',
+        version: '1.2.0',
+        exports: { '.': './confetti.js' },
+      }) + '\n',
+    );
+    await writeFile(
+      join(depotDir, 'acme', 'confetti', 'confetti.js'),
+      'export const V = "live";\n',
+    );
+    let unfrozen = await unfrozenBindingsFromDepot({
+      depotDir,
+      depotName: 'demo',
+      storeDir,
+    });
+    assert.strictEqual(
+      unfrozen.imports.confetti,
+      '/demo/acme/confetti@latest/confetti.js',
+    );
+    assert.strictEqual(
+      unfrozen.imports['acme/confetti'],
+      '/demo/acme/confetti/confetti.js',
+    );
+    assert.strictEqual(
+      unfrozen.scopes['/demo/me/app/']?.confetti,
+      '/demo/acme/confetti@latest/confetti.js',
+    );
+  });
+
+  test('decksFromTreePaths only takes depth-two package.json', function (assert) {
+    assert.deepEqual(
+      decksFromTreePaths([
+        'importmap.json',
+        'me/app/package.json',
+        'me/app/index.html',
+        'acme/palette/package.json',
+        'acme/palette/nested/package.json',
+        'bad/package.json',
+      ]),
+      [
+        { publisher: 'acme', package: 'palette', name: 'acme/palette' },
+        { publisher: 'me', package: 'app', name: 'me/app' },
+      ],
+    );
+  });
+
+  test('rewriteLiveTargetsIntoStep rewrites versionless URLs only', function (assert) {
+    assert.strictEqual(
+      rewriteLiveTargetsIntoStep(
+        'demo',
+        'aabbccdd',
+        '/demo/acme/palette/palette.js',
+      ),
+      '/demo/_history/aabbccdd/acme/palette/palette.js',
+    );
+    assert.strictEqual(
+      rewriteLiveTargetsIntoStep(
+        'demo',
+        'aabbccdd',
+        '/demo/acme/confetti@latest/confetti.js',
+      ),
+      '/demo/acme/confetti@latest/confetti.js',
+      'dist-tags stay store identity',
+    );
+    assert.strictEqual(
+      rewriteLiveTargetsIntoStep(
+        'demo',
+        'aabbccdd',
+        '/demo/acme/confetti@1.2.0/confetti.js',
+      ),
+      '/demo/acme/confetti@1.2.0/confetti.js',
+    );
+    assert.strictEqual(
+      rewriteLiveTargetsIntoStep(
+        'demo',
+        'aabbccdd',
+        '/demo/_history/oldrev/acme/palette/palette.js',
+      ),
+      '/demo/_history/oldrev/acme/palette/palette.js',
+      'already-at-step URLs are left alone',
+    );
+  });
+
+  test('unfrozenBindingsFromTree reads a Step tree, not the live disk', async function (assert) {
+    let stepFiles: Record<string, string> = {
+      'me/app/package.json': JSON.stringify({
+        name: 'app',
+        version: '0.1.0',
+        exports: { '.': './app.js' },
+        dependencies: { 'acme/palette': 'workspace:*' },
+      }),
+      'acme/palette/package.json': JSON.stringify({
+        name: 'palette',
+        version: '0.1.0',
+        exports: { '.': './old.js' },
+      }),
+    };
+    // Live disk says a different entry — the Step must not see it.
+    await mkdir(join(depotDir, 'acme', 'palette'), { recursive: true });
+    await writeFile(
+      join(depotDir, 'acme', 'palette', 'package.json'),
+      JSON.stringify({
+        name: 'palette',
+        version: '9.9.9',
+        exports: { '.': './live.js' },
+      }) + '\n',
+    );
+    let unfrozen = await unfrozenBindingsFromTree({
+      depotName: 'demo',
+      storeDir,
+      decks: decksFromTreePaths(Object.keys(stepFiles)),
+      readTreeFile: async (path) => stepFiles[path],
+    });
+    assert.strictEqual(
+      unfrozen.imports['acme/palette'],
+      '/demo/acme/palette/old.js',
+      'entry comes from the Step package.json',
+    );
+    let rewritten = rewriteImportMapIntoStep(
+      'demo',
+      'step0001',
+      unfrozen.imports,
+      unfrozen.scopes,
+    );
+    assert.strictEqual(
+      rewritten.imports['acme/palette'],
+      '/demo/_history/step0001/acme/palette/old.js',
+    );
+    assert.strictEqual(
+      rewritten.scopes['/demo/_history/step0001/me/app/']?.['acme/palette'],
+      '/demo/_history/step0001/acme/palette/old.js',
+    );
   });
 });

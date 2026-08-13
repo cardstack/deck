@@ -57,14 +57,12 @@ module('live HMR-lite (SSE)', function (hooks) {
     deckDir = join(depotDir, 'me', 'mylib');
     await mkdir(deckDir, { recursive: true });
     await writeFile(
-      join(deckDir, 'importmap.json'),
+      join(deckDir, 'package.json'),
       JSON.stringify({
-        imports: {},
-        deck: {
-          packages: {
-            mylib: { version: '0.1.0', entry: '$DECK/lib.js' },
-          },
-        },
+        name: 'mylib',
+        version: '0.1.0',
+        type: 'module',
+        exports: { '.': './lib.js' },
       }),
     );
     await writeFile(join(deckDir, 'lib.js'), 'export const v = 1;\n');

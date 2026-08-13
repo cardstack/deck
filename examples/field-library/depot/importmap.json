@@ -1,0 +1,50 @@
+{
+  "imports": {
+    "fields/audit-stamp": "/site/fields/audit-stamp@1.0.0/index.js",
+    "fields/audit-stamp/": "/site/fields/audit-stamp@1.0.0/",
+    "fields/brand-swatch": "/site/fields/brand-swatch@1.0.0/index.js",
+    "fields/brand-swatch/": "/site/fields/brand-swatch@1.0.0/",
+    "fields/due-date": "/site/fields/due-date@1.0.0/index.js",
+    "fields/due-date/": "/site/fields/due-date@1.0.0/",
+    "fields/handle": "/site/fields/handle@1.0.0/index.js",
+    "fields/handle/": "/site/fields/handle@1.0.0/",
+    "fields/meeting-slot": "/site/fields/meeting-slot@1.0.0/index.js",
+    "fields/meeting-slot/": "/site/fields/meeting-slot@1.0.0/",
+    "fields/swatch": "/site/fields/swatch@1.0.0/index.js",
+    "fields/swatch/": "/site/fields/swatch@1.0.0/",
+    "ship-by": "/site/you/ship-by@1.0.0/index.js",
+    "ship-by/": "/site/you/ship-by@1.0.0/",
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js",
+    "ui/pills/": "/site/ui/pills@1.0.0/"
+  },
+  "scopes": {
+    "/site/app/library/": {
+      "fields/audit-stamp": "/site/fields/audit-stamp@1.0.0/index.js",
+      "fields/audit-stamp/": "/site/fields/audit-stamp@1.0.0/",
+      "fields/brand-swatch": "/site/fields/brand-swatch@1.0.0/index.js",
+      "fields/brand-swatch/": "/site/fields/brand-swatch@1.0.0/",
+      "fields/due-date": "/site/fields/due-date@1.0.0/index.js",
+      "fields/due-date/": "/site/fields/due-date@1.0.0/",
+      "fields/handle": "/site/fields/handle@1.0.0/index.js",
+      "fields/handle/": "/site/fields/handle@1.0.0/",
+      "fields/meeting-slot": "/site/fields/meeting-slot@1.0.0/index.js",
+      "fields/meeting-slot/": "/site/fields/meeting-slot@1.0.0/",
+      "fields/swatch": "/site/fields/swatch@1.0.0/index.js",
+      "fields/swatch/": "/site/fields/swatch@1.0.0/",
+      "ship-by": "/site/you/ship-by@1.0.0/index.js",
+      "ship-by/": "/site/you/ship-by@1.0.0/",
+      "ui/pills": "/site/ui/pills@1.0.0/pills.js",
+      "ui/pills/": "/site/ui/pills@1.0.0/"
+    }
+  },
+  "integrity": {
+    "/site/fields/audit-stamp@1.0.0/index.js": "sha256-r91EjYS2imXmQMnr1ynUpbDvaF5jIkq4JsiDaA7HUBg=",
+    "/site/fields/brand-swatch@1.0.0/index.js": "sha256-8eS4GC58phMgXup6JNxCAbcWUqADiV+65IBKZYs8rFE=",
+    "/site/fields/due-date@1.0.0/index.js": "sha256-Tp7k+S9ZPJqOOTFrTals+JCKVc5F57MLoPFL9q+vyMQ=",
+    "/site/fields/handle@1.0.0/index.js": "sha256-5+sL5uTMA3NMLwcB0XmHVIaJusw4k006ZX29vMWAsw4=",
+    "/site/fields/meeting-slot@1.0.0/index.js": "sha256-Zbn/qSmdisY+i0OGs374oCDrIuEsTGK15bJSyYjCqdY=",
+    "/site/fields/swatch@1.0.0/index.js": "sha256-RvCMn7lV5bIpLGbghxO+HCm7GC4BfbumRi+1PDJ03d4=",
+    "/site/ui/pills@1.0.0/pills.js": "sha256-lrX+8UWsimQ+3y8TZgeV0+aG8Fm3QECUlAPn4/GNAzk=",
+    "/site/you/ship-by@1.0.0/index.js": "sha256-kSUYso1TejFVF0X6uD02Q3K0I67JHjcFJm8Tr0nfbqI="
+  }
+}

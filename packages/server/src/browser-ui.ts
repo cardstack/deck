@@ -238,7 +238,7 @@ function renderTruth() {
 
 function renderPkgList() {
   if (!packages.length) {
-    pkgList.innerHTML = '<div class="empty">No decks yet — create &lt;depot&gt;/&lt;publisher&gt;/&lt;package&gt;/importmap.json.</div>';
+    pkgList.innerHTML = '<div class="empty">No decks yet — create &lt;depot&gt;/&lt;publisher&gt;/&lt;package&gt;/package.json.</div>';
     return;
   }
   pkgList.innerHTML = packages.map((p) => {

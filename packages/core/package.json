@@ -22,6 +22,7 @@
     "./signature": "./src/signature.ts",
     "./keyring": "./src/keyring.ts",
     "./import-map": "./src/import-map.ts",
+    "./package-json": "./src/package-json.ts",
     "./vendor": "./src/vendor.ts",
     "./source-graph": "./src/source-graph.ts",
     "./es-lexer": "./src/es-lexer.ts",

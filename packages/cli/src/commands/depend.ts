@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { pack, peekPacklist } from '@cardstack/deck/pack';
 import { publishToStore } from '@cardstack/deck/store';
-import { lockDeck } from '@cardstack/deck/lock';
+import { lockDepot, DEPOT_LOCK_PATH } from '@cardstack/deck/lock';
 import { assertLinksOk, verifyLinks } from '@cardstack/deck/verify-links';
 import { vendorFromCdn, vendorImportMap } from '@cardstack/deck/vendor';
 import {
@@ -392,43 +392,39 @@ its wiring — and writes nothing.`,
 const lock = defineCommand({
   name: 'lock',
   group: 'depend',
-  summary: "resolve a deck's declared ranges to exact pins in its import map",
-  usage: ['lock --depot <dir> --publisher <p> --name <n> [--check]'],
-  detail: `A deck declares RANGES because that is what its author means. Its
-users must not get a range: a consumer should never inherit the volatility
-of somebody else's working tree. So the ranges resolve to exact versions and
-the pins are written INTO the tree, as an ordinary edit — which means the
-lock is readable with \`cat importmap.json\`, travels inside the pack, and
-moving a dependency forward is just another save.
+  summary:
+    "write the depot lockfile from every package.json's suggested ranges",
+  usage: ['lock --depot <dir> [--update] [--check] [--continuous]'],
+  detail: `package.json holds ranges — suggestions. The depot-root
+importmap.json is the only authority. \`deck lock\` creates it (newest
+version that satisfies each range) or, with --update, refreshes every pin.
+Nothing upstream changes what this depot runs until you ask.
 
---check is the CI shape: it resolves, refuses to write, and additionally
-runs the L11 link check — a lock that is merely up to date is not enough if
-the files its pins name do not exist.`,
+A lock that already exists is left alone except for new specifiers, unless
+--update is passed. --check is the frozen-lockfile analogue: resolve, refuse
+to write, fail if the lock would change.`,
   async run(argv) {
     let { values } = parseArgs({
       args: argv,
       options: {
         depot: { type: 'string' },
-        publisher: { type: 'string' },
-        name: { type: 'string' },
         check: { type: 'boolean', default: false },
+        update: { type: 'boolean', default: false },
+        continuous: { type: 'boolean', default: false },
       },
     });
-    if (!values.depot || !values.publisher || !values.name) {
-      fail('usage: deck lock --depot <dir> --publisher <p> --name <n> [--check]');
+    if (!values.depot) {
+      fail('usage: deck lock --depot <dir> [--update] [--check] [--continuous]');
     }
     let depot = depotAt(values.depot!);
-    let deckDir = join(depot.dir, values.publisher!, values.name!);
-    let { resolutions, text, changed } = await lockDeck({
+
+    let { resolutions, text, changed } = await lockDepot({
       depotDir: depot.dir,
       depotName: depot.name,
       storeDir: depot.storeDir,
-      deckDir,
+      update: values.update,
+      continuous: values.continuous,
     });
-    if (resolutions.length === 0) {
-      console.log('no dependencies declared (deck.dependencies is empty)');
-      return;
-    }
     for (let resolution of resolutions) {
       let target =
         resolution.imports[resolution.key] ??
@@ -441,35 +437,19 @@ the files its pins name do not exist.`,
         `${resolution.key}  ${resolution.alias ? `${resolution.alias}@` : ''}${resolution.spec} → ${target}${moved}`,
       );
     }
-    // L11: --check is the gate. A lock that is merely up to date is not
-    // enough — the pins must still resolve to files that exist, or CI is
-    // green while the app 404s.
     if (values.check) {
-      let report = await verifyLinks({
-        depotName: depot.name,
-        storeDir: depot.storeDir,
-        deck: `${values.publisher}/${values.name}`,
-        deckDir,
-      });
       if (changed) {
-        report.findings.push({
-          code: 'link-integrity',
-          specifier: `${values.publisher}/${values.name}`,
-          detail: 'the lock is out of date (run without --check to write it)',
-        });
+        fail('the depot lock is out of date (run without --check to write it)');
       }
-      assertLinksOk(report);
-      console.log(`verified ${report.checked} link(s)`);
+      console.log('depot lock is current');
       return;
     }
     if (!changed) {
       console.log('already locked — nothing to write');
       return;
     }
-    // Writing the pins is an ordinary edit: it auto-publishes, seals, and
-    // reverts like any other save.
-    await writeFile(join(deckDir, 'importmap.json'), text);
-    console.log(`locked ${values.publisher}/${values.name}`);
+    await writeFile(join(depot.dir, DEPOT_LOCK_PATH), text);
+    console.log(`locked depot ${depot.name} → ${DEPOT_LOCK_PATH}`);
   },
 });
 

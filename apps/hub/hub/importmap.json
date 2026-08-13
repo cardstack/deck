@@ -1,0 +1,91 @@
+{
+  "imports": {
+    "@tanstack/query-core": "/hub/lib/tanstack-query-core@browser/build/modern/index.js",
+    "@tanstack/query-core/": "/hub/lib/tanstack-query-core@browser/",
+    "@tanstack/table-core": "/hub/lib/tanstack-table-core@browser/dist/index.js",
+    "@tanstack/table-core/": "/hub/lib/tanstack-table-core@browser/",
+    "diff": "/hub/lib/diff@9.0.0/libesm/index.js",
+    "diff/": "/hub/lib/diff@9.0.0/",
+    "driver.js": "/hub/lib/driver-js@1.8.0/dist/driver.js.mjs",
+    "driver.js/": "/hub/lib/driver-js@1.8.0/",
+    "highlight-js": "/hub/lib/highlight-js@esm/lib/core.js",
+    "highlight-js/": "/hub/lib/highlight-js@esm/",
+    "ui/activity": "/hub/ui/activity/activity.js",
+    "ui/activity/": "/hub/ui/activity/",
+    "ui/nav": "/hub/ui/nav/nav.js",
+    "ui/nav/": "/hub/ui/nav/",
+    "ui/timeline": "/hub/ui/timeline/timeline.js",
+    "ui/timeline/": "/hub/ui/timeline/",
+    "ui/tour": "/hub/ui/tour/tour.js",
+    "ui/tour/": "/hub/ui/tour/"
+  },
+  "scopes": {
+    "/hub/app/browse/": {
+      "@tanstack/table-core": "/hub/lib/tanstack-table-core@browser/dist/index.js",
+      "@tanstack/table-core/": "/hub/lib/tanstack-table-core@browser/",
+      "diff": "/hub/lib/diff@9.0.0/libesm/index.js",
+      "diff/": "/hub/lib/diff@9.0.0/",
+      "highlight-js": "/hub/lib/highlight-js@esm/lib/core.js",
+      "highlight-js/": "/hub/lib/highlight-js@esm/",
+      "ui/activity": "/hub/ui/activity/activity.js",
+      "ui/activity/": "/hub/ui/activity/",
+      "ui/nav": "/hub/ui/nav/nav.js",
+      "ui/nav/": "/hub/ui/nav/",
+      "ui/timeline": "/hub/ui/timeline/timeline.js",
+      "ui/timeline/": "/hub/ui/timeline/",
+      "ui/tour": "/hub/ui/tour/tour.js",
+      "ui/tour/": "/hub/ui/tour/"
+    },
+    "/hub/app/run/": {
+      "ui/activity": "/hub/ui/activity/activity.js",
+      "ui/activity/": "/hub/ui/activity/",
+      "ui/nav": "/hub/ui/nav/nav.js",
+      "ui/nav/": "/hub/ui/nav/",
+      "ui/timeline": "/hub/ui/timeline/timeline.js",
+      "ui/timeline/": "/hub/ui/timeline/",
+      "ui/tour": "/hub/ui/tour/tour.js",
+      "ui/tour/": "/hub/ui/tour/"
+    },
+    "/hub/app/start/": {
+      "highlight-js": "/hub/lib/highlight-js@esm/lib/core.js",
+      "highlight-js/": "/hub/lib/highlight-js@esm/",
+      "ui/activity": "/hub/ui/activity/activity.js",
+      "ui/activity/": "/hub/ui/activity/",
+      "ui/nav": "/hub/ui/nav/nav.js",
+      "ui/nav/": "/hub/ui/nav/",
+      "ui/tour": "/hub/ui/tour/tour.js",
+      "ui/tour/": "/hub/ui/tour/"
+    },
+    "/hub/app/track/": {
+      "@tanstack/query-core": "/hub/lib/tanstack-query-core@browser/build/modern/index.js",
+      "@tanstack/query-core/": "/hub/lib/tanstack-query-core@browser/",
+      "@tanstack/table-core": "/hub/lib/tanstack-table-core@browser/dist/index.js",
+      "@tanstack/table-core/": "/hub/lib/tanstack-table-core@browser/",
+      "ui/activity": "/hub/ui/activity/activity.js",
+      "ui/activity/": "/hub/ui/activity/",
+      "ui/nav": "/hub/ui/nav/nav.js",
+      "ui/nav/": "/hub/ui/nav/",
+      "ui/tour": "/hub/ui/tour/tour.js",
+      "ui/tour/": "/hub/ui/tour/"
+    },
+    "/hub/lib/tanstack-table-core@9.1.1-browser.05cec605/": {
+      "@tanstack/store": "/hub/lib/tanstack-store@0.11.1/dist/index.js",
+      "@tanstack/store/": "/hub/lib/tanstack-store@0.11.1/",
+      "@tanstack/store/package.json": "/hub/lib/tanstack-store@0.11.1/package.json"
+    },
+    "/hub/ui/tour/": {
+      "driver.js": "/hub/lib/driver-js@1.8.0/dist/driver.js.mjs",
+      "driver.js/": "/hub/lib/driver-js@1.8.0/"
+    }
+  },
+  "integrity": {
+    "/hub/lib/diff@9.0.0/libesm/index.js": "sha256-sfQA/STaRDd4Z+3nq4R6NJQEI/i78/xUddjHZHdZoqo=",
+    "/hub/lib/driver-js@1.8.0/dist/driver.js.mjs": "sha256-kPXgQwWi0N8WpfYAC/frXTZstq7tG/mlw79cwruArTI=",
+    "/hub/lib/tanstack-store@0.11.1/dist/index.js": "sha256-vGy00gQx1KEuoHPrJ7SYx/jxMBzBVkdle9jPX2yviyI=",
+    "/hub/lib/tanstack-store@0.11.1/package.json": "sha256-Begc1Gky9Ci5b4xEVHrYYASacN2qEJ/eedh0dcnmYfU=",
+    "/hub/ui/activity/activity.js": "sha256-pgtj+AZQGgJwfF2uN0LakDbM29E3znGyLw7sxxAT/6g=",
+    "/hub/ui/nav/nav.js": "sha256-QUqHCLMMv5uOqDVsn+BhrVpuPPV9lrfVH40+zYp4nEI=",
+    "/hub/ui/timeline/timeline.js": "sha256-37tlbU7PuwfgpzbonCe5cv6uyF6lNB+1GAjTd0YfJUg=",
+    "/hub/ui/tour/tour.js": "sha256-+ENa/aoge91T2zPalLOHwdGbM7gjKsfGfMfEKFQ+Cc8="
+  }
+}

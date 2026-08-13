@@ -14,7 +14,7 @@ const type = join(depot, 'vale', 'type');
 
 const attachment = await createHistory({
   dir: depot,
-  kind: 'jj',
+  kind: 'deckd',
   onError: (error) => console.error(error),
 });
 if (!attachment.backend) {

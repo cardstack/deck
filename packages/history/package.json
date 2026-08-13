@@ -3,10 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Deck tier-2 history: seal-grained jj history under the auto-publish loop",
+  "description": "Deck tier-2 history: Timeline via deckd under the auto-publish loop",
   "exports": {
     "./backend": "./src/backend.ts",
-    "./jj-cli": "./src/jj-cli.ts",
     "./historyd": "./src/historyd.ts",
     "./create": "./src/create.ts"
   },

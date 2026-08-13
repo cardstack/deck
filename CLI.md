@@ -54,7 +54,7 @@ That scaffolds a depot, serves it, and prints a URL. Open it, edit `app.js`,
 reload. Then the loop that runs for the rest of the day:
 
 ```bash
-deck serve --root ./work --history auto
+deck serve --root ./work --history deckd
 ```
 
 `--root` is a directory *of* depots: every child directory becomes one,

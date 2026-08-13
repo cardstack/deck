@@ -44,7 +44,7 @@
 // nothing imports them — they are loaded on demand, by extension, at
 // runtime, which is how "universal highlighting" costs one request per
 // language you actually look at instead of 2.6 MB up front.
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pack } from '@cardstack/deck/pack';
@@ -61,19 +61,30 @@ const storeDir = storeDirFor(depotDir);
 // meaningful minimumReleaseAge. See L11.
 const POLICY = { minimumReleaseAge: 0 };
 
+await rm(storeDir, { recursive: true, force: true });
 await mkdir(storeDir, { recursive: true });
 
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
+
+/** Lineage only — identity and ranges live in the pack's package.json. */
+function lineageMap(name, extra = {}) {
+  return json({
+    imports: {},
+    deck: {
+      packages: {
+        [name]: extra,
+      },
+    },
+  });
+}
 
 /**
  * Publish, unless this exact version is already there.
  *
  * A published exact version never changes (L4) and the store refuses to
- * overwrite one — correctly, and this script must not fight it. Setup has to
- * be runnable twice, so it asks first. If the version exists it is left
- * alone and its recorded treeHash is reported, which also means a second run
- * silently VERIFIES the first: same inputs, same content hash, or the
- * mismatch shows up in the printed digest.
+ * overwrite one — correctly. This is demo data: setup clears the store
+ * first, then publishes. A second run still asks first so a leftover
+ * version is left alone.
  */
 async function publishOnce(_storeDir, name, version, bytes, options) {
   let meta = await readStoreMeta(storeDir, name);
@@ -136,17 +147,7 @@ console.log('\n  DECK HUB — vendoring the Hub\'s own dependencies\n');
   let bytes = pack([
     {
       path: 'importmap.json',
-      bytes: json({
-        deck: {
-          packages: {
-            diff: {
-              version: '9.0.0',
-              entry: `$DECK/${vendored.entryPath}`,
-              vendoredFrom: vendored.vendoredFrom,
-            },
-          },
-        },
-      }),
+      bytes: lineageMap('diff', { vendoredFrom: vendored.vendoredFrom }),
     },
     ...vendored.files,
   ]);
@@ -199,40 +200,60 @@ const ESM_LINE = 'export default highlight;';
     .filter((path) => !path.endsWith('.js.js') && !path.endsWith('.min.js'))
     .sort();
 
-  // The version is derived from the patch so that re-running this script
-  // republishes the same bytes under the same name. A demo that publishes
-  // different content at the same immutable URL teaches the browser a lie
-  // it will hold on to for a year.
-  const version = `${HLJS}-esm.${hashBytes(patched).slice(0, 8)}`;
+  // Upstream `exports["."].import` is `./es/index.js`, which re-exports
+  // `lib/index.js` — a file this fork does not carry (we ship core +
+  // on-demand languages only). Point the entry at the patched core, and
+  // rename the package to the specifier Hub already depends on.
+  let manifest = files.get('package.json');
+  if (!manifest) {
+    throw new Error(`highlight.js@${HLJS} has no package.json`);
+  }
+  let pkgJson = JSON.parse(manifest.toString('utf8'));
+  pkgJson.name = 'highlight-js';
+  pkgJson.type = 'module';
+  pkgJson.exports = {
+    '.': './lib/core.js',
+    './lib/core.js': './lib/core.js',
+    './es/languages/*': './es/languages/*',
+  };
+  delete pkgJson.main;
+  delete pkgJson.module;
+  // Version from the fork payload (patched core + rewritten exports), so a
+  // change to either publishes a new immutable URL rather than silently
+  // reusing a broken pack. Version is filled in after the hash so it cannot
+  // feed back into itself.
+  let forHash = Buffer.from(
+    JSON.stringify({ ...pkgJson, version: undefined }),
+    'utf8',
+  );
+  const version = `${HLJS}-esm.${hashBytes(
+    Buffer.concat([patched, forHash]),
+  ).slice(0, 8)}`;
+  pkgJson.version = version;
+  let manifestBytes = Buffer.from(`${JSON.stringify(pkgJson, null, 2)}\n`, 'utf8');
 
   let bytes = pack([
     {
       path: 'importmap.json',
-      bytes: json({
-        deck: {
-          packages: {
-            'highlight-js': {
-              version,
-              entry: '$DECK/lib/core.js',
-              vendoredFrom: vendored.vendoredFrom,
-              // What was changed and why, in the tree, at rest, where a
-              // reader of the deck finds it without being told to look.
-              forkedFrom: {
-                package: 'highlight.js',
-                version: HLJS,
-                changed: ['lib/core.js'],
-                reason:
-                  'lib/core.js is CommonJS (module.exports) behind an ESM ' +
-                  'shim, so the published package cannot be imported by a ' +
-                  'browser. One line changed: `module.exports = highlight` ' +
-                  'became `export default highlight`. Nothing else differs.',
-              },
-            },
-          },
+      bytes: lineageMap('highlight-js', {
+        vendoredFrom: vendored.vendoredFrom,
+        forkedFrom: {
+          package: 'highlight.js',
+          version: HLJS,
+          changed: ['lib/core.js', 'package.json'],
+          reason:
+            'lib/core.js is CommonJS (module.exports) behind an ESM ' +
+            'shim, so the published package cannot be imported by a ' +
+            'browser. One line changed: `module.exports = highlight` ' +
+            'became `export default highlight`. package.json is rewritten ' +
+            'so the Hub specifier `highlight-js` resolves to that core ' +
+            '(upstream exports point at es/index.js → lib/index.js, which ' +
+            'this fork does not carry).',
         },
       }),
     },
     { path: 'lib/core.js', bytes: patched },
+    { path: 'package.json', bytes: manifestBytes },
     ...languages.map((path) => ({ path, bytes: files.get(path) })),
   ]);
   let { treeHash, reused } = await publishOnce(
@@ -251,6 +272,9 @@ const ESM_LINE = 'export default highlight;';
   );
   console.log(
     `    forked lib/core.js: 1 line of 2597 — \`${CJS_LINE}\` → \`${ESM_LINE}\``,
+  );
+  console.log(
+    `    package.json entry → lib/core.js (specifier highlight-js)`,
   );
 }
 
@@ -307,17 +331,7 @@ const TABLE_DECK = 'lib/tanstack-table-core';
   let storeBytes = pack([
     {
       path: 'importmap.json',
-      bytes: json({
-        deck: {
-          packages: {
-            'tanstack-store': {
-              version: '0.11.1',
-              entry: `$DECK/${store.entryPath}`,
-              vendoredFrom: store.vendoredFrom,
-            },
-          },
-        },
-      }),
+      bytes: lineageMap('tanstack-store', { vendoredFrom: store.vendoredFrom }),
     },
     ...store.files,
   ]);
@@ -358,27 +372,18 @@ const TABLE_DECK = 'lib/tanstack-table-core';
   let tableBytes = pack([
     {
       path: 'importmap.json',
-      bytes: json({
-        deck: {
-          packages: {
-            'tanstack-table-core': {
-              version: tableVersion,
-              entry: `$DECK/${table.entryPath}`,
-              vendoredFrom: table.vendoredFrom,
-              forkedFrom: {
-                package: '@tanstack/table-core',
-                version: '9.1.1',
-                changed: patched,
-                reason:
-                  'Nine files guard dev-only warnings with ' +
-                  '`process.env.NODE_ENV === "development"`, which is not ' +
-                  'defined in a browser. The guard is folded to `false` — the ' +
-                  'same constant-fold a bundler performs — so the package ' +
-                  'runs without a build step or a `process` shim.',
-              },
-            },
-          },
-          dependencies: { '@tanstack/store': `${STORE_DECK}@^0.11.0` },
+      bytes: lineageMap('tanstack-table-core', {
+        vendoredFrom: table.vendoredFrom,
+        forkedFrom: {
+          package: '@tanstack/table-core',
+          version: '9.1.1',
+          changed: patched,
+          reason:
+            'Nine files guard dev-only warnings with ' +
+            '`process.env.NODE_ENV === "development"`, which is not ' +
+            'defined in a browser. The guard is folded to `false` — the ' +
+            'same constant-fold a bundler performs — so the package ' +
+            'runs without a build step or a `process` shim.',
         },
       }),
     },
@@ -422,24 +427,16 @@ const TABLE_DECK = 'lib/tanstack-table-core';
   let bytes = pack([
     {
       path: 'importmap.json',
-      bytes: json({
-        deck: {
-          packages: {
-            'tanstack-query-core': {
-              version,
-              entry: `$DECK/${vendored.entryPath}`,
-              vendoredFrom: vendored.vendoredFrom,
-              forkedFrom: {
-                package: '@tanstack/query-core',
-                version: '5.101.4',
-                changed: patched,
-                reason:
-                  '`process.env.NODE_ENV === "development"` guards folded to ' +
-                  '`false`, the same constant-fold a bundler performs, so the ' +
-                  'package runs in a browser without a build step or a shim.',
-              },
-            },
-          },
+      bytes: lineageMap('tanstack-query-core', {
+        vendoredFrom: vendored.vendoredFrom,
+        forkedFrom: {
+          package: '@tanstack/query-core',
+          version: '5.101.4',
+          changed: patched,
+          reason:
+            '`process.env.NODE_ENV === "development"` guards folded to ' +
+            '`false`, the same constant-fold a bundler performs, so the ' +
+            'package runs in a browser without a build step or a shim.',
         },
       }),
     },
@@ -519,18 +516,13 @@ const FACES = [
   let bytes = pack([
     {
       path: 'importmap.json',
-      bytes: json({
-        deck: {
-          packages: {
-            'commit-mono': {
-              version: FONT,
-              // NO ENTRY. Nothing imports a font; this deck is addressable
-              // and deliberately not importable (L11 as a shape).
-              vendoredFrom: vendored.vendoredFrom,
-            },
-          },
-        },
-      }),
+      bytes: lineageMap('commit-mono', { vendoredFrom: vendored.vendoredFrom }),
+    },
+    {
+      path: 'package.json',
+      bytes:
+        files.get('package.json') ??
+        json({ name: '@fontsource/commit-mono', version: FONT }),
     },
     { path: 'font.css', bytes: Buffer.from(`${css}\n`, 'utf8') },
     { path: 'LICENSE', bytes: files.get('LICENSE') ?? Buffer.from('', 'utf8') },
@@ -551,9 +543,52 @@ const FACES = [
   console.log('    no entry declared — a deck you can address and cannot import');
 }
 
+// ---------------------------------------------------------------------------
+// 6. driver.js — the product tour engine (ESM + CSS, unmodified).
+//
+// The module walk only reaches JS. The popover skin is a CSS export
+// (`./dist/driver.css`) that nothing imports, so it has to be carried
+// explicitly — same shape as highlight.js languages.
+// ---------------------------------------------------------------------------
+{
+  // One ESM file + CSS. Upstream lost the module boundary at publish time;
+  // an explicit entry opts into that shape instead of failing the tree probe.
+  let vendored = await vendorFromNpmSource({
+    spec: 'driver.js@1.8.0',
+    entry: 'dist/driver.js.mjs',
+    policy: POLICY,
+  });
+  let cssPaths = ['dist/driver.css', 'dist/hints.css'].filter((path) =>
+    vendored.pkg.files.has(path),
+  );
+  let bytes = pack([
+    {
+      path: 'importmap.json',
+      bytes: lineageMap('driver.js', { vendoredFrom: vendored.vendoredFrom }),
+    },
+    ...vendored.files,
+    ...cssPaths.map((path) => ({
+      path,
+      bytes: vendored.pkg.files.get(path),
+    })),
+  ]);
+  let { treeHash, reused } = await publishOnce(
+    storeDir,
+    'lib/driver-js',
+    '1.8.0',
+    bytes,
+    { tag: 'latest' },
+  );
+  console.log(
+    `  lib/driver-js@1.8.0       ${vendored.modules.length} modules · ` +
+      `${cssPaths.length} css · ` +
+      `${treeHash.slice(0, 12)}…${reused ? ' (already sealed)' : ''}`,
+  );
+}
+
 let store = await inspectStore(storeDir);
 console.log(
   `\n  store: ${store.objects ?? store.objectCount ?? '?'} objects · ` +
     `${((store.bytes ?? store.totalBytes ?? 0) / 1024 / 1024).toFixed(1)} MB\n`,
 );
-console.log('  next: deck lock --depot apps/hub/hub --publisher app --name browse\n');
+console.log('  next: deck lock --depot apps/hub/hub\n');

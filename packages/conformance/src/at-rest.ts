@@ -477,16 +477,13 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
     });
 
     // ---- L8 provenance ---------------------------------------------------
-    await checks.run('L8', 'a deck declares its own identity in its map', () => {
+    await checks.run('L8', 'a deck declares its own identity in package.json', () => {
       let opened = unpack(sealed);
-      let map = JSON.parse(
-        opened.files.get('importmap.json')!.toString('utf8'),
+      let pkg = JSON.parse(
+        opened.files.get('package.json')!.toString('utf8'),
       );
-      assertEqual(
-        map.deck.packages[FIXTURE_PACKAGE].version,
-        FIXTURE_VERSION,
-        'declared version',
-      );
+      assertEqual(pkg.name, FIXTURE_PACKAGE, 'declared name');
+      assertEqual(pkg.version, FIXTURE_VERSION, 'declared version');
     });
 
     // ---- L9 / L10 --------------------------------------------------------
@@ -576,15 +573,19 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
       let deckDir = join(root, 'link-check');
       await mkdir(deckDir, { recursive: true });
       await writeFile(
+        join(deckDir, 'package.json'),
+        JSON.stringify({
+          name: 'probe',
+          version: '1.0.0',
+          dependencies: { [name]: FIXTURE_VERSION },
+        }),
+      );
+      await writeFile(
         join(deckDir, 'importmap.json'),
         JSON.stringify({
           imports: {
             [`${name}/`]: `/r/${name}@9.9.9/`,
             [name]: `/r/${name}@9.9.9/index.js`,
-          },
-          deck: {
-            packages: { probe: { version: '1.0.0' } },
-            dependencies: { [name]: FIXTURE_VERSION },
           },
         }),
       );
@@ -604,10 +605,13 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
       let deckDir = join(root, 'orphan-pin');
       await mkdir(deckDir, { recursive: true });
       await writeFile(
+        join(deckDir, 'package.json'),
+        JSON.stringify({ name: 'probe', version: '1.0.0' }),
+      );
+      await writeFile(
         join(deckDir, 'importmap.json'),
         JSON.stringify({
           imports: { stray: `/r/${name}@${FIXTURE_VERSION}/index.js` },
-          deck: { packages: { probe: { version: '1.0.0' } } },
         }),
       );
       let report = await verifyLinks({
@@ -626,15 +630,19 @@ export async function runAtRestChecks(): Promise<CheckResult[]> {
       let deckDir = join(root, 'honest');
       await mkdir(deckDir, { recursive: true });
       await writeFile(
+        join(deckDir, 'package.json'),
+        JSON.stringify({
+          name: 'probe',
+          version: '1.0.0',
+          dependencies: { [name]: FIXTURE_VERSION },
+        }),
+      );
+      await writeFile(
         join(deckDir, 'importmap.json'),
         JSON.stringify({
           imports: {
             [`${name}/`]: `/r/${name}@${FIXTURE_VERSION}/`,
             [name]: `/r/${name}@${FIXTURE_VERSION}/index.js`,
-          },
-          deck: {
-            packages: { probe: { version: '1.0.0' } },
-            dependencies: { [name]: FIXTURE_VERSION },
           },
         }),
       );

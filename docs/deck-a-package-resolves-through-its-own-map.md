@@ -1,5 +1,13 @@
 # A package resolves through its own map
 
+**Status: SUPERSEDED for the consuming depot** (2026-08-12) by
+[`deck-package-json-and-depot-lock.md`](deck-package-json-and-depot-lock.md).
+A package's `package.json` is a suggestion; the depot-root import map is
+the only resolution authority. Same pack, two depots, two programs — that
+is the owner's jurisdiction. This file remains the record of the earlier
+ruling and still describes sealed-map behaviour for trees that have no
+depot lock (dual-lock fallback).
+
 **Status: RULING** (2026-08-11). Companions:
 [`deck-multi-package-design.md`](deck-multi-package-design.md) (the map format,
 and the design this narrows),

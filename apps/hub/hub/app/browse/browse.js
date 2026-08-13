@@ -26,6 +26,7 @@
 // because choosing between them is the same act.
 import 'ui/nav';
 import { installNavStyles, onLiveChange, wrapTables } from 'ui/nav';
+import { resumeHubTour } from 'ui/tour';
 import {
   activityCell,
   activityScale,
@@ -569,7 +570,7 @@ function volatility(parsed, meta, seals) {
   let kind = parsed.seal ? 'seal' : selected === '' ? 'live' : 'sealed';
   let sealCount = options.filter((option) => option.kind === 'seal').length;
   return (
-    `<span class="vol" data-kind="${kind}"><label>version</label> ` +
+    `<span class="vol" data-tour="vol" data-kind="${kind}"><label>version</label> ` +
     `<select data-role="vol">` +
     options
       .map(
@@ -1221,7 +1222,7 @@ async function viewCatalog(parsed) {
     .join('');
   return (
     crumbs(parsed) +
-    `<main><div class="facts">` +
+    `<main><div class="facts" data-tour="facts">` +
     `<div><b>decks</b> ${decks.length}</div>` +
     `<div><b>live</b> ${decks.filter((deck) => deck.live).length}</div>` +
     `<div><b>history</b> ${
@@ -1269,7 +1270,7 @@ async function viewSealLog(parsed) {
     .join('');
   return (
     crumbs(parsed) +
-    `<main><div class="facts"><div><b>steps</b> ${seals.length}</div>` +
+    `<main><div class="facts" data-tour="facts"><div><b>steps</b> ${seals.length}</div>` +
     `<div><b>newest</b> <span class="s-seal">${esc(seals[0].changeId.slice(0, 12))}</span></div></div>` +
     filterBox(seals.length, 'steps') +
     `<table><thead><tr><th>step id</th><th>when</th><th class="num">files</th>` +
@@ -1408,7 +1409,7 @@ async function viewSeal(parsed, vs) {
     .join('');
   return (
     crumbs(parsed) +
-    `<main><div class="facts">` +
+    `<main><div class="facts" data-tour="facts">` +
     `<div><b>step</b> <span class="s-seal">${esc(parsed.seal)}</span></div>` +
     `<div><b>backend</b> ${esc(attrs.backend)}</div>` +
     `<div><b>files</b> ${files.length}</div></div>` +
@@ -1459,7 +1460,7 @@ async function viewSealFile(parsed, vs) {
   return {
     html:
       crumbs(parsed) +
-      `<main><div class="facts">` +
+      `<main><div class="facts" data-tour="facts">` +
       `<div><b>kind</b> step</div>` +
       `<div><b>step</b> <span class="s-seal">${esc(String(parsed.seal).slice(0, 12))}</span></div>` +
       `<div><b>size</b> ${esc(bytes(text.length))}</div></div>` +
@@ -1502,7 +1503,7 @@ async function viewAddress(input, vs) {
   let head =
     crumbs(parsed) +
     (await siblings(parsed)) +
-    `<main><div class="facts">` +
+    `<main><div class="facts" data-tour="facts">` +
     (meta ? volatility(parsed, meta, seals) + compare(parsed, meta, seals, vs) : '') +
     hash(attrs.treeHash) +
     (attrs.size !== undefined ? `<div><b>size</b> ${esc(bytes(attrs.size))}</div>` : '') +
@@ -1679,9 +1680,16 @@ async function render() {
     hunk = -1;
     if (currentVs() && app.querySelector('pre.diff')) stepChange(1);
   }
+  maybeResumeTour();
 }
 
 let arrived = '';
+let tourResumed = false;
+function maybeResumeTour() {
+  if (tourResumed) return;
+  tourResumed = true;
+  resumeHubTour({ waitMs: 80 });
+}
 
 // ---------------------------------------------------------------------------
 // Keyboard
@@ -2014,12 +2022,9 @@ app.addEventListener('change', (event) => {
   }
 });
 
-// Heat before the first paint, so no list renders undecorated and then jumps.
-// One small request, and every view reads it synchronously afterwards.
-await loadActivity();
-// And again whenever the depot moves. A decoration that only updates on
-// reload is a decoration that lies for as long as the tab stays open — which,
-// for the person watching an agent work, is the whole time.
+// List first, heat later. Waiting on `/_activity` gated the file catalog
+// behind a multi-depot seal walk — the bytes were ready in milliseconds and
+// the page sat on loading… anyway. Paint undecorated; decorate when ready.
 //
 // LISTS ONLY. Heat decorates rows; it does not appear in a blob or a diff, so
 // re-rendering one on every save buys nothing and costs everything — it
@@ -2033,3 +2038,4 @@ onActivityChange(() => {
 onLiveChange(() => loadActivity());
 
 render();
+loadActivity();

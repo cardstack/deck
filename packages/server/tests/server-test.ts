@@ -22,18 +22,24 @@ const CONFETTI_JS_11 = `import { COLORS } from './util/colors.js';\nexport funct
 function confettiFiles(version: string, source: string) {
   return [
     {
+      path: 'package.json',
+      bytes: Buffer.from(
+        JSON.stringify({
+          name: 'confetti',
+          version,
+          type: 'module',
+          exports: { '.': './confetti.js', './main': './confetti.js' },
+        }),
+      ),
+    },
+    {
       path: 'importmap.json',
       bytes: Buffer.from(
         JSON.stringify({
           imports: {},
           deck: {
             packages: {
-              confetti: {
-                version,
-                entry: '$DECK/confetti.js',
-                exports: { './main': '$DECK/confetti.js' },
-                baseApi: '^1.0.0',
-              },
+              confetti: { baseApi: '^1.0.0' },
             },
           },
         }),
@@ -56,13 +62,12 @@ module('deck server: depots on disk', function (hooks) {
     // The live tree — the same paths the URL uses.
     await mkdir(join(depotDir, 'acme', 'confetti'), { recursive: true });
     await writeFile(
-      join(depotDir, 'acme', 'confetti', 'importmap.json'),
+      join(depotDir, 'acme', 'confetti', 'package.json'),
       JSON.stringify({
-        deck: {
-          packages: {
-            confetti: { version: '1.1.0', entry: '$DECK/confetti.js' },
-          },
-        },
+        name: 'confetti',
+        version: '1.1.0',
+        type: 'module',
+        exports: { '.': './confetti.js' },
       }),
     );
     await writeFile(
@@ -83,15 +88,21 @@ module('deck server: depots on disk', function (hooks) {
     // the app VENDORS the confetti 1.0.0 pack inside its own tree
     let appPack = pack([
       {
+        path: 'package.json',
+        bytes: Buffer.from(
+          JSON.stringify({
+            name: 'app',
+            version: '1.0.0',
+            type: 'module',
+            exports: { '.': './app.js' },
+          }),
+        ),
+      },
+      {
         path: 'importmap.json',
         bytes: Buffer.from(
           JSON.stringify({
             imports: { 'confetti/': '$DECK/vendor/confetti.pack.zip!/' },
-            deck: {
-              packages: {
-                app: { version: '1.0.0', entry: '$DECK/app.js' },
-              },
-            },
           }),
         ),
       },
@@ -116,15 +127,13 @@ module('deck server: depots on disk', function (hooks) {
       '1.0.0',
       pack([
         {
-          path: 'importmap.json',
+          path: 'package.json',
           bytes: Buffer.from(
             JSON.stringify({
-              imports: { 'confetti/': '/demo/acme/confetti@1.0.0/' },
-              deck: {
-                packages: {
-                  page: { version: '1.0.0', entry: '$DECK/boot.js' },
-                },
-              },
+              name: 'page',
+              version: '1.0.0',
+              type: 'module',
+              exports: { '.': './boot.js' },
             }),
           ),
         },
@@ -142,6 +151,13 @@ module('deck server: depots on disk', function (hooks) {
         },
       ]),
       { tag: 'latest' },
+    );
+
+    await writeFile(
+      join(depotDir, 'importmap.json'),
+      JSON.stringify({
+        imports: { 'confetti/': '/demo/acme/confetti@1.0.0/' },
+      }),
     );
 
     let depot: DepotMount = { name: 'demo', dir: depotDir, storeDir };
@@ -349,6 +365,7 @@ module('deck server: depots on disk', function (hooks) {
       'README.md',
       'confetti.js',
       'importmap.json',
+      'package.json',
       'util/colors.js',
     ]);
     let storeMeta = await readStoreMeta(storeDir, 'acme/confetti');

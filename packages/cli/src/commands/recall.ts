@@ -2,9 +2,9 @@
 //
 // Tier 1 is always on: every settled save auto-publishes an immutable
 // version, so the store alone can return you to any published state. Tier 2
-// adds a seal per SAVE — the states between publishes — through jj or
-// historyd. When neither is available the commands here say so and stop,
-// rather than pretending a partial answer is the whole log.
+// adds a seal per SAVE — the states between publishes — through deckd.
+// When deckd is down the commands here say so and stop, rather than
+// pretending a partial answer is the whole log.
 
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -27,13 +27,13 @@ before it is reported, so the log is never behind the tree.`,
       options: {
         limit: { type: 'string', default: '20' },
         json: { type: 'boolean', default: false },
-        history: { type: 'string', default: 'auto' },
+        history: { type: 'string', default: 'deckd' },
       },
     });
     let [dir] = positionals;
     if (!dir) fail('usage: deck history <dir> [--limit <n>] [--json]');
     if (!isValidHistoryKind(values.history!)) {
-      fail('--history must be auto, jj, historyd, deckd, or none');
+      fail('--history must be auto, deckd, historyd, or none');
     }
     let attachment = await createHistory({
       dir: resolve(dir!),
@@ -81,12 +81,12 @@ only ever grows.`,
     let { values, positionals } = parseArgs({
       args: argv,
       allowPositionals: true,
-      options: { history: { type: 'string', default: 'auto' } },
+      options: { history: { type: 'string', default: 'deckd' } },
     });
     let [dir, changeId] = positionals;
     if (!dir || !changeId) fail('usage: deck restore <dir> <changeId>');
     if (!isValidHistoryKind(values.history!)) {
-      fail('--history must be auto, jj, historyd, deckd, or none');
+      fail('--history must be auto, deckd, historyd, or none');
     }
     let attachment = await createHistory({
       dir: resolve(dir!),

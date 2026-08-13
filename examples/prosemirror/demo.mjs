@@ -163,11 +163,6 @@ for (let row of WITH_SOURCE) {
               packages: {
                 [deckNameForNpm(row.name)]: {
                   version: row.version,
-                  // NO ENTRY, on purpose. These are TypeScript sources: a
-                  // browser cannot run them and no transform here produces
-                  // something that can. A deck that declared an entry it
-                  // could not honour would be a lie the server would repeat,
-                  // so the server answers `no-entry-module` instead.
                   vendoredFrom: {
                     registry: 'https://registry.npmjs.org',
                     name: row.name,
@@ -187,6 +182,9 @@ for (let row of WITH_SOURCE) {
         'utf8',
       ),
     },
+    ...(pkg.files.get('package.json')
+      ? [{ path: 'package.json', bytes: pkg.files.get('package.json') }]
+      : []),
     ...files,
   ]);
   let record = await publishToStore(storeDir, deck, row.version, bytes, { tag: 'latest' });
@@ -213,9 +211,13 @@ for (let { spec, entry } of PACKAGES) {
     policy: { minimumReleaseAge: 0 },
   });
   let name = deckNameForNpm(vendored.pkg.name);
-  let dependencies = Object.fromEntries(
-    vendored.externals.map((external) => [external, `lib/${deckNameForNpm(external)}@${'^' + versionOf(external)}`]),
-  );
+  let npmManifest = vendored.pkg.files.get('package.json');
+  let packedManifest = vendored.files.find((file) => file.path === 'package.json')?.bytes;
+  if (!npmManifest || !packedManifest || !packedManifest.equals(npmManifest)) {
+    throw new Error(
+      `vendored ${vendored.pkg.name} package.json is not byte-identical to npm`,
+    );
+  }
   let bytes = pack([
     {
       path: 'importmap.json',
@@ -230,7 +232,6 @@ for (let { spec, entry } of PACKAGES) {
                   vendoredFrom: vendored.vendoredFrom,
                 },
               },
-              ...(Object.keys(dependencies).length > 0 ? { dependencies } : {}),
             },
           },
           null,
@@ -379,7 +380,7 @@ await lockAndWrite({
   depotDir,
   depotName: DEPOT,
   storeDir,
-  deckDir: join(depotDir, 'app', 'editor'),
+  depotLock: true,
 });
 
 } // end buildMode

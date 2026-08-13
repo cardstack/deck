@@ -9,7 +9,7 @@ import {
 import { join } from 'node:path';
 import semver from 'semver';
 import { unpack } from './pack.ts';
-import { packagesFromPack } from './import-map-pack.ts';
+import { packagesFromPack, packageJsonFromPack } from './import-map-pack.ts';
 import {
   collectGarbage,
   readTreeFile,
@@ -53,9 +53,9 @@ import {
 //   - published versions are immutable: re-publishing refuses; meta updates
 //     are atomic (tmp+rename)
 //   - only verified packs enter the store (full unpack verification)
-//   - manifest agreement: when the pack's import map declares a version for
-//     the package, a published stable must EQUAL it, and a prerelease must
-//     extend it (`<declared>-…`) — so bumping the map version in the live
+//   - manifest agreement: package.json version is the declaration of
+//     record. A published stable must EQUAL it, and a prerelease must
+//     extend it (`<declared>-…`) — so bumping package.json in the live
 //     tree is the ONLY edit a new line needs
 //   - dist-tags are movable; names never semver-shaped; `latest` never
 //     points at a prerelease
@@ -230,24 +230,26 @@ function assertTagRules(tag: string, version: string): void {
   }
 }
 
-// Manifest agreement: the pack's own import map is the manifest. When it
-// declares a version for this package, the published version must be that
-// version (stable) or extend it as a prerelease (`<declared>-…`). Undeclared
-// packages (plain libraries without a map entry) publish unconstrained.
+// Manifest agreement: package.json version is the declaration of record.
+// The published version must equal it (stable) or extend it as a
+// prerelease (`<declared>-…`). A pack without package.json is not a deck.
 function assertManifestAgreement(
   name: string,
   version: string,
   packBytes: Buffer,
 ): void {
-  let declared = packagesFromPack(packBytes)?.[mapKeyFor(name)]?.version;
+  let pkg = packageJsonFromPack(packBytes);
+  let declared = pkg?.version;
   if (declared === undefined) {
-    return;
+    throw new Error(
+      `${name}@${version} has no package.json — a pack is a package`,
+    );
   }
   if (version === declared || version.startsWith(`${declared}-`)) {
     return;
   }
   throw new Error(
-    `importmap.json declares ${name}@${declared}, but the request is publishing ${name}@${version}`,
+    `package.json declares ${name}@${declared}, but the request is publishing ${name}@${version}`,
   );
 }
 
@@ -275,7 +277,9 @@ function upstreamOf(
   packBytes: Buffer,
   name: string,
 ): { coordinate: string; publishedAt?: string } | undefined {
-  let entry = packagesFromPack(packBytes)?.[mapKeyFor(name)] as
+  let fromPack = packagesFromPack(packBytes);
+  let entry = (fromPack?.[mapKeyFor(name)] ??
+    (fromPack ? Object.values(fromPack)[0] : undefined)) as
     | {
         vendoredFrom?: {
           registry?: string;

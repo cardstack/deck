@@ -68,10 +68,89 @@ a.s-file { color: var(--fg); }
 * { box-sizing: border-box; }
 ::selection { background: var(--sel); }
 
+/* ── Cross-document View Transitions (MPA tab strip) ─────────────────────
+   Opt-in `@view-transition { navigation: auto }` lives inline in each app's
+   HTML so the browser can start the transition before the stylesheet lands.
+   Names + nested groups live here so every page shares one chrome map.
+
+   NO FADES. The UA default fades old↓ and new↑; at mid-transition the page
+   dims (and flashes white). Goal: the outgoing page (browse, run, …) stays
+   fully opaque on screen until the next document is ready, then cuts. */
+@media (prefers-reduced-motion: no-preference) {
+  body {
+    view-transition-name: hub-shell;
+  }
+  deck-nav {
+    view-transition-name: hub-nav;
+    view-transition-group: hub-shell;
+  }
+  deck-subject {
+    view-transition-name: hub-subject;
+    view-transition-group: hub-shell;
+  }
+  #app {
+    view-transition-name: hub-main;
+    view-transition-group: hub-shell;
+  }
+  deck-keys {
+    view-transition-name: hub-keys;
+    view-transition-group: hub-shell;
+  }
+  .hub-boot {
+    view-transition-name: none;
+  }
+
+  /* Instant cut — no morph timing that could interpolate opacity/geometry. */
+  ::view-transition-group(*) {
+    animation-duration: 0s;
+    animation-timing-function: step-end;
+  }
+
+  /* Outgoing snapshot stays full strength; incoming stays invisible until the
+     cut. Never run the UA fade keyframes. */
+  ::view-transition-old(*) {
+    animation: none !important;
+    opacity: 1 !important;
+    mix-blend-mode: normal;
+    z-index: 2;
+  }
+  ::view-transition-new(*) {
+    animation: none !important;
+    opacity: 0 !important;
+    mix-blend-mode: normal;
+    z-index: 1;
+  }
+}
+
+/* Hold the main region's height so an empty `#app` during a view transition
+   does not collapse the shell (nav + keys stay put). */
+#app {
+  min-height: 50vh;
+}
+
+/* Outside every named transition group — corner status, not a page flash. */
+.hub-boot {
+  position: fixed;
+  left: var(--gut);
+  bottom: 3.6em;
+  z-index: 4;
+  margin: 0;
+  color: var(--dim);
+  pointer-events: none;
+  letter-spacing: 0.04em;
+}
+.hub-boot[hidden] {
+  display: none;
+}
+
+html {
+  background-color: var(--bg, var(--hub-flash, #1e1e2e));
+}
+
 body {
   margin: 0;
   padding: 0 var(--gut) 6em;
-  background: var(--bg);
+  background: var(--bg, var(--hub-flash, #1e1e2e));
   color: var(--fg);
   font-family: var(--mono);
   font-size: 13px;
@@ -504,6 +583,13 @@ td.indent { padding-left: 2ch; }
 .sortbar label { color: var(--dim); margin-right: .6ch; }
 
 .feed { list-style: none; margin: 0; padding: 0; }
+.feed-more {
+  text-align: center;
+  padding: calc(var(--row) * .8em) 0 calc(var(--row) * 1.2em);
+  letter-spacing: .06em;
+}
+.feed-more[data-state='loading'],
+.feed-more[data-state='fetch'] { color: var(--a-live, var(--amber)); }
 
 /* RECENCY IS BRIGHTNESS. `--fresh` runs 1 → 0 over a day, and the entry fades
    with it, so "something just happened" reads from across the room and stops

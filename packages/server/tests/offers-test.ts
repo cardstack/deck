@@ -28,6 +28,32 @@ async function writeDeck(
 ): Promise<void> {
   let dir = join(depotDir, ...name.split('/'));
   await mkdir(dir, { recursive: true });
+  let pkgName = name.split('/')[1]!;
+  let deck = (map.deck ?? {}) as {
+    packages?: Record<string, { version?: string; entry?: string }>;
+    dependencies?: Record<string, string>;
+  };
+  let self = deck.packages?.[pkgName];
+  await writeFile(
+    join(dir, 'package.json'),
+    JSON.stringify(
+      {
+        name: pkgName,
+        version: self?.version ?? '0.1.0',
+        type: 'module',
+        ...(self?.entry
+          ? {
+              exports: {
+                '.': `./${self.entry.replace(/^\$DECK\//, '')}`,
+              },
+            }
+          : {}),
+        ...(deck.dependencies ? { dependencies: deck.dependencies } : {}),
+      },
+      null,
+      2,
+    ) + '\n',
+  );
   await writeFile(
     join(dir, 'importmap.json'),
     JSON.stringify(map, null, 2) + '\n',
@@ -35,6 +61,16 @@ async function writeDeck(
   for (let [path, text] of Object.entries(files)) {
     await writeFile(join(dir, path), text);
   }
+}
+
+async function writeDepotLock(
+  imports: Record<string, string>,
+  scopes: Record<string, Record<string, string>> = {},
+): Promise<void> {
+  await writeFile(
+    join(depotDir, 'importmap.json'),
+    JSON.stringify({ imports, scopes }, null, 2) + '\n',
+  );
 }
 
 async function publish(name: string, version: string, tag = 'latest') {
@@ -81,6 +117,10 @@ module('offers, rebase, and try-by-URL', function (hooks) {
         },
       },
     );
+    await writeDepotLock({
+      'acme/palette': '/site/acme/palette@1.0.0/palette.js',
+      'acme/palette/': '/site/acme/palette@1.0.0/',
+    });
     server = createDeckServer({ depots: [depot] });
     await new Promise<void>((resolve) => server.listen(0, resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -152,12 +192,12 @@ module('offers, rebase, and try-by-URL', function (hooks) {
       'a trial is never cached as if it were the real thing',
     );
 
-    // The app's own tree is untouched by any of this.
-    let map = JSON.parse(
-      await readFile(join(depotDir, 'you', 'app', 'importmap.json'), 'utf8'),
+    // The depot lock is untouched by a trial — substitution is per-request.
+    let lock = JSON.parse(
+      await readFile(join(depotDir, 'importmap.json'), 'utf8'),
     );
     assert.strictEqual(
-      map.imports['acme/palette'],
+      lock.imports['acme/palette'],
       '/site/acme/palette@1.0.0/palette.js',
     );
   });
@@ -262,18 +302,23 @@ module('offers, rebase, and try-by-URL', function (hooks) {
     await publish('acme/palette', '1.1.0');
     // The app imports it as `palette`, aliased to the acme/palette deck.
     await writeFile(
-      join(depotDir, 'you', 'app', 'importmap.json'),
-      JSON.stringify({
-        imports: {
-          palette: '/site/acme/palette@1.0.0/palette.js',
-          'palette/': '/site/acme/palette@1.0.0/',
-        },
-        deck: {
-          packages: { app: { version: '0.1.0', entry: '$DECK/app.js' } },
+      join(depotDir, 'you', 'app', 'package.json'),
+      JSON.stringify(
+        {
+          name: 'app',
+          version: '0.1.0',
+          type: 'module',
+          exports: { '.': './app.js' },
           dependencies: { palette: 'acme/palette@1.0.0' },
         },
-      }),
+        null,
+        2,
+      ) + '\n',
     );
+    await writeDepotLock({
+      palette: '/site/acme/palette@1.0.0/palette.js',
+      'palette/': '/site/acme/palette@1.0.0/',
+    });
     let trial = await fetch(
       `${origin}/site/you/app/index.html?with=acme/palette@1.1.0`,
     );

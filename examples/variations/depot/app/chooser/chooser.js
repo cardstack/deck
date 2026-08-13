@@ -129,3 +129,7 @@ document.head.insertAdjacentHTML(
   .quiet { color:var(--quiet); }
   </style>`,
 );
+
+// teach: try-by-URL chooser
+
+// teach: pass-2 — promote a try tag

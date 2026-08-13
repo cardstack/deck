@@ -327,6 +327,8 @@ importers:
         specifier: 'catalog:'
         version: 5.9.3
 
+  packages/deckd: {}
+
   packages/history:
     dependencies:
       '@cardstack/deck':

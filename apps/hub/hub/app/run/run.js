@@ -15,6 +15,7 @@
 // a readout, sitting directly below the thing doing the running.
 import 'ui/nav';
 import { installNavStyles, onLiveChange, wrapTables } from 'ui/nav';
+import { resumeHubTour } from 'ui/tour';
 import {
   attachScrub,
   foldBursts,
@@ -197,6 +198,24 @@ async function loadOrigins() {
 /** Concrete page last framed — scrubbing must not use a depot-only `?at=`. */
 let stageAt = '';
 
+/**
+ * A seal is a working-tree snapshot. `@1.2.3` is a store Version address —
+ * not a directory under `/_history/<id>/`. Browse already rebuilds Step
+ * addresses without the version segment; /run has to do the same or the
+ * iframe loads `…/app/form@0.1.0-dev.2/index.html` and the history backend
+ * correctly answers file-not-found.
+ */
+function sealPath(inner) {
+  return inner
+    .split('/')
+    .map((segment) => {
+      let at = segment.indexOf('@');
+      return at === -1 ? segment : segment.slice(0, at);
+    })
+    .filter(Boolean)
+    .join('/');
+}
+
 function runTarget(at, withs = currentWith(), step = currentStep()) {
   let [, depot, ...rest] = at.split('/');
   let query = withs.map((value) => `with=${value}`).join('&');
@@ -216,12 +235,13 @@ function runTarget(at, withs = currentWith(), step = currentStep()) {
   // import map with its live pins rewritten to resolve inside the step, so
   // what loads is the page AND its dependencies as they actually were.
   if (step) {
+    let path = sealPath(inner);
     return {
       url:
         depot === 'hub'
-          ? `/hub/${HISTORY}/${step}/${inner}${suffix}`
+          ? `/hub/${HISTORY}/${step}/${path}${suffix}`
           : ORIGINS[depot]
-            ? `${ORIGINS[depot]}/site/${HISTORY}/${step}/${inner}${suffix}`
+            ? `${ORIGINS[depot]}/site/${HISTORY}/${step}/${path}${suffix}`
             : undefined,
       why: ORIGINS[depot] || depot === 'hub' ? undefined :
         `No depot named ${depot} is mounted, so there is no origin to run it at.`,
@@ -650,10 +670,10 @@ async function viewOne(input) {
     `<button data-role="full" aria-pressed="${isFull() ? 'true' : 'false'}">Full</button>` +
     `<a class="popout" href="${esc(url)}" target="_blank" rel="noopener">Pop Out ↗</a>` +
     `</div>` +
-    `<div class="stagewrap"><iframe class="stage" data-role="stage" ` +
+    `<div class="stagewrap" data-tour="stage"><iframe class="stage" data-role="stage" ` +
     `src="${esc(url)}" title="${esc(at)}"></iframe></div>` +
     `<div class="grip" data-role="grip" title="drag to resize"></div>` +
-    `<div class="runsplit-under">` +
+    `<div class="runsplit-under" data-tour="graph">` +
     // "imports 1 · scopes 0" is two numbers and no meaning. What a reader
     // wants is the sentence those numbers are evidence for.
     `<p class="dim">${
@@ -811,6 +831,14 @@ async function render() {
   cursor = -1;
   wrapTables(app);
   keys.keys = bindings();
+  maybeResumeTour();
+}
+
+let tourResumed = false;
+function maybeResumeTour() {
+  if (tourResumed) return;
+  tourResumed = true;
+  resumeHubTour({ waitMs: 80 });
 }
 
 let cursor = -1;
@@ -959,7 +987,6 @@ app.addEventListener('input', (event) => {
 });
 
 await loadOrigins();
-await loadActivity();
 onActivityChange(() => {
   // Only the index is decorated, and re-rendering while a demo is framed
   // would tear the iframe down and restart whatever it was doing.
@@ -968,3 +995,4 @@ onActivityChange(() => {
 onLiveChange(() => loadActivity());
 
 render();
+loadActivity();

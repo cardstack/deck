@@ -1,6 +1,12 @@
 import { watch, type FSWatcher } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { discoverDecks, type DeckRef } from '@cardstack/deck/deck-scan';
+import {
+  lockDepot,
+  parseDepotLock,
+  DEPOT_LOCK_PATH,
+} from '@cardstack/deck/lock';
 import type { HistoryBackend } from '@cardstack/deck-history/backend';
 import {
   watchAndPublish,
@@ -14,10 +20,11 @@ import {
 //
 //   <root>/<depot>/                     served at /<depot>/
 //     <publisher>/<package>/            a deck — /<depot>/<publisher>/<package>/…
-//       importmap.json                  what makes the directory a deck
+//       package.json                    what makes the directory a deck
 //       app.js
+//     importmap.json                    the depot lock (not a deck)
 //     .deck/store/{_objects/,_trees/,<publisher>/<package>/meta.json}
-//     .jj/                              seals for the whole depot
+//     .deck/timeline/                   seals for the whole depot (via deckd)
 //
 // Both dot-directories are ignored by the tree hash, so a depot carries its
 // own versions and its own history without either one changing what the
@@ -64,14 +71,46 @@ export interface DepotWatchController {
 }
 
 // One watcher per deck (each publishes its own versions), plus a depot-level
-// watch that notices a NEW deck appearing — creating a directory with an
-// importmap.json is all it should take to start publishing.
+// watch that notices a NEW deck appearing — creating a directory with a
+// package.json is all it should take to start publishing.
 export function watchDepot(options: WatchDepotOptions): DepotWatchController {
   let { depot, debounceMs, onPublish, onLiveChange, onDeck, onError } = options;
   let depotDir = resolve(depot.dir);
   let watchers = new Map<string, { deck: DeckRef; controller: WatchController }>();
   let closed = false;
   let rescanTimer: NodeJS.Timeout | undefined;
+  let locking = false;
+
+  async function refreshContinuousLock(): Promise<void> {
+    if (locking) {
+      return;
+    }
+    try {
+      let text = await readFile(join(depotDir, DEPOT_LOCK_PATH), 'utf8');
+      if (!parseDepotLock(text).continuous) {
+        return;
+      }
+    } catch {
+      return;
+    }
+    locking = true;
+    try {
+      let locked = await lockDepot({
+        depotDir: depot.dir,
+        depotName: depot.name,
+        storeDir: depot.storeDir,
+        update: true,
+        continuous: true,
+      });
+      if (locked.changed) {
+        await writeFile(join(depotDir, DEPOT_LOCK_PATH), locked.text);
+      }
+    } catch (error) {
+      onError?.(error);
+    } finally {
+      locking = false;
+    }
+  }
 
   function add(deck: DeckRef): void {
     if (watchers.has(deck.name)) {
@@ -84,7 +123,10 @@ export function watchDepot(options: WatchDepotOptions): DepotWatchController {
       debounceMs,
       history: depot.history,
       historyDir: depotDir,
-      onPublish,
+      onPublish: async (event) => {
+        onPublish?.(event);
+        await refreshContinuousLock();
+      },
       onLiveChange,
       onError,
     });

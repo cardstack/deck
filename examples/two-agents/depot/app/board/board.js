@@ -1,4 +1,4 @@
-// The reviewer's page: three token sets that were edited at the same time,
+// The review board: three token sets edited in parallel,
 // and the rule that decided each key nobody could agree on.
 //
 // It imports the two agents' component decks by their bare specifiers. The
@@ -19,7 +19,7 @@ const load = async (url) => {
 const SETS = [
   // `@latest` is a dist-tag, so this follows upstream wherever it goes — one
   // short-TTL hop to whatever exact version it currently names.
-  { who: 'std/tokens', label: 'upstream', url: '/site/std/tokens@latest/tokens.json' },
+  { who: 'std/tokens', label: 'upstream @latest', url: '/site/std/tokens@latest/tokens.json' },
   { who: 'agent-a/tokens', label: 'agent A', url: '/site/agent-a/tokens/tokens.json' },
   { who: 'agent-b/tokens', label: 'agent B', url: '/site/agent-b/tokens/tokens.json' },
 ];
@@ -48,7 +48,7 @@ function preview(tokens) {
       <div class="tbar"></div>
       <div class="tbar short"></div>
       <div class="tactions">
-        <span class="tbtn">Confirm</span>
+        <span class="tbtn">Accept</span>
         ${color.warning ? '<span class="twarn">Check stock</span>' : ''}
       </div>
     </div>
