@@ -59,6 +59,7 @@ installActivityStyles();
 installTimelineStyles();
 
 const app = document.getElementById('app');
+let repositoryMutationBusy = false;
 const keys = document.querySelector('deck-keys');
 const subject = document.querySelector('deck-subject');
 
@@ -1619,6 +1620,19 @@ function shortSeal(address) {
   return match ? `${match[1].slice(0, 12)}…${match[2] ?? ''}` : String(address);
 }
 
+function repositoryActionDialog() {
+  return `<dialog class="repo-action-dialog" data-repository-dialog>` +
+    `<form data-repository-form>` +
+    `<header><div><span class="section-index">NEW</span><h2 data-repository-dialog-title></h2></div>` +
+    `<button type="button" class="repo-dialog-close" data-repository-dialog-close aria-label="Close">×</button></header>` +
+    `<label><span data-repository-dialog-label></span><input name="target" required autocomplete="off" spellcheck="false"></label>` +
+    `<p class="dim" data-repository-dialog-help></p>` +
+    `<p class="bad repo-dialog-error" data-repository-dialog-error role="alert"></p>` +
+    `<footer><button type="button" class="action" data-repository-dialog-close>Cancel</button>` +
+    `<button type="submit" class="action primary" data-repository-dialog-submit></button></footer>` +
+    `</form></dialog>`;
+}
+
 /** Branch and fork are one lineage control; mutability decides which verbs appear. */
 async function repositoryPanel(parsed, meta) {
   if (!parsed.depot || !parsed.publisher || !parsed.pkg) return '';
@@ -1635,7 +1649,7 @@ async function repositoryPanel(parsed, meta) {
       `<div class="repo-identity"><span class="s-publisher">${esc(parsed.publisher)}</span><span class="sep">/</span>` +
       `<strong class="s-package">${esc(parsed.pkg)}</strong><span class="visibility">imported · read-only</span></div>` +
       `<button class="repo-new primary" data-repository-action="fork" data-depot="${esc(parsed.depot)}" ` +
-      `data-from="${esc(member)}" data-spec="${esc(parsed.spec ?? '')}">Fork</button></section>`;
+      `data-from="${esc(member)}" data-spec="${esc(parsed.spec ?? '')}">Fork</button></section>` + repositoryActionDialog();
   }
   if (!summary) return '';
   let state = await getJson(summary.url).catch(() => undefined);
@@ -1669,7 +1683,7 @@ async function repositoryPanel(parsed, meta) {
     `<button data-repository-action="fork" data-depot="${esc(parsed.depot)}" data-from="${esc(member)}" data-spec="${esc(parsed.spec ?? '')}">Fork to my scope</button>` +
     `</div></div></details>` +
     (state.initialized ? `<a class="repo-review" href="/review?repository=${encodeURIComponent(reviewRepository)}&depot=${encodeURIComponent(state.depot)}${reviewSource}">${review}</a>` : '') + `</div>` +
-    `</section>`
+    `</section>` + repositoryActionDialog()
   );
 }
 
@@ -2113,48 +2127,43 @@ function expandGap(control) {
 }
 
 app.addEventListener('click', async (event) => {
+  let closeRepositoryDialog = event.target.closest('[data-repository-dialog-close]');
+  if (closeRepositoryDialog) {
+    closeRepositoryDialog.closest('dialog')?.close();
+    return;
+  }
   let repositoryAction = event.target.closest('[data-repository-action]');
   if (repositoryAction) {
-    repositoryAction.disabled = true;
-    let response;
-    if (repositoryAction.dataset.repositoryAction === 'fork') {
-      let packageName = repositoryAction.dataset.from.split('/').at(-1);
-      let to = prompt('Fork to publisher/package', `me/${packageName}`);
-      if (!to) { repositoryAction.disabled = false; return; }
-      response = await fetch('/_hub/forks', {
-        method: 'POST',
-        headers: { accept: 'application/json', 'content-type': 'application/json' },
-        body: JSON.stringify({
-          depot: repositoryAction.dataset.depot,
-          from: repositoryAction.dataset.from,
-          to,
-          ...(repositoryAction.dataset.spec ? { spec: repositoryAction.dataset.spec } : {}),
-        }),
-      });
-    } else {
-      let name = prompt('Branch name');
-      if (!name) { repositoryAction.disabled = false; return; }
-      response = await fetch(`${repositoryAction.dataset.endpoint}/branches`, {
-        method: 'POST',
-        headers: { accept: 'application/json', 'content-type': 'application/json' },
-        body: JSON.stringify({ name, from: 'main' }),
-      });
-    }
-    if (!response.ok) {
-      let body = await response.json().catch(() => ({}));
-      repositoryAction.insertAdjacentHTML(
-        'afterend',
-        ` <span class="bad">${esc(body.error ?? response.statusText)}</span>`,
-      );
-      repositoryAction.disabled = false;
-      return;
-    }
-    if (repositoryAction.dataset.repositoryAction === 'fork') {
-      let body = await response.json();
-      location.href = body.browseUrl;
-      return;
-    }
-    await render();
+    let dialog = app.querySelector('[data-repository-dialog]');
+    let form = dialog.querySelector('[data-repository-form]');
+    let action = repositoryAction.dataset.repositoryAction;
+    let packageName = repositoryAction.dataset.from?.split('/').at(-1);
+    Object.assign(form.dataset, {
+      action,
+      depot: repositoryAction.dataset.depot ?? '',
+      from: repositoryAction.dataset.from ?? '',
+      spec: repositoryAction.dataset.spec ?? '',
+      endpoint: repositoryAction.dataset.endpoint ?? '',
+    });
+    dialog.querySelector('[data-repository-dialog-title]').textContent = action === 'fork' ? 'Create a fork' : 'Create a branch';
+    dialog.querySelector('[data-repository-dialog-label]').textContent = action === 'fork' ? 'Fork to publisher/package' : 'Branch name';
+    dialog.querySelector('[data-repository-dialog-help]').textContent = action === 'fork'
+      ? `Creates a mutable package from ${repositoryAction.dataset.from}. The source stays unchanged.`
+      : 'Creates an isolated line of work from main in this package.';
+    dialog.querySelector('[data-repository-dialog-submit]').textContent = action === 'fork' ? 'Create fork' : 'Create branch';
+    dialog.querySelector('[data-repository-dialog-error]').textContent = '';
+    let input = form.elements.target;
+    input.value = action === 'fork' ? `me/${packageName}` : '';
+    input.pattern = action === 'fork'
+      ? '[a-z0-9][a-z0-9._-]{0,63}/[a-z0-9][a-z0-9._-]{0,63}'
+      : '(?!.*\\.\\.)[a-z0-9][a-z0-9._/-]{0,127}';
+    input.title = action === 'fork'
+      ? 'Use publisher/package with lowercase letters, numbers, dots, dashes, or underscores.'
+      : 'Start with a lowercase letter or number; then use lowercase letters, numbers, dots, dashes, underscores, or slashes.';
+    repositoryAction.closest('details')?.removeAttribute('open');
+    dialog.showModal();
+    input.focus();
+    input.select();
     return;
   }
   let gap = event.target.closest('.gap[data-gap]');
@@ -2190,6 +2199,53 @@ app.addEventListener('click', async (event) => {
   if (!link || event.metaKey || event.ctrlKey || event.shiftKey) return;
   event.preventDefault();
   go(link.dataset.at, link.dataset.vs ?? currentVs());
+});
+
+app.addEventListener('submit', async (event) => {
+  let form = event.target.closest('[data-repository-form]');
+  if (!form) return;
+  event.preventDefault();
+  let input = form.elements.target;
+  let value = input.value.trim();
+  let valid = form.dataset.action === 'fork'
+    ? /^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._-]{0,63}$/.test(value)
+    : /^[a-z0-9][a-z0-9._/-]{0,127}$/.test(value) && !value.includes('..');
+  if (!valid) {
+    form.querySelector('[data-repository-dialog-error]').textContent = input.title;
+    input.focus();
+    return;
+  }
+  let submit = form.querySelector('[type="submit"]');
+  let error = form.querySelector('[data-repository-dialog-error]');
+  submit.disabled = true;
+  error.textContent = '';
+  repositoryMutationBusy = true;
+  try {
+    let response = form.dataset.action === 'fork'
+      ? await fetch('/_hub/forks', {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/json' },
+        body: JSON.stringify({ depot: form.dataset.depot, from: form.dataset.from, to: value, ...(form.dataset.spec ? { spec: form.dataset.spec } : {}) }),
+      })
+      : await fetch(`${form.dataset.endpoint}/branches`, {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/json' },
+        body: JSON.stringify({ name: value, from: 'main' }),
+      });
+    let body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error ?? response.statusText);
+    if (form.dataset.action === 'fork') {
+      location.href = body.browseUrl;
+      return;
+    }
+    form.closest('dialog').close();
+    await render();
+  } catch (caught) {
+    error.textContent = caught.message;
+  } finally {
+    repositoryMutationBusy = false;
+    submit.disabled = false;
+  }
 });
 
 // Both controls are reachable from the keyboard, because both are buttons in
@@ -2273,12 +2329,12 @@ app.addEventListener('change', (event) => {
 // they had folded, several times a minute while an agent is running. Reading
 // code in a live depot has to be possible.
 onActivityChange(() => {
-  if (app.querySelector('pre.blob')) return;
+  if (app.querySelector('pre.blob') || app.querySelector('dialog[open]')) return;
   render();
 });
 onLiveChange(() => {
   loadActivity();
-  if (app.querySelector('[data-repository]')) render();
+  if (!repositoryMutationBusy && !app.querySelector('dialog[open]') && app.querySelector('[data-repository]')) render();
 });
 
 render();

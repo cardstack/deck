@@ -951,6 +951,19 @@ button.aside { margin-left: 1.5ch; align-self: center; }
 .repo-new { border: 1px solid var(--line-strong); padding: .4em 1ch; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
 .repo-new.primary { border-color: var(--accent); color: var(--accent); }
 .repo-context-readonly .visibility { margin-right: auto; }
+.repo-action-dialog { width: min(31rem, calc(100vw - 2rem)); padding: 0; border: 1px solid var(--line-strong); background: var(--bg); color: var(--text); box-shadow: 0 1.5rem 4rem rgb(0 0 0 / .45); }
+.repo-action-dialog::backdrop { background: rgb(20 22 30 / .55); backdrop-filter: blur(2px); }
+.repo-action-dialog form { display: grid; gap: 1rem; padding: 1.1rem; }
+.repo-action-dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.repo-action-dialog header > div { display: flex; align-items: baseline; gap: .75rem; }
+.repo-action-dialog h2 { margin: 0; font-size: 1rem; font-weight: 650; }
+.repo-dialog-close { border: 0; background: transparent; color: var(--dim); font: inherit; font-size: 1.25rem; cursor: pointer; }
+.repo-action-dialog label { display: grid; gap: .4rem; color: var(--dim); font-size: .85rem; }
+.repo-action-dialog input { width: 100%; box-sizing: border-box; padding: .65rem .7rem; border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); font: inherit; }
+.repo-action-dialog input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.repo-action-dialog p { margin: 0; }
+.repo-dialog-error:empty { display: none; }
+.repo-action-dialog footer { display: flex; justify-content: flex-end; gap: .5rem; padding-top: .2rem; }
 @media (max-width: 44rem) {
   .repo-context { align-items: flex-start; }
   .repo-identity { flex-wrap: wrap; }
