@@ -15,6 +15,15 @@ identity, records its base tree, and initializes that mutable package's
 `main`. Branch and fork therefore share ancestry and merge mechanics while
 preserving different ownership boundaries.
 
+When the source is itself mutable, a fork also records the exact source
+Revision. Opening a cross-owner Review uses that Revision as the three-way
+merge base. The Review retains the fork endpoint as authored metadata, but
+normalizes its one package tree into the upstream package member key before
+preview and merge. Imported packages have no mutable upstream Revision, so a
+fork of an import begins an independent repository rather than advertising a
+fake upstream Review. The Hub derives this base from the fork's stored lineage;
+it does not trust a browser-supplied Revision hash.
+
 **Status: PROTOCOL V1 — local reference implementation plus conditional object
 store adapters.** This document defines the durable objects beneath Deck's
 familiar repository, branch, fork, pull request, and merge UX. The protocol
@@ -197,6 +206,12 @@ current != expected  → conflict; write nothing
 
 Same owner and repository is presented as a branch. A different owner is
 presented as a fork. Both use isolated refs and identical ancestry rules.
+
+For a single-package cross-owner Review, source and target package identities
+differ by design. Deck records an immutable normalized source Revision whose
+member key is the target package and whose tree is the fork's current tree.
+The Pull Request still names the real source endpoint. Existing preview,
+three-way merge, and target-ref compare-and-swap then operate unchanged.
 
 ## 7. Merge
 

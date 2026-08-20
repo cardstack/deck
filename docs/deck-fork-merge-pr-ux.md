@@ -127,6 +127,9 @@ Design rules:
   scope**. They share one isolation primitive; ownership determines the noun.
 - Imported packages are read-only. They show **Fork** only; the new package is
   mutable and gains `main`, branches, commits, and Reviews.
+- A fork made from another mutable Deck package quietly shows **fork of
+  owner/package** and **Review upstream**. A fork of an imported package has
+  no writable upstream in Deck, so it has no upstream Review action.
 - Branch/Version volatility remains visible without duplicating the Version
   control below it.
 - **Run** and **Code** form Deck's persistent two-way lens.
@@ -140,6 +143,7 @@ Design rules:
 /browse?at=<exact-branch-Version>                branch package tree
 /review                                          proposed-change list
 /review?repository=<owner>/<repository>&number=N Pull Request
+/review?repository=<upstream>&source=<fork>       propose fork main upstream
 /track?at=<Repository-member-address>            ref and Revision activity
 ```
 
@@ -232,6 +236,12 @@ primitive.
 
 The primary **Fork** button opens a familiar confirmation rather than
 immediately enrolling the fork in an upstream queue.
+
+The fork records both its content base and, when the source is a mutable Deck
+package, the exact upstream Revision. **Review upstream** compares the fork's
+current `main` against that recorded base. The Review keeps the fork's real
+owner/package endpoint visible, while its package tree is mapped back onto the
+upstream package identity for preview and merge.
 
 ```text
 ┌─ Create a fork ──────────────────────────────────────────────────────────────┐

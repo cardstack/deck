@@ -59,6 +59,7 @@ module('Repository pull requests', function (hooks) {
     message: string;
     parent?: string;
     lock?: object;
+    roots?: string[];
   }): Promise<string> {
     let lockHash = await storeRepositoryLock(
       storeDir,
@@ -67,7 +68,7 @@ module('Repository pull requests', function (hooks) {
     let repositoryHash = await storeRepository(
       storeDir,
       repositoryState({
-        roots: ['app/dashboard'],
+        roots: options.roots ?? ['app/dashboard'],
         members: options.members,
         lockHash,
       }),
@@ -183,6 +184,87 @@ module('Repository pull requests', function (hooks) {
       closed?.events[1].revisionHash,
       merged.mergeRevisionHash,
     );
+  });
+
+  test('a fork review maps its package tree back into the upstream identity', async function (assert) {
+    let palette1 = await tree({
+      'index.js': "export const color = 'blue';\n",
+    });
+    let palette2 = await tree({
+      'index.js': "export const color = 'green';\n",
+    });
+    let palette3 = await tree({
+      'README.md': 'Palette documentation\n',
+      'index.js': "export const color = 'blue';\n",
+    });
+    let expected = await tree({
+      'README.md': 'Palette documentation\n',
+      'index.js': "export const color = 'green';\n",
+    });
+    let upstream = await repositoryRevision({
+      roots: ['acme/palette'],
+      members: { 'acme/palette': palette1 },
+      message: 'Upstream palette',
+    });
+    let fork = await repositoryRevision({
+      roots: ['chris/palette'],
+      members: { 'chris/palette': palette2 },
+      message: 'Fork palette',
+    });
+    let upstreamMoved = await repositoryRevision({
+      roots: ['acme/palette'],
+      members: { 'acme/palette': palette3 },
+      message: 'Document upstream palette',
+      parent: upstream,
+    });
+    await setBranch('main', upstream);
+    await updateBranchRef({
+      storeDir,
+      owner: 'acme',
+      repository: 'dashboard',
+      branch: 'main',
+      expectedRevision: upstream,
+      nextRevision: upstreamMoved,
+    });
+    await updateBranchRef({
+      storeDir,
+      owner: 'chris',
+      repository: 'palette',
+      branch: 'main',
+      expectedRevision: null,
+      nextRevision: fork,
+    });
+
+    let opened = await createPullRequest({
+      storeDir,
+      target: { owner: 'acme', repository: 'dashboard', branch: 'main' },
+      source: { owner: 'chris', repository: 'palette', branch: 'main' },
+      title: 'Green palette',
+      author: { id: '@chris:deck.test' },
+      createdAt: '2026-08-20T00:02:00.000Z',
+      baseRevisionHash: upstream,
+    });
+    assert.deepEqual(
+      opened.events.map((event) => event.type),
+      ['source-updated'],
+    );
+    let preview = await previewPullRequest(storeDir, 'acme', 'dashboard', 1);
+    assert.strictEqual(preview.state, 'ready');
+    if (preview.state === 'ready') {
+      assert.deepEqual(preview.changedMembers, ['acme/palette']);
+    }
+    let merged = await mergePullRequest({
+      storeDir,
+      owner: 'acme',
+      repository: 'dashboard',
+      number: 1,
+      actor: { id: '@maintainer:deck.test' },
+      createdAt: '2026-08-20T00:03:00.000Z',
+    });
+    if (merged.state !== 'ready') throw new Error('fork must merge');
+    let landed = await readRepository(storeDir, merged.repositoryHash);
+    assert.strictEqual(landed?.members['acme/palette'], expected);
+    assert.notOk(landed?.members['chris/palette']);
   });
 
   test('a real package conflict leaves the target branch and request open', async function (assert) {

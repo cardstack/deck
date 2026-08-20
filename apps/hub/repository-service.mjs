@@ -5,6 +5,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { forkDeck } from '@cardstack/deck/fork';
+import { readForkedFrom } from '@cardstack/deck/offer';
 import { rebuildPack } from '@cardstack/deck/object-store';
 import { createPullRequest, mergePullRequest, previewPullRequest, readPullRequest } from '@cardstack/deck/pull-request-store';
 import { pullRequestEventHash } from '@cardstack/deck/pull-request';
@@ -46,11 +47,14 @@ async function valuesBelow(directory) {
 
 export async function createRepositoryService({ depots, log = console.log, onChange = () => {} }) {
   let repositories = [];
-  function addPackage(depot, publisher, name) {
+  function addPackage(depot, publisher, name, forkedFrom) {
     let identity = `${publisher}/${name}`;
     let existing = repositories.find((entry) => entry.depot.name === depot.name && entry.kind === 'package' && `${entry.config.owner}/${entry.config.name}` === identity);
-    if (existing) return existing;
-    let entry = { depot, kind: 'package', config: { schema: REPOSITORY_CONFIG_SPEC, owner: publisher, name, roots: [identity], members: [identity] } };
+    if (existing) {
+      if (forkedFrom) existing.forkedFrom = forkedFrom;
+      return existing;
+    }
+    let entry = { depot, kind: 'package', forkedFrom, config: { schema: REPOSITORY_CONFIG_SPEC, owner: publisher, name, roots: [identity], members: [identity] } };
     repositories.push(entry);
     return entry;
   }
@@ -71,7 +75,14 @@ export async function createRepositoryService({ depots, log = console.log, onCha
         } catch { continue; }
         let identity = `${publisher.name}/${pkg.name}`;
         if (grouped && `${grouped.owner}/${grouped.name}` === identity) continue;
-        addPackage(depot, publisher.name, pkg.name);
+        let forkedFrom;
+        try {
+          forkedFrom = readForkedFrom(
+            await readFile(join(depot.dir, publisher.name, pkg.name, 'importmap.json'), 'utf8'),
+            pkg.name,
+          );
+        } catch {}
+        addPackage(depot, publisher.name, pkg.name, forkedFrom);
       }
     }
   }
@@ -130,7 +141,7 @@ export async function createRepositoryService({ depots, log = console.log, onCha
     let branches = (await Promise.all(branchNames.map((name) => branchState(entry, name)))).filter(Boolean);
     let main = branches.find((branch) => branch.name === 'main');
     let pulls = (await Promise.all((await pullNumbers(entry)).map((number) => pullState(entry, number)))).filter(Boolean);
-    let common = { repository: `${entry.config.owner}/${entry.config.name}`, kind: entry.kind, owner: entry.config.owner, name: entry.config.name, depot: entry.depot.name, roots: entry.config.roots, members: entry.config.members };
+    let common = { repository: `${entry.config.owner}/${entry.config.name}`, kind: entry.kind, forkedFrom: entry.forkedFrom, owner: entry.config.owner, name: entry.config.name, depot: entry.depot.name, roots: entry.config.roots, members: entry.config.members };
     if (!main) return { ...common, initialized: false, branches: [], pulls: [], history: [], protocol: [] };
     let selectedPull = pulls.find((pull) => pull.state === 'open') ?? pulls[0];
     let preview = selectedPull?.state === 'open' ? await previewPullRequest(entry.depot.storeDir, entry.config.owner, entry.config.name, selectedPull.number) : undefined;
@@ -168,8 +179,8 @@ export async function createRepositoryService({ depots, log = console.log, onCha
 
   return {
     async list() {
-      return { repositories: await Promise.all(repositories.map(async ({ depot, config, kind }) => ({
-        repository: `${config.owner}/${config.name}`, kind, owner: config.owner, name: config.name,
+      return { repositories: await Promise.all(repositories.map(async ({ depot, config, kind, forkedFrom }) => ({
+        repository: `${config.owner}/${config.name}`, kind, forkedFrom, owner: config.owner, name: config.name,
         depot: depot.name, roots: config.roots, members: config.members,
         initialized: Boolean(await readBranchRef(depot.storeDir, config.owner, config.name, 'main')),
         url: `/_hub/repositories/${depot.name}/${config.owner}/${config.name}`,
@@ -196,14 +207,25 @@ export async function createRepositoryService({ depots, log = console.log, onCha
           let [fromPublisher, fromPackage, ...fromRest] = String(body.from ?? '').split('/');
           let [toPublisher, toPackage, ...toRest] = String(body.to ?? '').split('/');
           if (!fromPublisher || !fromPackage || fromRest.length || !toPublisher || !toPackage || toRest.length) throw new Error('from and to must be publisher/package');
+          let sourceEntry = repositories.find((entry) => entry.depot === depot && entry.kind === 'package' && entry.config.owner === fromPublisher && entry.config.name === fromPackage);
+          let baseRevisionHash;
+          if (sourceEntry && !body.spec) {
+            baseRevisionHash = await ensureRepositoryMain({ depotDir: depot.dir, storeDir: depot.storeDir, config: sourceEntry.config, author: { id: body.actor ?? '@hub:local', name: body.actorName ?? 'Deck Hub' } });
+          }
           let result = await forkDeck({
             depotDir: depot.dir,
             storeDir: depot.storeDir,
             from: { publisher: fromPublisher, package: fromPackage, ...(body.spec ? { spec: body.spec } : {}) },
             to: { publisher: toPublisher, package: toPackage },
             actor: body.actor ?? '@hub:local',
+            baseRevisionHash,
           });
-          let entry = addPackage(depot, toPublisher, toPackage);
+          let entry = addPackage(depot, toPublisher, toPackage, {
+            package: body.from,
+            ...(result.version ? { version: result.version } : {}),
+            treeHash: result.baseTreeHash,
+            ...(baseRevisionHash ? { revisionHash: baseRevisionHash } : {}),
+          });
           await ensureRepositoryMain({ depotDir: depot.dir, storeDir: depot.storeDir, config: entry.config, author: { id: body.actor ?? '@hub:local', name: body.actorName ?? 'Deck Hub' } });
           onChange({ name: `fork:${result.to}`, treeHash: result.baseTreeHash });
           log(`forked ${result.from} → ${result.to}`);
@@ -225,7 +247,20 @@ export async function createRepositoryService({ depots, log = console.log, onCha
           await ensureRepositoryMain({ depotDir: entry.depot.dir, storeDir: entry.depot.storeDir, config: entry.config, author: body.author ?? { id: '@hub:local', name: 'Deck Hub' } });
           await changed(entry, () => createRepositoryBranch({ storeDir: entry.depot.storeDir, config: entry.config, branch: body.name, from: body.from ?? 'main' }));
         }
-        else if (req.method === 'POST' && tail === '/pulls') await changed(entry, () => createPullRequest({ storeDir: entry.depot.storeDir, target: { owner, repository: name, branch: body.target ?? 'main' }, source: { owner, repository: name, branch: body.source }, title: body.title, body: body.body ?? '', author: body.author ?? { id: '@hub:local', name: 'Deck Hub' }, createdAt: new Date().toISOString() }));
+        else if (req.method === 'POST' && tail === '/pulls') {
+          let sourceIdentity = String(body.sourceRepository ?? `${owner}/${name}`);
+          let [sourceOwner, sourceRepository, ...sourceRest] = sourceIdentity.split('/');
+          if (!sourceOwner || !sourceRepository || sourceRest.length) throw new Error('sourceRepository must be publisher/package');
+          let baseRevisionHash;
+          if (sourceIdentity !== `${owner}/${name}`) {
+            let sourceEntry = repositories.find((candidate) => candidate.depot === entry.depot && candidate.kind === 'package' && `${candidate.config.owner}/${candidate.config.name}` === sourceIdentity);
+            if (sourceEntry?.forkedFrom?.package !== `${owner}/${name}` || !sourceEntry.forkedFrom.revisionHash) {
+              throw new Error(`${sourceIdentity} has no mutable fork lineage from ${owner}/${name}`);
+            }
+            baseRevisionHash = sourceEntry.forkedFrom.revisionHash;
+          }
+          await changed(entry, () => createPullRequest({ storeDir: entry.depot.storeDir, target: { owner, repository: name, branch: body.target ?? 'main' }, source: { owner: sourceOwner, repository: sourceRepository, branch: body.source }, title: body.title, body: body.body ?? '', author: body.author ?? { id: '@hub:local', name: 'Deck Hub' }, createdAt: new Date().toISOString(), baseRevisionHash }));
+        }
         else {
           let merge = tail.match(/^\/pulls\/(\d+)\/merge$/);
           if (!merge || req.method !== 'POST') { json(res, 404, { error: 'repository action not found' }); return true; }

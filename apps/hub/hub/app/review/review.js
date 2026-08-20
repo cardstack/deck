@@ -5,7 +5,7 @@ import { installNavStyles, onLiveChange, wrapTables } from 'ui/nav';
 installNavStyles();
 const app = document.getElementById('app');
 const keys = document.querySelector('deck-keys');
-let current; let endpoint; let busy = false;
+let current; let endpoint; let reviewSource; let busy = false;
 const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 async function json(url, options) {
@@ -20,7 +20,10 @@ async function selectRepository() {
   let params = new URLSearchParams(location.search);
   let wanted = params.get('repository');
   let depot = params.get('depot');
-  return catalog.repositories.find((item) => item.repository === wanted && (!depot || item.depot === depot)) ?? catalog.repositories.find((item) => item.initialized) ?? catalog.repositories[0];
+  let selected = catalog.repositories.find((item) => item.repository === wanted && (!depot || item.depot === depot)) ?? catalog.repositories.find((item) => item.initialized) ?? catalog.repositories[0];
+  let sourceName = params.get('source');
+  let source = sourceName && catalog.repositories.find((item) => item.repository === sourceName && item.depot === selected?.depot);
+  return { selected, source };
 }
 
 function changes(state) {
@@ -38,19 +41,25 @@ function protocol(state) {
 
 function render(state) {
   current = state;
+  if (!state.initialized) {
+    app.innerHTML = `<main class="repository review-page"><section class="repo-section"><header><div><span class="section-index">01</span><h1>Review</h1></div></header><p class="empty-pull">${esc(state.repository)} is mutable, but its main branch has not been initialized yet. Create a branch from Browse to begin.</p></section></main>`;
+    app.setAttribute('aria-busy', 'false');
+    return;
+  }
   let pull = state.pullRequest;
   let runnable = state.preview?.projection ?? state.main.projection;
   let rootAddress = runnable.members[state.roots[0]];
   let featureBranches = state.branches.filter((branch) => branch.name !== 'main');
+  let forkReady = reviewSource?.initialized && reviewSource.forkedFrom?.revisionHash;
   let action = pull?.state === 'open'
     ? `<button class="action primary" data-action="merge" data-number="${pull.number}">Merge review</button>`
-    : featureBranches.length
+    : forkReady || featureBranches.length
       ? `<button class="action primary" data-action="review">Open review</button>`
       : `<a class="action" href="/browse?at=${esc(rootAddress)}">Create a branch in Browse</a>`;
   app.innerHTML = `<main class="repository review-page">` +
     `<div class="review-context"><a href="/browse?at=${esc(rootAddress)}"><span class="s-publisher">${esc(state.owner)}</span><span class="sep">/</span><strong class="s-package">${esc(state.name)}</strong></a><span class="dim"> / reviews</span></div>` +
     `<section class="repo-section"><header><div><span class="section-index">01</span><h1>Review</h1></div>${action}</header>` +
-    (pull ? `<article class="pull-summary"><div class="pull-heading"><span class="status status-${esc(pull.state)}">${pull.state === 'merged' ? '✓' : '●'} ${esc(pull.state)}</span><div><strong>${esc(pull.title)}</strong> <span class="dim">#${pull.number}</span><p>${esc(pull.body)}</p></div></div><div class="merge-line"><code>${esc(pull.source.branch)}</code><span>→</span><code>${esc(pull.target.branch)}</code></div>${changes(state)}<div class="handoffs"><a class="action" href="${esc(runnable.runUrl)}">Run exact Repository →</a><a href="${esc(rootAddress)}/index.html">raw root Version</a></div><h2>Review events</h2><ol class="review-events">${pull.events.map((event) => `<li><b>${esc(event.type)}</b> <code>${esc(event.revisionHash?.slice(0, 12) ?? event.hash.slice(0, 12))}</code> <span class="dim">${esc(event.actor.name)} · ${esc(event.createdAt)}</span></li>`).join('') || '<li class="dim">opened</li>'}</ol></article>` : `<p class="empty-pull">Choose a branch and open a review when the work is ready.</p>`) +
+    (pull ? `<article class="pull-summary"><div class="pull-heading"><span class="status status-${esc(pull.state)}">${pull.state === 'merged' ? '✓' : '●'} ${esc(pull.state)}</span><div><strong>${esc(pull.title)}</strong> <span class="dim">#${pull.number}</span><p>${esc(pull.body)}</p></div></div><div class="merge-line"><code>${esc(pull.source.owner)}/${esc(pull.source.repository)}:${esc(pull.source.branch)}</code><span>→</span><code>${esc(pull.target.owner)}/${esc(pull.target.repository)}:${esc(pull.target.branch)}</code></div>${changes(state)}<div class="handoffs"><a class="action" href="${esc(runnable.runUrl)}">Run exact Repository →</a><a href="${esc(rootAddress)}/index.html">raw root Version</a></div><h2>Review events</h2><ol class="review-events">${pull.events.map((event) => `<li><b>${esc(event.type)}</b> <code>${esc(event.revisionHash?.slice(0, 12) ?? event.hash.slice(0, 12))}</code> <span class="dim">${esc(event.actor.name)} · ${esc(event.createdAt)}</span></li>`).join('') || '<li class="dim">opened</li>'}</ol></article>` : `<p class="empty-pull">${forkReady ? `${esc(reviewSource.repository)} is a mutable fork. Open a review to propose its current main branch upstream.` : 'Choose a branch and open a review when the work is ready.'}</p>`) +
     `</section><section class="repo-section"><header><div><span class="section-index">02</span><h1>Work</h1></div></header>${history(state)}</section>` +
     `<section class="repo-section underneath"><header><div><span class="section-index">03</span><h1>Underneath</h1></div></header><p class="section-note">Canonical refs and immutable objects. This is the state the CLI, agents, and Hub share.</p>${protocol(state)}</section></main>`;
   app.setAttribute('aria-busy', 'false'); wrapTables(app);
@@ -59,9 +68,11 @@ function render(state) {
 
 async function load() {
   try {
-    let selected = await selectRepository();
+    let { selected, source } = await selectRepository();
     if (!selected) { app.innerHTML = '<main><p class="dim">No depot declares a repository.json yet.</p></main>'; return; }
-    endpoint = selected.url; render(await json(endpoint));
+    endpoint = selected.url;
+    reviewSource = source ? await json(source.url) : undefined;
+    render(await json(endpoint));
   } catch (error) { app.innerHTML = `<main><div class="err"><b>review</b> — ${esc(error.message)}</div></main>`; }
 }
 
@@ -71,9 +82,14 @@ app.addEventListener('click', async (event) => {
   try {
     if (button.dataset.action === 'review') {
       let branches = current.branches.filter((branch) => branch.name !== 'main');
-      let source = prompt('Source branch', branches.at(-1)?.name ?? ''); if (!source) return;
+      let source = reviewSource ? 'main' : prompt('Source branch', branches.at(-1)?.name ?? ''); if (!source) return;
       let title = prompt('Review title'); if (!title) return;
-      render(await json(`${endpoint}/pulls`, { method: 'POST', body: JSON.stringify({ source, target: 'main', title }) }));
+      render(await json(`${endpoint}/pulls`, { method: 'POST', body: JSON.stringify({
+        source,
+        target: 'main',
+        title,
+        ...(reviewSource ? { sourceRepository: reviewSource.repository } : {}),
+      }) }));
     } else {
       render(await json(`${endpoint}/pulls/${button.dataset.number}/merge`, { method: 'POST', body: '{}' }));
     }

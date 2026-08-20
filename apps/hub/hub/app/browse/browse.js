@@ -1642,7 +1642,12 @@ async function repositoryPanel(parsed, meta) {
   if (!state) return '';
 
   let open = state.pulls?.find((pull) => pull.state === 'open');
-  let review = open ? `Review #${open.number}` : 'Reviews';
+  let upstream = state.forkedFrom?.revisionHash && catalog.repositories.find(
+    (item) => item.depot === state.depot && item.repository === state.forkedFrom.package && item.initialized,
+  );
+  let review = open ? `Review #${open.number}` : upstream ? 'Review upstream' : 'Reviews';
+  let reviewRepository = upstream?.repository ?? state.repository;
+  let reviewSource = upstream ? `&source=${encodeURIComponent(state.repository)}` : '';
   let current = (state.branches ?? []).find(
     (branch) => parsed.spec === branch.projection.version,
   );
@@ -1655,14 +1660,15 @@ async function repositoryPanel(parsed, meta) {
     `<section class="repo-context" data-repository="${esc(state.repository)}">` +
     `<div class="repo-identity"><span class="s-publisher">${esc(state.owner)}</span>` +
     `<span class="sep">/</span><strong class="s-package">${esc(state.name)}</strong>` +
-    (state.kind === 'group' ? `<span class="visibility">${state.members.length}-package group</span>` : '') + `</div>` +
+    (state.kind === 'group' ? `<span class="visibility">${state.members.length}-package group</span>` : '') +
+    (state.forkedFrom ? `<span class="visibility">fork of ${esc(state.forkedFrom.package)}</span>` : '') + `</div>` +
     `<div class="repo-controls"><details class="repo-switcher"><summary>${esc(current?.name ?? 'live')} <span>⌄</span></summary>` +
     `<div class="repo-menu">${branches || '<span class="repo-empty">No branches yet</span>'}` +
     `<div class="repo-menu-new"><b>New…</b>` +
     `<button data-repository-action="branch" data-endpoint="${esc(summary.url)}">Branch here</button>` +
     `<button data-repository-action="fork" data-depot="${esc(parsed.depot)}" data-from="${esc(member)}" data-spec="${esc(parsed.spec ?? '')}">Fork to my scope</button>` +
     `</div></div></details>` +
-    (state.initialized ? `<a class="repo-review" href="/review?repository=${encodeURIComponent(state.repository)}&depot=${encodeURIComponent(state.depot)}">${review}</a>` : '') + `</div>` +
+    (state.initialized ? `<a class="repo-review" href="/review?repository=${encodeURIComponent(reviewRepository)}&depot=${encodeURIComponent(state.depot)}${reviewSource}">${review}</a>` : '') + `</div>` +
     `</section>`
   );
 }

@@ -12,6 +12,7 @@ import {
   canonicalJson,
   hashProtocolObject,
   isHash,
+  repositoryState,
   revision,
   type JsonValue,
   type RevisionAuthor,
@@ -32,6 +33,7 @@ import {
   readBranchRef,
   readRepository,
   readRevision,
+  storeRepository,
   storeRevision,
   updateBranchRef,
   type ConditionalObjectStore,
@@ -354,11 +356,18 @@ export async function createPullRequest(options: {
   body?: string;
   author: RevisionAuthor;
   createdAt: string;
+  baseRevisionHash?: string;
 }): Promise<StoredPullRequest> {
   let [target, source] = await Promise.all([
     endpointAt({ storeDir: options.storeDir, ...options.target }),
     endpointAt({ storeDir: options.storeDir, ...options.source }),
   ]);
+  if (options.baseRevisionHash) {
+    if (!(await readRevision(options.storeDir, options.baseRevisionHash))) {
+      throw new Error('pull request base Revision is missing');
+    }
+    target.revisionHash = options.baseRevisionHash;
+  }
   let request = pullRequest({
     target,
     source,
@@ -379,7 +388,7 @@ export async function createPullRequest(options: {
     target.owner,
     target.repository,
   );
-  return withLock(join(directory, '.allocate.lock'), async () => {
+  let opened = await withLock(join(directory, '.allocate.lock'), async () => {
     let names = await readdir(directory).catch(() => [] as string[]);
     let number =
       Math.max(
@@ -405,6 +414,69 @@ export async function createPullRequest(options: {
       flag: 'wx',
     });
     return { ref, request, events: [] };
+  });
+  if (
+    target.owner === source.owner &&
+    target.repository === source.repository
+  ) {
+    return opened;
+  }
+
+  // A fork has a different package identity, but merging it upstream is the
+  // same tree operation as merging a branch. Normalize a single-package
+  // fork into the target's logical member slot and record that exact Revision
+  // as a source-updated event. The opening still names the real fork endpoint.
+  let [targetRevision, sourceRevision] = await Promise.all([
+    readRevision(options.storeDir, target.revisionHash),
+    readRevision(options.storeDir, source.revisionHash),
+  ]);
+  if (!targetRevision || !sourceRevision) {
+    throw new Error('pull request endpoint Revision is missing');
+  }
+  let [targetRepository, sourceRepository] = await Promise.all([
+    readRepository(options.storeDir, targetRevision.repositoryHash),
+    readRepository(options.storeDir, sourceRevision.repositoryHash),
+  ]);
+  if (!targetRepository || !sourceRepository) {
+    throw new Error('pull request endpoint Repository is missing');
+  }
+  let targetMembers = Object.keys(targetRepository.members);
+  let sourceMembers = Object.keys(sourceRepository.members);
+  if (targetMembers.length !== 1 || sourceMembers.length !== 1) {
+    throw new Error(
+      'cross-repository pull requests currently require one package on each side',
+    );
+  }
+  let normalizedRepository = repositoryState({
+    roots: targetRepository.roots,
+    members: {
+      [targetMembers[0]]: sourceRepository.members[sourceMembers[0]],
+    },
+    lockHash: targetRepository.lockHash,
+  });
+  let normalizedRepositoryHash = await storeRepository(
+    options.storeDir,
+    normalizedRepository,
+  );
+  let normalizedRevisionHash = await storeRevision(
+    options.storeDir,
+    revision({
+      repositoryHash: normalizedRepositoryHash,
+      parents: [source.revisionHash],
+      author: options.author,
+      message: `Map ${source.owner}/${source.repository} onto ${target.owner}/${target.repository}`,
+      createdAt: options.createdAt,
+    }),
+  );
+  return appendPullRequestEvent({
+    storeDir: options.storeDir,
+    owner: target.owner,
+    repository: target.repository,
+    number: opened.ref.number,
+    type: 'source-updated',
+    actor: options.author,
+    createdAt: options.createdAt,
+    revisionHash: normalizedRevisionHash,
   });
 }
 
