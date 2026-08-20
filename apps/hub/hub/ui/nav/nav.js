@@ -1,6 +1,6 @@
 // <deck-nav app="browse"> and <deck-keys> — the chrome every Hub app carries.
 //
-// Four apps, four documents, so moving between them is a link and a page
+// Five apps, five documents, so moving between them is a link and a page
 // load. There is no router here and there does not need to be one: the
 // browser has always been able to do this part.
 //
@@ -14,12 +14,12 @@
 // rather than underlined, and the keys that work are listed along the bottom
 // where you can see them rather than discovered by accident.
 //
-// `1`…`4` still switch apps. They are not printed beside the names — a row of
-// ordinals is noise once the four words are the four words — and the legend
+// `1`…`5` still switch apps. They are not printed beside the names — a row of
+// ordinals is noise once the five words are the five words — and the legend
 // at the foot of every page carries them instead, which is where every other
 // binding is documented anyway.
 
-// FOUR APPS, BUT ONLY THREE OF THEM ARE LENSES.
+// FIVE APPS, BUT ONLY THREE OF THEM ARE ADDRESS LENSES.
 //
 // `start` is about the machine. The other three are three questions about one
 // address: what is it, what does it do, what happened to it. That is not a
@@ -36,6 +36,7 @@ const ROUTES = [
   ['browse', 'the depot at rest'],
   ['run', 'the assembled, executing thing'],
   ['track', 'what changed, and where'],
+  ['review', 'proposed changes and merge'],
 ];
 
 /** The focused address, or ''. The one piece of state the lenses share. */

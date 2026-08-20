@@ -1,0 +1,9 @@
+{
+  "name": "@cardstack/deck-example-collaboration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@cardstack/deck": "workspace:*"
+  }
+}

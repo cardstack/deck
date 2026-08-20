@@ -213,6 +213,12 @@ export interface DeckServerOptions {
   // Typed against the Node HTTP compat shapes — `allowHTTP1` h2 requests
   // duck-type the same `writeHead` / `end` surface at runtime.
   fallback?: (req: IncomingMessage, res: ServerResponse) => void;
+  // Optional non-GET actions owned by the embedding application. Deck routes
+  // stay read-only: returning false reaches the normal 405 method gate.
+  action?: (
+    req: IncomingMessage,
+    res: ServerResponse,
+  ) => boolean | Promise<boolean>;
   // In-process bus for live-tree change notifications (SSE). Created
   // automatically when omitted; pass one in to share with watchers.
   liveBus?: LiveBus;
@@ -261,7 +267,7 @@ interface CachedPack {
 }
 
 export function createDeckServer(options: DeckServerOptions): DeckServer {
-  let { depots, fallback } = options;
+  let { depots, fallback, action } = options;
   let liveBus = options.liveBus ?? createLiveBus();
   let byName = new Map(depots.map((depot) => [depot.name, depot]));
   // The activity index reads the same depots the router serves, so "who is
@@ -981,6 +987,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
     // and this server reads it, so presence arrives by the same road as
     // everything else and there is no write endpoint to secure.
     if (req.method !== 'GET' && req.method !== 'HEAD') {
+      if (action && (await action(req, res))) return;
       respondError(req, res, 405, 'method-not-allowed', `${req.method}`);
       return;
     }

@@ -1,0 +1,7 @@
+{
+  "schema": "deck-repository-config-v1",
+  "owner": "acme",
+  "name": "dashboard",
+  "roots": ["app/dashboard"],
+  "members": ["acme/editor", "acme/theme", "app/dashboard"]
+}

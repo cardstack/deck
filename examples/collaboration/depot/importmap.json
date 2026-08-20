@@ -1,0 +1,10 @@
+{
+  "imports": {
+    "acme/editor": "/site/acme/editor/index.js",
+    "acme/theme": "/site/acme/theme/index.js"
+  },
+  "deck": {
+    "continuous": false,
+    "overrides": {}
+  }
+}

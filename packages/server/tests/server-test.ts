@@ -537,4 +537,30 @@ module('deck server: depots on disk', function (hooks) {
     );
     assert.strictEqual(response.status, 405);
   });
+
+  test('an embedder may own an action without making depot routes writable', async function (assert) {
+    let other = createDeckServer({
+      depots: [{ name: 'demo', dir: depotDir, storeDir }],
+      action: (req, res) => {
+        if (req.method !== 'POST' || req.url !== '/_app/actions/ping') return false;
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+        return true;
+      },
+    });
+    await new Promise<void>((resolve) => other.listen(0, resolve));
+    let base = `http://127.0.0.1:${(other.address() as AddressInfo).port}`;
+    try {
+      let action = await fetch(`${base}/_app/actions/ping`, { method: 'POST' });
+      assert.deepEqual(await action.json(), { ok: true });
+      let write = await fetch(`${base}/demo/acme/confetti@1.0.0/confetti.js`, {
+        method: 'POST',
+      });
+      assert.strictEqual(write.status, 405, 'Deck content stays read-only');
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        other.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
 });

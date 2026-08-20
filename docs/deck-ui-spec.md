@@ -12,6 +12,17 @@ and reachable today. What is *not* settled is the product: this document fixes
 the requirements and the invariants, and deliberately leaves information
 architecture and interaction patterns open, with directions to explore.
 
+> **Collaboration vocabulary update (2026-08-20).**
+> [`deck-fork-merge-pr-ux.md`](deck-fork-merge-pr-ux.md) supersedes this
+> document's instruction to avoid *branch*, *pull request*, and *merge* in
+> product UI. The familiar names are now deliberate. Internally, a branch and
+> an external fork use the same isolated fork primitive: same
+> owner/repository is presented as a **branch**; a different owner is
+> presented as a **fork**. A fork remains private until a pull request is
+> opened. A Repository may contain one or many independently addressable
+> member packages; a multi-package Repository is simply a monorepo. See
+> [`deck-collaboration-protocol.md`](deck-collaboration-protocol.md).
+
 Read §1–§6 as constraints. Read §7–§8 as an invitation. Use §9 to check any
 design against all four workloads in about twenty minutes.
 

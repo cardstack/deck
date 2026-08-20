@@ -1,0 +1,11 @@
+{
+  "name": "review",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./review.js"
+  },
+  "dependencies": {
+    "ui/nav": "workspace:*"
+  }
+}

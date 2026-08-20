@@ -32,7 +32,13 @@
     "./tree": "./src/tree.ts",
     "./merge": "./src/merge.ts",
     "./offer": "./src/offer.ts",
-    "./deck-scan": "./src/deck-scan.ts"
+    "./deck-scan": "./src/deck-scan.ts",
+    "./repository": "./src/repository.ts",
+    "./repository-store": "./src/repository-store.ts",
+    "./repository-merge": "./src/repository-merge.ts",
+    "./pull-request": "./src/pull-request.ts",
+    "./pull-request-store": "./src/pull-request-store.ts",
+    "./repository-workflow": "./src/repository-workflow.ts"
   },
   "scripts": {
     "test": "node tests/index.ts",

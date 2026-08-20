@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>review — Deck Hub</title>
+    <link rel="stylesheet" href="/hub/ui/theme/boot.css" />
+    <script src="/hub/ui/theme/boot.js"></script>
+    <link rel="stylesheet" href="/hub/type/commit-mono@5.3.0/font.css" />
+    <link rel="stylesheet" href="/hub/ui/theme/theme.css" />
+    <style>
+      @media (prefers-reduced-motion: no-preference) {
+        @view-transition {
+          navigation: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <deck-nav app="review"></deck-nav>
+    <div id="app" aria-busy="true"></div>
+    <p id="boot" class="hub-boot" hidden aria-live="polite">still loading…</p>
+    <deck-keys></deck-keys>
+    <script type="module" src="/_live/hmr.js"></script>
+    <script type="module" src="./review.js"></script>
+  </body>
+</html>

@@ -51,7 +51,10 @@ const esc = (value) =>
 
 const params = () => new URLSearchParams(location.search);
 const currentAt = () => params().get('at') ?? '';
-const currentWith = () => params().getAll('with');
+// Run keeps substitutions as UI-only `sub` params. The framed document gets
+// Deck's protocol-level `with` query in `runTarget`; putting `with` on this
+// app document would ask the server to substitute app/run itself on reload.
+const currentWith = () => [...params().getAll('sub'), ...params().getAll('with')];
 /** Which Step the stage is showing. '' is live — a position, not a mode. */
 const currentStep = () => params().get('step') ?? '';
 
@@ -140,7 +143,7 @@ function go(next = {}) {
   let step = 'step' in next ? next.step : currentStep();
   if (at) query.set('at', at);
   if (step) query.set('step', step);
-  for (let value of withs) query.append('with', value);
+  for (let value of withs) query.append('sub', value);
   let text = query.toString();
   history.pushState({}, '', text ? `?${decodeURIComponent(text)}` : location.pathname);
   render();

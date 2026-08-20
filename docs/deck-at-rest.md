@@ -14,8 +14,11 @@ are the agreement between two programs. `tree-hash-v1` and the Deck Pack are
 formats. The store layout in section 3, the command-line tool and the watcher
 are implementation: no law requires a server to store anything this way.
 
-Deck is not a federation protocol. Offers and endorsements addressed by tree
-hash are the parts that need two servers, and they are not finished.
+Deck's package-serving laws do not require federation. The first durable
+Repository, Revision, and Ref layer is specified separately in
+[`deck-collaboration-protocol.md`](deck-collaboration-protocol.md). Its local review
+Request workflow and conditional object-store adapters are implemented;
+hosted identity, policy, and cross-server discovery remain unfinished.
 
 **The laws are the contract, not this document.** `docs/deck-laws.md` states
 the twelve laws. `packages/conformance` examines them, and it also examines a
@@ -56,6 +59,14 @@ server supplies.
     store/
       _objects/<aa>/<sha256>         one file's bytes, one time
       _trees/<aa>/<treeHash>.json    one tree's packlist, one time
+      _locks/<aa>/<lockHash>.json    one exact import map, one time
+      _repositories/<aa>/<hash>.json one Repository state, one time
+      _revisions/<aa>/<hash>.json    one authored Revision, one time
+      _refs/<owner>/<repo>/heads/…   mutable branch refs
+      _pull_requests/<aa>/<hash>.json immutable Pull Request openings
+      _pull_request_events/<aa>/<hash>.json append-only request events
+      _pulls/<owner>/<repo>/<n>.json mutable numbered request refs
+      _pulls/<owner>/<repo>/_counter.json mutable number allocator
       <publisher>/<package>/meta.json    Versions and dist-tags
     claims/<actor>.json              declared work in progress
     policy.json                      the cooldown policy
@@ -84,6 +95,10 @@ Copy the directory and you copy the live files, the Versions and the Timeline.
 history, one thing to clone, and a change that crosses several packages is
 one change. Four differences are worth knowing.
 
+The architectural argument for keeping that coherent development experience
+while replacing the monorepo as the storage and coordination boundary is in
+[`deck-cas-packages-vs-monorepos.md`](deck-cas-packages-vs-monorepos.md).
+
 - Each deck has its own version line. A monorepo usually versions everything
   together, or needs a tool so that it does not have to.
 - The directory layout *is* the URL space. A consumer imports one module from
@@ -91,8 +106,8 @@ one change. Four differences are worth knowing.
 - The publisher segment lets two people hold the same package name in one
   depot. That is a fork inside the repository, and it costs nothing until the
   bytes differ.
-- There is no workspace file and no link step. A deck names another deck by
-  address, and `deck lock` turns the range into a pin.
+- There is no separate linking manifest or link step. A deck names another
+  deck by address, and `deck lock` turns the range into a pin.
 
 ---
 

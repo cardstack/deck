@@ -2,12 +2,12 @@
 
 Status: **decided.** This resolves the information architecture that
 [deck-ui-spec.md](deck-ui-spec.md) deliberately left open, and specifies the
-four applications to build.
+five applications to build.
 
 Read that document first for requirements (§3), jobs to be done (§5),
 invariants (§4), constraints (§6), scale targets (§11) and the states that
 must exist (§12). None of it is repeated here. This brief adds: which
-direction won and why, the four apps, the journeys, the shared parts, the
+direction won and why, the five apps, the journeys, the shared parts, the
 stack, and what has to be built on the server to support it.
 
 Scope note: the nine demos under `examples/` are **out of scope** and are not
@@ -54,10 +54,10 @@ A two-position toggle is a control. A four-position one is a mode.
 
 ---
 
-## 2. The four apps
+## 2. The five apps
 
-One depot named `hub`, four decks under the `app/` publisher. They are not
-depots; they are four documents in one depot, which is why they can share
+One depot named `hub`, five decks under the `app/` publisher. They are not
+depots; they are five documents in one depot, which is why they can share
 components at ordinary deck addresses.
 
 | route | canonical address | centre of gravity | workloads |
@@ -66,6 +66,15 @@ components at ordinary deck addresses.
 | `/browse` | `/hub/app/browse/` | the tree at rest | W2, W3 |
 | `/run` | `/hub/app/run/` | the assembled, executing thing | W1, W4 |
 | `/track` | `/hub/app/track/` | what changed, and where | W3, W4 |
+| `/review` | `/hub/app/review/` | proposed changes and merge | W1, W2, W4 |
+
+Repository identity and branches live in `/browse`, alongside the package tree
+they govern. A branch within an owner/repository uses the same isolated
+Repository ref as a fork, but the UI calls it a branch. `/review` begins with a
+proposed change: Pull Request review links lead back to exact `/browse`
+comparisons, while Preview leads to `/run` with the proposed Repository's exact
+package Versions. **Underneath** exposes the ref, Revision, Repository, Pull
+Request opening, and append-only events behind those familiar labels.
 
 **`/read` is gone; `/track` replaces it.** Two moves, one reason each.
 

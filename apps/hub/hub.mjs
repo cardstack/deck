@@ -4,14 +4,15 @@
 //   node apps/hub/hub.mjs
 //   open http://localhost:8788/
 //
-// Four applications over one address space (docs/deck-hub-brief.md):
+// Five applications over one address space (docs/deck-hub-brief.md):
 //
 //   /start    is it up, and what just happened
 //   /browse   the depot at rest
 //   /run      the assembled, executing thing
-//   /read     the protocol, taught
+//   /track    what changed, and where
+//   /review   proposed changes, pull requests, and merge
 //
-// They are NOT depots. They are four decks in one depot named `hub`, which
+// They are NOT depots. They are five decks in one depot named `hub`, which
 // is what lets them share components at ordinary deck addresses instead of
 // through a bundler. The Hub is served by the same read-only server it is a
 // front end for, and it hot-reloads through the same watcher, because it is
@@ -30,6 +31,7 @@ import { createDeckServer } from '@cardstack/deck-server/server';
 import { storeDirFor, watchDepot } from '@cardstack/deck-server/depot';
 import { claimsDirFor } from '@cardstack/deck-server/activity';
 import { createHistory } from '@cardstack/deck-history/create';
+import { createRepositoryService } from './repository-service.mjs';
 import {
   readEditable,
   seedEditable,
@@ -53,7 +55,7 @@ const PORT = Number(process.env.PORT ?? 8788);
 // cheapest way to make the disagreement impossible.
 const HUB = { name: 'hub', dir: join(here, 'hub') };
 
-// The four apps, and whether they exist yet. A route that is planned and not
+// The five apps, and whether they exist yet. A route that is planned and not
 // built says so; it does not 404 as though it were a typo, and it does not
 // quietly redirect somewhere else as though the user asked for that.
 const APPS = [
@@ -61,6 +63,7 @@ const APPS = [
   { route: 'browse', deck: 'app/browse', title: 'the depot at rest' },
   { route: 'run', deck: 'app/run', title: 'the assembled, executing thing' },
   { route: 'track', deck: 'app/track', title: 'what changed, and where' },
+  { route: 'review', deck: 'app/review', title: 'proposed changes and merge' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -214,6 +217,11 @@ if (WANT_HISTORY) {
   );
 }
 let depots = [hub, ...demos];
+let repositoryService = await createRepositoryService({
+  depots,
+  log: (message) => console.log(`   repository: ${message}`),
+  onChange: (event) => server.liveBus.emit(event),
+});
 
 // The second mount: each demo depot served as `site`, on its own port, so its
 // own pins resolve. `createDeckServer` is cheap and these share the store on
@@ -369,9 +377,17 @@ function notBuilt(res, app) {
 
 const server = createDeckServer({
   depots,
+  action(req, res) {
+    let path = new URL(req.url ?? '/', 'http://localhost').pathname;
+    if (!path.startsWith('/_hub/repositories')) return false;
+    return repositoryService.handle(req, res, path);
+  },
   fallback(req, res) {
     let requested = new URL(req.url ?? '/', 'http://localhost');
     let path = requested.pathname;
+    if (path.startsWith('/_hub/repositories')) {
+      return repositoryService.handle(req, res, path);
+    }
     // Retired: use GET /_activity. Kept as a tiny stub so old bookmarks do
     // not trigger a multi-second multi-megabyte walk.
     if (path === '/_hub/heat') {
@@ -453,6 +469,13 @@ const server = createDeckServer({
       // by landing you on the depot index with no hint that you had asked for
       // a diff. It would break the lens tabs the same way the moment they
       // start carrying a focused address between apps.
+      // `with` belongs to the framed page, not to app/run itself. Keep it as
+      // UI state until Run constructs the frame URL.
+      if (app.route === 'run' && requested.searchParams.has('with')) {
+        let values = requested.searchParams.getAll('with');
+        requested.searchParams.delete('with');
+        for (let value of values) requested.searchParams.append('sub', value);
+      }
       return built.has(app.route)
         ? redirect(res, `/${hub.name}/${app.deck}/${requested.search}`)
         : notBuilt(res, app);
@@ -479,6 +502,26 @@ let watcher = watchDepot({
   onError: (error) => console.error(`   watch: ${error}`),
 });
 watcher.rescan();
+
+// CLI and agents mutate Repository refs beside the running Hub. Poll only the
+// tiny mutable heads and emit the same live event as a Hub action, so Browse
+// and Review never need to know which client performed the operation.
+let repositoryFingerprint = await repositoryService.fingerprint();
+let repositoryPollBusy = false;
+setInterval(async () => {
+  if (repositoryPollBusy) return;
+  repositoryPollBusy = true;
+  try {
+    let next = await repositoryService.fingerprint();
+    if (next === repositoryFingerprint) return;
+    repositoryFingerprint = next;
+    server.liveBus.emit({ name: 'repositories', treeHash: String(Date.now()) });
+  } catch (error) {
+    console.error(`   repository watch: ${error.message ?? error}`);
+  } finally {
+    repositoryPollBusy = false;
+  }
+}, 1000).unref();
 
 // The Hub's own port is NOT ephemeral — you have to be able to type it — so
 // this is the one listener that can still collide, and it says so in words

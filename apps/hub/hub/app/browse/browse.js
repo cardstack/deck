@@ -1619,6 +1619,47 @@ function shortSeal(address) {
   return match ? `${match[1].slice(0, 12)}…${match[2] ?? ''}` : String(address);
 }
 
+/** Repository identity belongs beside its packages, in Browse. */
+async function repositoryPanel(parsed) {
+  if (!parsed.depot || !parsed.publisher || !parsed.pkg) return '';
+  let member = `${parsed.publisher}/${parsed.pkg}`;
+  let catalog = await getJson('/_hub/repositories').catch(() => ({ repositories: [] }));
+  let candidates = catalog.repositories.filter(
+    (item) => item.depot === parsed.depot && item.members.includes(member),
+  );
+  let summary = candidates.find(
+    (item) => item.kind === 'package' && item.repository === member,
+  ) ?? candidates.find((item) => item.kind === 'group');
+  if (!summary) return '';
+  let state = await getJson(summary.url).catch(() => undefined);
+  if (!state) return '';
+
+  let open = state.pulls?.find((pull) => pull.state === 'open');
+  let review = open ? `Review #${open.number}` : 'Reviews';
+  let branches = (state.branches ?? []).map((branch) => {
+    let at = branch.projection.members[member];
+    return `<a class="repo-branch${parsed.spec === branch.projection.version ? ' selected' : ''}" href="?at=${esc(at)}">` +
+      `<span class="branch-mark${branch.name === 'main' ? '' : ' branch-feature'}">●</span>${esc(branch.name)} ` +
+      `<code class="s-hash">${esc(branch.revisionHash.slice(0, 12))}</code></a>`;
+  }).join('');
+  let recent = (state.history ?? []).slice(0, 4).map((item) =>
+    `<li><code>${esc(item.revisionHash.slice(0, 12))}</code> ${esc(item.message)} ` +
+    `<span class="dim">${esc(item.author.name)}</span></li>`,
+  ).join('');
+  return (
+    `<section class="repo-browser" data-repository="${esc(state.repository)}">` +
+    `<header><div class="repo-title"><span class="s-publisher">${esc(state.owner)}</span>` +
+    `<span class="sep">/</span><strong class="s-package">${esc(state.name)}</strong>` +
+    `<span class="visibility">${state.kind === 'group' ? `${state.members.length}-package group` : 'repository'}</span></div>` +
+    (state.initialized ? `<a class="action" href="/review?repository=${encodeURIComponent(state.repository)}&depot=${encodeURIComponent(state.depot)}">${review} →</a>` : '') + `</header>` +
+    `<div class="repo-browser-body"><div><b>branches</b></div>` +
+    branches + `<button class="action primary" data-repository-action="branch" data-endpoint="${esc(summary.url)}">New branch</button>` +
+    `</div><p class="section-note">${state.kind === 'group' ? `${state.members.length} packages land atomically; each remains independently addressable.` : 'Every mutable package is a repository. The first branch captures main; no registration step.'}</p>` +
+    (recent ? `<div class="repo-work"><b>recent work</b><ul>${recent}</ul></div>` : '') +
+    `</section>`
+  );
+}
+
 async function viewAddress(input, vs) {
   let [meta, seals] = await Promise.all([
     getJson(`/_packages/${input.depot}/${input.publisher}/${input.pkg}`)
@@ -1645,7 +1686,7 @@ async function viewAddress(input, vs) {
   let head =
     crumbs(parsed) +
     (await siblings(parsed)) +
-    `<main><div class="facts" data-tour="facts">` +
+    `<main>${await repositoryPanel(parsed)}<div class="facts" data-tour="facts">` +
     (meta ? volatility(parsed, meta, seals) + compare(parsed, meta, seals, vs) : '') +
     hash(attrs.treeHash) +
     (attrs.size !== undefined ? `<div><b>size</b> ${esc(bytes(attrs.size))}</div>` : '') +
@@ -2058,7 +2099,28 @@ function expandGap(control) {
   control.outerHTML = html;
 }
 
-app.addEventListener('click', (event) => {
+app.addEventListener('click', async (event) => {
+  let repositoryAction = event.target.closest('[data-repository-action]');
+  if (repositoryAction) {
+    let name = prompt('Branch name');
+    if (!name) return;
+    repositoryAction.disabled = true;
+    let response = await fetch(`${repositoryAction.dataset.endpoint}/branches`, {
+      method: 'POST',
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      body: JSON.stringify({ name, from: 'main' }),
+    });
+    if (!response.ok) {
+      let body = await response.json().catch(() => ({}));
+      repositoryAction.insertAdjacentHTML(
+        'afterend',
+        ` <span class="bad">${esc(body.error ?? response.statusText)}</span>`,
+      );
+      return;
+    }
+    await render();
+    return;
+  }
   let gap = event.target.closest('.gap[data-gap]');
   if (gap) return expandGap(gap);
 
@@ -2178,7 +2240,10 @@ onActivityChange(() => {
   if (app.querySelector('pre.blob')) return;
   render();
 });
-onLiveChange(() => loadActivity());
+onLiveChange(() => {
+  loadActivity();
+  if (app.querySelector('[data-repository]')) render();
+});
 
 render();
 loadActivity();
