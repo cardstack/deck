@@ -9,6 +9,12 @@ collaboration layer for packages.
 must advance atomically. That is Deck’s content-addressed equivalent of a
 traditional monorepo—not an opt-in required for ordinary package work.
 
+Imported packages are immutable inputs. They do not acquire a writable branch
+in place: forking materializes the chosen exact Version under a new package
+identity, records its base tree, and initializes that mutable package's
+`main`. Branch and fork therefore share ancestry and merge mechanics while
+preserving different ownership boundaries.
+
 **Status: PROTOCOL V1 — local reference implementation plus conditional object
 store adapters.** This document defines the durable objects beneath Deck's
 familiar repository, branch, fork, pull request, and merge UX. The protocol

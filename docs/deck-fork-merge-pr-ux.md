@@ -112,20 +112,23 @@ that lands them together in one place.
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ DECK                                      Search or jump to…        +   ◉ CS │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ acme / currencies                                      Public     ☆ 128     │
-│ Reference currency data and formatting modules                              │
-│                                                                              │
-│ [ Code ]  Branches 3  Versions 34  Activity            [ Review 12 ] [ Fork ]│
+│ acme / currencies                                      main ▾    Review 12  │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ main ▾   3 branches   41 revisions                       [ Run ] [ <> Code ] │
+│ package tree, Version controls, and content                                 │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Design rules:
 
 - Owner and repository name are the strongest locator.
-- Tabs use ordinary forge vocabulary.
-- Branch/Version volatility is always visible directly under the tabs.
+- Branch selection is a quiet address control beside package identity, not a
+  loud tab or repository dashboard.
+- The selector's **New…** section offers **Branch here** and **Fork to my
+  scope**. They share one isolation primitive; ownership determines the noun.
+- Imported packages are read-only. They show **Fork** only; the new package is
+  mutable and gains `main`, branches, commits, and Reviews.
+- Branch/Version volatility remains visible without duplicating the Version
+  control below it.
 - **Run** and **Code** form Deck's persistent two-way lens.
 - `treeHash`, storage savings, and canonical URLs are one click away, never
   the headline a newcomer must decode.

@@ -379,13 +379,13 @@ const server = createDeckServer({
   depots,
   action(req, res) {
     let path = new URL(req.url ?? '/', 'http://localhost').pathname;
-    if (!path.startsWith('/_hub/repositories')) return false;
+    if (!path.startsWith('/_hub/repositories') && path !== '/_hub/forks') return false;
     return repositoryService.handle(req, res, path);
   },
   fallback(req, res) {
     let requested = new URL(req.url ?? '/', 'http://localhost');
     let path = requested.pathname;
-    if (path.startsWith('/_hub/repositories')) {
+    if (path.startsWith('/_hub/repositories') || path === '/_hub/forks') {
       return repositoryService.handle(req, res, path);
     }
     // Retired: use GET /_activity. Kept as a tiny stub so old bookmarks do

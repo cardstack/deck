@@ -1619,8 +1619,8 @@ function shortSeal(address) {
   return match ? `${match[1].slice(0, 12)}…${match[2] ?? ''}` : String(address);
 }
 
-/** Repository identity belongs beside its packages, in Browse. */
-async function repositoryPanel(parsed) {
+/** Branch and fork are one lineage control; mutability decides which verbs appear. */
+async function repositoryPanel(parsed, meta) {
   if (!parsed.depot || !parsed.publisher || !parsed.pkg) return '';
   let member = `${parsed.publisher}/${parsed.pkg}`;
   let catalog = await getJson('/_hub/repositories').catch(() => ({ repositories: [] }));
@@ -1630,32 +1630,39 @@ async function repositoryPanel(parsed) {
   let summary = candidates.find(
     (item) => item.kind === 'package' && item.repository === member,
   ) ?? candidates.find((item) => item.kind === 'group');
+  if (!summary && !meta?.live) {
+    return `<section class="repo-context repo-context-readonly" data-repository="${esc(member)}">` +
+      `<div class="repo-identity"><span class="s-publisher">${esc(parsed.publisher)}</span><span class="sep">/</span>` +
+      `<strong class="s-package">${esc(parsed.pkg)}</strong><span class="visibility">imported · read-only</span></div>` +
+      `<button class="repo-new primary" data-repository-action="fork" data-depot="${esc(parsed.depot)}" ` +
+      `data-from="${esc(member)}" data-spec="${esc(parsed.spec ?? '')}">Fork</button></section>`;
+  }
   if (!summary) return '';
   let state = await getJson(summary.url).catch(() => undefined);
   if (!state) return '';
 
   let open = state.pulls?.find((pull) => pull.state === 'open');
   let review = open ? `Review #${open.number}` : 'Reviews';
+  let current = (state.branches ?? []).find(
+    (branch) => parsed.spec === branch.projection.version,
+  );
   let branches = (state.branches ?? []).map((branch) => {
     let at = branch.projection.members[member];
-    return `<a class="repo-branch${parsed.spec === branch.projection.version ? ' selected' : ''}" href="?at=${esc(at)}">` +
-      `<span class="branch-mark${branch.name === 'main' ? '' : ' branch-feature'}">●</span>${esc(branch.name)} ` +
-      `<code class="s-hash">${esc(branch.revisionHash.slice(0, 12))}</code></a>`;
+    return `<a class="repo-option${current?.name === branch.name ? ' selected' : ''}" href="?at=${esc(at)}">` +
+      `<span>${esc(branch.name)}</span><code>${esc(branch.revisionHash.slice(0, 8))}</code></a>`;
   }).join('');
-  let recent = (state.history ?? []).slice(0, 4).map((item) =>
-    `<li><code>${esc(item.revisionHash.slice(0, 12))}</code> ${esc(item.message)} ` +
-    `<span class="dim">${esc(item.author.name)}</span></li>`,
-  ).join('');
   return (
-    `<section class="repo-browser" data-repository="${esc(state.repository)}">` +
-    `<header><div class="repo-title"><span class="s-publisher">${esc(state.owner)}</span>` +
+    `<section class="repo-context" data-repository="${esc(state.repository)}">` +
+    `<div class="repo-identity"><span class="s-publisher">${esc(state.owner)}</span>` +
     `<span class="sep">/</span><strong class="s-package">${esc(state.name)}</strong>` +
-    `<span class="visibility">${state.kind === 'group' ? `${state.members.length}-package group` : 'repository'}</span></div>` +
-    (state.initialized ? `<a class="action" href="/review?repository=${encodeURIComponent(state.repository)}&depot=${encodeURIComponent(state.depot)}">${review} →</a>` : '') + `</header>` +
-    `<div class="repo-browser-body"><div><b>branches</b></div>` +
-    branches + `<button class="action primary" data-repository-action="branch" data-endpoint="${esc(summary.url)}">New branch</button>` +
-    `</div><p class="section-note">${state.kind === 'group' ? `${state.members.length} packages land atomically; each remains independently addressable.` : 'Every mutable package is a repository. The first branch captures main; no registration step.'}</p>` +
-    (recent ? `<div class="repo-work"><b>recent work</b><ul>${recent}</ul></div>` : '') +
+    (state.kind === 'group' ? `<span class="visibility">${state.members.length}-package group</span>` : '') + `</div>` +
+    `<div class="repo-controls"><details class="repo-switcher"><summary>${esc(current?.name ?? 'live')} <span>⌄</span></summary>` +
+    `<div class="repo-menu">${branches || '<span class="repo-empty">No branches yet</span>'}` +
+    `<div class="repo-menu-new"><b>New…</b>` +
+    `<button data-repository-action="branch" data-endpoint="${esc(summary.url)}">Branch here</button>` +
+    `<button data-repository-action="fork" data-depot="${esc(parsed.depot)}" data-from="${esc(member)}" data-spec="${esc(parsed.spec ?? '')}">Fork to my scope</button>` +
+    `</div></div></details>` +
+    (state.initialized ? `<a class="repo-review" href="/review?repository=${encodeURIComponent(state.repository)}&depot=${encodeURIComponent(state.depot)}">${review}</a>` : '') + `</div>` +
     `</section>`
   );
 }
@@ -1686,7 +1693,7 @@ async function viewAddress(input, vs) {
   let head =
     crumbs(parsed) +
     (await siblings(parsed)) +
-    `<main>${await repositoryPanel(parsed)}<div class="facts" data-tour="facts">` +
+    `<main>${await repositoryPanel(parsed, meta)}<div class="facts" data-tour="facts">` +
     (meta ? volatility(parsed, meta, seals) + compare(parsed, meta, seals, vs) : '') +
     hash(attrs.treeHash) +
     (attrs.size !== undefined ? `<div><b>size</b> ${esc(bytes(attrs.size))}</div>` : '') +
@@ -2102,20 +2109,43 @@ function expandGap(control) {
 app.addEventListener('click', async (event) => {
   let repositoryAction = event.target.closest('[data-repository-action]');
   if (repositoryAction) {
-    let name = prompt('Branch name');
-    if (!name) return;
     repositoryAction.disabled = true;
-    let response = await fetch(`${repositoryAction.dataset.endpoint}/branches`, {
-      method: 'POST',
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
-      body: JSON.stringify({ name, from: 'main' }),
-    });
+    let response;
+    if (repositoryAction.dataset.repositoryAction === 'fork') {
+      let packageName = repositoryAction.dataset.from.split('/').at(-1);
+      let to = prompt('Fork to publisher/package', `me/${packageName}`);
+      if (!to) { repositoryAction.disabled = false; return; }
+      response = await fetch('/_hub/forks', {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/json' },
+        body: JSON.stringify({
+          depot: repositoryAction.dataset.depot,
+          from: repositoryAction.dataset.from,
+          to,
+          ...(repositoryAction.dataset.spec ? { spec: repositoryAction.dataset.spec } : {}),
+        }),
+      });
+    } else {
+      let name = prompt('Branch name');
+      if (!name) { repositoryAction.disabled = false; return; }
+      response = await fetch(`${repositoryAction.dataset.endpoint}/branches`, {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/json' },
+        body: JSON.stringify({ name, from: 'main' }),
+      });
+    }
     if (!response.ok) {
       let body = await response.json().catch(() => ({}));
       repositoryAction.insertAdjacentHTML(
         'afterend',
         ` <span class="bad">${esc(body.error ?? response.statusText)}</span>`,
       );
+      repositoryAction.disabled = false;
+      return;
+    }
+    if (repositoryAction.dataset.repositoryAction === 'fork') {
+      let body = await response.json();
+      location.href = body.browseUrl;
       return;
     }
     await render();

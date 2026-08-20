@@ -23,6 +23,11 @@ architecture and interaction patterns open, with directions to explore.
 > member packages; a multi-package Repository is simply a monorepo. See
 > [`deck-collaboration-protocol.md`](deck-collaboration-protocol.md).
 
+Branch and fork are one lineage affordance in Browse. Mutable packages get a
+compact branch selector whose **New…** menu contains **Branch here** and
+**Fork to my scope**. Imported packages are read-only and expose **Fork** only.
+The full Review surface becomes prominent only after work exists.
+
 Read §1–§6 as constraints. Read §7–§8 as an invitation. Use §9 to check any
 design against all four workloads in about twenty minutes.
 

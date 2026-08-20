@@ -4,6 +4,7 @@
 // back into ordinary package Versions for Browse and Run.
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { forkDeck } from '@cardstack/deck/fork';
 import { rebuildPack } from '@cardstack/deck/object-store';
 import { createPullRequest, mergePullRequest, previewPullRequest, readPullRequest } from '@cardstack/deck/pull-request-store';
 import { pullRequestEventHash } from '@cardstack/deck/pull-request';
@@ -45,6 +46,14 @@ async function valuesBelow(directory) {
 
 export async function createRepositoryService({ depots, log = console.log, onChange = () => {} }) {
   let repositories = [];
+  function addPackage(depot, publisher, name) {
+    let identity = `${publisher}/${name}`;
+    let existing = repositories.find((entry) => entry.depot.name === depot.name && entry.kind === 'package' && `${entry.config.owner}/${entry.config.name}` === identity);
+    if (existing) return existing;
+    let entry = { depot, kind: 'package', config: { schema: REPOSITORY_CONFIG_SPEC, owner: publisher, name, roots: [identity], members: [identity] } };
+    repositories.push(entry);
+    return entry;
+  }
   for (let depot of depots) {
     let grouped = await readRepositoryConfig(depot.dir);
     if (grouped) repositories.push({ depot, config: grouped, kind: 'group' });
@@ -62,7 +71,7 @@ export async function createRepositoryService({ depots, log = console.log, onCha
         } catch { continue; }
         let identity = `${publisher.name}/${pkg.name}`;
         if (grouped && `${grouped.owner}/${grouped.name}` === identity) continue;
-        repositories.push({ depot, kind: 'package', config: { schema: REPOSITORY_CONFIG_SPEC, owner: publisher.name, name: pkg.name, roots: [identity], members: [identity] } });
+        addPackage(depot, publisher.name, pkg.name);
       }
     }
   }
@@ -179,6 +188,31 @@ export async function createRepositoryService({ depots, log = console.log, onCha
     },
     async handle(req, res, path) {
       if (path === '/_hub/repositories' && req.method === 'GET') { json(res, 200, await this.list()); return true; }
+      if (path === '/_hub/forks' && req.method === 'POST') {
+        try {
+          let body = await bodyOf(req);
+          let depot = depots.find((candidate) => candidate.name === body.depot);
+          if (!depot) throw new Error(`depot not found: ${body.depot}`);
+          let [fromPublisher, fromPackage, ...fromRest] = String(body.from ?? '').split('/');
+          let [toPublisher, toPackage, ...toRest] = String(body.to ?? '').split('/');
+          if (!fromPublisher || !fromPackage || fromRest.length || !toPublisher || !toPackage || toRest.length) throw new Error('from and to must be publisher/package');
+          let result = await forkDeck({
+            depotDir: depot.dir,
+            storeDir: depot.storeDir,
+            from: { publisher: fromPublisher, package: fromPackage, ...(body.spec ? { spec: body.spec } : {}) },
+            to: { publisher: toPublisher, package: toPackage },
+            actor: body.actor ?? '@hub:local',
+          });
+          let entry = addPackage(depot, toPublisher, toPackage);
+          await ensureRepositoryMain({ depotDir: depot.dir, storeDir: depot.storeDir, config: entry.config, author: { id: body.actor ?? '@hub:local', name: body.actorName ?? 'Deck Hub' } });
+          onChange({ name: `fork:${result.to}`, treeHash: result.baseTreeHash });
+          log(`forked ${result.from} → ${result.to}`);
+          json(res, 201, { ...result, repository: `${toPublisher}/${toPackage}`, browseUrl: `/browse?at=/${depot.name}/${toPublisher}/${toPackage}` });
+        } catch (error) {
+          json(res, 409, { error: error.message });
+        }
+        return true;
+      }
       let match = path.match(/^\/_hub\/repositories\/([^/]+)\/([^/]+)\/([^/]+)(.*)$/);
       if (!match) return false;
       let [, depotName, owner, name, tail] = match;
