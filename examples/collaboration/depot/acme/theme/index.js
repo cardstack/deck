@@ -1,5 +1,10 @@
 export const theme = {
-  surface: 'surface-review',
-  density: 'compact',
-  colors: { accent: '#9bfab0', warning: '#ffd479', muted: '#8d91a7' },
+  surface: 'surface-fulfillment',
+  density: 'comfortable',
+  colors: {
+    accent: '#7dd3fc',
+    critical: '#fb7185',
+    warning: '#fbbf24',
+    muted: '#94a3b8',
+  },
 };

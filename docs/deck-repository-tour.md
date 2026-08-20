@@ -37,7 +37,7 @@ The direct command is:
 deck branch \
   --depot examples/collaboration/depot \
   --repo acme/dashboard \
-  --name agent/review-workbench \
+  --name ops/delivery-exceptions \
   --from main
 ```
 
@@ -62,8 +62,8 @@ Edit any member directories. Then capture them atomically:
 deck commit \
   --depot examples/collaboration/depot \
   --repo acme/dashboard \
-  --branch agent/review-workbench \
-  --message "Build repository review workbench"
+  --branch ops/delivery-exceptions \
+  --message "Prioritize delayed shipments"
 ```
 
 One Revision now points to one Repository containing exact tree hashes for
@@ -76,10 +76,10 @@ lands as a unit.
 deck review \
   --depot examples/collaboration/depot \
   --repo acme/dashboard \
-  --source agent/review-workbench \
+  --source ops/delivery-exceptions \
   --target main \
-  --title "Build repository review workbench" \
-  --body "Changes the app, editor, and theme together."
+  --title "Prioritize delayed shipments" \
+  --body "Adds risk-ranked exceptions, owner routing, and alert tokens across the dashboard, queue component, and theme."
 ```
 
 Visit [Review](http://localhost:8788/review?repository=acme/dashboard). The

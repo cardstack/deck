@@ -1,15 +1,15 @@
 import { theme } from 'acme/theme';
 
-export function reviewQueue(items) {
-  return `<ol class="review-queue">${items
+export function exceptionQueue(items) {
+  return `<ol class="exception-queue">${items
     .map(
-      (item) => `<li><span class="review-state ${item.state}">${item.state}</span>` +
-        `<div><strong>${item.title}</strong><small>${item.packages} packages · ${item.author}</small></div>` +
-        `<code>#${item.number}</code></li>`,
+      (item) => `<li><span class="risk ${item.risk}">${item.risk}</span>` +
+        `<div><strong>${item.shipment}</strong><small>${item.route} · ${item.reason}</small></div>` +
+        `<span class="delay">${item.delay}</span><span class="owner">${item.owner}</span></li>`,
     )
     .join('')}</ol>`;
 }
 
 export function editorClass() {
-  return `editor editor--${theme.density}`;
+  return `operations operations--${theme.density}`;
 }

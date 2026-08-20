@@ -12,8 +12,11 @@ The Repository contains three independently addressable packages:
 - `acme/editor`
 - `acme/theme`
 
-The current workbench change touches all three, making partial package landing
-visibly wrong and exercising atomic Repository revisions.
+The current delivery-exceptions change touches all three: the app introduces a
+risk-ranked fulfillment view, the editor package supplies the exception queue,
+and the theme adds operational alert tokens. Landing only one package would
+break the runnable result, which makes this a concrete atomic Review rather
+than an example about Deck itself.
 
 Start the real services:
 
