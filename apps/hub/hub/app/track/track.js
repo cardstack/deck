@@ -174,6 +174,7 @@ async function collect(scope, { historyLimit = HISTORY_PAGE } = {}) {
           // publication decisions, so showing them here would make merely
           // opening Review look like six releases happened.
           if (isRepositoryProjection(version)) continue;
+          let previous = previousVersion(deck, version);
           rows.push({
             // `vendored` is now sayable. It used to be guesswork, because
             // telling a vendored version from a hand-cut one meant reading
@@ -209,8 +210,20 @@ async function collect(scope, { historyLimit = HISTORY_PAGE } = {}) {
             upstream: deck.upstream,
             treeHash: record.treeHash,
             at: `/${depot.name}/${deck.publisher}/${deck.name}@${version}`,
-            // A version's natural comparison is the one before it.
-            vs: previousVersion(deck, version),
+            // A Version's natural comparison is the one before it, but a
+            // release can deliberately give an existing tree a stable name.
+            // That is a real event, not a content change. Sending it through
+            // Browse's diff surface can only produce "no differences", so
+            // keep the ancestry visible while reserving `vs` for changed
+            // trees.
+            vs:
+              previous && previous.treeHash !== record.treeHash
+                ? previous.at
+                : '',
+            sameTreeAs:
+              previous?.treeHash === record.treeHash
+                ? previous.version
+                : undefined,
           });
         }
       }
@@ -351,12 +364,16 @@ function previousVersion(deck, version) {
       ([, left], [, right]) =>
         (Date.parse(left.publishedAt ?? '') || 0) -
         (Date.parse(right.publishedAt ?? '') || 0),
-    )
-    .map(([candidate]) => candidate);
-  let index = all.indexOf(version);
-  return index > 0
-    ? `/${deck.id.split('/')[0]}/${deck.publisher}/${deck.name}@${all[index - 1]}`
-    : '';
+    );
+  let index = all.findIndex(([candidate]) => candidate === version);
+  if (index <= 0) return;
+
+  let [previous, record] = all[index - 1];
+  return {
+    version: previous,
+    treeHash: record.treeHash,
+    at: `/${deck.id.split('/')[0]}/${deck.publisher}/${deck.name}@${previous}`,
+  };
 }
 
 function isRepositoryProjection(version) {
@@ -779,6 +796,9 @@ function entry(row) {
           ? ` <span class="dim">+${row.changes.length - 3}</span>`
           : '')
       : esc(row.detail ?? '');
+  let sameTree = row.sameTreeAs
+    ? `<span class="dim same-tree">same tree as ${esc(row.sameTreeAs)} · new name, zero bytes copied</span>`
+    : '';
   return (
     `<li class="entry" data-kind="${esc(row.kind)}" style="--fresh:${fresh.toFixed(3)}" ` +
     `data-name="${esc(
@@ -801,6 +821,7 @@ function entry(row) {
       : '') +
     (row.summary ? ` <span class="dim">${esc(row.what)}</span>` : '') +
     (detail ? ` <span class="dim">${detail}</span>` : '') +
+    (sameTree ? ` ${sameTree}` : '') +
     // Provenance sits on the second line because it is a property of the
     // thing, not the event: `npm:three · published 2y ago` answers "what did
     // we take on", while the row's own timestamp answers "when did we".

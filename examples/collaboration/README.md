@@ -75,5 +75,10 @@ Track shows the authored History saves and deliberate releases by default.
 Press `a` or use the **auto-publishes** switch to reveal every immutable
 `-dev.N` Version created by those same saves.
 
+A release that gives an existing tree a stable Version is shown as a naming
+event, with the source Version called out explicitly. Only transitions whose
+tree hash changed offer a diff, so Track never sends a deliberate zero-copy
+release to an empty comparison.
+
 `depot/` is ignored by git. The authoritative fixture is the ordered replay
 plus its readable source inputs—not generated CAS objects or mutable refs.
