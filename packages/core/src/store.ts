@@ -6,6 +6,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import semver from 'semver';
 import { unpack } from './pack.ts';
@@ -214,9 +215,31 @@ async function writeStoreMeta(
   meta: StoreMeta,
 ): Promise<void> {
   let path = metaPath(storeDir, meta.name);
-  let tmp = `${path}.tmp`;
+  let tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tmp, JSON.stringify(meta, null, 2) + '\n');
   await rename(tmp, path);
+}
+
+// One Hub can publish a live dev Version and a Review projection at the same
+// instant. They are independent operations, but they share one package's
+// meta.json read-modify-write boundary. Keep that boundary single-writer in a
+// local process so neither update can erase the other. Cloud implementations
+// use the conditional-object adapter for the equivalent guarantee.
+const packageMetaQueues = new Map<string, Promise<unknown>>();
+
+function withPackageMetaWriter<T>(
+  storeDir: string,
+  name: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  let key = metaPath(storeDir, name);
+  let prior = packageMetaQueues.get(key) ?? Promise.resolve();
+  let next = prior.then(action, action);
+  let parked = next.catch(() => undefined);
+  packageMetaQueues.set(key, parked);
+  return next.finally(() => {
+    if (packageMetaQueues.get(key) === parked) packageMetaQueues.delete(key);
+  });
 }
 
 function assertTagRules(tag: string, version: string): void {
@@ -325,6 +348,18 @@ export async function publishToStore(
   // `now` is injectable so a test can publish a known history rather than
   // whatever the clock said while it ran.
   options: { tag?: string; now?: Date } = {},
+): Promise<StoreVersionRecord> {
+  return withPackageMetaWriter(storeDir, name, () =>
+    publishToStoreSingleWriter(storeDir, name, version, packBytes, options),
+  );
+}
+
+async function publishToStoreSingleWriter(
+  storeDir: string,
+  name: string,
+  version: string,
+  packBytes: Buffer,
+  options: { tag?: string; now?: Date },
 ): Promise<StoreVersionRecord> {
   if (!isValidPackageName(name)) {
     throw new Error(`invalid package name: ${JSON.stringify(name)}`);

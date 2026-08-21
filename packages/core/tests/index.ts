@@ -39,7 +39,8 @@ await import('./merge-test.ts');
 await import('./offer-test.ts');
 await import('./signature-test.ts');
 await import('./verify-links-test.ts');
+await import('./rri-test.ts');
 await import('./repository-test.ts');
-await import('./pull-request-test.ts');
+await import('./review-test.ts');
 
 QUnit.start();

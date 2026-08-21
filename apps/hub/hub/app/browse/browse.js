@@ -567,12 +567,13 @@ function repositoryVersionNote(repository, version) {
   let main = branches.find((branch) => branch.name === 'main');
   let merged =
     main &&
-    (repository.pulls ?? []).find(
-      (pull) =>
-        pull.state === 'merged' &&
-        pull.events?.some(
+    (repository.reviews ?? []).find(
+      (review) =>
+        review.state === 'merged' &&
+        review.events?.some(
           (event) =>
-            event.type === 'merged' && event.revisionHash === main.revisionHash,
+            event.type === 'merged' &&
+            event.checkpointHash === main.checkpointHash,
         ),
     );
   let labels = [];
@@ -1794,9 +1795,9 @@ function repositoryPanel(parsed, meta, context) {
   if (!summary) return '';
   if (!state) return '';
 
-  let open = state.pulls?.find((pull) => pull.state === 'open');
+  let open = state.reviews?.find((review) => review.state === 'open');
   let upstream =
-    state.forkedFrom?.revisionHash &&
+    state.forkedFrom?.checkpointHash &&
     catalog.repositories.find(
       (item) =>
         item.depot === state.depot &&
@@ -1820,7 +1821,7 @@ function repositoryPanel(parsed, meta, context) {
       let at = branch.projection.members[member];
       return (
         `<a class="repo-option${current?.name === branch.name ? ' selected' : ''}" href="?at=${esc(at)}">` +
-        `<span>${esc(branch.name)}</span><code>${esc(branch.revisionHash.slice(0, 8))}</code></a>`
+        `<span>${esc(branch.name)}</span><code>${esc(branch.checkpointHash?.slice(0, 8) ?? 'working')}</code></a>`
       );
     })
     .join('');

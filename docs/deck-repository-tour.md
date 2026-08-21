@@ -4,12 +4,10 @@ This is the real workflow used by agents, the CLI, and Deck Hub. The Hub does
 not seed examples or keep parallel state. Every mutable package is implicitly
 a repository, and Hub reads the same refs and immutable objects the CLI writes.
 
-The running local reference currently writes V1 Repository member names such
-as `app/dashboard`; the commands below are therefore accurate today. Backport
-gate R0 upgrades the sealed durable object to RRI-native V2 before Boxel A0.
-CLI `--root` / `--member` arguments may remain local authoring paths, but V2
-sealing maps them to canonical roots such as `@acme/dashboard/`. The workflow
-and product nouns do not change.
+Deck writes only the RRI-native Repository/Checkpoint/Review protocol. CLI
+`--root` / `--member` arguments are local authoring paths; the manifest maps
+them to canonical roots such as `@acme/dashboard/`. URL-form identity,
+Revision, and Pull Request wire objects are not accepted aliases.
 
 ## 1. Package first; grouping only when needed
 
@@ -28,7 +26,9 @@ deck repo-init \
   --root app/dashboard \
   --member app/dashboard \
   --member acme/editor \
-  --member acme/theme
+  --member acme/theme \
+  --history <deckd-head> \
+  --index <completed-index-generation-hash>
 ```
 
 `repo-init` writes the realm-owned `.deck/repository.json`, captures all three packages and the
@@ -66,22 +66,22 @@ are detected by Hub and sent over its live event stream.
 Edit any member directories. Then capture them atomically:
 
 ```sh
-deck commit \
+deck checkpoint \
   --depot examples/collaboration/depot \
   --repo acme/dashboard \
   --branch ops/delivery-exceptions \
-  --message "Prioritize delayed shipments"
+  --message "Prioritize delayed shipments" \
+  --history <deckd-head> \
+  --index <completed-index-generation-hash>
 ```
 
 One Checkpoint now points to one Repository containing exact tree hashes for
 every member. Packages remain individually addressable, but the composition
 lands as a unit.
 
-The current reference CLI keeps the Git-familiar verb `deck commit`, but the
-object it writes and the product noun are Checkpoint. Ordinary saves already
-produce deckd History Steps and do not require this command. `deck review`
-also captures the current settled branch as a Checkpoint when needed. A future
-`deck checkpoint` alias must not be documented as runnable until implemented.
+Ordinary saves produce deckd History Steps and advance the branch head without
+this command. `deck checkpoint` deliberately names the current Repository,
+History head, and completed index generation before Review.
 
 ## 4. Open a review
 
@@ -95,9 +95,9 @@ deck review \
   --body "Adds risk-ranked exceptions, owner routing, and alert tokens across the dashboard, queue component, and theme."
 ```
 
-Visit [Review](http://localhost:8788/review?repository=acme/dashboard). The
-page shows exact package diffs, a runnable projection, Checkpoint history, review
-events, and expandable canonical protocol objects.
+Visit [Review](http://localhost:8788/review?repository=acme/dashboard&depot=collaboration).
+The page shows exact package diffs, a runnable projection, Checkpoint history,
+review events, and expandable canonical protocol objects.
 
 ## 5. Merge through the same protocol
 
@@ -105,7 +105,9 @@ events, and expandable canonical protocol objects.
 deck merge \
   --depot examples/collaboration/depot \
   --repo acme/dashboard \
-  --number 1
+  --number 1 \
+  --history <post-merge-deckd-head> \
+  --index <post-merge-index-generation-hash>
 ```
 
 Deck computes the three-way merge from exact Checkpoints, creates a two-parent
@@ -134,9 +136,9 @@ using direct S3 preconditions.
 
 ## The agent request
 
-You can now ask: “Create a branch for this change, implement it, commit the
-Repository, open a review, and merge it after verification.” The agent should
+You can now ask: “Create a branch for this change, implement it, checkpoint the
+Repository, open a Review, and merge it after verification.” The agent should
 use these commands in order and report the branch, review number, and resulting
-main Checkpoint. The explicit checkpoint command is optional before Review.
+main Checkpoint. The explicit Checkpoint is required before opening a Review.
 For ordinary package work, pass the package identity—for
 example, `--repo app/dashboard`. No `repo-init` is involved.

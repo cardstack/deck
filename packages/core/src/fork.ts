@@ -61,8 +61,8 @@ export interface ForkOptions {
   // copying — and is where a Matrix user id goes when this reaches the
   // realm server.
   actor?: string;
-  // Exact upstream Revision when forking a mutable package through Hub.
-  baseRevisionHash?: string;
+  // Exact upstream Checkpoint when forking a mutable package through Hub.
+  baseCheckpointHash?: string;
 }
 
 // The map travels with the copy, so it has to say what the copy IS: the
@@ -88,7 +88,7 @@ function rewriteMap(
 }
 
 export async function forkDeck(options: ForkOptions): Promise<ForkResult> {
-  let { depotDir, storeDir, from, to, force, actor, baseRevisionHash } = options;
+  let { depotDir, storeDir, from, to, force, actor, baseCheckpointHash } = options;
   let targetDir = join(depotDir, to.publisher, to.package);
   let exists = await stat(targetDir).then(
     () => true,
@@ -136,7 +136,7 @@ export async function forkDeck(options: ForkOptions): Promise<ForkResult> {
     package: `${from.publisher}/${from.package}`,
     ...(version ? { version } : {}),
     treeHash: baseTreeHash,
-    ...(baseRevisionHash ? { revisionHash: baseRevisionHash } : {}),
+    ...(baseCheckpointHash ? { checkpointHash: baseCheckpointHash } : {}),
     ...(actor ? { actor } : {}),
   };
   let pkgText = files.get('package.json')?.toString('utf8');

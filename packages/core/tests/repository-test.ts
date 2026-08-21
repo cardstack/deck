@@ -6,24 +6,26 @@ import { join } from 'node:path';
 import {
   canonicalJson,
   changedMembers,
+  checkpoint,
+  checkpointHash,
+  repository,
   repositoryHash,
   repositoryManifest,
-  repositoryState,
-  revision,
-  revisionHash,
   type JsonValue,
 } from '../src/repository.ts';
 import {
   RefConflictError,
-  readBranchRef,
+  branchHeadPath,
+  readBranchHead,
+  readCheckpoint,
   readRepository,
   readRepositoryLock,
-  readRevision,
+  realmDeckPath,
+  storeCheckpoint,
   storeRepository,
   storeRepositoryLock,
-  storeRevision,
-  updateBranchRef,
-  updateConditionalBranchRef,
+  updateBranchHead,
+  updateConditionalBranchHead,
   type ConditionalObjectStore,
 } from '../src/repository-store.ts';
 
@@ -31,206 +33,169 @@ const A = 'a'.repeat(64);
 const B = 'b'.repeat(64);
 const C = 'c'.repeat(64);
 
-module('multi-package collaboration objects', function (hooks) {
-  let storeDir: string;
+module('RRI-native collaboration objects', function (hooks) {
+  let realmDir: string;
 
   hooks.beforeEach(async function () {
-    storeDir = await mkdtemp(join(tmpdir(), 'deck-repository-'));
+    realmDir = await mkdtemp(join(tmpdir(), 'deck-repository-'));
   });
 
   hooks.afterEach(async function () {
-    await rm(storeDir, { recursive: true, force: true });
+    await rm(realmDir, { recursive: true, force: true });
   });
 
-  test('repository identity is canonical across input ordering', function (assert) {
-    let first = repositoryState({
-      roots: ['app/dashboard'],
-      members: { 'acme/theme': B, 'app/dashboard': A },
+  test('Repository identity is canonical across RRI input ordering', function (assert) {
+    let first = repository({
+      roots: ['@app/dashboard/'],
+      members: { '@acme/theme/': B, '@app/dashboard/': A },
       lockHash: C,
     });
-    let second = repositoryState({
-      roots: ['app/dashboard'],
-      members: { 'app/dashboard': A, 'acme/theme': B },
+    let second = repository({
+      roots: ['@app/dashboard/'],
+      members: { '@app/dashboard/': A, '@acme/theme/': B },
       lockHash: C,
     });
     assert.strictEqual(repositoryHash(first), repositoryHash(second));
-    assert.deepEqual(Object.keys(first.members), [
-      'acme/theme',
-      'app/dashboard',
-    ]);
+    assert.deepEqual(Object.keys(first.members), ['@acme/theme/', '@app/dashboard/']);
   });
 
-  test('roots must be editable members and every member names a package tree', function (assert) {
-    assert.throws(
-      () =>
-        repositoryState({
-          roots: ['app/missing'],
-          members: { 'app/dashboard': A },
-          lockHash: C,
-        }),
-      /root is not a member/,
-    );
-    assert.throws(
-      () =>
-        repositoryState({ roots: [], members: { dashboard: A }, lockHash: C }),
-      /invalid repository member name/,
-    );
-    assert.throws(
-      () =>
-        repositoryState({
-          roots: [],
-          members: { 'app/dashboard': 'not-a-hash' },
-          lockHash: C,
-        }),
-      /invalid treeHash/,
-    );
-  });
-
-  test('the local repository manifest canonicalizes authored membership', function (assert) {
+  test('the manifest keeps RRI identity separate from authoring paths', function (assert) {
     assert.deepEqual(
       repositoryManifest({
-        roots: ['app/dashboard'],
-        members: ['app/dashboard', 'acme/theme', 'acme/editor'],
+        roots: ['@app/dashboard/'],
+        members: {
+          '@app/dashboard/': 'app/dashboard',
+          '@acme/theme/': 'packages/theme',
+          '@acme/editor/': 'packages/editor',
+        },
       }),
       {
-        schema: 'deck-repository-manifest-v1',
-        roots: ['app/dashboard'],
-        members: ['acme/editor', 'acme/theme', 'app/dashboard'],
+        schema: 'deck-repository-manifest-v2',
+        roots: ['@app/dashboard/'],
+        members: {
+          '@acme/editor/': 'packages/editor',
+          '@acme/theme/': 'packages/theme',
+          '@app/dashboard/': 'app/dashboard',
+        },
       },
     );
     assert.throws(
-      () =>
-        repositoryManifest({
-          roots: ['app/dashboard'],
-          members: ['app/dashboard', 'app/dashboard'],
-        }),
-      /duplicates/,
+      () => repositoryManifest({ roots: ['@app/dashboard/'], members: { 'app/dashboard': 'app/dashboard' } }),
+      /invalid Deck RRI/,
+    );
+    assert.throws(
+      () => repositoryManifest({ roots: ['https://example.test/app/'], members: { '@app/dashboard/': 'app/dashboard' } }),
+      /URL-form identity/,
     );
   });
 
-  test('a revision preserves parent order because first-parent history is meaningful', function (assert) {
-    let state = repositoryState({
-      roots: ['app/dashboard'],
-      members: { 'app/dashboard': A },
-      lockHash: C,
-    });
-    let value = revision({
-      repositoryHash: repositoryHash(state),
-      parents: [A, B],
+  test('a Checkpoint binds Repository, History, index, and ordered parents', function (assert) {
+    let value = checkpoint({
+      repositoryHash: A,
+      parents: [B, C],
+      historyHead: 'qvnrkqpmsxt',
+      indexGenerationHash: C,
       author: { id: '@chris:example.test', name: 'Chris' },
       message: 'Merge editor and theme changes',
       createdAt: '2026-08-20T00:00:00.000Z',
     });
-    assert.deepEqual(value.parents, [A, B]);
-    assert.notStrictEqual(
-      revisionHash(value),
-      revisionHash({ ...value, parents: [B, A] }),
-    );
-    assert.throws(
-      () =>
-        revision({
-          repositoryHash: repositoryHash(state),
-          author: { id: '@chris:example.test' },
-          message: 'Ambiguous time',
-          createdAt: '2026-08-20',
-        }),
-      /canonical UTC/,
-    );
+    assert.deepEqual(value.parents, [B, C]);
+    assert.notStrictEqual(checkpointHash(value), checkpointHash({ ...value, parents: [C, B] }));
   });
 
-  test('lock, repository, and revision round-trip through the local CAS', async function (assert) {
+  test('lock, Repository, and Checkpoint round-trip below one realm .deck', async function (assert) {
     let lock: JsonValue = {
-      imports: {
-        'acme/editor': '/site/acme/editor@1.0.0/index.js',
-      },
+      imports: { editor: '@catalog/editor@1.0.0/index.js' },
+      scopes: {},
     };
-    let lockHash = await storeRepositoryLock(storeDir, lock);
-    let state = repositoryState({
-      roots: ['app/dashboard'],
-      members: { 'app/dashboard': A, 'acme/editor': B },
+    let lockHash = await storeRepositoryLock(realmDir, lock);
+    let value = repository({
+      roots: ['@app/dashboard/'],
+      members: { '@app/dashboard/': A, '@acme/editor/': B },
       lockHash,
     });
-    let stateHash = await storeRepository(storeDir, state);
-    let commit = revision({
-      repositoryHash: stateHash,
+    let repositoryHash = await storeRepository(realmDir, value);
+    let point = checkpoint({
+      repositoryHash,
+      historyHead: 'history-change-1',
+      indexGenerationHash: C,
       author: { id: '@agent:example.test' },
-      message: 'Initial repository',
+      message: 'Initial Repository',
       createdAt: '2026-08-20T00:00:00.000Z',
     });
-    let commitHash = await storeRevision(storeDir, commit);
+    let pointHash = await storeCheckpoint(realmDir, point);
 
-    assert.deepEqual(await readRepositoryLock(storeDir, lockHash), lock);
-    assert.deepEqual(await readRepository(storeDir, stateHash), state);
-    assert.deepEqual(await readRevision(storeDir, commitHash), commit);
-    assert.strictEqual(
-      await readFile(
-        join(
-          storeDir,
-          '_repositories',
-          stateHash.slice(0, 2),
-          `${stateHash}.json`,
-        ),
-        'utf8',
-      ),
-      canonicalJson(state as unknown as JsonValue).toString('utf8'),
+    assert.deepEqual(await readRepositoryLock(realmDir, lockHash), lock);
+    assert.deepEqual(await readRepository(realmDir, repositoryHash), value);
+    assert.deepEqual(await readCheckpoint(realmDir, pointHash), point);
+    let path = realmDeckPath(
+      realmDir,
+      'store',
+      '_repositories',
+      repositoryHash.slice(0, 2),
+      `${repositoryHash}.json`,
     );
+    assert.strictEqual(
+      await readFile(path, 'utf8'),
+      canonicalJson(value as unknown as JsonValue).toString('utf8'),
+    );
+    assert.true(path.startsWith(join(realmDir, '.deck')));
   });
 
-  test('one revision can atomically change several members while reusing the rest', function (assert) {
-    let before = repositoryState({
-      roots: ['app/dashboard'],
-      members: { 'app/dashboard': A, 'acme/editor': A, 'acme/theme': A },
+  test('one Repository atomically changes several independently addressed members', function (assert) {
+    let before = repository({
+      roots: ['@app/dashboard/'],
+      members: { '@app/dashboard/': A, '@acme/editor/': A, '@acme/theme/': A },
       lockHash: C,
     });
-    let after = repositoryState({
-      roots: ['app/dashboard'],
-      members: { 'app/dashboard': B, 'acme/editor': C, 'acme/theme': A },
+    let after = repository({
+      roots: ['@app/dashboard/'],
+      members: { '@app/dashboard/': B, '@acme/editor/': C, '@acme/theme/': A },
       lockHash: C,
     });
-    assert.deepEqual(changedMembers(before, after), [
-      'acme/editor',
-      'app/dashboard',
-    ]);
+    assert.deepEqual(changedMembers(before, after), ['@acme/editor/', '@app/dashboard/']);
   });
 
-  test('local branch updates are compare-and-swap', async function (assert) {
-    let created = await updateBranchRef({
-      storeDir,
-      owner: 'acme',
-      repository: 'dashboard',
+  test('a normal Step advances branch state without creating a new Checkpoint', async function (assert) {
+    let created = await updateBranchHead({
+      realmDir,
       branch: 'main',
-      expectedRevision: null,
-      nextRevision: A,
+      expectedGeneration: null,
+      next: {
+        repositoryHash: A,
+        historyHead: 'history-1',
+        indexGenerationHash: B,
+        latestCheckpointHash: C,
+      },
     });
     assert.strictEqual(created.generation, 1);
+    let advanced = await updateBranchHead({
+      realmDir,
+      branch: 'main',
+      expectedGeneration: 1,
+      next: {
+        repositoryHash: B,
+        historyHead: 'history-2',
+        indexGenerationHash: A,
+        latestCheckpointHash: C,
+      },
+    });
+    assert.strictEqual(advanced.latestCheckpointHash, C, 'the daily save did not invent a Checkpoint');
+    assert.strictEqual(advanced.generation, 2);
+    assert.strictEqual((await readBranchHead(realmDir, 'main'))?.repositoryHash, B);
+    assert.strictEqual(branchHeadPath(realmDir, 'main'), join(realmDir, '.deck', 'refs', 'heads', 'main.json'));
     await assert.rejects(
-      updateBranchRef({
-        storeDir,
-        owner: 'acme',
-        repository: 'dashboard',
+      updateBranchHead({
+        realmDir,
         branch: 'main',
-        expectedRevision: null,
-        nextRevision: B,
+        expectedGeneration: 1,
+        next: { ...advanced, repositoryHash: A },
       }),
       RefConflictError,
     );
-    let updated = await updateBranchRef({
-      storeDir,
-      owner: 'acme',
-      repository: 'dashboard',
-      branch: 'main',
-      expectedRevision: A,
-      nextRevision: B,
-    });
-    assert.strictEqual(updated.generation, 2);
-    assert.strictEqual(
-      (await readBranchRef(storeDir, 'acme', 'dashboard', 'main'))
-        ?.revisionHash,
-      B,
-    );
   });
 
-  test('S3-style branch updates use the object ETag as the write condition', async function (assert) {
+  test('S3-style branch updates use the observed ETag', async function (assert) {
     let object: { bytes: Buffer; etag: string } | undefined;
     let condition: { ifMatch?: string; ifNoneMatch?: '*' } | undefined;
     let objects: ConditionalObjectStore = {
@@ -243,20 +208,16 @@ module('multi-package collaboration objects', function (hooks) {
         return { etag: object.etag };
       },
     };
-    await updateConditionalBranchRef({
-      objects,
-      key: '_refs/acme/dashboard/heads/main.json',
-      expectedRevision: null,
-      nextRevision: A,
-    });
+    let state = {
+      repositoryHash: A,
+      historyHead: 'history-1',
+      indexGenerationHash: B,
+      latestCheckpointHash: C,
+    };
+    await updateConditionalBranchHead({ objects, key: '.deck/refs/heads/main.json', expectedGeneration: null, next: state });
     assert.deepEqual(condition, { ifNoneMatch: '*' });
     object!.etag = 'etag-1';
-    await updateConditionalBranchRef({
-      objects,
-      key: '_refs/acme/dashboard/heads/main.json',
-      expectedRevision: A,
-      nextRevision: B,
-    });
+    await updateConditionalBranchHead({ objects, key: '.deck/refs/heads/main.json', expectedGeneration: 1, next: { ...state, repositoryHash: B } });
     assert.deepEqual(condition, { ifMatch: 'etag-1' });
   });
 });

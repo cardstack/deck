@@ -108,20 +108,17 @@ keys. A1 projects it deterministically into the URL-valued import map native
 ESM consumes. That projection is disposable derived delivery state; it does
 not get reviewed, merged, or hashed as the Repository's lock authority.
 
-### Reading and compatibility
+### One canonical form
 
 - Source imports, card/code refs, Repository member roots, locks, index keys,
   fixtures, events, and UI use scoped RRI form.
 - Exact Versions place `@version` on the RRI package name, for example
   `@catalog/three@0.169.0/`; a mutable realm stays `@acme/gallery/`.
-- URL-form RRIs remain readable for old Checkpoints and foreign intake. Reads do
-  not silently rewrite durable history.
 - Absolute URLs appear in HTTP requests and the generated browser import map
   only.
 
-`@cardstack/base/card-api` is already canonical today. Old published content
-that says `https://cardstack.com/base/…` keeps its permanent read mapping;
-published Versions never change.
+`@cardstack/base/card-api` is canonical. Protocol validators reject URL-form
+identity instead of carrying a second interpretation through every layer.
 
 ---
 
@@ -188,13 +185,13 @@ in Deck first:
 - make all collaboration paths relative to the owning realm's `.deck/`;
 - accept a host transport projector instead of storing absolute URLs as
   logical identity; and
-- keep V1 Repository, Revision, Pull Request, and URL-form objects readable
-  without rehashing them.
+- expose only the V2 Repository, Checkpoint, Review, branch-head, and scoped-RRI
+  object surface.
 
-**Done when.** V2 Repository and RRI lock hashes are unchanged across two URL
-projections; Checkpoint/branch-head/Review V2 round-trip; a Step can advance a
-head without changing its latest Checkpoint; legacy hashes remain readable;
-and RRI conformance is independently green.
+**Done when.** Repository and RRI lock hashes are unchanged across two URL
+projections; Checkpoint/branch-head/Review round-trip; a Step can advance a
+head without changing its latest Checkpoint; URL-form protocol identity is
+rejected; and RRI conformance is independently green.
 
 Record the exact clean Deck commit. That commit, not this planning worktree or
 the stale `deck/at-rest-poc` vendor tree, is A0's source.
@@ -676,9 +673,8 @@ optional infrastructure and they expose no branch UI yet.
 ### B0 — V2 protocol objects
 
 **Story.** Import RRI-native Repository, `deck-checkpoint-v2`, Review, branch
-head, and `mergeTrees` contracts from the exact Deck commit. Keep legacy
-`deck-revision-v1` and `deck-pull-request-v1` fixtures readable without
-rewriting their hashes.
+head, and `mergeTrees` contracts from the exact Deck commit. Delete the legacy
+Revision/Pull Request adapter surface rather than shipping two protocols.
 
 **Done when.** A Repository, Checkpoint, Review, and branch head round-trip
 through Boxel adapters with byte-identical local/AWS canonical JSON.

@@ -1,0 +1,9 @@
+{
+  "schema": "deck-repository-manifest-v2",
+  "roots": ["@acme/dashboard/"],
+  "members": {
+    "@acme/dashboard/": "app/dashboard",
+    "@acme/editor/": "acme/editor",
+    "@acme/theme/": "acme/theme"
+  }
+}

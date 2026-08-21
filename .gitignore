@@ -6,10 +6,13 @@
 # index is a machine-local cache over machine-local files.
 .pnpm-store/
 .deck/
+!examples/collaboration/depot/.deck/
+examples/collaboration/depot/.deck/*
+!examples/collaboration/depot/.deck/repository.json
 # A depot carries its own machinery inside itself, and none of it is source:
-# `.deck/` is the store, `.jj/` is the seal log, and jj colocates a backing
-# `.git` beside it — which git otherwise mistakes for an embedded repository
-# and refuses to descend into.
+# `.deck/` contains the store, Repository refs, indexes, and History. deckd's
+# jj backend also colocates machine-generated `.jj/` and `.git/` directories,
+# which the outer git repository must ignore.
 .jj/
 examples/*/depot/.git/
 examples/*/depot/app/viewer/build.json

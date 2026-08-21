@@ -304,14 +304,14 @@ already in the store.</p>
 
 <p>Every mutable package is already a repository. It needs no
 <code>repository.json</code> and no initialization ceremony. Create a branch,
-edit the package, capture an intentional Revision, open a Review, and merge
+edit the package, capture an intentional Checkpoint, open a Review, and merge
 it:</p>
 
 <pre class="term"><code>deck branch --depot ./work/site --repo acme/palette \\
   --name fix/contrast --from main
 
 # edit ./work/site/acme/palette, then capture the branch
-deck commit --depot ./work/site --repo acme/palette \\
+deck checkpoint --depot ./work/site --repo acme/palette \\
   --branch fix/contrast --message "Improve contrast"
 
 deck review --depot ./work/site --repo acme/palette \\
@@ -319,8 +319,8 @@ deck review --depot ./work/site --repo acme/palette \\
 
 deck merge --depot ./work/site --repo acme/palette --number 1</code></pre>
 
-<p>Browse shows the package, its branches, and its Revision history. Review
-shows the exact source and target Revisions, the file differences, a runnable
+<p>Browse shows the package, its branches, and its Checkpoint history. Review
+shows the exact source and target Checkpoints, the file differences, a runnable
 preview, and the merge result. Both surfaces read the same durable objects
 that the CLI writes.</p>
 
@@ -343,13 +343,13 @@ has mutable upstream lineage.</p>
 <p>Most work stops at the package repository above. When a change to several
 packages and the exact import map must be atomic, use
 <code>deck repo-init</code>. It writes <code>repository.json</code> to name the
-members and roots. This is Deck's monorepo: a Repository Revision points to
+members and roots. This is Deck's monorepo: a Repository Checkpoint points to
 several independently addressable package trees and one exact lock.</p>
 `;
 
 const SYSTEM = `
 <p class="lede">Deck has one content-addressed foundation and two kinds of
-state. Files, package trees, Versions, Repositories and Revisions are immutable
+state. Files, package trees, Versions, Repositories and Checkpoints are immutable
 objects. Branches, tags and Review heads are small mutable pointers to those
 objects. That division is the whole system.</p>
 
@@ -364,14 +364,14 @@ package tree ──hash──┬──▶ Version ──URL──▶ Browse + Ru
 
 chosen package tree(s) + exact import-map lock
      │
-     │ deck commit — intentional authorship
+     │ deck checkpoint — intentional authorship
      ▼
-Repository ◀── Revision ◀── branch  (mutable compare-and-swap ref)
+Repository ◀── Checkpoint ◀── branch  (mutable compare-and-swap ref)
 
-source branch ──exact Revision──┐
+source branch ──exact Checkpoint──┐
                                 ├──▶ Review ──preview──▶ Browse + Run
-target branch ──exact Revision──┘       │
-                                       └──merge──▶ new two-parent Revision
+target branch ──exact Checkpoint──┘       │
+                                       └──merge──▶ new two-parent Checkpoint
                                                         │
                                                         └──CAS──▶ target branch</code></pre>
 
@@ -383,15 +383,15 @@ package tree. Automatic <code>-dev.N</code> Versions preserve every settled
 save.</td></tr>
 <tr><td><b>Step</b></td><td class="says">An observed filesystem capture in a
 depot History. It answers “what happened while work was in progress?”</td></tr>
-<tr><td><b>Revision</b></td><td class="says">An intentional authored history
-event. It points to one Repository and its parent Revisions.</td></tr>
+<tr><td><b>Checkpoint</b></td><td class="says">An intentional authored history
+event. It points to one Repository and its parent Checkpoints.</td></tr>
 <tr><td><b>Branch</b></td><td class="says">A named compare-and-swap ref inside
 one owner and repository.</td></tr>
 <tr><td><b>Fork</b></td><td class="says">The same isolation and ancestry
 mechanics across an ownership boundary. Imported packages are read-only until
 forked.</td></tr>
 <tr><td><b>Review</b></td><td class="says">Durable metadata connecting exact
-source and target Revisions, plus append-only review and merge events.</td></tr>
+source and target Checkpoints, plus append-only review and merge events.</td></tr>
 <tr><td><b>Repository</b></td><td class="says">The atomic collaboration state.
 Usually it contains one package implicitly. A <code>repository.json</code>
 exists only when several packages and their lock must advance together.</td></tr>
@@ -404,7 +404,7 @@ conditional object writes. Neither needs a Git object store.</p>
 
 <p><b>The Hub is an inspector for this state.</b> Browse answers what exists
 and which repository governs it. Run executes an exact package graph. Track
-shows automatic Steps and activity. Review shows proposed Revision-to-Revision
+shows automatic Steps and activity. Review shows proposed Checkpoint-to-Checkpoint
 changes and moves the target branch only after a clean merge.</p>
 `;
 
@@ -458,11 +458,11 @@ const ANY_SYSTEM = [
   ],
   [
     'Automatic history and authored history stay connected',
-    `A Step is what the filesystem watcher observed on a save. A Revision is
-     what a person or agent intentionally committed to a branch. Both point
+    `A Step is what the filesystem watcher observed on a save. A Checkpoint is
+     what a person or agent intentionally captured on a branch. Both point
      into the same content-addressed store, so review can retain the authored
-     story without losing the work between commits. To combine concurrent
-     work, Deck merges package trees against the exact base Revision. JSON is
+     story without losing the work between Checkpoints. To combine concurrent
+     work, Deck merges package trees against the exact base Checkpoint. JSON is
      merged as data, key by key, so two additions at different keys do not
      conflict.`,
     '/track',
@@ -491,7 +491,7 @@ const ANY_SYSTEM = [
   ],
   [
     'You can run a contribution before you accept it',
-    `A Review durably names exact source and target Revisions. Deck prepares
+    `A Review durably names exact source and target Checkpoints. Deck prepares
      the same three-way Repository merge for Preview that it will use for
      Merge, then hands the resulting exact package Versions to Run. You do not
      have to infer the assembled result from a diff. If the merge conflicts,
@@ -552,7 +552,7 @@ const ANY_SYSTEM = [
   [
     'Review tools can use more than a difference between two files',
     `A Review retains familiar source and target branch names while binding
-     them to exact immutable Revisions. Its event chain records source
+     them to exact immutable Checkpoints. Its event chain records source
      updates, verdicts, merge preparation and completion. The Hub can
      therefore show files, authored history, executable preview, merge state,
      and the canonical objects underneath instead of reconstructing truth
@@ -687,12 +687,12 @@ next. This half is settled: the twelve laws state it, the conformance suite
 examines it, and you can write a second implementation of it today.</p>
 
 <p><b>Collaboration</b> records what people and agents do to work. Repository,
-Revision, branch-ref, Pull Request opening and event formats are implemented
+Checkpoint, branch-head, Review opening and event formats are implemented
 and tested locally. The mutable parts are deliberately small: a branch ref, a
 Review head, and its event pointer. Everything they name is immutable.</p>
 
 <p>The question that divides them is: <b>is this an object or a pointer?</b> A
-tree, Repository, Revision and Review event never change. A branch or numbered
+tree, Repository, Checkpoint and Review event never change. A branch or numbered
 Review ref can move, but only with compare-and-swap against the value its
 writer observed.</p>
 
@@ -700,12 +700,12 @@ writer observed.</p>
 <thead><tr><th></th><th>immutable objects</th><th>mutable coordination</th></tr></thead>
 <tbody>
 <tr><td>identity</td><td class="says">tree hash, packlist, object</td><td class="says">—</td></tr>
-<tr><td>naming</td><td class="says">Version, Repository, Revision</td><td class="says">dist-tag, range, branch ref</td></tr>
+<tr><td>naming</td><td class="says">Version, Repository, Checkpoint</td><td class="says">dist-tag, range, branch head</td></tr>
 <tr><td>distribution</td><td class="says">the address grammar, the cache rules</td><td class="says">—</td></tr>
-<tr><td>time</td><td class="says">Step, Revision, Review event</td><td class="says">History head, branch head, Review head</td></tr>
+<tr><td>time</td><td class="says">Step, Checkpoint, Review event</td><td class="says">History head, branch head, Review head</td></tr>
 <tr><td>provenance</td><td class="says">where bytes came from, and when</td><td class="says">—</td></tr>
 <tr><td>trust</td><td class="says">an endorsement of a tree hash</td><td class="says">whose endorsements you accept</td></tr>
-<tr><td>change</td><td class="says">Pull Request opening and events</td><td class="says">branch, fork, Review, merge</td></tr>
+<tr><td>change</td><td class="says">Review opening and events</td><td class="says">branch, fork, Review, merge</td></tr>
 <tr><td>intent</td><td class="says">—</td><td class="says">claim</td></tr>
 <tr><td>talk</td><td class="says">—</td><td class="says">note, reply</td></tr>
 <tr><td>presence</td><td class="says">—</td><td class="says">activity</td></tr>
@@ -746,7 +746,7 @@ in motion. That is how claims were built — files at a known path, read by an
 ordinary <code>GET</code>, and no change to identity, naming or serving.</p>
 
 <p><b>The collaboration object model is implemented; hosting is unfinished.</b>
-Local Deck has Repository and Revision objects, compare-and-swap branches,
+Local Deck has Repository and Checkpoint objects, compare-and-swap branches,
 durable Reviews, executable previews, three-way merge, and crash recovery.
 Conditional object-store adapters implement the same ref contract for S3.
 What remains is production AWS wiring, identity and permissions, policy for
@@ -806,16 +806,16 @@ through an authoring adapter, but local files and S3 objects obey the same
 contract:</p>
 <table class="stack"><tbody>
 <tr><td><b>immutable put</b></td><td class="says">Locks, Repositories,
-Revisions, Pull Request openings and events are canonical, content addressed,
+Checkpoints, Review openings and events are canonical, content addressed,
 and write-once.</td></tr>
 <tr><td><b>conditional ref update</b></td><td class="says">A branch moves only
-when its current Revision equals the writer's expected Revision. Local Deck
+when its current generation equals the writer's expected generation. Local Deck
 uses an atomic rename; S3 uses <code>If-Match</code>.</td></tr>
 <tr><td><b>unique allocation</b></td><td class="says">Review numbers, openings
 and new event objects use create-if-absent. Concurrent writers reread and
 retry allocation; they do not overwrite.</td></tr>
 <tr><td><b>recoverable merge</b></td><td class="says">Deck records the prepared
-merge Revision before advancing the target branch, then records completion.
+merge Checkpoint before advancing the target branch, then records completion.
 Retry completes the same merge rather than creating another.</td></tr>
 <tr><td><b>preview parity</b></td><td class="says">Preview and Merge use the
 same base, source, target and Repository merge engine, so an unchanged clean
@@ -855,10 +855,10 @@ const BOOK = [
      <tr><td><b>Step</b></td><td class="says">One capture of the working tree. The server records one Step for each save.</td></tr>
      <tr><td><b>History</b></td><td class="says">All the Steps of one depot, in order.</td></tr>
      <tr><td><b>Repository</b></td><td class="says">The exact package trees and lock that advance atomically. Every mutable package has an implicit one-member Repository.</td></tr>
-     <tr><td><b>Revision</b></td><td class="says">An immutable authored history event pointing to one Repository and its parent Revisions.</td></tr>
-     <tr><td><b>branch</b></td><td class="says">A named mutable ref to a Revision inside one owner and repository.</td></tr>
+     <tr><td><b>Checkpoint</b></td><td class="says">An immutable authored history event pointing to one Repository and its parent Checkpoints.</td></tr>
+     <tr><td><b>branch</b></td><td class="says">A named mutable ref to a Checkpoint inside one owner and repository.</td></tr>
      <tr><td><b>fork</b></td><td class="says">A mutable package under a different publisher, with exact source ancestry when available.</td></tr>
-     <tr><td><b>Review</b></td><td class="says">A durable proposal from one exact branch Revision to another, with append-only events, preview and merge state.</td></tr>
+     <tr><td><b>Review</b></td><td class="says">A durable proposal from one exact branch Checkpoint to another, with append-only events, preview and merge state.</td></tr>
      <tr><td><b>Import</b></td><td class="says">A specifier that a deck asks for.</td></tr>
      <tr><td><b>Pin</b></td><td class="says">The exact address that answers an Import.</td></tr>
      <tr><td><b>Entry</b></td><td class="says">The module that a deck offers as the way into itself.</td></tr>
@@ -892,7 +892,7 @@ const BOOK = [
 <p><b>A depot is a package address space, not automatically a monorepo.</b>
      It may contain many unrelated packages, forks and repositories. Each
      mutable package is its own repository unless a <code>repository.json</code>
-     explicitly groups several packages so one Revision can advance them and
+     explicitly groups several packages so one Checkpoint can advance them and
      their lock atomically.</p>
      <ul>
      <li>A package remains the independently addressable execution and release
@@ -1028,7 +1028,7 @@ const BOOK = [
      <pre class="term"><code>deck fork --depot ./work/site --from acme/palette --as you/palette --use-in you/app
 deck lock --depot ./work/site --publisher you --name app
 deck branch --depot ./work/site --repo you/palette --name fix/contrast
-deck commit --depot ./work/site --repo you/palette --branch fix/contrast --message "Improve contrast"
+deck checkpoint --depot ./work/site --repo you/palette --branch fix/contrast --message "Improve contrast"
 deck review --depot ./work/site --repo you/palette --source fix/contrast --title "Improve contrast"
 deck merge --depot ./work/site --repo you/palette --number 1</code></pre>
      <p>To try another package in your app without creating durable review
@@ -1073,7 +1073,7 @@ makes the same graph yours, hermetic, and diffable. Deck can be your CDN;
 a CDN cannot be your registry.</td></tr>
 <tr><td><b>git</b></td><td class="dim">Both keep every state. Git keeps
 <i>commits you author</i> in a repository object graph. Deck keeps automatic
-Steps and authored Revisions over the same content-addressed package trees,
+Steps and authored Checkpoints over the same content-addressed package trees,
 and gives every runnable state a URL. Deck now has familiar branches, forks,
 Reviews and three-way merge, but does not reproduce Git's staging area,
 working-copy checkout or history-rewriting model. Its branch refs select exact
@@ -1107,7 +1107,7 @@ it cannot drift from what exists.</p>
 answer to it — <code>vendor</code> <code>vendor-tree</code> <code>lock</code>
 <code>verify-links</code></td></tr>
 <tr><td><b>repository</b></td><td class="dim">author durable collaboration
-state — <code>repo-init</code> <code>branch</code> <code>commit</code>
+state — <code>repo-init</code> <code>branch</code> <code>checkpoint</code>
 <code>review</code> <code>merge</code></td></tr>
 <tr><td><b>propose</b></td><td class="dim">materialize someone else's package
 under your ownership — <code>fork</code>; inspect older package offers with
@@ -1130,7 +1130,7 @@ const STATUS = [
   ['vendoring hermetic graphs, with a cooldown policy', 'built', 'tested'],
   ['lock, fork, merge, offers, rebase', 'built', 'tested'],
   [
-    'Repository, Revision and compare-and-swap branch refs',
+    'Repository, Checkpoint and compare-and-swap branch heads',
     'built',
     'local and S3 adapters tested',
   ],
@@ -1147,7 +1147,7 @@ const STATUS = [
   [
     'multi-package repository.json grouping',
     'built',
-    'atomic Repository Revision and merge',
+    'atomic Repository Checkpoint and merge',
   ],
   [
     'Hub Browse and Review projections',
@@ -1369,8 +1369,8 @@ function view(state) {
      every-save History is attached, the same save is also an ordered Step: the exact
      depot state, when it happened, and which files changed. You can inspect,
      run, compare and restore work that was never committed. A later
-     <code>deck commit</code> does a different job: it turns chosen package
-     state into an authored Repository Revision for branch and Review
+     <code>deck checkpoint</code> does a different job: it turns chosen package
+     state into an authored Repository Checkpoint for branch and Review
      history.</p>` +
     // The unifying assumption, before any mechanism. Four claims that each
     // sound like a separate trick are one claim said three times, and a
@@ -1378,7 +1378,7 @@ function view(state) {
     // a feature list.
     `<p class="lede">One foundation makes all four true: files and package
      trees are named by their content and reachable at URLs. Versions,
-     Repositories and Revisions name immutable state above those trees.
+     Repositories and Checkpoints name immutable state above those trees.
      Branches, tags and Review heads are the small mutable pointers. Execution,
      distribution and collaboration therefore share one address space instead
      of copying code through a repository, package registry and deployment
@@ -1394,8 +1394,8 @@ function view(state) {
         'an immutable automatic Version and—when attached—an ordered Step in History.',
       ],
       [
-        'A commit becomes',
-        'an authored immutable Revision pointing to exact Repository state.',
+        'A Checkpoint is',
+        'an authored immutable object pointing to exact Repository state.',
       ],
       [
         'A version, a tag, a release, a staging environment are just',
@@ -1417,7 +1417,7 @@ function view(state) {
       ],
       [
         'A Review is',
-        'durable source-to-target metadata bound to exact Revisions and an' +
+        'durable source-to-target metadata bound to exact Checkpoints and an' +
           ' append-only event history.',
       ],
       [

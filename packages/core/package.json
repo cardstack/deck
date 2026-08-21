@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./node": "./src/node.ts",
     "./resolve": "./src/resolve.ts",
+    "./rri": "./src/rri.ts",
     "./import-map-pack": "./src/import-map-pack.ts",
     "./inherit": "./src/inherit.ts",
     "./classify": "./src/classify.ts",
@@ -36,8 +37,8 @@
     "./repository": "./src/repository.ts",
     "./repository-store": "./src/repository-store.ts",
     "./repository-merge": "./src/repository-merge.ts",
-    "./pull-request": "./src/pull-request.ts",
-    "./pull-request-store": "./src/pull-request-store.ts",
+    "./review": "./src/review.ts",
+    "./review-store": "./src/review-store.ts",
     "./repository-workflow": "./src/repository-workflow.ts"
   },
   "scripts": {

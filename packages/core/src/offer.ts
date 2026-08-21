@@ -44,9 +44,9 @@ export interface ForkedFrom {
   version?: string;
   // The identity that matters: what the base tree WAS.
   treeHash: string;
-  // The upstream package's exact collaboration Revision when the fork came
+  // The upstream package's exact collaboration Checkpoint when the fork came
   // from a mutable branch. This is the three-way merge base for Review.
-  revisionHash?: string;
+  checkpointHash?: string;
   // Who made the offer, when that is known. The seal already records an
   // author; this is the durable, in-tree claim.
   actor?: string;

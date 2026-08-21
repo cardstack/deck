@@ -24,12 +24,10 @@ fork of an import begins an independent repository rather than advertising a
 fake upstream Review. The Hub derives this base from the fork's stored lineage;
 it does not trust a browser-supplied Checkpoint hash.
 
-**Status: LEGACY V1 IMPLEMENTED; RRI/CHECKPOINT V2 REQUIRED BEFORE BOXEL A0.**
-The local reference implementation currently writes V1 Repository member names
-as `owner/package` and the legacy wire noun `deck-revision-v1`. Before Boxel A0,
-Deck gate R0 adds V2: durable member/root identities are RRIs and intentional
-collaboration points use `deck-checkpoint-v2`. V1 remains readable and
-hash-stable; new backport objects write V2. This document defines
+**Status: RRI/CHECKPOINT PROTOCOL IS THE ONLY SUPPORTED COLLABORATION FORMAT.**
+Deck makes a clean cutover before Boxel A0: durable member/root identities are
+scoped RRIs and intentional collaboration points use `deck-checkpoint-v2`.
+There is no V1 compatibility reader or legacy write surface. This document defines
 the durable objects beneath Deck's familiar repository, branch, fork, Review,
 and merge UX. The protocol deliberately introduces no new product
 noun. A repository containing several member packages is simply a monorepo.
@@ -114,6 +112,13 @@ Storing the canonical lock by hash makes exact resolution closed over by a
 Repository and reconstructable on another machine without baking one host's
 origin into authored history.
 
+Deck accepts standard authored import maps at the authoring boundary. Before
+hashing, it removes the transport projector: a target such as
+`/site/acme/theme@2.1.0/index.js` becomes
+`@acme/theme@2.1.0/index.js`, relative targets resolve against the root RRI,
+and URL-form values never enter the stored lock. Delivery later performs the
+inverse projection for the serving authority.
+
 ## 3. Repository membership
 
 A hosted forge may project repository membership into authenticated query
@@ -162,10 +167,8 @@ are placement intent, not durable identity. Sealing resolves each member to a
 Member RRIs and roots are sorted in canonical form. A Repository must have at
 least one member. Hashes are lowercase SHA-256 hex.
 
-V1 objects keep their original `owner/package` member keys and hashes. A V1
-reader may expose a derived scoped RRI, but must not rewrite or rehash the
-stored object. V2 writers require scoped RRI roots and never emit the legacy
-member form.
+Repository writers require scoped RRI roots. URL-form identities and bare
+`owner/package` member keys are invalid protocol input.
 
 ```text
 dependency edge = this package is needed to run
@@ -209,10 +212,9 @@ with that state. A normal save creates a deckd/jj Step and advances the branch
 head; it does not write a Checkpoint. Opening a Review, explicitly naming a
 milestone, and merging do write Checkpoints.
 
-The implemented legacy object remains readable as `deck-revision-v1` under
-`_revisions/`, with its original field names and canonical hash. Readers expose
-it as a legacy Checkpoint but never rewrite it in place. V2 writers use
-`deck-checkpoint-v2`, `checkpointHash`, and `_checkpoints/` exclusively.
+The API and storage vocabulary is Checkpoint throughout:
+`deck-checkpoint-v2`, `checkpointHash`, and `_checkpoints/`. There is no
+Revision alias.
 
 ## 6. Branches and forks
 
@@ -297,6 +299,11 @@ planning may already exist and are harmless because no ref reaches them.
 Each realm owns its protocol data. A host may physically aggregate realms in
 one bucket, but no Deck resource floats in a parallel protocol tree:
 
+- For an ordinary one-package Repository, the package directory is the realm
+  root and its `.deck/` belongs to that package alone.
+- For an explicit multi-package Repository, the directory containing
+  `.deck/repository.json` is the realm root and owns the shared atomic state.
+
 ```text
 <realm-root>/.deck/
 ├── store/
@@ -304,8 +311,7 @@ one bucket, but no Deck resource floats in a parallel protocol tree:
 │   ├── _trees/                           package trees
 │   ├── _locks/<hh>/<lockHash>.json       exact import maps
 │   ├── _repositories/<hh>/<hash>.json    Repository objects
-│   ├── _checkpoints/<hh>/<hash>.json     Checkpoint objects
-│   └── _revisions/<hh>/<hash>.json       legacy V1; read-only
+│   └── _checkpoints/<hh>/<hash>.json     Checkpoint objects
 ├── refs/heads/<branch-token>.json        mutable branch heads
 ├── reviews/
 │   ├── objects/<hh>/<hash>.json          immutable Review openings
@@ -398,9 +404,9 @@ If the process stops after step 2 or 3, the next merge call reads
 `merge-started`, completes the missing ref update, and appends `merged`. It
 never creates a second merge Checkpoint.
 
-The implemented `deck-pull-request-v1` opening/events remain readable with
-their original bytes and paths. R0/B0 migrate writers and UI to
-`deck-review-v2`; compatibility readers project legacy objects as Reviews.
+The API, paths, and wire objects use Review throughout. GitHub pull requests
+may be produced later as a syndicated representation, but are not a Deck
+protocol alias.
 
 Preview runs the same Repository merge engine as Merge, using the captured
 target as base, the current target as “ours,” and the captured or explicitly
@@ -411,25 +417,22 @@ name the same Repository hash.
 
 | Layer                                                    | Status                                          |
 | -------------------------------------------------------- | ----------------------------------------------- |
-| Legacy V1 Repository, Revision, and branch ref           | Implemented and tested                          |
-| RRI-native Repository, Checkpoint, and branch-head V2    | Required by R0; not yet implemented             |
+| RRI-native Repository, Checkpoint, and branch head       | Implemented and tested                          |
 | Local compare-and-swap refs                              | Implemented and tested                          |
 | Conditional object-store branch adapter for S3           | Implemented and tested                          |
 | Multi-package Repository merge                           | Implemented and tested                          |
-| Legacy Pull Request V1 opening/events/preview/merge      | Implemented and tested locally                  |
-| Review V2 opening/events/preview/merge                   | Required by R0/B0; not yet implemented          |
-| Crash recovery across branch + Review refs               | Implemented in V1; must port to V2              |
-| Legacy depot-root `repository.json` discovery            | Implemented                                     |
-| Realm-owned `.deck/repository.json` discovery            | Required by R0; not yet implemented             |
-| Agent CLI: init, branch, commit, review, merge           | Implemented                                     |
-| Generic Hub Browse and Review projection                 | Implemented                                     |
+| Review opening/events/preview/merge                      | Implemented and tested locally                  |
+| Crash recovery across branch + Review refs               | Implemented                                     |
+| Realm-owned `.deck/repository.json` discovery            | Implemented                                     |
+| Agent CLI: init, branch, checkpoint, Review, merge       | Implemented and tested                          |
+| Generic Hub Browse and Review projection                 | Implemented against current objects              |
 | Multi-package validation depot and guided tour           | Implemented                                     |
 | Hosted authentication and authorization                  | Not implemented                                 |
 | Signed checks and required-review policy                 | Event shape exists; enforcement not implemented |
-| S3 legacy Pull Request numbering/events                  | Implemented and tested                          |
-| Realm-local S3 Review numbering/events                   | Required by B1; not yet implemented             |
+| Realm-local conditional Review numbering/opening         | Implemented and tested                          |
+| Conditional Review event-head adapter                    | Required by B1                                  |
 | Production AWS object adapters and S3 Files/deckd wiring | Required by backport; not yet implemented       |
-| Production Hub repository UI                             | Specified, not implemented                      |
+| Hosted multi-user Hub authorization/policy UI            | Specified, not implemented                      |
 
 The validation depot is the architectural test. UX must not invent state the protocol
 cannot reproduce.

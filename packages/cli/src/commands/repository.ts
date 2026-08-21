@@ -1,19 +1,14 @@
-import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { createBranchReview, mergeReview } from '@cardstack/deck/review-store';
 import {
-  createPullRequest,
-  mergePullRequest,
-} from '@cardstack/deck/pull-request-store';
-import {
-  captureRepositoryRevision,
+  captureRepositoryCheckpoint,
   createRepositoryBranch,
-  ensureRepositoryMain,
   readRepositoryConfig,
-  resolveRepositoryConfig,
   repositoryConfig,
+  repositoryIdentity,
+  resolveRepositoryContext,
+  writeRepositoryConfig,
   REPOSITORY_CONFIG_FILE,
-  REPOSITORY_CONFIG_SPEC,
 } from '@cardstack/deck/repository-workflow';
 import { defineCommand, type Command } from '../command.ts';
 import { depotAt, fail } from '../support.ts';
@@ -26,24 +21,39 @@ function actor() {
   };
 }
 
-async function configured(depotDir: string, identity?: string) {
+async function configured(realmDir: string, identity?: string) {
   try {
-    return await resolveRepositoryConfig(depotDir, identity);
+    return await resolveRepositoryContext(realmDir, identity);
   } catch (error) {
     fail((error as Error).message);
   }
 }
 
+function packageRRI(value: string): string {
+  if (!/^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._-]{0,63}$/.test(value)) {
+    fail(`package must be <owner>/<name>: ${value}`);
+  }
+  return `@${value}/`;
+}
+
+function requireSettlement(values: { history?: string; index?: string }) {
+  if (!values.history || !values.index) {
+    fail('a Checkpoint requires --history <deckd-head> and --index <generation-hash>');
+  }
+  if (!/^[0-9a-f]{64}$/.test(values.index)) fail('--index must be a SHA-256 hash');
+  return { historyHead: values.history, indexGenerationHash: values.index };
+}
+
 const repoInit = defineCommand({
   name: 'repo-init',
   group: 'repository',
-  summary: 'name a set of packages as one Repository and create main',
+  summary: 'name packages that advance as one Repository and create main',
   usage: [
-    'repo-init --depot <dir> --owner <owner> --name <name> --root <pkg> --member <pkg>...',
+    'repo-init --depot <dir> --owner <owner> --name <name> --root <pkg> --member <pkg>... --history <head> --index <hash>',
   ],
-  detail: `Writes repository.json beside the depot import map, captures every
-member package into CAS, and creates the main branch. The file names the
-composition; immutable Repository and Revision objects carry its history.`,
+  detail: `Writes .deck/repository.json, captures each member package and the
+RRI lock, creates an initial Checkpoint, and points main at its exact
+Repository, History head, and completed index generation.`,
   async run(argv) {
     let { values } = parseArgs({
       args: argv,
@@ -53,45 +63,36 @@ composition; immutable Repository and Revision objects carry its history.`,
         name: { type: 'string' },
         root: { type: 'string', multiple: true },
         member: { type: 'string', multiple: true },
+        history: { type: 'string' },
+        index: { type: 'string' },
         message: { type: 'string', default: 'Initialize Repository' },
       },
     });
-    if (
-      !values.depot ||
-      !values.owner ||
-      !values.name ||
-      !values.root?.length ||
-      !values.member?.length
-    ) {
-      fail(
-        'usage: deck repo-init --depot <dir> --owner <owner> --name <name> --root <pkg> --member <pkg>...',
-      );
+    if (!values.depot || !values.owner || !values.name || !values.root?.length || !values.member?.length) {
+      fail('usage: deck repo-init --depot <dir> --owner <owner> --name <name> --root <pkg> --member <pkg>... --history <head> --index <hash>');
     }
     let depot = depotAt(values.depot);
-    if (await readRepositoryConfig(depot.dir))
-      fail(`${REPOSITORY_CONFIG_FILE} already exists`);
+    if (await readRepositoryConfig(depot.dir)) fail(`${REPOSITORY_CONFIG_FILE} already exists`);
+    let repositoryRoot = `@${values.owner}/${values.name}/`;
+    let memberRRI = (path: string) =>
+      path === values.root![0] ? repositoryRoot : packageRRI(path);
+    let members = Object.fromEntries(values.member.map((path) => [memberRRI(path), path]));
     let config = repositoryConfig({
-      schema: REPOSITORY_CONFIG_SPEC,
-      owner: values.owner,
-      name: values.name,
-      roots: values.root,
-      members: values.member,
+      schema: 'deck-repository-manifest-v2',
+      roots: values.root.map(memberRRI),
+      members,
     });
-    await writeFile(
-      join(depot.dir, REPOSITORY_CONFIG_FILE),
-      `${JSON.stringify(config, null, 2)}\n`,
-      { flag: 'wx' },
-    );
-    let captured = await captureRepositoryRevision({
-      depotDir: depot.dir,
-      storeDir: depot.storeDir,
+    await writeRepositoryConfig(depot.dir, config);
+    let captured = await captureRepositoryCheckpoint({
+      realmDir: depot.dir,
       config,
       branch: 'main',
       message: values.message,
       author: actor(),
+      ...requireSettlement(values),
     });
     console.log(
-      `initialized ${config.owner}/${config.name}:main ${captured.revisionHash.slice(0, 12)} (${config.members.length} packages)`,
+      `initialized ${values.owner}/${values.name}:main ${captured.checkpointHash.slice(0, 12)} (${Object.keys(config.members).length} packages)`,
     );
   },
 });
@@ -99,10 +100,8 @@ composition; immutable Repository and Revision objects carry its history.`,
 const branch = defineCommand({
   name: 'branch',
   group: 'repository',
-  summary: 'create a familiar branch ref over Repository Revisions',
-  usage: [
-    'branch --depot <dir> --repo <publisher/package> --name <branch> [--from main]',
-  ],
+  summary: 'clone a Repository branch head',
+  usage: ['branch --depot <dir> --repo <owner/package> --name <branch> [--from main]'],
   async run(argv) {
     let { values } = parseArgs({
       args: argv,
@@ -113,36 +112,20 @@ const branch = defineCommand({
         from: { type: 'string', default: 'main' },
       },
     });
-    if (!values.depot || !values.name)
-      fail(
-        'usage: deck branch --depot <dir> --repo <publisher/package> --name <branch> [--from main]',
-      );
+    if (!values.depot || !values.repo || !values.name) fail('usage: deck branch --depot <dir> --repo <owner/package> --name <branch> [--from main]');
     let depot = depotAt(values.depot);
-    let config = await configured(depot.dir, values.repo);
-    await ensureRepositoryMain({
-      depotDir: depot.dir,
-      storeDir: depot.storeDir,
-      config,
-      author: actor(),
-    });
-    let hash = await createRepositoryBranch({
-      storeDir: depot.storeDir,
-      config,
-      branch: values.name,
-      from: values.from,
-    });
-    console.log(
-      `branched ${config.owner}/${config.name}:${values.name} from ${values.from} at ${hash.slice(0, 12)}`,
-    );
+    let context = await configured(depot.dir, values.repo);
+    let head = await createRepositoryBranch({ realmDir: context.realmDir, branch: values.name, from: values.from });
+    console.log(`branched ${values.name} from ${values.from} at ${head.latestCheckpointHash?.slice(0, 12) ?? 'uncheckpointed'}`);
   },
 });
 
-const commit = defineCommand({
-  name: 'commit',
+const checkpointCommand = defineCommand({
+  name: 'checkpoint',
   group: 'repository',
-  summary: 'capture every member package as one atomic Revision',
+  summary: 'name the current Repository, History, and index as one Checkpoint',
   usage: [
-    'commit --depot <dir> --repo <publisher/package> --branch <branch> --message <message>',
+    'checkpoint --depot <dir> --repo <owner/package> --branch <branch> --message <message> --history <head> --index <hash>',
   ],
   async run(argv) {
     let { values } = parseArgs({
@@ -152,34 +135,33 @@ const commit = defineCommand({
         repo: { type: 'string' },
         branch: { type: 'string' },
         message: { type: 'string' },
+        history: { type: 'string' },
+        index: { type: 'string' },
       },
     });
-    if (!values.depot || !values.branch || !values.message)
-      fail(
-        'usage: deck commit --depot <dir> --branch <branch> --message <message>',
-      );
+    if (!values.depot || !values.branch || !values.message) {
+      fail('usage: deck checkpoint --depot <dir> --repo <owner/package> --branch <branch> --message <message> --history <head> --index <hash>');
+    }
     let depot = depotAt(values.depot);
-    let config = await configured(depot.dir, values.repo);
-    let captured = await captureRepositoryRevision({
-      depotDir: depot.dir,
-      storeDir: depot.storeDir,
-      config,
+    let context = await configured(depot.dir, values.repo);
+    let captured = await captureRepositoryCheckpoint({
+      realmDir: context.realmDir,
+      config: context.config,
       branch: values.branch,
       message: values.message,
       author: actor(),
+      ...requireSettlement(values),
     });
-    console.log(
-      `committed ${config.owner}/${config.name}:${values.branch} ${captured.revisionHash.slice(0, 12)}`,
-    );
+    console.log(`checkpointed ${repositoryIdentity(context.config)}:${values.branch} ${captured.checkpointHash.slice(0, 12)}`);
   },
 });
 
-const review = defineCommand({
+const reviewCommand = defineCommand({
   name: 'review',
   group: 'repository',
-  summary: 'open a durable review from one branch into another',
+  summary: 'open a durable Review from one branch into another',
   usage: [
-    'review --depot <dir> --repo <publisher/package> --source <branch> --title <title> [--target main] [--body <text>]',
+    'review --depot <dir> --repo <owner/package> --source <branch> --title <title> [--target main] [--body <text>]',
   ],
   async run(argv) {
     let { values } = parseArgs({
@@ -193,40 +175,30 @@ const review = defineCommand({
         body: { type: 'string', default: '' },
       },
     });
-    if (!values.depot || !values.source || !values.title)
-      fail(
-        'usage: deck review --depot <dir> --source <branch> --title <title> [--target main]',
-      );
+    if (!values.depot || !values.repo || !values.source || !values.title) {
+      fail('usage: deck review --depot <dir> --repo <owner/package> --source <branch> --title <title> [--target main]');
+    }
     let depot = depotAt(values.depot);
-    let config = await configured(depot.dir, values.repo);
-    let opened = await createPullRequest({
-      storeDir: depot.storeDir,
-      target: {
-        owner: config.owner,
-        repository: config.name,
-        branch: values.target,
-      },
-      source: {
-        owner: config.owner,
-        repository: config.name,
-        branch: values.source,
-      },
+    let context = await configured(depot.dir, values.repo);
+    let opened = await createBranchReview({
+      realmDir: context.realmDir,
+      repository: packageRRI(values.repo),
+      sourceBranch: values.source,
+      targetBranch: values.target,
       title: values.title,
       body: values.body,
       author: actor(),
       createdAt: new Date().toISOString(),
     });
-    console.log(
-      `opened review ${config.owner}/${config.name}#${opened.ref.number}: ${values.source} → ${values.target}`,
-    );
+    console.log(`opened Review #${opened.ref.number}: ${values.source} → ${values.target}`);
   },
 });
 
 const merge = defineCommand({
   name: 'merge',
   group: 'repository',
-  summary: 'merge a review with compare-and-swap branch safety',
-  usage: ['merge --depot <dir> --repo <publisher/package> --number <n>'],
+  summary: 'merge a Review with compare-and-swap branch safety',
+  usage: ['merge --depot <dir> --repo <owner/package> --number <n> --history <head> --index <hash>'],
   async run(argv) {
     let { values } = parseArgs({
       args: argv,
@@ -234,38 +206,36 @@ const merge = defineCommand({
         depot: { type: 'string' },
         repo: { type: 'string' },
         number: { type: 'string' },
+        history: { type: 'string' },
+        index: { type: 'string' },
       },
     });
     let number = Number(values.number);
-    if (!values.depot || !Number.isSafeInteger(number) || number < 1)
-      fail('usage: deck merge --depot <dir> --number <n>');
+    if (!values.depot || !values.repo || !Number.isSafeInteger(number) || number < 1) {
+      fail('usage: deck merge --depot <dir> --repo <owner/package> --number <n> --history <head> --index <hash>');
+    }
     let depot = depotAt(values.depot);
-    let config = await configured(depot.dir, values.repo);
-    let result = await mergePullRequest({
-      storeDir: depot.storeDir,
-      owner: config.owner,
-      repository: config.name,
+    let context = await configured(depot.dir, values.repo);
+    let result = await mergeReview({
+      realmDir: context.realmDir,
       number,
       actor: actor(),
       createdAt: new Date().toISOString(),
+      ...requireSettlement(values),
     });
     if (result.state === 'conflicted') {
-      console.log(
-        `conflicted ${config.owner}/${config.name}#${number}: ${result.conflicts.join(', ')}`,
-      );
+      console.log(`conflicted Review #${number}: ${result.conflicts.join(', ')}`);
       process.exitCode = 1;
       return;
     }
-    console.log(
-      `merged ${config.owner}/${config.name}#${number} ${result.mergeRevisionHash.slice(0, 12)}`,
-    );
+    console.log(`merged Review #${number} ${result.mergeCheckpointHash.slice(0, 12)}`);
   },
 });
 
 export const REPOSITORY_COMMANDS: Command[] = [
   repoInit,
   branch,
-  commit,
-  review,
+  checkpointCommand,
+  reviewCommand,
   merge,
 ];

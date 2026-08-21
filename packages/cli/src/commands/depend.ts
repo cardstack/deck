@@ -12,7 +12,7 @@ import { parseArgs } from 'node:util';
 import { pack, peekPacklist } from '@cardstack/deck/pack';
 import { publishToStore } from '@cardstack/deck/store';
 import { lockDepot, DEPOT_LOCK_PATH } from '@cardstack/deck/lock';
-import { assertLinksOk, verifyLinks } from '@cardstack/deck/verify-links';
+import { verifyLinks } from '@cardstack/deck/verify-links';
 import {
   vendorFromCdn,
   vendorImportMap,

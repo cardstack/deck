@@ -17,6 +17,7 @@
 // rather than merely intended.
 
 export * from './resolve.ts';
+export * from './rri.ts';
 
 // The three-way merge.
 //

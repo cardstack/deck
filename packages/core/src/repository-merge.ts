@@ -3,72 +3,70 @@ import { mergeJsonValues, mergeTrees } from './merge.ts';
 import { readObject, readTree, storePack } from './object-store.ts';
 import {
   changedMembers,
-  repositoryState,
-  revision,
+  checkpoint,
+  repository,
+  type Actor,
   type JsonValue,
-  type RepositoryState,
-  type RevisionAuthor,
+  type Repository,
 } from './repository.ts';
 import {
+  readBranchHead,
+  readCheckpoint,
   readRepository,
   readRepositoryLock,
-  readRevision,
+  realmDeckStoreDir,
+  storeCheckpoint,
   storeRepository,
   storeRepositoryLock,
-  storeRevision,
-  updateBranchRef,
+  updateBranchHead,
 } from './repository-store.ts';
 
 export interface RepositoryMergeReady {
   state: 'ready';
-  baseRevisionHash: string;
-  targetRevisionHash: string;
-  sourceRevisionHash: string;
-  repository: RepositoryState;
+  baseCheckpointHash: string;
+  targetCheckpointHash: string;
+  sourceCheckpointHash: string;
+  repository: Repository;
   repositoryHash: string;
   changedMembers: string[];
 }
 
 export interface RepositoryMergeConflicted {
   state: 'conflicted';
-  baseRevisionHash: string;
-  targetRevisionHash: string;
-  sourceRevisionHash: string;
+  baseCheckpointHash: string;
+  targetCheckpointHash: string;
+  sourceCheckpointHash: string;
   conflicts: string[];
 }
 
-export type RepositoryMergeResult =
-  RepositoryMergeReady | RepositoryMergeConflicted;
+export type RepositoryMergeResult = RepositoryMergeReady | RepositoryMergeConflicted;
 
-async function requiredRevision(storeDir: string, hash: string) {
-  let value = await readRevision(storeDir, hash);
-  if (!value) throw new Error(`missing Revision ${hash}`);
+async function requiredCheckpoint(realmDir: string, hash: string) {
+  let value = await readCheckpoint(realmDir, hash);
+  if (!value) throw new Error(`missing Checkpoint ${hash}`);
   return value;
 }
 
-async function requiredRepository(storeDir: string, hash: string) {
-  let value = await readRepository(storeDir, hash);
+async function requiredRepository(realmDir: string, hash: string) {
+  let value = await readRepository(realmDir, hash);
   if (!value) throw new Error(`missing Repository ${hash}`);
   return value;
 }
 
-async function requiredLock(storeDir: string, hash: string) {
-  let value = await readRepositoryLock(storeDir, hash);
+async function requiredLock(realmDir: string, hash: string) {
+  let value = await readRepositoryLock(realmDir, hash);
   if (!value) throw new Error(`missing Repository lock ${hash}`);
   return value;
 }
 
-async function treeFiles(
-  storeDir: string,
-  treeHash: string,
-): Promise<Map<string, Buffer>> {
+async function treeFiles(realmDir: string, treeHash: string): Promise<Map<string, Buffer>> {
+  let storeDir = realmDeckStoreDir(realmDir);
   let tree = await readTree(storeDir, treeHash);
   if (!tree) throw new Error(`missing package tree ${treeHash}`);
   let files = new Map<string, Buffer>();
   for (let entry of tree.entries) {
     let bytes = await readObject(storeDir, entry.sha256);
-    if (!bytes)
-      throw new Error(`missing object ${entry.sha256} for ${treeHash}`);
+    if (!bytes) throw new Error(`missing object ${entry.sha256} for ${treeHash}`);
     files.set(entry.path, bytes);
   }
   return files;
@@ -89,30 +87,30 @@ function mergeRoots(
   return { conflicted: true };
 }
 
-export async function mergeRepositoryRevisions(options: {
-  storeDir: string;
-  baseRevisionHash: string;
-  targetRevisionHash: string;
-  sourceRevisionHash: string;
+export async function mergeRepositoryCheckpoints(options: {
+  realmDir: string;
+  baseCheckpointHash: string;
+  targetCheckpointHash: string;
+  sourceCheckpointHash: string;
 }): Promise<RepositoryMergeResult> {
-  let [baseRevision, targetRevision, sourceRevision] = await Promise.all([
-    requiredRevision(options.storeDir, options.baseRevisionHash),
-    requiredRevision(options.storeDir, options.targetRevisionHash),
-    requiredRevision(options.storeDir, options.sourceRevisionHash),
+  let [baseCheckpoint, targetCheckpoint, sourceCheckpoint] = await Promise.all([
+    requiredCheckpoint(options.realmDir, options.baseCheckpointHash),
+    requiredCheckpoint(options.realmDir, options.targetCheckpointHash),
+    requiredCheckpoint(options.realmDir, options.sourceCheckpointHash),
   ]);
   let [base, target, source] = await Promise.all([
-    requiredRepository(options.storeDir, baseRevision.repositoryHash),
-    requiredRepository(options.storeDir, targetRevision.repositoryHash),
-    requiredRepository(options.storeDir, sourceRevision.repositoryHash),
+    requiredRepository(options.realmDir, baseCheckpoint.repositoryHash),
+    requiredRepository(options.realmDir, targetCheckpoint.repositoryHash),
+    requiredRepository(options.realmDir, sourceCheckpoint.repositoryHash),
   ]);
   let conflicts: string[] = [];
   let roots = mergeRoots(base.roots, target.roots, source.roots);
-  if (roots.conflicted) conflicts.push('repository.json#roots');
+  if (roots.conflicted) conflicts.push('.deck/repository.json#roots');
 
   let [baseLock, targetLock, sourceLock] = await Promise.all([
-    requiredLock(options.storeDir, base.lockHash),
-    requiredLock(options.storeDir, target.lockHash),
-    requiredLock(options.storeDir, source.lockHash),
+    requiredLock(options.realmDir, base.lockHash),
+    requiredLock(options.realmDir, target.lockHash),
+    requiredLock(options.realmDir, source.lockHash),
   ]);
   let lockMerge = mergeJsonValues(baseLock, targetLock, sourceLock);
   if (lockMerge.conflicted) conflicts.push('importmap.json');
@@ -143,24 +141,19 @@ export async function mergeRepositoryRevisions(options: {
       continue;
     }
     if (!b || !o || !t) {
-      conflicts.push(`${name}/`);
+      conflicts.push(name);
       continue;
     }
     let merged = mergeTrees(
-      await treeFiles(options.storeDir, b),
-      await treeFiles(options.storeDir, o),
-      await treeFiles(options.storeDir, t),
+      await treeFiles(options.realmDir, b),
+      await treeFiles(options.realmDir, o),
+      await treeFiles(options.realmDir, t),
     );
     if (merged.conflicts.length > 0) {
-      conflicts.push(...merged.conflicts.map((path) => `${name}/${path}`));
+      conflicts.push(...merged.conflicts.map((path) => `${name}${path}`));
       continue;
     }
-    let bytes = pack(
-      [...merged.files].map(([path, fileBytes]) => ({
-        path,
-        bytes: fileBytes,
-      })),
-    );
+    let bytes = pack([...merged.files].map(([path, fileBytes]) => ({ path, bytes: fileBytes })));
     let treeHash = unpack(bytes).treeHash;
     members[name] = treeHash;
     pendingPacks.set(treeHash, bytes);
@@ -169,65 +162,68 @@ export async function mergeRepositoryRevisions(options: {
   if (conflicts.length > 0 || !roots.roots) {
     return {
       state: 'conflicted',
-      baseRevisionHash: options.baseRevisionHash,
-      targetRevisionHash: options.targetRevisionHash,
-      sourceRevisionHash: options.sourceRevisionHash,
+      baseCheckpointHash: options.baseCheckpointHash,
+      targetCheckpointHash: options.targetCheckpointHash,
+      sourceCheckpointHash: options.sourceCheckpointHash,
       conflicts: [...new Set(conflicts)].sort(),
     };
   }
 
-  for (let bytes of pendingPacks.values()) {
-    await storePack(options.storeDir, bytes);
-  }
-  let lockHash = await storeRepositoryLock(
-    options.storeDir,
-    lockMerge.value as JsonValue,
-  );
-  let repository = repositoryState({ roots: roots.roots, members, lockHash });
-  let repositoryHash = await storeRepository(options.storeDir, repository);
+  let storeDir = realmDeckStoreDir(options.realmDir);
+  for (let bytes of pendingPacks.values()) await storePack(storeDir, bytes);
+  let lockHash = await storeRepositoryLock(options.realmDir, lockMerge.value as JsonValue);
+  let value = repository({ roots: roots.roots, members, lockHash });
+  let repositoryHash = await storeRepository(options.realmDir, value);
   return {
     state: 'ready',
-    baseRevisionHash: options.baseRevisionHash,
-    targetRevisionHash: options.targetRevisionHash,
-    sourceRevisionHash: options.sourceRevisionHash,
-    repository,
+    baseCheckpointHash: options.baseCheckpointHash,
+    targetCheckpointHash: options.targetCheckpointHash,
+    sourceCheckpointHash: options.sourceCheckpointHash,
+    repository: value,
     repositoryHash,
-    changedMembers: changedMembers(target, repository),
+    changedMembers: changedMembers(target, value),
   };
 }
 
 export async function landRepositoryMerge(options: {
-  storeDir: string;
-  owner: string;
-  repository: string;
+  realmDir: string;
   branch: string;
-  baseRevisionHash: string;
-  targetRevisionHash: string;
-  sourceRevisionHash: string;
-  author: RevisionAuthor;
+  expectedGeneration: number;
+  baseCheckpointHash: string;
+  targetCheckpointHash: string;
+  sourceCheckpointHash: string;
+  historyHead: string;
+  indexGenerationHash: string;
+  author: Actor;
   message: string;
   createdAt: string;
-}): Promise<
-  | RepositoryMergeConflicted
-  | (RepositoryMergeReady & { mergeRevisionHash: string })
-> {
-  let result = await mergeRepositoryRevisions(options);
+}): Promise<RepositoryMergeConflicted | (RepositoryMergeReady & { mergeCheckpointHash: string })> {
+  let result = await mergeRepositoryCheckpoints(options);
   if (result.state === 'conflicted') return result;
-  let mergeRevision = revision({
+  let mergeCheckpoint = checkpoint({
     repositoryHash: result.repositoryHash,
-    parents: [options.targetRevisionHash, options.sourceRevisionHash],
+    parents: [options.targetCheckpointHash, options.sourceCheckpointHash],
+    historyHead: options.historyHead,
+    indexGenerationHash: options.indexGenerationHash,
     author: options.author,
     message: options.message,
     createdAt: options.createdAt,
   });
-  let mergeRevisionHash = await storeRevision(options.storeDir, mergeRevision);
-  await updateBranchRef({
-    storeDir: options.storeDir,
-    owner: options.owner,
-    repository: options.repository,
+  let mergeCheckpointHash = await storeCheckpoint(options.realmDir, mergeCheckpoint);
+  let head = await readBranchHead(options.realmDir, options.branch);
+  if (!head || head.generation !== options.expectedGeneration) {
+    throw new Error('target branch moved before merge settlement');
+  }
+  await updateBranchHead({
+    realmDir: options.realmDir,
     branch: options.branch,
-    expectedRevision: options.targetRevisionHash,
-    nextRevision: mergeRevisionHash,
+    expectedGeneration: options.expectedGeneration,
+    next: {
+      repositoryHash: result.repositoryHash,
+      historyHead: options.historyHead,
+      indexGenerationHash: options.indexGenerationHash,
+      latestCheckpointHash: mergeCheckpointHash,
+    },
   });
-  return { ...result, mergeRevisionHash };
+  return { ...result, mergeCheckpointHash };
 }

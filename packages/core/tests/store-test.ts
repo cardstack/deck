@@ -71,6 +71,19 @@ module('store: content addressing and pruning', function (hooks) {
     );
   });
 
+  test('concurrent local publishers preserve both Version pointers', async function (assert) {
+    let first = pack(libFiles('1.0.0', 'export const v = 1;\n'));
+    let second = pack(libFiles('1.0.0', 'export const v = 2;\n'));
+    await Promise.all([
+      publishToStore(storeDir, 'lib', '1.0.0-dev.1', first),
+      publishToStore(storeDir, 'lib', '1.0.0-dev.2', second),
+    ]);
+    assert.deepEqual(Object.keys((await readStoreMeta(storeDir, 'lib'))!.versions).sort(), [
+      '1.0.0-dev.1',
+      '1.0.0-dev.2',
+    ]);
+  });
+
   test('pruning keeps the newest dev versions and never touches stables or tags', async function (assert) {
     for (let n of [1, 2, 3, 4]) {
       await publishToStore(

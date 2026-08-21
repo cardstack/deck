@@ -7,6 +7,7 @@ import { createDeckServer } from '@cardstack/deck-server/server';
 import { storeDirFor } from '@cardstack/deck-server/depot';
 import { runAtRestChecks } from './at-rest.ts';
 import { runHttpChecks, type HttpTarget } from './over-http.ts';
+import { runRRIChecks } from './rri.ts';
 import { summarize, type ConformanceReport } from './laws.ts';
 import {
   FIXTURE_PACKAGE,
@@ -20,6 +21,7 @@ import {
 } from './fixture.ts';
 
 export interface RunOptions {
+  rri?: boolean;
   atRest?: boolean;
   // Measure a server someone else is running. Without this, the reference
   // server is started on a temporary depot and measured instead.
@@ -77,8 +79,11 @@ export async function withFixtureServer<T>(
 export async function runConformance(
   options: RunOptions = {},
 ): Promise<ConformanceReport> {
-  let { atRest = true, http = true, target, port = 0 } = options;
+  let { rri = true, atRest = true, http = true, target, port = 0 } = options;
   let results = [];
+  if (rri) {
+    results.push(...(await runRRIChecks()));
+  }
   if (atRest) {
     results.push(...(await runAtRestChecks()));
   }

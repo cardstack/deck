@@ -1,90 +1,76 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { packFromDir } from './pack.ts';
 import { storePack } from './object-store.ts';
 import {
+  checkpoint,
+  repository,
   repositoryManifest,
-  repositoryState,
-  revision,
-  type RevisionAuthor,
+  type Actor,
+  type JsonValue,
+  type RepositoryManifest,
 } from './repository.ts';
 import {
-  readBranchRef,
+  readBranchHead,
+  realmDeckPath,
+  realmDeckStoreDir,
+  storeCheckpoint,
   storeRepository,
   storeRepositoryLock,
-  storeRevision,
-  updateBranchRef,
+  updateBranchHead,
 } from './repository-store.ts';
+import { canonicalRRIImportMap, parseRRI } from './rri.ts';
 
-export const REPOSITORY_CONFIG_SPEC = 'deck-repository-config-v1';
-export const REPOSITORY_CONFIG_FILE = 'repository.json';
+export const REPOSITORY_CONFIG_FILE = '.deck/repository.json';
 
-export interface RepositoryConfig {
-  schema: typeof REPOSITORY_CONFIG_SPEC;
-  owner: string;
-  name: string;
-  roots: string[];
-  members: string[];
+export interface RepositoryContext {
+  realmDir: string;
+  config: RepositoryManifest;
 }
 
-const SEGMENT = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-
-export function repositoryConfig(value: unknown): RepositoryConfig {
-  let input = value as Partial<RepositoryConfig>;
-  if (
-    input.schema !== REPOSITORY_CONFIG_SPEC ||
-    typeof input.owner !== 'string' ||
-    typeof input.name !== 'string' ||
-    !SEGMENT.test(input.owner) ||
-    !SEGMENT.test(input.name) ||
-    !Array.isArray(input.roots) ||
-    !Array.isArray(input.members)
-  ) {
-    throw new Error('invalid Deck repository configuration');
+export function repositoryConfig(value: unknown): RepositoryManifest {
+  let input = value as Partial<RepositoryManifest>;
+  if (!Array.isArray(input.roots) || input.members === null || typeof input.members !== 'object') {
+    throw new Error('invalid Deck Repository manifest');
   }
-  let manifest = repositoryManifest({
-    roots: input.roots,
-    members: input.members,
-  });
-  return {
-    schema: REPOSITORY_CONFIG_SPEC,
-    owner: input.owner,
-    name: input.name,
-    roots: manifest.roots,
-    members: manifest.members,
-  };
+  if (input.schema !== 'deck-repository-manifest-v2') {
+    throw new Error('unsupported Deck Repository manifest schema');
+  }
+  return repositoryManifest({ roots: input.roots, members: input.members as Record<string, string> });
 }
 
-export async function readRepositoryConfig(
-  depotDir: string,
-): Promise<RepositoryConfig | undefined> {
+export async function readRepositoryConfig(realmDir: string): Promise<RepositoryManifest | undefined> {
   try {
-    return repositoryConfig(
-      JSON.parse(
-        await readFile(join(depotDir, REPOSITORY_CONFIG_FILE), 'utf8'),
-      ),
-    );
+    return repositoryConfig(JSON.parse(await readFile(join(realmDir, REPOSITORY_CONFIG_FILE), 'utf8')));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
 }
 
-// A package is a repository without registration. repository.json exists
-// only for the monorepo-equivalent case where several packages land as one.
-export async function resolveRepositoryConfig(
+export async function writeRepositoryConfig(
+  realmDir: string,
+  value: RepositoryManifest,
+): Promise<void> {
+  let path = join(realmDir, REPOSITORY_CONFIG_FILE);
+  await import('node:fs/promises').then(({ mkdir }) => mkdir(dirname(path), { recursive: true }));
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' });
+}
+
+// A mutable package is already a Repository. The manifest exists only when
+// several package paths must advance atomically.
+export async function resolveRepositoryContext(
   depotDir: string,
   identity?: string,
-): Promise<RepositoryConfig> {
+): Promise<RepositoryContext> {
   let grouped = await readRepositoryConfig(depotDir);
-  if (!identity) {
-    if (grouped) return grouped;
-    throw new Error('repository required: use --repo <publisher/package>');
+  if (grouped && (!identity || repositoryIdentity(grouped) === identity)) {
+    return { realmDir: depotDir, config: grouped };
   }
-  if (`${grouped?.owner}/${grouped?.name}` === identity) return grouped!;
+  if (!identity) throw new Error('repository required: use --repo <owner/package>');
   let parts = identity.split('/');
-  if (parts.length !== 2 || !parts.every((part) => SEGMENT.test(part))) {
-    throw new Error('repository must be <publisher>/<package>');
+  if (parts.length !== 2 || parts.some((part) => !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(part))) {
+    throw new Error('repository must be <owner>/<package>');
   }
   try {
     await readFile(join(depotDir, ...parts, 'package.json'), 'utf8');
@@ -94,119 +80,157 @@ export async function resolveRepositoryConfig(
     }
     throw error;
   }
+  let root = `@${parts[0]}/${parts[1]}/`;
   return {
-    schema: REPOSITORY_CONFIG_SPEC,
-    owner: parts[0],
-    name: parts[1],
-    roots: [identity],
-    members: [identity],
+    realmDir: join(depotDir, ...parts),
+    config: repositoryManifest({ roots: [root], members: { [root]: '.' } }),
   };
 }
 
-export async function ensureRepositoryMain(options: {
-  depotDir: string;
-  storeDir: string;
-  config: RepositoryConfig;
-  author: RevisionAuthor;
-}): Promise<string> {
-  let current = await readBranchRef(
-    options.storeDir,
-    options.config.owner,
-    options.config.name,
-    'main',
-  );
-  if (current) return current.revisionHash;
-  return (
-    await captureRepositoryRevision({
-      ...options,
-      branch: 'main',
-      message: `Initialize ${options.config.owner}/${options.config.name}`,
-    })
-  ).revisionHash;
+export function repositoryIdentity(config: RepositoryManifest): string {
+  let root = parseRRI(config.roots[0]);
+  return `${root.scope}/${root.name}`;
 }
 
-export async function captureRepositoryRevision(options: {
-  depotDir: string;
-  storeDir: string;
-  config: RepositoryConfig;
-  branch: string;
-  message: string;
-  author: RevisionAuthor;
-  createdAt?: string;
-}): Promise<{
-  repositoryHash: string;
-  revisionHash: string;
-  parentRevisionHash?: string;
-}> {
-  let current = await readBranchRef(
-    options.storeDir,
-    options.config.owner,
-    options.config.name,
-    options.branch,
-  );
+async function captureRepository(options: {
+  realmDir: string;
+  config: RepositoryManifest;
+}): Promise<string> {
   let members: Record<string, string> = {};
-  for (let member of options.config.members) {
+  let storeDir = realmDeckStoreDir(options.realmDir);
+  for (let [member, path] of Object.entries(options.config.members)) {
     members[member] = (
       await storePack(
-        options.storeDir,
-        await packFromDir(join(options.depotDir, ...member.split('/'))),
+        storeDir,
+        await packFromDir(path === '.' ? options.realmDir : join(options.realmDir, path)),
       )
     ).treeHash;
   }
-  let lock = JSON.parse(
-    await readFile(join(options.depotDir, 'importmap.json'), 'utf8'),
+  let authoredMap = JSON.parse(await readFile(join(options.realmDir, 'importmap.json'), 'utf8'));
+  let lock = canonicalRRIImportMap(authoredMap, { relativeTo: options.config.roots[0] });
+  let lockHash = await storeRepositoryLock(options.realmDir, lock as unknown as JsonValue);
+  return storeRepository(
+    options.realmDir,
+    repository({ roots: options.config.roots, members, lockHash }),
   );
-  let lockHash = await storeRepositoryLock(options.storeDir, lock);
-  let state = repositoryState({
-    roots: options.config.roots,
-    members,
-    lockHash,
+}
+
+export async function advanceRepositoryBranch(options: {
+  realmDir: string;
+  config: RepositoryManifest;
+  branch: string;
+  historyHead: string;
+  indexGenerationHash: string;
+}): Promise<{ repositoryHash: string; generation: number; latestCheckpointHash: string | null }> {
+  let current = await readBranchHead(options.realmDir, options.branch);
+  let repositoryHash = await captureRepository(options);
+  let next = await updateBranchHead({
+    realmDir: options.realmDir,
+    branch: options.branch,
+    expectedGeneration: current?.generation ?? null,
+    next: {
+      repositoryHash,
+      historyHead: options.historyHead,
+      indexGenerationHash: options.indexGenerationHash,
+      latestCheckpointHash: current?.latestCheckpointHash ?? null,
+    },
   });
-  let repositoryHash = await storeRepository(options.storeDir, state);
-  let next = revision({
+  return {
     repositoryHash,
-    parents: current ? [current.revisionHash] : [],
+    generation: next.generation,
+    latestCheckpointHash: next.latestCheckpointHash,
+  };
+}
+
+export async function captureRepositoryCheckpoint(options: {
+  realmDir: string;
+  config: RepositoryManifest;
+  branch: string;
+  historyHead: string;
+  indexGenerationHash: string;
+  message: string;
+  author: Actor;
+  createdAt?: string;
+}): Promise<{
+  repositoryHash: string;
+  checkpointHash: string;
+  parentCheckpointHash?: string;
+}> {
+  let current = await readBranchHead(options.realmDir, options.branch);
+  let repositoryHash = await captureRepository(options);
+  let value = checkpoint({
+    repositoryHash,
+    parents: current?.latestCheckpointHash ? [current.latestCheckpointHash] : [],
+    historyHead: options.historyHead,
+    indexGenerationHash: options.indexGenerationHash,
     author: options.author,
     message: options.message,
     createdAt: options.createdAt ?? new Date().toISOString(),
   });
-  let revisionHash = await storeRevision(options.storeDir, next);
-  await updateBranchRef({
-    storeDir: options.storeDir,
-    owner: options.config.owner,
-    repository: options.config.name,
+  let checkpointHash = await storeCheckpoint(options.realmDir, value);
+  await updateBranchHead({
+    realmDir: options.realmDir,
     branch: options.branch,
-    expectedRevision: current?.revisionHash ?? null,
-    nextRevision: revisionHash,
+    expectedGeneration: current?.generation ?? null,
+    next: {
+      repositoryHash,
+      historyHead: options.historyHead,
+      indexGenerationHash: options.indexGenerationHash,
+      latestCheckpointHash: checkpointHash,
+    },
   });
   return {
     repositoryHash,
-    revisionHash,
-    ...(current ? { parentRevisionHash: current.revisionHash } : {}),
+    checkpointHash,
+    ...(current?.latestCheckpointHash ? { parentCheckpointHash: current.latestCheckpointHash } : {}),
   };
 }
 
+export async function ensureRepositoryMain(options: {
+  realmDir: string;
+  config: RepositoryManifest;
+  author: Actor;
+  historyHead: string;
+  indexGenerationHash: string;
+}): Promise<string> {
+  let current = await readBranchHead(options.realmDir, 'main');
+  if (current?.latestCheckpointHash) return current.latestCheckpointHash;
+  return (
+    await captureRepositoryCheckpoint({
+      ...options,
+      branch: 'main',
+      message: `Initialize ${repositoryIdentity(options.config)}`,
+    })
+  ).checkpointHash;
+}
+
 export async function createRepositoryBranch(options: {
-  storeDir: string;
-  config: RepositoryConfig;
+  realmDir: string;
   branch: string;
   from?: string;
-}): Promise<string> {
-  let source = await readBranchRef(
-    options.storeDir,
-    options.config.owner,
-    options.config.name,
-    options.from ?? 'main',
-  );
-  if (!source)
-    throw new Error(`source branch not found: ${options.from ?? 'main'}`);
-  await updateBranchRef({
-    storeDir: options.storeDir,
-    owner: options.config.owner,
-    repository: options.config.name,
+}) {
+  let source = await readBranchHead(options.realmDir, options.from ?? 'main');
+  if (!source) throw new Error(`source branch not found: ${options.from ?? 'main'}`);
+  return updateBranchHead({
+    realmDir: options.realmDir,
     branch: options.branch,
-    expectedRevision: null,
-    nextRevision: source.revisionHash,
+    expectedGeneration: null,
+    next: {
+      repositoryHash: source.repositoryHash,
+      historyHead: source.historyHead,
+      indexGenerationHash: source.indexGenerationHash,
+      latestCheckpointHash: source.latestCheckpointHash,
+    },
   });
-  return source.revisionHash;
+}
+
+export function repositoryMetadataPaths(realmDir: string) {
+  return {
+    manifest: join(realmDir, REPOSITORY_CONFIG_FILE),
+    store: realmDeckStoreDir(realmDir),
+    refs: realmDeckPath(realmDir, 'refs'),
+    reviews: realmDeckPath(realmDir, 'reviews'),
+    indexes: realmDeckPath(realmDir, 'indexes'),
+    history: realmDeckPath(realmDir, 'history'),
+  };
 }

@@ -3,51 +3,78 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   canonicalJson,
+  checkpointHash,
   hashProtocolObject,
   isHash,
   repositoryHash,
-  revisionHash,
+  type Checkpoint,
   type JsonValue,
-  type RepositoryState,
-  type Revision,
+  type Repository,
 } from './repository.ts';
 
+export const DECK_DIR = '.deck';
+export const STORE_DIR = 'store';
 export const LOCKS_DIR = '_locks';
 export const REPOSITORIES_DIR = '_repositories';
-export const REVISIONS_DIR = '_revisions';
-export const REFS_DIR = '_refs';
-export const REF_SPEC = 'deck-ref-v1';
+export const CHECKPOINTS_DIR = '_checkpoints';
+export const REFS_DIR = 'refs';
+export const REVIEWS_DIR = 'reviews';
+export const INDEXES_DIR = 'indexes';
+export const HISTORY_DIR = 'history';
+export const BRANCH_HEAD_SPEC = 'deck-branch-head-v2';
 
-export interface BranchRef {
-  schema: typeof REF_SPEC;
-  revisionHash: string;
+export interface BranchHead {
+  schema: typeof BRANCH_HEAD_SPEC;
   generation: number;
+  repositoryHash: string;
+  historyHead: string;
+  indexGenerationHash: string;
+  latestCheckpointHash: string | null;
 }
 
-function parseBranchRef(bytes: Buffer): BranchRef {
-  let parsed = JSON.parse(bytes.toString('utf8')) as Partial<BranchRef>;
+export type BranchHeadState = Omit<BranchHead, 'schema' | 'generation'>;
+
+export function realmDeckPath(realmDir: string, ...parts: string[]): string {
+  return join(realmDir, DECK_DIR, ...parts);
+}
+
+export function realmDeckStoreDir(realmDir: string): string {
+  return realmDeckPath(realmDir, STORE_DIR);
+}
+
+function validateBranchHead(value: Partial<BranchHead>): BranchHead {
   if (
-    parsed.schema !== REF_SPEC ||
-    typeof parsed.revisionHash !== 'string' ||
-    !isHash(parsed.revisionHash) ||
-    !Number.isSafeInteger(parsed.generation) ||
-    (parsed.generation ?? 0) < 1
+    value.schema !== BRANCH_HEAD_SPEC ||
+    !Number.isSafeInteger(value.generation) ||
+    (value.generation ?? 0) < 1 ||
+    typeof value.repositoryHash !== 'string' ||
+    !isHash(value.repositoryHash) ||
+    typeof value.historyHead !== 'string' ||
+    value.historyHead.trim() === '' ||
+    typeof value.indexGenerationHash !== 'string' ||
+    !isHash(value.indexGenerationHash) ||
+    !(
+      value.latestCheckpointHash === null ||
+      (typeof value.latestCheckpointHash === 'string' && isHash(value.latestCheckpointHash))
+    )
   ) {
-    throw new Error('invalid Deck branch ref');
+    throw new Error('invalid Deck branch head');
   }
-  return parsed as BranchRef;
+  return value as BranchHead;
 }
 
-function casPath(storeDir: string, kind: string, hash: string): string {
-  return join(storeDir, kind, hash.slice(0, 2), `${hash}.json`);
+function parseBranchHead(bytes: Buffer): BranchHead {
+  return validateBranchHead(JSON.parse(bytes.toString('utf8')) as Partial<BranchHead>);
+}
+
+function casPath(realmDir: string, kind: string, hash: string): string {
+  return realmDeckPath(realmDir, STORE_DIR, kind, hash.slice(0, 2), `${hash}.json`);
 }
 
 async function writeOnce(path: string, bytes: Buffer): Promise<void> {
   try {
     let existing = await readFile(path);
-    if (!existing.equals(bytes)) {
-      throw new Error(`content-address collision at ${path}`);
-    }
+    if (!existing.equals(bytes)) throw new Error(`content-address collision at ${path}`);
     return;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
@@ -63,10 +90,7 @@ async function writeOnce(path: string, bytes: Buffer): Promise<void> {
   }
 }
 
-async function readHashedJson<T>(
-  path: string,
-  expectedHash: string,
-): Promise<T | undefined> {
+async function readHashedJson<T>(path: string, expectedHash: string): Promise<T | undefined> {
   try {
     let bytes = await readFile(path);
     let parsed = JSON.parse(bytes.toString('utf8')) as JsonValue;
@@ -80,93 +104,69 @@ async function readHashedJson<T>(
   }
 }
 
-export async function storeRepositoryLock(
-  storeDir: string,
-  lock: JsonValue,
-): Promise<string> {
+export async function storeRepositoryLock(realmDir: string, lock: JsonValue): Promise<string> {
   let hash = hashProtocolObject(lock);
-  await writeOnce(casPath(storeDir, LOCKS_DIR, hash), canonicalJson(lock));
+  await writeOnce(casPath(realmDir, LOCKS_DIR, hash), canonicalJson(lock));
   return hash;
 }
 
 export async function readRepositoryLock(
-  storeDir: string,
+  realmDir: string,
   lockHash: string,
 ): Promise<JsonValue | undefined> {
   if (!isHash(lockHash)) return undefined;
-  return readHashedJson(casPath(storeDir, LOCKS_DIR, lockHash), lockHash);
+  return readHashedJson(casPath(realmDir, LOCKS_DIR, lockHash), lockHash);
 }
 
-export async function storeRepository(
-  storeDir: string,
-  repository: RepositoryState,
-): Promise<string> {
-  let hash = repositoryHash(repository);
+export async function storeRepository(realmDir: string, value: Repository): Promise<string> {
+  let hash = repositoryHash(value);
   await writeOnce(
-    casPath(storeDir, REPOSITORIES_DIR, hash),
-    canonicalJson(repository as unknown as JsonValue),
-  );
-  return hash;
-}
-
-export async function readRepository(
-  storeDir: string,
-  hash: string,
-): Promise<RepositoryState | undefined> {
-  if (!isHash(hash)) return undefined;
-  return readHashedJson(casPath(storeDir, REPOSITORIES_DIR, hash), hash);
-}
-
-export async function storeRevision(
-  storeDir: string,
-  value: Revision,
-): Promise<string> {
-  let hash = revisionHash(value);
-  await writeOnce(
-    casPath(storeDir, REVISIONS_DIR, hash),
+    casPath(realmDir, REPOSITORIES_DIR, hash),
     canonicalJson(value as unknown as JsonValue),
   );
   return hash;
 }
 
-export async function readRevision(
-  storeDir: string,
+export async function readRepository(
+  realmDir: string,
   hash: string,
-): Promise<Revision | undefined> {
+): Promise<Repository | undefined> {
   if (!isHash(hash)) return undefined;
-  return readHashedJson(casPath(storeDir, REVISIONS_DIR, hash), hash);
+  return readHashedJson(casPath(realmDir, REPOSITORIES_DIR, hash), hash);
 }
 
-const REF_SEGMENT = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+export async function storeCheckpoint(realmDir: string, value: Checkpoint): Promise<string> {
+  let hash = checkpointHash(value);
+  await writeOnce(
+    casPath(realmDir, CHECKPOINTS_DIR, hash),
+    canonicalJson(value as unknown as JsonValue),
+  );
+  return hash;
+}
+
+export async function readCheckpoint(
+  realmDir: string,
+  hash: string,
+): Promise<Checkpoint | undefined> {
+  if (!isHash(hash)) return undefined;
+  return readHashedJson(casPath(realmDir, CHECKPOINTS_DIR, hash), hash);
+}
+
 const BRANCH = /^[a-z0-9][a-z0-9._/-]{0,127}$/;
 
-function branchRefPath(
-  storeDir: string,
-  owner: string,
-  repository: string,
-  branch: string,
-): string {
-  if (
-    !REF_SEGMENT.test(owner) ||
-    !REF_SEGMENT.test(repository) ||
-    !BRANCH.test(branch) ||
-    branch.includes('..')
-  ) {
-    throw new Error('invalid repository ref name');
+export function branchHeadPath(realmDir: string, branch: string): string {
+  if (!BRANCH.test(branch) || branch.includes('..') || branch.endsWith('/')) {
+    throw new Error('invalid branch name');
   }
-  return join(storeDir, REFS_DIR, owner, repository, 'heads', `${branch}.json`);
+  return realmDeckPath(realmDir, REFS_DIR, 'heads', `${branch}.json`);
 }
 
-export async function readBranchRef(
-  storeDir: string,
-  owner: string,
-  repository: string,
+export async function readBranchHead(
+  realmDir: string,
   branch: string,
-): Promise<BranchRef | undefined> {
+): Promise<BranchHead | undefined> {
   try {
-    return parseBranchRef(
-      await readFile(branchRefPath(storeDir, owner, repository, branch)),
-    );
+    return parseBranchHead(await readFile(branchHeadPath(realmDir, branch)));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
@@ -175,57 +175,35 @@ export async function readBranchRef(
 
 export class RefConflictError extends Error {}
 export class RefBusyError extends Error {}
-// An S3 adapter translates HTTP 412 Precondition Failed into this error so
-// higher-level CAS loops can retry without treating transport failure as a
-// protocol conflict.
 export class ConditionalWriteConflictError extends Error {}
 
-// Local refs use a per-ref mkdir lock, then tmp+rename. S3 implementations
-// must not put this mutable file through the NFS projection: use If-Match or
-// If-None-Match through the S3 API, as updateConditionalBranchRef does below.
-export async function updateBranchRef(options: {
-  storeDir: string;
-  owner: string;
-  repository: string;
+function nextBranchHead(generation: number, value: BranchHeadState): BranchHead {
+  return validateBranchHead({ schema: BRANCH_HEAD_SPEC, generation, ...value });
+}
+
+export async function updateBranchHead(options: {
+  realmDir: string;
   branch: string;
-  expectedRevision: string | null;
-  nextRevision: string;
-}): Promise<BranchRef> {
-  if (!isHash(options.nextRevision))
-    throw new Error('invalid next revision hash');
-  let path = branchRefPath(
-    options.storeDir,
-    options.owner,
-    options.repository,
-    options.branch,
-  );
+  expectedGeneration: number | null;
+  next: BranchHeadState;
+}): Promise<BranchHead> {
+  let path = branchHeadPath(options.realmDir, options.branch);
   let lock = `${path}.lock`;
   await mkdir(dirname(path), { recursive: true });
   try {
     await mkdir(lock);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new RefBusyError(
-        `branch ref is being updated: ${options.owner}/${options.repository}:${options.branch}`,
-      );
+      throw new RefBusyError(`branch head is being updated: ${options.branch}`);
     }
     throw error;
   }
   try {
-    let current = await readBranchRef(
-      options.storeDir,
-      options.owner,
-      options.repository,
-      options.branch,
-    );
-    if ((current?.revisionHash ?? null) !== options.expectedRevision) {
+    let current = await readBranchHead(options.realmDir, options.branch);
+    if ((current?.generation ?? null) !== options.expectedGeneration) {
       throw new RefConflictError('branch moved since it was read');
     }
-    let next: BranchRef = {
-      schema: REF_SPEC,
-      revisionHash: options.nextRevision,
-      generation: (current?.generation ?? 0) + 1,
-    };
+    let next = nextBranchHead((current?.generation ?? 0) + 1, options.next);
     let tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(tmp, canonicalJson(next as unknown as JsonValue));
     await rename(tmp, path);
@@ -249,25 +227,18 @@ export interface ConditionalObjectStore {
   ): Promise<{ etag: string }>;
 }
 
-export async function updateConditionalBranchRef(options: {
+export async function updateConditionalBranchHead(options: {
   objects: ConditionalObjectStore;
   key: string;
-  expectedRevision: string | null;
-  nextRevision: string;
-}): Promise<BranchRef> {
-  if (!isHash(options.nextRevision)) {
-    throw new Error('invalid next revision hash');
-  }
+  expectedGeneration: number | null;
+  next: BranchHeadState;
+}): Promise<BranchHead> {
   let currentObject = await options.objects.get(options.key);
-  let current = currentObject ? parseBranchRef(currentObject.bytes) : undefined;
-  if ((current?.revisionHash ?? null) !== options.expectedRevision) {
+  let current = currentObject ? parseBranchHead(currentObject.bytes) : undefined;
+  if ((current?.generation ?? null) !== options.expectedGeneration) {
     throw new RefConflictError('branch moved since it was read');
   }
-  let next: BranchRef = {
-    schema: REF_SPEC,
-    revisionHash: options.nextRevision,
-    generation: (current?.generation ?? 0) + 1,
-  };
+  let next = nextBranchHead((current?.generation ?? 0) + 1, options.next);
   await options.objects.put(
     options.key,
     canonicalJson(next as unknown as JsonValue),

@@ -85,13 +85,13 @@ realm addresses a deck as a directory:
 
     acme/blog@1.2.3                              depot-local
     @acme/blog@1.2.3/                            canonical scoped RRI
-    https://app.example/catalog/acme/blog@1.2.3/ legacy / foreign URL-form RRI
+    @catalog/acme/blog@1.2.3/                    exact imported Version RRI
 
-Tags and ranges are still refused in every space, and so is a name with no
-version. **2026-08-21 backport ruling:** RRI support is present in Boxel
-`origin/main`, so new Boxel locks and `extends` values use the scoped form
-from the first PR. Absolute URLs survive only for compatibility, foreign
-intake, and the derived browser transport projection.
+Tags and ranges are still refused, and so is a name with no version.
+**2026-08-21 backport ruling:** RRI support is present in Boxel `origin/main`,
+so Deck and Boxel expose one scoped-RRI protocol surface from the first PR.
+Absolute URLs exist only in the derived browser transport projection; they
+are not accepted as canonical protocol identity.
 
 ### W2 — the absolute-reference classifier
 
@@ -376,9 +376,8 @@ not a Boxel-only wrapper around legacy Deck names:
   pull requests remain a possible syndicated representation;
 - make the resolver return an RRI before a host-supplied transport projector
   turns it into a URL;
-- retain read-only V1 Repository, `deck-revision-v1`, `_revisions/`,
-  `deck-pull-request-v1`, and URL-form RRI compatibility without rewriting
-  their content hashes;
+- remove the legacy Repository/Revision/Pull Request API and URL-form identity
+  handling instead of maintaining dual readers;
 - define every collaboration path relative to the owning realm's `.deck/`;
   Deck Core must not require a bucket-global protocol namespace.
 
@@ -400,15 +399,14 @@ precisely what this gate rejects.
    scoped RRIs;
 2. Core round-trips `deck-checkpoint-v2` and `deck-branch-head-v2`, proving a
    normal Step can advance the head without changing `latestCheckpointHash`;
-3. Core round-trips `deck-review-v2` against exact Checkpoints and keeps a
-   legacy Pull Request V1 fixture hash-stable;
+3. Core round-trips `deck-review-v2` against exact Checkpoints and exposes no
+   Pull Request or Revision alias;
 4. one canonical RRI lock resolves two exact Version RRIs by importer RRI;
 5. two different authority/view projectors produce different URLs from the
    same lock without changing `lockHash` or `repositoryHash`;
 6. the existing URL-level scopes proof still passes against the projected
    browser map;
-7. V1 Repository, Revision, and URL-form fixtures remain readable with their
-   original hashes;
+7. URL-form protocol identities are rejected rather than normalized;
 8. local fixture paths place store, refs, Reviews, indexes, and History below
    one realm `.deck/`; and
 9. `deck conform` can test RRI resolution separately from HTTP projection.

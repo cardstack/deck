@@ -52,7 +52,7 @@ export const GROUPS: Group[] = [
   {
     id: 'repository',
     title: 'repository',
-    blurb: 'branch, commit, review, and merge related packages atomically',
+    blurb: 'branch, checkpoint, review, and merge related packages atomically',
   },
   {
     id: 'propose',

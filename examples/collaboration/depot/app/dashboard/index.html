@@ -15,6 +15,7 @@
       h2 { margin: 0; font-size: .95rem; }
       .eyebrow, small, .section-title span, .metrics span { color: #8d91a7; font: .72rem ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; }
       button { border: 0; background: #7dd3fc; color: #08202a; padding: .7rem 1rem; font-weight: 700; }
+      .header-action { display: grid; justify-items: end; gap: .65rem; }
       .metrics { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid #30333e; }
       .metrics article { padding: 1.4rem 2rem; border-right: 1px solid #30333e; display: grid; gap: .35rem; }
       .metrics article:last-child { border: 0; }
@@ -22,15 +23,18 @@
       .work { padding: 2rem; }
       .section-title { display: flex; justify-content: space-between; margin-bottom: 1rem; }
       .exception-queue { list-style: none; padding: 0; margin: 0; border: 1px solid #30333e; }
-      .exception-queue li { display: grid; grid-template-columns: 5rem 1fr 4rem 5rem; gap: 1rem; align-items: center; padding: 1rem; border-bottom: 1px solid #242731; }
+      .exception-queue li { display: grid; grid-template-columns: 5rem 1fr 4.5rem 4rem 5rem; gap: 1rem; align-items: center; padding: 1rem; border-bottom: 1px solid #242731; }
       .exception-queue li:last-child { border: 0; }
       .exception-queue small { display: block; margin-top: .35rem; }
       .risk { font: .65rem ui-monospace, monospace; text-transform: uppercase; text-align: center; padding: .3rem; border: 1px solid; }
       .critical { color: #fb7185; }
       .high { color: #fbbf24; }
       .watch { color: #7dd3fc; }
+      .positive { color: #86efac; }
+      .reason { color: #cbd5e1; text-transform: none; letter-spacing: 0; }
+      .impact { color: #f3f4f8; font: .8rem ui-monospace, monospace; text-align: right; }
       .delay, .owner { color: #94a3b8; font: .75rem ui-monospace, monospace; text-align: right; }
-      @media (max-width: 42rem) { body { padding: 1rem; } .metrics { grid-template-columns: 1fr; } .metrics article { border-right: 0; border-bottom: 1px solid #30333e; } .exception-queue li { grid-template-columns: 4.5rem 1fr auto; } .owner { display: none; } }
+      @media (max-width: 42rem) { body { padding: 1rem; } main > header { align-items: start; gap: 1rem; } .header-action small { display: none; } .metrics { grid-template-columns: 1fr; } .metrics article { border-right: 0; border-bottom: 1px solid #30333e; } .exception-queue li { grid-template-columns: 4.5rem 1fr auto; } .owner, .impact { display: none; } }
     </style>
   </head>
   <body>

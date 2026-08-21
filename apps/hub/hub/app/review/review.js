@@ -32,7 +32,7 @@ function changes(state) {
 }
 
 function history(state) {
-  return `<ol class="review-history">${state.history.map((item) => `<li><code>${esc(item.revisionHash.slice(0, 12))}</code><div><strong>${esc(item.message)}</strong><br><span class="dim">${esc(item.author.name)} · ${esc(item.createdAt)}${item.parents.length === 2 ? ' · merge' : ''}</span></div></li>`).join('')}</ol>`;
+  return `<ol class="review-history">${state.history.map((item) => `<li><code>${esc(item.checkpointHash.slice(0, 12))}</code><div><strong>${esc(item.message)}</strong><br><span class="dim">${esc(item.author.name)} · ${esc(item.createdAt)}${item.parents.length === 2 ? ' · merge' : ''}</span></div></li>`).join('')}</ol>`;
 }
 
 function protocol(state) {
@@ -46,20 +46,20 @@ function render(state) {
     app.setAttribute('aria-busy', 'false');
     return;
   }
-  let pull = state.pullRequest;
+  let review = state.review;
   let runnable = state.preview?.projection ?? state.main.projection;
   let rootAddress = runnable.members[state.roots[0]];
   let featureBranches = state.branches.filter((branch) => branch.name !== 'main');
-  let forkReady = reviewSource?.initialized && reviewSource.forkedFrom?.revisionHash;
-  let action = pull?.state === 'open'
-    ? `<button class="action primary" data-action="merge" data-number="${pull.number}">Merge review</button>`
+  let forkReady = reviewSource?.initialized && reviewSource.forkedFrom?.checkpointHash;
+  let action = review?.state === 'open'
+    ? `<button class="action primary" data-action="merge" data-number="${review.number}">Merge review</button>`
     : forkReady || featureBranches.length
       ? `<button class="action primary" data-action="review">Open review</button>`
       : `<a class="action" href="/browse?at=${esc(rootAddress)}">Create a branch in Browse</a>`;
   app.innerHTML = `<main class="repository review-page">` +
     `<div class="review-context"><a href="/browse?at=${esc(rootAddress)}"><span class="s-publisher">${esc(state.owner)}</span><span class="sep">/</span><strong class="s-package">${esc(state.name)}</strong></a><span class="dim"> / reviews</span></div>` +
     `<section class="repo-section"><header><div><span class="section-index">01</span><h1>Review</h1></div>${action}</header>` +
-    (pull ? `<article class="pull-summary"><div class="pull-heading"><span class="status status-${esc(pull.state)}">${pull.state === 'merged' ? '✓' : '●'} ${esc(pull.state)}</span><div><strong>${esc(pull.title)}</strong> <span class="dim">#${pull.number}</span><p>${esc(pull.body)}</p></div></div><div class="merge-line"><code>${esc(pull.source.owner)}/${esc(pull.source.repository)}:${esc(pull.source.branch)}</code><span>→</span><code>${esc(pull.target.owner)}/${esc(pull.target.repository)}:${esc(pull.target.branch)}</code></div>${changes(state)}<div class="handoffs"><a class="action" href="${esc(runnable.runUrl)}">Run exact Repository →</a><a href="${esc(rootAddress)}/index.html">raw root Version</a></div><h2>Review events</h2><ol class="review-events">${pull.events.map((event) => `<li><b>${esc(event.type)}</b> <code>${esc(event.revisionHash?.slice(0, 12) ?? event.hash.slice(0, 12))}</code> <span class="dim">${esc(event.actor.name)} · ${esc(event.createdAt)}</span></li>`).join('') || '<li class="dim">opened</li>'}</ol></article>` : `<p class="empty-pull">${forkReady ? `${esc(reviewSource.repository)} is a mutable fork. Open a review to propose its current main branch upstream.` : 'Choose a branch and open a review when the work is ready.'}</p>`) +
+    (review ? `<article class="pull-summary"><div class="pull-heading"><span class="status status-${esc(review.state)}">${review.state === 'merged' ? '✓' : '●'} ${esc(review.state)}</span><div><strong>${esc(review.title)}</strong> <span class="dim">#${review.number}</span><p>${esc(review.body)}</p></div></div><div class="merge-line"><code>${esc(review.source.repository)}:${esc(review.source.branch)}</code><span>→</span><code>${esc(review.target.repository)}:${esc(review.target.branch)}</code></div>${changes(state)}<div class="handoffs"><a class="action" href="${esc(runnable.runUrl)}">Run exact Repository →</a><a href="${esc(rootAddress)}/index.html">raw root Version</a></div><h2>Review events</h2><ol class="review-events">${review.events.map((event) => `<li><b>${esc(event.type)}</b> <code>${esc(event.checkpointHash?.slice(0, 12) ?? event.hash.slice(0, 12))}</code> <span class="dim">${esc(event.actor.name)} · ${esc(event.createdAt)}</span></li>`).join('') || '<li class="dim">opened</li>'}</ol></article>` : `<p class="empty-pull">${forkReady ? `${esc(reviewSource.repository)} is a mutable fork. Open a review to propose its current main branch upstream.` : 'Choose a branch and open a review when the work is ready.'}</p>`) +
     `</section><section class="repo-section"><header><div><span class="section-index">02</span><h1>Work</h1></div></header>${history(state)}</section>` +
     `<section class="repo-section underneath"><header><div><span class="section-index">03</span><h1>Underneath</h1></div></header><p class="section-note">Canonical refs and immutable objects. This is the state the CLI, agents, and Hub share.</p>${protocol(state)}</section></main>`;
   app.setAttribute('aria-busy', 'false'); wrapTables(app);
@@ -84,14 +84,14 @@ app.addEventListener('click', async (event) => {
       let branches = current.branches.filter((branch) => branch.name !== 'main');
       let source = reviewSource ? 'main' : prompt('Source branch', branches.at(-1)?.name ?? ''); if (!source) return;
       let title = prompt('Review title'); if (!title) return;
-      render(await json(`${endpoint}/pulls`, { method: 'POST', body: JSON.stringify({
+      render(await json(`${endpoint}/reviews`, { method: 'POST', body: JSON.stringify({
         source,
         target: 'main',
         title,
         ...(reviewSource ? { sourceRepository: reviewSource.repository } : {}),
       }) }));
     } else {
-      render(await json(`${endpoint}/pulls/${button.dataset.number}/merge`, { method: 'POST', body: '{}' }));
+      render(await json(`${endpoint}/reviews/${button.dataset.number}/merge`, { method: 'POST', body: '{}' }));
     }
   } catch (error) { button.insertAdjacentHTML('afterend', ` <span class="bad">${esc(error.message)}</span>`); }
   finally { busy = false; }

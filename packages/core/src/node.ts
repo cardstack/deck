@@ -167,3 +167,13 @@ export type {
   SignatureRole,
   SignatureSummary,
 } from './signature.ts';
+
+// Durable collaboration objects and realm-local persistence. These remain on
+// the Node entry because canonical hashing and storage writes are server
+// responsibilities; RRI resolution itself is exported by the browser entry.
+export * from './repository.ts';
+export * from './repository-store.ts';
+export * from './repository-merge.ts';
+export * from './repository-workflow.ts';
+export * from './review.ts';
+export * from './review-store.ts';
