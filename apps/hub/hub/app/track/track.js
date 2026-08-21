@@ -169,6 +169,11 @@ async function collect(scope, { historyLimit = HISTORY_PAGE } = {}) {
       // ── versions ──────────────────────────────────────────────────────
       for (let deck of depot.packages) {
         for (let [version, record] of Object.entries(deck.versions ?? {})) {
+          // Repository projections are transport addresses created so a
+          // Review can run an exact multi-package tree. They are not package
+          // publication decisions, so showing them here would make merely
+          // opening Review look like six releases happened.
+          if (isRepositoryProjection(version)) continue;
           rows.push({
             // `vendored` is now sayable. It used to be guesswork, because
             // telling a vendored version from a hand-cut one meant reading
@@ -267,6 +272,8 @@ async function collect(scope, { historyLimit = HISTORY_PAGE } = {}) {
             publisher: touched[0]?.split('/')[0] ?? '',
             pkg: touched[0]?.split('/')[1] ?? '',
             id: attrs.changeId,
+            summary: attrs.description,
+            actor: attrs.author,
             what:
               decks.length === 1
                 ? decks[0]
@@ -338,11 +345,22 @@ async function collect(scope, { historyLimit = HISTORY_PAGE } = {}) {
 }
 
 function previousVersion(deck, version) {
-  let all = Object.keys(deck.versions ?? {}).sort();
+  let all = Object.entries(deck.versions ?? {})
+    .filter(([candidate]) => !isRepositoryProjection(candidate))
+    .sort(
+      ([, left], [, right]) =>
+        (Date.parse(left.publishedAt ?? '') || 0) -
+        (Date.parse(right.publishedAt ?? '') || 0),
+    )
+    .map(([candidate]) => candidate);
   let index = all.indexOf(version);
   return index > 0
     ? `/${deck.id.split('/')[0]}/${deck.publisher}/${deck.name}@${all[index - 1]}`
     : '';
+}
+
+function isRepositoryProjection(version) {
+  return /-repository\.[0-9a-f]{12}$/.test(version);
 }
 
 /**
@@ -746,6 +764,7 @@ function entry(row) {
   if (row.count > 1) return groupEntry(row);
   let fresh = freshness(row.when);
   let browse = row.vs ? `/browse?at=${row.at}&vs=${row.vs}` : `/browse?at=${row.at}`;
+  let headline = row.summary || row.what;
   let detail =
     row.changes?.length
       ? row.changes
@@ -763,13 +782,14 @@ function entry(row) {
   return (
     `<li class="entry" data-kind="${esc(row.kind)}" style="--fresh:${fresh.toFixed(3)}" ` +
     `data-name="${esc(
-      `${row.kind} ${row.depot} ${row.publisher} ${row.pkg} ${row.what}`.toLowerCase(),
+      `${row.kind} ${row.depot} ${row.publisher} ${row.pkg} ${row.what} ${row.summary ?? ''} ${row.actor ?? ''}`.toLowerCase(),
     )}">` +
     `<div class="entry-when">${esc(ago(row.when)) || '<span class="dim">—</span>'}</div>` +
     `<div class="entry-main">` +
     `<div class="entry-head">` +
     `<span class="verb"><i>${MARK[row.kind] ?? '·'}</i>${esc(row.kind)}</span> ` +
-    `<span class="s-package">${esc(row.what)}</span>` +
+    `<span class="s-package">${esc(headline)}</span>` +
+    (row.actor ? ` <span class="dim">by ${esc(row.actor)}</span>` : '') +
     `</div>` +
     `<div class="entry-sub">` +
     `<span class="s-depot">${esc(row.depot)}</span>` +
@@ -779,6 +799,7 @@ function entry(row) {
     (row.pkg
       ? `<span class="sep">/</span><span class="s-package">${esc(row.pkg)}</span>`
       : '') +
+    (row.summary ? ` <span class="dim">${esc(row.what)}</span>` : '') +
     (detail ? ` <span class="dim">${detail}</span>` : '') +
     // Provenance sits on the second line because it is a property of the
     // thing, not the event: `npm:three · published 2y ago` answers "what did

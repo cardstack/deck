@@ -19,12 +19,17 @@ From the Deck checkout:
 DECK_REPLAY_COLLABORATION=1 ./scripts/run-hub-with-deckd.sh
 ```
 
-After deckd is ready, the replay itself takes about two seconds. It creates
-multiple attributed History revisions, a hermetically vendored two-module
-package, three branches, four Checkpoints, merged Review #1, and open
-approved Review #2. It then reads the state back and asserts the RRI lock, old
-History revision, two-parent merge, event chains, and clean three-package
-preview.
+After deckd is ready, the replay itself takes under four seconds. It creates
+eight attributed History revisions, eleven watcher-created development
+Versions across `1.0`, `1.1`, and `1.2` lines, stable LTS/latest releases, a
+hermetically vendored two-module package, three branches, four Checkpoints,
+merged Review #1, and open approved Review #2. It then reads the state back and
+asserts the RRI lock, old History revision, Version tags, two-parent merge,
+event chains, semver-aware projections, and clean three-package preview.
+
+Open `http://localhost:8788/track?at=/collaboration&group=0` to see the replay
+as a tape. History rows retain save descriptions and actors. Press `a` to add
+the corresponding `-dev.N` auto-publishes to the same view.
 
 The tracked input is under `examples/collaboration/scenario/`; the resulting
 realm under `examples/collaboration/depot/` is ignored generated state.

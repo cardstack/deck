@@ -8,8 +8,8 @@
       :root {
         color-scheme: dark;
         font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-        background: #0b0c11;
-        color: #f3f4f8;
+        background: #050816;
+        color: #eef2ff;
       }
       * {
         box-sizing: border-box;
@@ -17,40 +17,84 @@
       body {
         margin: 0;
         min-height: 100vh;
-        padding: 4rem;
+        padding: 2.5rem;
         background:
-          radial-gradient(circle at 80% 0%, #202433 0, transparent 35%), #0b0c11;
+          radial-gradient(circle at 8% 0%, #312e81 0, transparent 34%),
+          radial-gradient(circle at 100% 18%, #0e749055 0, transparent 32%),
+          linear-gradient(145deg, #050816, #10152b 60%, #071923);
       }
       #app {
-        max-width: 76rem;
+        max-width: 92rem;
         margin: auto;
       }
       main {
-        border: 1px solid #30333e;
-        background: #111319;
-        box-shadow: 0 2rem 6rem #0008;
+        overflow: hidden;
+        border: 1px solid #22d3ee88;
+        background: #0a0e1eeb;
+        box-shadow:
+          0 2rem 8rem #020617cc,
+          0 0 0 0.35rem #312e8122;
+      }
+      .live-ribbon {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.65rem 2rem;
+        color: #a5f3fc;
+        background: linear-gradient(90deg, #0e7490, #312e81);
+        font:
+          0.72rem ui-monospace,
+          monospace;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+      .live-ribbon i {
+        width: 0.55rem;
+        height: 0.55rem;
+        border-radius: 50%;
+        background: #5eead4;
+        box-shadow: 0 0 1rem #5eead4;
+      }
+      .live-ribbon span {
+        margin-left: auto;
+        color: #e0e7ff;
       }
       main > header {
         display: flex;
         justify-content: space-between;
         align-items: end;
-        padding: 2rem;
-        border-bottom: 1px solid #30333e;
+        padding: 2.5rem;
+        border-bottom: 1px solid #312e81;
+        background: linear-gradient(
+          120deg,
+          #11193a 0%,
+          #12102d 70%,
+          #082f49 140%
+        );
       }
       h1 {
-        font-size: 2.2rem;
-        margin: 0.2rem 0 0;
-        letter-spacing: -0.04em;
+        max-width: 45rem;
+        font-size: clamp(2.4rem, 5vw, 4.6rem);
+        line-height: 0.92;
+        margin: 0.45rem 0 1rem;
+        color: #f0fdfa;
+        letter-spacing: -0.06em;
       }
       h2 {
         margin: 0;
         font-size: 0.95rem;
       }
+      .lede {
+        max-width: 38rem;
+        margin: 0;
+        color: #a5b4fc;
+        line-height: 1.55;
+      }
       .eyebrow,
       small,
       .section-title span,
       .metrics span {
-        color: #8d91a7;
+        color: #94a3b8;
         font:
           0.72rem ui-monospace,
           monospace;
@@ -59,10 +103,11 @@
       }
       button {
         border: 0;
-        background: #7dd3fc;
-        color: #08202a;
-        padding: 0.7rem 1rem;
+        background: linear-gradient(135deg, #5eead4, #22d3ee);
+        color: #082f49;
+        padding: 0.85rem 1.2rem;
         font-weight: 700;
+        box-shadow: 0 0.8rem 2rem #0891b244;
       }
       .header-action {
         display: grid;
@@ -72,11 +117,12 @@
       .metrics {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        border-bottom: 1px solid #30333e;
+        border-bottom: 1px solid #312e81;
+        background: #0c1228;
       }
       .metrics article {
         padding: 1.4rem 2rem;
-        border-right: 1px solid #30333e;
+        border-right: 1px solid #312e81;
         display: grid;
         gap: 0.35rem;
       }
@@ -88,8 +134,72 @@
           1.4rem ui-monospace,
           monospace;
       }
+      .metrics .metric-hot {
+        background: linear-gradient(120deg, #312e8144, #0891b233);
+      }
+      .metrics .metric-hot b {
+        color: #67e8f9;
+      }
+      .dispatch-layout {
+        display: grid;
+        grid-template-columns: minmax(19rem, 0.72fr) minmax(0, 2fr);
+      }
+      .routing-rail {
+        padding: 2rem;
+        border-right: 1px solid #312e81;
+        background: linear-gradient(180deg, #121432, #0b1024);
+      }
+      .routing-rail h2 {
+        margin: 0.35rem 0 1.5rem;
+        font-size: 1.35rem;
+      }
+      .routing-rail ol {
+        display: grid;
+        gap: 0.55rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .routing-rail li {
+        display: grid;
+        grid-template-columns: 0.35rem 1fr auto;
+        gap: 0.8rem;
+        align-items: center;
+        padding: 0.85rem;
+        border: 1px solid #3730a366;
+        background: #141936;
+      }
+      .routing-rail li > i {
+        align-self: stretch;
+        border-radius: 1rem;
+        background: currentColor;
+        box-shadow: 0 0 0.8rem currentColor;
+      }
+      .routing-rail li b {
+        display: block;
+        font-size: 0.82rem;
+      }
+      .routing-rail li > span {
+        color: #67e8f9;
+        font:
+          0.72rem ui-monospace,
+          monospace;
+      }
+      .routing-rail footer {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 1rem;
+        padding: 1rem;
+        border: 1px dashed #22d3ee88;
+        color: #a5f3fc;
+        font:
+          0.7rem ui-monospace,
+          monospace;
+        text-transform: uppercase;
+      }
       .work {
         padding: 2rem;
+        background: #080d1d;
       }
       .section-title {
         display: flex;
@@ -100,18 +210,20 @@
         list-style: none;
         padding: 0;
         margin: 0;
-        border: 1px solid #30333e;
+        border: 1px solid #312e81;
       }
       .exception-queue li {
         display: grid;
         grid-template-columns: 5rem 1fr 4.5rem 4rem 5rem;
         gap: 1rem;
         align-items: center;
+        margin: 0.65rem;
         padding: 1rem;
-        border-bottom: 1px solid #242731;
+        border: 1px solid #26315a;
+        background: linear-gradient(90deg, #111833, #0c1228);
       }
       .exception-queue li:last-child {
-        border: 0;
+        border: 1px solid #26315a;
       }
       .exception-queue small {
         display: block;
@@ -196,6 +308,13 @@
         }
         .exception-queue li {
           grid-template-columns: 4.5rem 1fr auto;
+        }
+        .dispatch-layout {
+          grid-template-columns: 1fr;
+        }
+        .routing-rail {
+          border-right: 0;
+          border-bottom: 1px solid #312e81;
         }
         .owner,
         .impact {

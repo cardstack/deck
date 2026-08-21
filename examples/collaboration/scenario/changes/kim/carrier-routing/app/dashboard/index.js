@@ -72,8 +72,12 @@ export function dashboard() {
     exceptions.reduce((total, item) => total + item.value, 0),
   );
   return `<main class="${theme.surface} ${editorClass()}">
-    <header><div><p class="eyebrow">ACME / FULFILLMENT</p><h1>Delivery control</h1></div><div class="header-action"><small>72h recoverable value: ${recoverable}</small><button>Create recovery plan</button></div></header>
-    <section class="metrics"><article><b>12</b><span>shipments at risk</span></article><article><b>4</b><span>active carrier playbooks</span></article><article><b>${recoverable}</b><span>recoverable value</span></article></section>
-    <section class="work"><div class="section-title"><h2>Exceptions requiring action</h2><span>routed by impact and ownership</span></div>${exceptionQueue(exceptions)}</section>
+    <div class="live-ribbon"><i></i> Live carrier routing <span>4 desks online</span></div>
+    <header><div><p class="eyebrow">ACME / NETWORK COMMAND</p><h1>Carrier command center</h1><p class="lede">Every high-value exception now has a route, a desk, and a named owner.</p></div><div class="header-action"><small>72h recoverable value: ${recoverable}</small><button>Open incident room</button></div></header>
+    <section class="metrics"><article><b>12</b><span>shipments at risk</span></article><article class="metric-hot"><b>4</b><span>carrier desks engaged</span></article><article><b>${recoverable}</b><span>recoverable value</span></article></section>
+    <div class="dispatch-layout">
+      <aside class="routing-rail"><p class="eyebrow">Routing map</p><h2>Recovery desks</h2><ol><li><i class="desk-trade"></i><div><b>Trade compliance</b><small>Northstar Retail · ACM-2048</small></div><span>18h</span></li><li><i class="desk-network"></i><div><b>Network control</b><small>Kanso Labs · ACM-1987</small></div><span>9h</span></li><li><i class="desk-carrier"></i><div><b>Capacity desk</b><small>Forma Casa · ACM-2071</small></div><span>4h</span></li><li><i class="desk-local"></i><div><b>Local operations</b><small>Field & Finch · ACM-2059</small></div><span>3h</span></li></ol><footer><span>Next coordination</span><b>09:30 SGT</b></footer></aside>
+      <section class="work"><div class="section-title"><div><p class="eyebrow">Dispatch queue</p><h2>Exceptions requiring action</h2></div><span>routed by impact and ownership</span></div>${exceptionQueue(exceptions)}</section>
+    </div>
   </main>`;
 }

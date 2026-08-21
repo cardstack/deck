@@ -30,6 +30,7 @@ import {
 } from '../packages/core/src/review-store.ts';
 import { readStoreMeta } from '../packages/core/src/store.ts';
 import { createRepositoryService } from '../apps/hub/repository-service.mjs';
+import { watchDepot } from '../packages/server/src/depot.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const exampleDir = join(root, 'examples', 'collaboration');
@@ -64,6 +65,7 @@ const vendorPort = 8793;
 const repository = 'acme/dashboard';
 const repositoryRRI = '@acme/dashboard/';
 const startedAt = performance.now();
+const watcherErrors = [];
 
 function check(condition, message) {
   if (!condition) throw new Error(`replay assertion failed: ${message}`);
@@ -154,6 +156,41 @@ async function settle(history, message, actor) {
   };
 }
 
+async function settleAndPublish(history, watcher, message, actor) {
+  let result = await settle(history, message, actor);
+  await watcher.settled();
+  check(
+    watcherErrors.length === 0,
+    `auto-publisher failed: ${watcherErrors.map(String).join('; ')}`,
+  );
+  return result;
+}
+
+async function releaseLine(version, tag) {
+  for (let [publisher, name] of [
+    ['app', 'dashboard'],
+    ['acme', 'editor'],
+    ['acme', 'theme'],
+  ]) {
+    await runDeck(
+      'Release Bot',
+      'release',
+      '--depot',
+      depotDir,
+      '--publisher',
+      publisher,
+      '--name',
+      name,
+      '--version',
+      version,
+      '--from',
+      'dev',
+      '--tag',
+      tag,
+    );
+  }
+}
+
 async function startVendorOrigin() {
   let server = createServer(async (request, response) => {
     let name = new URL(
@@ -214,7 +251,10 @@ async function readHubState(service) {
     '/_hub/repositories/collaboration/acme/dashboard',
   );
   check(handled, 'Hub service handles the Repository state route');
-  check(status === 200, `Hub Repository state answers 200, not ${status}`);
+  check(
+    status === 200,
+    `Hub Repository state answers 200, not ${status}: ${bytes?.toString('utf8')}`,
+  );
   return JSON.parse(bytes.toString('utf8'));
 }
 
@@ -232,6 +272,7 @@ async function main() {
   await copyTree(baseDir);
 
   let history = new HistorydHistory({ baseUrl: deckdUrl, debounceMs: 0 });
+  let watcher;
   try {
     say('01  initialize the canonical multi-package Repository');
     let baseline = await settle(
@@ -239,6 +280,18 @@ async function main() {
       'Start fulfillment control',
       'Release Bot',
     );
+    watcher = watchDepot({
+      depot: {
+        name: 'collaboration',
+        dir: depotDir,
+        storeDir: join(depotDir, '.deck', 'store'),
+        history,
+      },
+      debounceMs: 50,
+      onError: (error) => watcherErrors.push(error),
+    });
+    await watcher.settled();
+    check(watcherErrors.length === 0, 'initial auto-publish succeeds');
     await runDeck(
       'Release Bot',
       'repo-init',
@@ -262,6 +315,21 @@ async function main() {
       baseline.indexGenerationHash,
       '--message',
       'Initialize fulfillment control',
+    );
+    await releaseLine('1.0.0', 'lts');
+    await runDeck(
+      'Release Bot',
+      'tag',
+      '--depot',
+      depotDir,
+      '--publisher',
+      'app',
+      '--name',
+      'dashboard',
+      '--tag',
+      'latest',
+      '--version',
+      '1.0.0',
     );
 
     say('02  Ana branches, vendors an approved module graph, and saves twice');
@@ -298,10 +366,16 @@ async function main() {
       await stopServer(vendorOrigin);
     }
     await copyTree(anaCustomerImpact);
-    await settle(history, 'Add customer value and impact scoring', 'Ana');
-    await copyTree(anaSlaPresentation);
-    let ana = await settle(
+    await settleAndPublish(
       history,
+      watcher,
+      'Add customer value and impact scoring',
+      'Ana',
+    );
+    await copyTree(anaSlaPresentation);
+    let ana = await settleAndPublish(
+      history,
+      watcher,
       'Present SLA state across editor and theme',
       'Ana',
     );
@@ -353,6 +427,7 @@ async function main() {
       'Merge Review #1: customer impact',
       'Merge Bot',
     );
+    await watcher.settled();
     await runDeck(
       'Merge Bot',
       'merge',
@@ -367,8 +442,11 @@ async function main() {
       '--index',
       merge.indexGenerationHash,
     );
+    await releaseLine('1.1.0', 'latest');
 
-    say('04  Kim branches from the merge, saves twice, and opens Review #2');
+    say(
+      '04  Kim branches from the merge, saves three times, and opens Review #2',
+    );
     await runDeck(
       'Kim',
       'branch',
@@ -382,13 +460,28 @@ async function main() {
       'main',
     );
     await copyScenarioFile('app/dashboard/index.js');
-    await settle(history, 'Attach carrier desks to delivery exceptions', 'Kim');
-    await copyScenarioFile('acme/editor/index.js');
-    await copyScenarioFile('acme/theme/index.js');
-    await copyScenarioFile('app/dashboard/index.html');
-    let kim = await settle(
+    await copyScenarioFile('app/dashboard/package.json');
+    await settleAndPublish(
       history,
-      'Present carrier escalation ownership',
+      watcher,
+      'Attach carrier desks to delivery exceptions',
+      'Kim',
+    );
+    await copyScenarioFile('acme/editor/index.js');
+    await copyScenarioFile('acme/editor/package.json');
+    await copyScenarioFile('acme/theme/index.js');
+    await copyScenarioFile('acme/theme/package.json');
+    await settleAndPublish(
+      history,
+      watcher,
+      'Add carrier-routing presentation primitives',
+      'Kim',
+    );
+    await copyScenarioFile('app/dashboard/index.html');
+    let kim = await settleAndPublish(
+      history,
+      watcher,
+      'Turn fulfillment control into a carrier command center',
       'Kim',
     );
     await runDeck(
@@ -436,6 +529,9 @@ async function main() {
       review2,
       historyEntries,
       vendorMeta,
+      dashboardMeta,
+      editorMeta,
+      themeMeta,
     ] = await Promise.all([
       readBranchHead(depotDir, 'main'),
       readBranchHead(depotDir, 'ana/customer-impact'),
@@ -444,6 +540,9 @@ async function main() {
       readReview(depotDir, 2),
       history.list(depotDir, { flush: false }),
       readStoreMeta(join(depotDir, '.deck', 'store'), 'vendor/impact-score'),
+      readStoreMeta(join(depotDir, '.deck', 'store'), 'app/dashboard'),
+      readStoreMeta(join(depotDir, '.deck', 'store'), 'acme/editor'),
+      readStoreMeta(join(depotDir, '.deck', 'store'), 'acme/theme'),
     ]);
     check(mainHead?.latestCheckpointHash, 'main Checkpoint exists');
     check(anaHead?.latestCheckpointHash, 'Ana Checkpoint exists');
@@ -475,7 +574,24 @@ async function main() {
       'approved tag names the vendored Version',
     );
     check(
-      historyEntries.length >= 7,
+      dashboardMeta?.tags.latest === '1.1.0' &&
+        dashboardMeta.tags.lts === '1.0.0' &&
+        dashboardMeta.tags.dev === '1.2.0-dev.2',
+      'dashboard records stable, LTS, and current development lines',
+    );
+    check(
+      Object.keys(dashboardMeta?.versions ?? {}).length === 7,
+      'dashboard has seven meaningful Versions across three semver lines',
+    );
+    check(
+      editorMeta?.tags.latest === '1.1.0' &&
+        editorMeta.tags.dev === '1.2.0-dev.1' &&
+        themeMeta?.tags.latest === '1.1.0' &&
+        themeMeta.tags.dev === '1.2.0-dev.1',
+      'editor and theme carry released and in-review Version lines',
+    );
+    check(
+      historyEntries.length >= 8,
       'every-save History contains the replayed work',
     );
 
@@ -509,13 +625,32 @@ async function main() {
       kim.historyHead,
       'app/dashboard/index.js',
     );
+    let kimHtml = await history.fileAt(
+      depotDir,
+      kim.historyHead,
+      'app/dashboard/index.html',
+    );
     check(
       baselineSource && !baselineSource.includes('impactScore'),
       'baseline History revision is addressable',
     );
     check(
-      kimSource?.includes('carrier playbooks'),
+      kimSource?.includes('Open incident room'),
       'Kim History revision is addressable',
+    );
+    check(
+      kimHtml?.includes('live-ribbon') &&
+        kimHtml.includes('dispatch-layout') &&
+        kimSource?.includes('Carrier command center'),
+      'open Review renders an unmistakable carrier command center',
+    );
+    check(
+      historyEntries.some(
+        (entry) =>
+          entry.author === 'Kim' &&
+          entry.description === 'save: app/dashboard/index.html',
+      ),
+      'History retains autosave descriptions and actor attribution for Track',
     );
     let openPreview = await previewReview(depotDir, 2);
     check(
@@ -547,10 +682,12 @@ async function main() {
       projected.every(
         (state) =>
           state.main?.checkpointHash === mainHead.latestCheckpointHash &&
+          state.main?.projection?.version?.startsWith('1.1.0-repository.') &&
           state.review?.number === 2 &&
-          state.preview?.changedMembers?.length === 3,
+          state.preview?.changedMembers?.length === 3 &&
+          state.preview?.projection?.version?.startsWith('1.2.0-repository.'),
       ),
-      'concurrent Hub projections reuse identical immutable Versions',
+      'concurrent Hub projections preserve semver lines and reuse immutable Versions',
     );
 
     await writeFile(
@@ -575,11 +712,13 @@ async function main() {
       `  kim/carrier-routing     ${kimHead.latestCheckpointHash.slice(0, 12)}  open Review #2`,
     );
     say(`  History revisions       ${historyEntries.length}`);
+    say('  dashboard Versions      1.0.0 lts → 1.1.0 latest → 1.2.0-dev.2');
     say(
       '  vendored                 vendor/impact-score@1.0.0 (approved, 2 modules)',
     );
     say(`  generated realm         ${relative(root, depotDir)}`);
   } finally {
+    watcher?.close();
     history.close();
   }
 }

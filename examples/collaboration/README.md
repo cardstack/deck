@@ -21,21 +21,27 @@ addressable packages that must advance atomically:
 The replay performs these statements in order:
 
 1. Copy the small initial source tree into a new realm, seal its first History
-   revision, and run `deck repo-init` to create `main`.
+   revision, let the real watcher auto-publish `1.0.0-dev.1`, run
+   `deck repo-init`, and release `1.0.0` as the LTS line.
 2. Create `ana/customer-impact`. Run `deck vendor` against a local two-module
    origin and publish `vendor/impact-score@1.0.0` with the `approved` tag.
-3. Apply Ana's work in two saves, create one cross-package Checkpoint, open
-   Review #1, and record Kim's approval through the Review API.
+3. Apply Ana's `1.1.0` work in two saves. Each save enters History with actor
+   attribution and auto-publishes the changed packages on their `-dev.N`
+   lines. Create one cross-package Checkpoint, open Review #1, and record Kim's
+   approval through the Review API.
 4. Restore the original History revision, replay Ana's result as an attributed
-   merge save, and run `deck merge`. `main` now names a two-parent Checkpoint.
-5. Create `kim/carrier-routing`, apply two more saves across all three
-   packages, create a Checkpoint, open Review #2, and record Mina's approval.
-   This Review remains open so Browse and Review have a real pending diff.
-6. Assert the exact vendored Version and RRI lock, old and new History
-   revisions, branch heads, Review event chains, merge topology, and clean
+   merge save, run `deck merge`, and release `1.1.0` as `latest`. `main` now
+   names a two-parent Checkpoint.
+5. Create `kim/carrier-routing` and apply three `1.2.0` saves across all three
+   packages. This produces a visible `1.2.0-dev.1`/`.2` tape, then a
+   Checkpoint and approved Review #2. The Review remains open and turns the
+   app into an unmistakably different carrier command center.
+6. Assert the exact vendored Version and RRI lock, all three semver lines,
+   autosave descriptions and actors, old and new History revisions, branch
+   heads, Review events, merge topology, semver-aware projections, and clean
    three-way preview.
 
-On this machine the replay takes about two seconds after deckd is available.
+On this machine the replay takes under four seconds after deckd is available.
 
 ## Run it
 
@@ -63,6 +69,11 @@ Inspect the result:
 
 - `http://localhost:8788/browse?at=/collaboration/app/dashboard`
 - `http://localhost:8788/review?repository=acme/dashboard&depot=collaboration`
+- `http://localhost:8788/track?at=/collaboration&group=0`
+
+Track shows the authored History saves and deliberate releases by default.
+Press `a` or use the **auto-publishes** switch to reveal every immutable
+`-dev.N` Version created by those same saves.
 
 `depot/` is ignored by git. The authoritative fixture is the ordered replay
 plus its readable source inputs—not generated CAS objects or mutable refs.

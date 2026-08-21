@@ -2,6 +2,7 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { forkDeck } from '@cardstack/deck/fork';
+import { packageJsonFromPack } from '@cardstack/deck/import-map-pack';
 import { readForkedFrom } from '@cardstack/deck/offer';
 import { readObject, readTree, rebuildPack } from '@cardstack/deck/object-store';
 import {
@@ -49,7 +50,7 @@ const json = (res, status, value) => {
   res.end(bytes);
 };
 const short = (hash) => hash?.slice(0, 12);
-const versionFor = (hash) => `1.0.0-repository.${short(hash)}`;
+const versionFor = (base, hash) => `${base}-repository.${short(hash)}`;
 
 async function bodyOf(req) {
   let chunks = [];
@@ -160,18 +161,21 @@ export async function createRepositoryService({ depots, log = console.log, onCha
   }
 
   async function project(entry, repositoryHash, value) {
-    let version = versionFor(repositoryHash);
     let members = {};
     let rriMembers = {};
+    let memberVersions = {};
     for (let [memberRRI, treeHash] of Object.entries(value.members)) {
       let name = storageName(entry, memberRRI);
+      let bytes = await rebuildPack(realmDeckStoreDir(entry.realmDir), treeHash);
+      if (!bytes) throw new Error(`missing package tree ${treeHash}`);
+      let declaredVersion = packageJsonFromPack(bytes)?.version;
+      if (!declaredVersion) throw new Error(`${memberRRI} has no declared Version`);
+      let version = versionFor(declaredVersion, repositoryHash);
       let existing = (await readStoreMeta(entry.depot.storeDir, name))?.versions?.[version];
       if (existing && existing.treeHash !== treeHash) {
         throw new Error(`Repository projection collision: ${name}@${version}`);
       }
       if (!existing) {
-        let bytes = await rebuildPack(realmDeckStoreDir(entry.realmDir), treeHash);
-        if (!bytes) throw new Error(`missing package tree ${treeHash}`);
         try {
           await publishToStore(entry.depot.storeDir, name, version, bytes);
         } catch (error) {
@@ -185,13 +189,20 @@ export async function createRepositoryService({ depots, log = console.log, onCha
       }
       members[name] = `/${entry.depot.name}/${name}@${version}`;
       rriMembers[memberRRI] = members[name];
+      memberVersions[name] = version;
     }
     let rootName = storageName(entry, value.roots[0]);
     let query = new URLSearchParams({ at: `${members[rootName]}/index.html` });
     for (let name of Object.keys(members).filter((name) => name !== rootName)) {
-      query.append('with', `${name}=${name}@${version}`);
+      query.append('with', `${name}=${name}@${memberVersions[name]}`);
     }
-    return { version, runUrl: `/run?${query.toString()}`, members, rriMembers };
+    return {
+      version: memberVersions[rootName],
+      versions: memberVersions,
+      runUrl: `/run?${query.toString()}`,
+      members,
+      rriMembers,
+    };
   }
 
   async function branchState(entry, name) {
