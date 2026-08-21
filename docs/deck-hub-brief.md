@@ -200,22 +200,26 @@ and `.jj/`.
 
 ---
 
-### 2.3 `/run` — the assembled thing, and the toggle
+### 2.3 `/run` — the assembled thing and its package graph
 
 W1's home. J4, J9, J10, J12.
 
-**What is runnable.** Any deck that declares an entry and any HTML page in a
-depot, plus the nine demos. A deck with no declared entry — the ProseMirror
-`src/` decks are the reference case — appears as **readable, not runnable**,
-structurally, because the server refuses to import it. That refusal is L11 as
-a shape and belongs in the interface as a state, not a warning.
+**What is runnable.** HTML pages run directly. A library package does not
+pretend to be a page, but it is not a dead end: `/run` follows resolved import
+maps in reverse and lists the pages that consume it. Choosing one runs that
+page with the selected package or Version supplied as a no-store `?with=`
+trial. A package with no declared graph consumers explains that Run cannot
+prove computed-URL relationships, then shows the import-map edge needed to
+make it discoverable. This preserves L11's structural refusal without turning
+most of a package graph into errors or guessing from source text.
+Fork lineage participates in the lookup: a fork discovers pages that import
+its upstream and offers the asymmetric trial
+`?with=upstream/package=fork/package@Version`.
 
-**The toggle.**
-
-- **run** — the app in an iframe, with its resolved import map alongside.
-- **read** — the module graph of *exactly what is executing*: every node, the
-  volatility of every edge, and every node a link into `/browse` at the
-  address that answered.
+**The view.** The app runs in an iframe and its resolved import map sits below
+it: every node, the volatility of every edge, and every node a link into
+`/browse` at the canonical Hub address that answered. Runtime-only `site`
+mounts must never leak into those read links.
 
 The graph is the payoff. On any other package site "what am I actually
 running" is an inference; here it is a readout, because the import map the

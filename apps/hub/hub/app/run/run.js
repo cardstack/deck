@@ -279,11 +279,12 @@ function runTarget(at, withs = currentWith(), step = currentStep()) {
 // a case it hides.
 // ---------------------------------------------------------------------------
 
-async function inventory() {
+async function inventory(depotName) {
   let { data } = await getJson('/_packages');
+  let depots = data.filter((depot) => !depotName || depot.name === depotName);
   let found = [];
   await Promise.all(
-    data.flatMap((depot) =>
+    depots.flatMap((depot) =>
       depot.packages.map(async (deck) => {
         let name = `${deck.publisher}/${deck.name}`;
         let version = deck.distTags?.latest ?? Object.keys(deck.versions ?? {}).at(-1);
@@ -384,17 +385,33 @@ async function resolvedMap(url) {
   }
 }
 
+/**
+ * Turn a runtime pin back into the address the Hub reads.
+ *
+ * Demo pages execute from a private origin where their depot is named
+ * `site`; the Hub mounts that same depot under its real name. Exposing the
+ * runtime path in Browse produced links to a depot that does not exist here.
+ */
+function hubAddress(url) {
+  let target = String(url).replace(/^\//, '').split('/');
+  if (target[0] === 'site') {
+    target[0] = currentAt().replace(/^\//, '').split('/')[0];
+  }
+  return `/${target.join('/')}`;
+}
+
 /** Every mapped URL becomes a link into /browse at that exact address. */
 function mapRows(table, indent = false) {
   return Object.entries(table)
     .filter(([specifier]) => !specifier.endsWith('/'))
     .map(([specifier, url]) => {
-      let target = url.replace(/^\//, '').split('/');
+      let address = hubAddress(url);
+      let target = address.replace(/^\//, '').split('/');
       let [depot, publisher, pkg] = target;
       return (
         `<tr data-name="${esc(specifier.toLowerCase())}">` +
         `<td class="${indent ? 'indent' : ''}">${esc(specifier)}</td>` +
-        `<td><a href="/browse?at=${esc(url)}">` +
+        `<td><a href="/browse?at=${esc(address)}">` +
         `<span class="s-depot">${esc(depot ?? '')}</span><span class="sep">/</span>` +
         `<span class="s-publisher">${esc(publisher ?? '')}</span><span class="sep">/</span>` +
         `<span class="s-package">${esc(pkg ?? '')}</span></a></td>` +
@@ -417,9 +434,11 @@ function mapRows(table, indent = false) {
  * deck's page. The subject does not change, the substitution is stated, and
  * the reader gets the thing they meant: the file they were reading, running.
  *
- * A deck with no page at all is the one honest refusal, and it is a fact
- * about that deck — the eleven ProseMirror `src/` decks publish no entry —
- * rather than a failure of the strip.
+ * A deck with no page continues across the graph instead: resolved import
+ * maps say which pages consume it, and `?with=` can place the selected
+ * Version into one of those pages without a checkout. Only a library with no
+ * reverse edge stops, and even then Run explains the edge it needs rather
+ * than presenting an error.
  */
 /**
  * Every page in one deck, by full path.
@@ -443,6 +462,213 @@ function pagesOf(deck) {
   return pagesCache.get(deck);
 }
 
+/**
+ * The package coordinate inside any Deck address.
+ *
+ * Paths and files are deliberately ignored: Run needs the graph node, not
+ * the particular source file through which somebody arrived at it.
+ */
+function packageCoordinate(at) {
+  let [depot, publisher, pkgAndSpec] = at.replace(/^\//, '').split('/');
+  if (!depot || !publisher || !pkgAndSpec) return;
+  let marker = pkgAndSpec.indexOf('@');
+  let pkg = marker === -1 ? pkgAndSpec : pkgAndSpec.slice(0, marker);
+  let version = marker === -1 ? '' : pkgAndSpec.slice(marker + 1);
+  return {
+    depot,
+    publisher,
+    pkg,
+    version,
+    identity: `${publisher}/${pkg}`,
+  };
+}
+
+/** The package coordinate named by one resolved import-map target. */
+function mappedCoordinate(target) {
+  let pathname;
+  try {
+    pathname = new URL(String(target), location.origin).pathname;
+  } catch {
+    return;
+  }
+  // At runtime the first segment is normally `site`, not the Hub's mount
+  // name. Publisher and package remain the protocol identity in both forms.
+  let [, , publisher, pkgAndSpec] = pathname.split('/');
+  if (!publisher || !pkgAndSpec) return;
+  let marker = pkgAndSpec.indexOf('@');
+  let pkg = marker === -1 ? pkgAndSpec : pkgAndSpec.slice(0, marker);
+  return {
+    publisher,
+    pkg,
+    version: marker === -1 ? '' : pkgAndSpec.slice(marker + 1),
+    identity: `${publisher}/${pkg}`,
+  };
+}
+
+async function forkedFromOf(at) {
+  let focus = packageCoordinate(at);
+  if (!focus) return;
+  let address =
+    `/${focus.depot}/${focus.identity}` +
+    (focus.version ? `@${focus.version}` : '');
+  let map = await fetch(`${address}/importmap.json`)
+    .then((response) => (response.ok ? response.json() : undefined))
+    .catch(() => undefined);
+  let entry = map?.deck?.packages?.[focus.pkg]?.forkedFrom;
+  let identity = entry?.package ?? entry?.deck;
+  return identity ? { identity, version: entry.version ?? '' } : undefined;
+}
+
+function consumerHref(page, focus, alreadyUsing, sourceIdentity) {
+  let query = new URLSearchParams({ at: page });
+  if (!alreadyUsing) {
+    let target = focus.version
+      ? `${focus.identity}@${focus.version}`
+      : focus.identity;
+    query.set(
+      'sub',
+      sourceIdentity === focus.identity
+        ? target
+        : `${sourceIdentity}=${target}`,
+    );
+  }
+  return `?${query.toString()}`;
+}
+
+/**
+ * Runnable pages whose resolved import map reaches this package.
+ *
+ * This is the missing half of Run. Most packages are libraries by design;
+ * asking only whether the package itself contains HTML turns most of the
+ * graph into dead ends. The import map already says where a library becomes
+ * visible, and `?with=` can put the selected Version into that page for one
+ * no-store trial without changing its lock.
+ */
+async function consumersOf(at) {
+  let focus = packageCoordinate(at);
+  if (!focus) return [];
+  let forkedFrom = await forkedFromOf(at);
+  let accepted = new Set([
+    focus.identity,
+    ...(forkedFrom ? [forkedFrom.identity] : []),
+  ]);
+  let pages = await inventory(focus.depot);
+  let found = await Promise.all(
+    pages.map(async (item) => {
+      let target = runTarget(item.at, [], '');
+      if (!target.url) return;
+      let map = await resolvedMap(target.url).catch(() => undefined);
+      if (!map) return;
+      let bindings = [
+        ...Object.entries(map.imports ?? {}),
+        ...Object.values(map.scopes ?? {}).flatMap((scope) =>
+          Object.entries(scope),
+        ),
+      ];
+      let matches = bindings
+        .map(([specifier, value]) => ({
+          specifier,
+          target: mappedCoordinate(value),
+        }))
+        .filter(
+          (binding) =>
+            binding.target && accepted.has(binding.target.identity),
+        );
+      if (!matches.length) return;
+      let alreadyUsing = matches.some(({ target }) => {
+        if (target.identity !== focus.identity) return false;
+        return focus.version
+          ? target.version === focus.version
+          : target.version === '';
+      });
+      let samePackage = matches.find(
+        ({ target }) => target.identity === focus.identity,
+      );
+      let sourceIdentity = samePackage?.target.identity ?? matches[0].target.identity;
+      return {
+        ...item,
+        specifiers: [...new Set(matches.map(({ specifier }) => specifier))],
+        current: [
+          ...new Set(
+            matches.map(({ target }) =>
+              `${target.identity}${target.version ? `@${target.version}` : ' live'}`,
+            ),
+          ),
+        ],
+        sourceIdentity,
+        alreadyUsing,
+        href: consumerHref(item.at, focus, alreadyUsing, sourceIdentity),
+      };
+    }),
+  );
+  return found.filter(Boolean);
+}
+
+function consumerView(input, consumers) {
+  let focus = packageCoordinate(input);
+  let selected = focus.version || 'live';
+  let rows = consumers
+    .map((consumer) => {
+      let relation = consumer.alreadyUsing
+        ? `already uses ${selected}`
+        : `currently uses ${consumer.current.join(', ')}`;
+      return (
+        `<tr data-name="${esc(`${consumer.at} ${consumer.specifiers.join(' ')}`.toLowerCase())}">` +
+        `<td><a href="${esc(consumer.href)}">` +
+        `<span class="s-publisher">${esc(consumer.publisher)}</span><span class="sep">/</span>` +
+        `<span class="s-package">${esc(consumer.deck.split('/')[1])}</span></a></td>` +
+        `<td><code>${esc(consumer.specifiers.join(', '))}</code></td>` +
+        `<td class="dim">${esc(relation)}</td>` +
+        `<td><a class="action run-action" href="${esc(consumer.href)}">` +
+        `${consumer.alreadyUsing ? 'Run where used' : `Run with ${esc(selected)}`} →</a></td></tr>`
+      );
+    })
+    .join('');
+  return (
+    `<main class="use-view">` +
+    `<div class="facts"><div><b>library</b> no page of its own</div>` +
+    `<div><b>used by</b> ${consumers.length} runnable ${consumers.length === 1 ? 'page' : 'pages'}</div></div>` +
+    `<div class="use-explainer"><h1>This package runs inside other pages.</h1>` +
+    `<p><code>${esc(focus.identity)}@${esc(selected)}</code> exports code rather than HTML. ` +
+    `Choose a consumer below and Deck will assemble that page with this ` +
+    `${focus.version ? 'exact Version' : 'live package'} in its import map.</p>` +
+    `<div class="use-flow"><span>page</span><i>imports</i>` +
+    `<strong>${esc(focus.identity)}@${esc(selected)}</strong><i>from</i><span>CAS</span></div>` +
+    `<p class="dim">The trial is <code>no-store</code> and changes no files or locks. ` +
+    `It is a runnable question, not a checkout.</p></div>` +
+    `<table><thead><tr><th>Run in</th><th>Imported as</th><th>Current pin</th>` +
+    `<th></th></tr></thead><tbody>${rows}</tbody></table>` +
+    `<p class="dim use-fallback"><a href="/browse?at=${esc(input)}">Browse this package</a> · ` +
+    `<a href="/track?at=${esc(input)}">See its History</a></p></main>`
+  );
+}
+
+function unusedLibraryView(input) {
+  let focus = packageCoordinate(input);
+  let selected = focus.version || 'live';
+  return (
+    `<main class="use-view">` +
+    `<div class="facts"><div><b>library</b> no page of its own</div>` +
+    `<div><b>graph consumers</b> 0</div></div>` +
+    `<div class="use-explainer"><h1>No consumer declared in the graph.</h1>` +
+    `<p><code>${esc(focus.identity)}@${esc(selected)}</code> is valid code, but no ` +
+    `page in <span class="s-depot">${esc(focus.depot)}</span> currently names it ` +
+    `in a resolved import map. Run does not guess from source text or computed ` +
+    `URLs, so it cannot prove a page in which to show this package.</p>` +
+    `<div class="use-flow"><strong>${esc(focus.identity)}</strong><i>add to</i>` +
+    `<span>import map</span><i>then load from</i><span>HTML page</span></div>` +
+    `<p class="dim">If a page loads this through a computed URL, that edge is ` +
+    `invisible to Deck. Add an ESM import and map its specifier to this package. ` +
+    `Run will discover the reverse edge automatically—no Run configuration ` +
+    `or special entry file is required.</p></div>` +
+    `<pre><code>import value from '${esc(focus.identity)}';\n\n` +
+    `{"imports":{"${esc(focus.identity)}":"/${esc(focus.depot)}/${esc(focus.identity)}${focus.version ? `@${esc(focus.version)}` : ''}/index.js"}}</code></pre>` +
+    `<p class="use-fallback"><a href="/browse?at=${esc(input)}">Browse this package</a> · ` +
+    `<a href="/run">Find a runnable page</a> · ` +
+    `<a href="/track?at=${esc(input)}">See its History</a></p></main>`
+  );
+}
+
 async function resolveRunnable(at) {
   if (/\.html?$/.test(at)) return { at };
   let parts = at.replace(/^\//, '').split('/');
@@ -453,7 +679,7 @@ async function resolveRunnable(at) {
   // a candidate, and there is usually more than one, so this never picks.
   if (!publisher || !pkgAndSpec) {
     let prefix = `/${parts.join('/')}`;
-    let under = (await inventory()).filter(
+    let under = (await inventory(depot)).filter(
       (item) => item.at === prefix || item.at.startsWith(`${prefix}/`),
     );
     if (!under.length) {
@@ -474,13 +700,7 @@ async function resolveRunnable(at) {
   let within = rest.join('/');
   let pages = await pagesOf(deck);
   if (!pages.length) {
-    return {
-      why:
-        `Nothing in ${pkgAndSpec} is a page, so there is nothing here to run. ` +
-        `That is a fact about the deck, not a missing feature — a deck can be ` +
-        `addressable, hashed and diffable and still have no entry a browser ` +
-        `can be pointed at.`,
-    };
+    return { library: true };
   }
 
   // DOWN BEFORE UP. The address is the most specific thing the reader has
@@ -542,6 +762,12 @@ async function viewOne(input) {
   if (!resolved.at) {
     subject.trail = addressTrail(input);
     subject.fact = '';
+    if (resolved.library) {
+      let consumers = await consumersOf(input);
+      return consumers.length
+        ? consumerView(input, consumers)
+        : unusedLibraryView(input);
+    }
     return (
       `<main><div class="err"><b>nothing to run</b> — ${esc(resolved.why)}</div>` +
       `<p class="dim"><a href="/browse?at=${esc(input)}">Read it in /browse</a>, ` +

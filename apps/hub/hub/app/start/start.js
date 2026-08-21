@@ -403,9 +403,11 @@ Local Deck coordinates ref updates with atomic files; an S3-backed Deck uses
 conditional object writes. Neither needs a Git object store.</p>
 
 <p><b>The Hub is an inspector for this state.</b> Browse answers what exists
-and which repository governs it. Run executes an exact package graph. Track
-shows automatic Steps and activity. Review shows proposed Checkpoint-to-Checkpoint
-changes and moves the target branch only after a clean merge.</p>
+and which repository governs it. Run executes pages and follows library nodes
+into the pages that consume them, with an exact Version available as a
+no-store trial. Track shows automatic Steps and activity. Review shows proposed
+Checkpoint-to-Checkpoint changes and moves the target branch only after a clean
+merge.</p>
 `;
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1456,9 +1458,10 @@ function view(state) {
      obeys the test suite, that implementation is also Deck.</p>` +
     `<p class="lede">The four working views ask different questions about the
      same state. Browse asks what exists and who governs it. Run asks what an
-     exact graph does. Track asks what happened while it changed. Review asks
-     what is proposed, what exact state was examined, and whether it merged.
-     The views are decks supplied from the store they inspect.</p>` +
+     exact graph does—and, for a library, which page makes it visible. Track
+     asks what happened while it changed. Review asks what is proposed, what
+     exact state was examined, and whether it merged. The views are decks
+     supplied from the store they inspect.</p>` +
     statLine(state) +
     `</header>` +
     sections

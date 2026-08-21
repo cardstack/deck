@@ -195,7 +195,10 @@ ruled nouns. `/start` is still a stub — no product copy to fix there yet.
 | index `where: sealed`                                                                 | **Version** / **published**          |
 | `reload the frame`                                                                    | **reload the stage**                 |
 
-Keep: empty/refusal honesty, trial/`?with=`, stage sizes, depot-not-mounted errors, “not a page → running Y in the same deck.”
+Keep: empty/refusal honesty, trial/`?with=`, stage sizes, depot-not-mounted
+errors, “not a page → run it inside a page that imports it.” The reverse
+import edge is a normal Run handoff; a package with no declared graph consumer
+gets an actionable explanation instead of an error.
 
 ### 6.3 `/browse` — history status
 

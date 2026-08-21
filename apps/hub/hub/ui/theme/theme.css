@@ -862,6 +862,40 @@ td.indent { padding-left: 2ch; }
 .pick li a { color: var(--a-package); }
 .pick li .dim { padding-left: 1.5ch; }
 
+/* A library is executable context, not an error. Run follows the reverse
+   import edge to the page where the package becomes visible, then makes the
+   selected Version a no-store trial. */
+.use-view { max-width: 90rem; }
+.use-explainer {
+  max-width: 76ch;
+  margin: calc(var(--row) * .8em) 0 calc(var(--row) * 1.2em);
+  padding-left: var(--gut);
+  border-left: 2px solid var(--blue);
+}
+.use-explainer h1 {
+  margin: 0 0 calc(var(--row) * .25em);
+  color: var(--fg);
+  font-size: 1rem;
+}
+.use-explainer p { margin: calc(var(--row) * .35em) 0; }
+.use-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1ch;
+  margin: calc(var(--row) * .7em) 0;
+}
+.use-flow span, .use-flow strong {
+  padding: .25em .7em;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font-weight: 500;
+}
+.use-flow strong { color: var(--a-package); }
+.use-flow i { color: var(--dim); font-style: normal; }
+.run-action { white-space: nowrap; font-weight: 600; }
+.use-fallback { margin-top: calc(var(--row) * .8em); }
+
 /* The set-aside control and its way back. Both are quiet: the band already
    has the reader's attention, and a loud dismiss button competes with the
    thing it is dismissing. */
