@@ -290,7 +290,7 @@
     <li><a href="#volatility">4. Three volatilities</a></li>
     <li><a href="#loop">5. The live loop</a></li>
     <li><a href="#store">6. Store &amp; packs</a></li>
-    <li><a href="#history">7. History: Versions, or a Timeline</a></li>
+    <li><a href="#history">7. History: every save, or Versions only</a></li>
     <li><a href="#vendor">8. Safe vendor</a></li>
     <li><a href="#fork">9. Fork, lock, offers</a></li>
     <li><a href="#http">10. HTTP surface</a></li>
@@ -316,13 +316,13 @@
     are all pointers to trees. Commit, install and deploy all do the same job:
     they move a copy to a second place that names things differently. Here
     there is no second place. This book teaches the running reference
-    implementation: the CLI, the store, the server, the Timeline, and the
+    implementation: the CLI, the store, the server, the History, and the
     workflows they open up.
   </p>
   <div class="badges">
     <span class="badge ok">Reference impl built</span>
     <span class="badge ok">Versions always on</span>
-    <span class="badge ok">Timeline optional</span>
+    <span class="badge ok">Every-save History optional</span>
     <span class="badge dim">No framework required</span>
   </div>
 </header>
@@ -340,7 +340,7 @@
     <tbody>
       <tr><td>Instant feedback</td><td>Version-less URL → working tree, <code>Cache-Control: no-store</code></td></tr>
       <tr><td>Never lose work</td><td>Auto-publish <code>&lt;base&gt;-dev.N</code> + optional per-save seals</td></tr>
-      <tr><td>Revert anytime</td><td><code>deck unpack</code> a pack, or <code>deck restore &lt;changeId&gt;</code> (with a Timeline)</td></tr>
+      <tr><td>Revert anytime</td><td><code>deck unpack</code> a pack, or <code>deck restore &lt;changeId&gt;</code> (with every-save History)</td></tr>
       <tr><td>Ship any version</td><td><code>deck release --from dev</code> — pointer, zero bytes copied</td></tr>
       <tr><td>Share a milestone</td><td><code>deck pack</code> → a Deck Pack (<code>.pack.zip</code>, a standard zip)</td></tr>
       <tr><td>Use any library</td><td><code>deck vendor</code> hermetic CDN graph → your store</td></tr>
@@ -364,7 +364,7 @@
       <tr><td><strong>Version</strong></td><td>A published tree that does not change. A semver number addresses it. (Was “sealed deck”.)</td></tr>
       <tr><td><strong>Deck Pack</strong></td><td><code>.pack.zip</code> — one tree and its packlist in one file. Any zip tool opens it. (Was “cardpack”.)</td></tr>
       <tr><td><strong>treeHash</strong></td><td>Content identity of a whole tree (<code>tree-hash-v1</code>).</td></tr>
-      <tr><td><strong>Step / changeId</strong></td><td>One capture of the working tree, one for each save. The Steps in order are the Timeline. Needs a history backend (jj / historyd).</td></tr>
+      <tr><td><strong>Step / changeId</strong></td><td>One capture of the working tree, one for each save. The Steps in order are History. Needs a history backend (deckd).</td></tr>
       <tr><td><strong>offer</strong></td><td>A fork that records its upstream base — a proposal you can run.</td></tr>
     </tbody>
   </table>
@@ -418,7 +418,7 @@
 # → debounce (~500ms quiet)
 # → treeHash unchanged? stop
 # → packFromDir → publish &lt;base&gt;-dev.N, tag:dev
-# → [with a Timeline] the save is recorded as a Step too
+# → [with every-save History] the save is recorded as a Step too
 
 deck release --depot ./work/site --publisher acme --name palette \
   --version 1.1.0 --from dev --tag latest</code></pre>
@@ -449,7 +449,7 @@ deck release --depot ./work/site --publisher acme --name palette \
 </section>
 
 <section id="history">
-  <h2>7. History: Versions, or a Timeline</h2>
+  <h2>7. History: every save, or Versions only</h2>
   <p>A depot has one of two answers, and the server reports which. These are
   not numbered levels — each one has a name that says what you get.</p>
   <table>
@@ -461,7 +461,7 @@ deck release --depot ./work/site --publisher acme --name palette \
         <td><span class="badge ok">Always on</span></td>
       </tr>
       <tr>
-        <td><strong>A Timeline</strong></td>
+        <td><strong>Every-save History</strong></td>
         <td>Every save also becomes a Step at <code>/&lt;depot&gt;/_history/&lt;changeId&gt;/…</code>, with <code>deck history</code> and <code>deck restore</code>. A packlist can name the Step it was cut from.</td>
         <td><span class="badge ok">Implemented</span> when <code>--history auto|jj|historyd</code> attaches</td>
       </tr>
@@ -536,7 +536,7 @@ GET /site/_offers</code></pre>
       <tr><td><code>?meta</code></td><td>Machine-readable listing (incl. seal when present)</td></tr>
       <tr><td><code>?format=pack</code></td><td>Faithful stored pack bytes</td></tr>
       <tr><td><code>…/vendor.pack.zip!/inner.js</code></td><td>Mount into a nested pack (depth-capped)</td></tr>
-      <tr><td><code>GET /&lt;depot&gt;/_history</code></td><td>The Timeline, when a history backend is attached</td></tr>
+      <tr><td><code>GET /&lt;depot&gt;/_history</code></td><td>Every-save History, when a history backend is attached</td></tr>
       <tr><td><code>GET /&lt;depot&gt;/_history/&lt;id&gt;/…</code></td><td>File at any seal</td></tr>
       <tr><td><code>GET /_packages</code></td><td>Catalog + capability truth</td></tr>
       <tr><td><code>GET /_browse/…</code></td><td>Directory / file JSON for the store browser</td></tr>
@@ -1028,7 +1028,7 @@ nothing written. One person decides one key, instead of three.</code></pre>
   </p>
   <div class="callout">
     Runnable: <code>pnpm --filter @cardstack/deck-example-two-agents demo</code>, or the
-    <b>two-agents</b> panel in the hub. It is also the demo that turns a Timeline
+    <b>two-agents</b> panel in the hub. It is also the demo that turns on every-save History
     history on, so every save there has a changeId and not just every publish.
   </div>
 
@@ -1089,7 +1089,7 @@ C  app/gallery@1.1.0-try.c  tags: try-c   1305 bytes, still rebuilds</code></pre
     <li><a href="/_packages">/_packages</a> — JSON catalog + history capability block</li>
     <li><a href="/_live/hmr.js">/_live/hmr.js</a> — drop-in HMR client source</li>
     <li><a href="/site/_offers">/&lt;depot&gt;/_offers</a> — the open proposals, re-merged on read</li>
-    <li><a href="/site/_history">/&lt;depot&gt;/_history</a> — the Timeline, when a history backend is attached</li>
+    <li><a href="/site/_history">/&lt;depot&gt;/_history</a> — every-save History, when a history backend is attached</li>
   </ul>
   <p>
     And <code>pnpm demo</code> in the repo starts all seven examples at once —
@@ -1126,7 +1126,7 @@ C  app/gallery@1.1.0-try.c  tags: try-c   1305 bytes, still rebuilds</code></pre
       <tr><td>Depot vs realm (backport prep)</td><td>Ruled — <code>docs/deck-depot-and-realm-backport.md</code> (standalone = depot; Boxel realm stays placement-free)</td></tr>
       <tr><td><code>deck.land</code> hostnames</td><td>Ruled — <code>docs/deck-land-hostnames.md</code> (apex / local / <strong>cloud</strong> / cdn; hub is the app)</td></tr>
       <tr><td>Activity (<code>/_activity</code>)</td><td>Proposed — <code>docs/deck-activity-protocol.md</code> (replaces <code>/_heat</code>; lean focus + <code>story=1</code> canvas pack)</td></tr>
-      <tr><td>UI vocabulary</td><td>Ruled — <code>docs/deck-step-version-vocabulary.md</code> (Version/Step/Timeline; Import/Pin/Entry/Leaf/Closure)</td></tr>
+      <tr><td>UI vocabulary</td><td>Ruled — <code>docs/deck-step-version-vocabulary.md</code> (Version/Step/History; Import/Pin/Entry/Leaf/Closure)</td></tr>
     </tbody>
   </table>
   <p>

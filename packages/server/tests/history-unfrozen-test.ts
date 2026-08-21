@@ -14,7 +14,7 @@ import type {
 import { createDeckServer, type DeckServer } from '../src/server.ts';
 import { storeDirFor, type DepotMount } from '../src/depot.ts';
 
-// Timeline Step identity: a historical HTML page binds unfrozen edges from
+// History Step identity: a historical HTML page binds unfrozen edges from
 // THAT Step's package.json, rewritten into /_history/<rev>/… — even with no
 // depot lock. Live working-tree edits must not leak into the Step.
 
@@ -108,7 +108,7 @@ function injectedMap(html: string): {
   return JSON.parse(match[1]);
 }
 
-module('timeline step: unfrozen edges without a lock', function (hooks) {
+module('History Step: unfrozen edges without a lock', function (hooks) {
   hooks.before(async function () {
     root = await mkdtemp(join(tmpdir(), 'deck-step-unfrozen-'));
     depotDir = join(root, 'demo');
@@ -232,7 +232,7 @@ module('timeline step: unfrozen edges without a lock', function (hooks) {
   });
 });
 
-module('timeline step: lock pins merge with step unfrozen edges', function (
+module('History Step: lock pins merge with Step unfrozen edges', function (
   hooks,
 ) {
   let server: DeckServer;

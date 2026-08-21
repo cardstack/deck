@@ -7,7 +7,7 @@
 //!
 //! Modern esbuild (0.18+) dropped `--format=amd`; the graph work is still
 //! esbuild, the AMD factory is a thin post-wrap. esbuild is Go — we shell
-//! out (`ESBUILD_BIN` or PATH), same as jj CLI for Timeline.
+//! out (`ESBUILD_BIN` or PATH), same as the History implementation.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -16,7 +16,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
-use crate::timeline::is_machinery_path;
+use crate::history::is_machinery_path;
 
 const DEFAULT_TOOLCHAIN: &str = "poc-esbuild-amd-v1";
 const MAX_ENTRIES: usize = 32;

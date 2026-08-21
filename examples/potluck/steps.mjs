@@ -24,7 +24,7 @@ async function writeStage(stage, index) {
   await writeFile(join(formDir, 'form.css'), stage.css);
   await sleep(200);
   await writeFile(join(formDir, 'form.js'), stage.js);
-  // Explicit seal so each Stage is one Timeline notch even if the watcher
+  // Explicit seal so each Stage is one History notch even if the watcher
   // coalesces bursts — message names the intention.
   if (attachment.backend) {
     await sleep(500);

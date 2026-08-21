@@ -12,8 +12,8 @@ A depot is a directory; its layout IS its URL space:
   /<depot>/<publisher>/<package>@1.2.0/app.js   the sealed copy
   /<depot>/_history/<changeId>/<path>           any state, published or not
 
-Sealed versions live in <depot>/.deck/store/, Timeline in
-<depot>/.deck/timeline/ (via deckd) — both inside the depot, both invisible
+Sealed versions live in <depot>/.deck/store/, every-save History in
+<depot>/.deck/history/ (via deckd) — both inside the depot, both invisible
 to the tree hash, so a depot directory is self-contained and movable.`;
 
 const FOOTER = `\`deck help <command>\` explains one command in full;

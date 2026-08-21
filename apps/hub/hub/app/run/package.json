@@ -5,7 +5,7 @@
   "exports": { ".": "./run.js" },
   "dependencies": {
     "ui/nav": "workspace:*",
-    "ui/timeline": "workspace:*",
+    "ui/history": "workspace:*",
     "ui/activity": "workspace:*",
     "ui/tour": "workspace:*"
   }

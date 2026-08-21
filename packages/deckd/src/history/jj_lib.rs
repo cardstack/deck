@@ -1,11 +1,11 @@
-//! jj-lib Timeline — copied closely from
+//! jj-lib History — copied closely from
 //! `/Users/chris/Projects/boxel-labs/examples/jj-lib-node/rust/src/lib.rs`
 //! (`jj-historyd`), with these Deck-only deltas called out inline:
 //!
 //! 1. `Workspace::init_internal_git` (not colocated) — no depot `.git` / gitlink.
-//! 2. After init, durable store lives at `.deck/timeline/repo` with a thin
+//! 2. After init, durable store lives at `.deck/history/repo` with a thin
 //!    `.jj/repo` *file* pointer (jj's supported out-of-tree repo path).
-//! 3. Snapshot ignores `.deck` / `.jj` / … so Timeline cannot seal itself.
+//! 3. Snapshot ignores `.deck` / `.jj` / … so History cannot capture itself.
 //! 4. `/file-list-at` + optional seal `actor` (Deck D1 gaps historyd lacked).
 //!
 //! HTTP still runs ops on `spawn_blocking` + `pollster` because jj-lib
@@ -44,11 +44,11 @@ use tokio::sync::Mutex;
 const NOTE_DEBOUNCE_MS: u64 = 400;
 
 use super::{
-    is_machinery_path, timeline_dir, Actor, BoxFuture, HistoryEntry, RestorePlan, Timeline,
-    TimelineError,
+    history_dir, is_machinery_path, legacy_timeline_dir, Actor, BoxFuture, HistoryBackend,
+    HistoryBackendError, HistoryEntry, RestorePlan,
 };
 
-const REPO_POINTER: &str = "../.deck/timeline/repo";
+const REPO_POINTER: &str = "../.deck/history/repo";
 
 #[derive(Debug, thiserror::Error)]
 pub enum HistoryError {
@@ -68,9 +68,9 @@ impl HistoryError {
     }
 }
 
-impl From<HistoryError> for TimelineError {
+impl From<HistoryError> for HistoryBackendError {
     fn from(value: HistoryError) -> Self {
-        TimelineError::Jj(value.to_string())
+        HistoryBackendError::Jj(value.to_string())
     }
 }
 
@@ -261,18 +261,18 @@ impl HistoryService {
     }
 }
 
-/// Timeline adapter: historyd's `spawn_blocking` + `pollster` pattern.
-pub struct JjLibTimeline {
+/// History adapter: historyd's `spawn_blocking` + `pollster` pattern.
+pub struct JjLibHistory {
     inner: Arc<HistoryService>,
 }
 
-impl Default for JjLibTimeline {
+impl Default for JjLibHistory {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl JjLibTimeline {
+impl JjLibHistory {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(HistoryService::new()),
@@ -284,7 +284,7 @@ impl JjLibTimeline {
         self.inner.clone()
     }
 
-    async fn run<T, F>(&self, f: F) -> std::result::Result<T, TimelineError>
+    async fn run<T, F>(&self, f: F) -> std::result::Result<T, HistoryBackendError>
     where
         T: Send + 'static,
         F: FnOnce(Arc<HistoryService>) -> std::result::Result<T, HistoryError> + Send + 'static,
@@ -292,13 +292,16 @@ impl JjLibTimeline {
         let inner = self.inner.clone();
         tokio::task::spawn_blocking(move || f(inner))
             .await
-            .map_err(|e| TimelineError::Jj(format!("join error: {e}")))?
-            .map_err(TimelineError::from)
+            .map_err(|e| HistoryBackendError::Jj(format!("join error: {e}")))?
+            .map_err(HistoryBackendError::from)
     }
 }
 
-impl Timeline for JjLibTimeline {
-    fn ensure<'a>(&'a self, dir: &'a str) -> BoxFuture<'a, std::result::Result<(), TimelineError>> {
+impl HistoryBackend for JjLibHistory {
+    fn ensure<'a>(
+        &'a self,
+        dir: &'a str,
+    ) -> BoxFuture<'a, std::result::Result<(), HistoryBackendError>> {
         let dir = PathBuf::from(dir);
         Box::pin(async move {
             self.run(move |h| pollster::block_on(h.ensure_repo(&dir)))
@@ -310,7 +313,7 @@ impl Timeline for JjLibTimeline {
         &'a self,
         dir: &'a str,
         path: &'a str,
-    ) -> BoxFuture<'a, std::result::Result<(), TimelineError>> {
+    ) -> BoxFuture<'a, std::result::Result<(), HistoryBackendError>> {
         let dir = PathBuf::from(dir);
         let path = path.to_owned();
         let inner = self.inner.clone();
@@ -318,14 +321,14 @@ impl Timeline for JjLibTimeline {
             inner
                 .enqueue_note(&dir, &path)
                 .await
-                .map_err(TimelineError::from)
+                .map_err(HistoryBackendError::from)
         })
     }
 
     fn flush_notes<'a>(
         &'a self,
         dir: &'a str,
-    ) -> BoxFuture<'a, std::result::Result<Option<String>, TimelineError>> {
+    ) -> BoxFuture<'a, std::result::Result<Option<String>, HistoryBackendError>> {
         let dir = PathBuf::from(dir);
         let inner = self.inner.clone();
         Box::pin(async move {
@@ -337,8 +340,8 @@ impl Timeline for JjLibTimeline {
                         pollster::block_on(h.seal(&dir, &message, None))
                     })
                     .await
-                    .map_err(|e| TimelineError::Jj(format!("join error: {e}")))?
-                    .map_err(TimelineError::from)
+                    .map_err(|e| HistoryBackendError::Jj(format!("join error: {e}")))?
+                    .map_err(HistoryBackendError::from)
                 }
                 None => Ok(None),
             }
@@ -350,7 +353,7 @@ impl Timeline for JjLibTimeline {
         dir: &'a str,
         message: &'a str,
         actor: Option<&'a Actor>,
-    ) -> BoxFuture<'a, std::result::Result<Option<String>, TimelineError>> {
+    ) -> BoxFuture<'a, std::result::Result<Option<String>, HistoryBackendError>> {
         let dir = PathBuf::from(dir);
         let message = message.to_owned();
         let actor = actor.cloned();
@@ -362,7 +365,10 @@ impl Timeline for JjLibTimeline {
         })
     }
 
-    fn list<'a>(&'a self, dir: &'a str) -> BoxFuture<'a, std::result::Result<Vec<HistoryEntry>, TimelineError>> {
+    fn list<'a>(
+        &'a self,
+        dir: &'a str,
+    ) -> BoxFuture<'a, std::result::Result<Vec<HistoryEntry>, HistoryBackendError>> {
         let dir = PathBuf::from(dir);
         Box::pin(async move { self.run(move |h| pollster::block_on(h.list(&dir))).await })
     }
@@ -372,7 +378,7 @@ impl Timeline for JjLibTimeline {
         dir: &'a str,
         revision_id: &'a str,
         path: &'a str,
-    ) -> BoxFuture<'a, std::result::Result<Option<Vec<u8>>, TimelineError>> {
+    ) -> BoxFuture<'a, std::result::Result<Option<Vec<u8>>, HistoryBackendError>> {
         let dir = PathBuf::from(dir);
         let revision_id = revision_id.to_owned();
         let path = path.to_owned();
@@ -386,7 +392,7 @@ impl Timeline for JjLibTimeline {
         &'a self,
         dir: &'a str,
         revision_id: &'a str,
-    ) -> BoxFuture<'a, std::result::Result<Vec<String>, TimelineError>> {
+    ) -> BoxFuture<'a, std::result::Result<Vec<String>, HistoryBackendError>> {
         let dir = PathBuf::from(dir);
         let revision_id = revision_id.to_owned();
         Box::pin(async move {
@@ -399,7 +405,7 @@ impl Timeline for JjLibTimeline {
         &'a self,
         dir: &'a str,
         revision_id: &'a str,
-    ) -> BoxFuture<'a, std::result::Result<RestorePlan, TimelineError>> {
+    ) -> BoxFuture<'a, std::result::Result<RestorePlan, HistoryBackendError>> {
         let dir = PathBuf::from(dir);
         let revision_id = revision_id.to_owned();
         Box::pin(async move {
@@ -483,14 +489,18 @@ fn snapshot_options() -> HistoryResult<SnapshotOptions<'static>> {
 async fn ensure_repo_inner(dir: &Path) -> HistoryResult<()> {
     std::fs::create_dir_all(dir).map_err(|e| HistoryError::msg(e.to_string()))?;
     std::fs::create_dir_all(dir.join(".deck")).map_err(|e| HistoryError::msg(e.to_string()))?;
+    migrate_legacy_history_dir(dir)?;
 
     let jj = dir.join(".jj");
-    let tl = timeline_dir(dir);
-    let tl_repo = tl.join("repo");
+    let history = history_dir(dir);
+    let history_repo = history.join("repo");
     let jj_repo = jj.join("repo");
 
-    if jj_repo.is_file() && tl_repo.is_dir() && jj.join("working_copy").is_dir() {
-        let _ = std::fs::remove_file(tl.join(".jj"));
+    if jj_repo.is_file() && history_repo.is_dir() && jj.join("working_copy").is_dir() {
+        // This also updates a pointer left at `../.deck/timeline/repo` by a
+        // pre-rename depot after its directory was migrated above.
+        std::fs::write(&jj_repo, REPO_POINTER).map_err(|e| HistoryError::msg(e.to_string()))?;
+        let _ = std::fs::remove_file(history.join(".jj"));
         return Ok(());
     }
 
@@ -498,32 +508,34 @@ async fn ensure_repo_inner(dir: &Path) -> HistoryResult<()> {
     if jj.is_symlink() {
         std::fs::remove_file(&jj).map_err(|e| HistoryError::msg(e.to_string()))?;
         std::fs::create_dir_all(&jj).map_err(|e| HistoryError::msg(e.to_string()))?;
-        if !tl_repo.is_dir() {
+        if !history_repo.is_dir() {
             return Err(HistoryError::msg(format!(
                 "symlink .jj removed but {} missing",
-                tl_repo.display()
+                history_repo.display()
             )));
         }
-        let tl_wc = tl.join("working_copy");
+        let history_wc = history.join("working_copy");
         let jj_wc = jj.join("working_copy");
-        if tl_wc.is_dir() && !jj_wc.exists() {
-            std::fs::rename(&tl_wc, &jj_wc).map_err(|e| HistoryError::msg(e.to_string()))?;
+        if history_wc.is_dir() && !jj_wc.exists() {
+            std::fs::rename(&history_wc, &jj_wc)
+                .map_err(|e| HistoryError::msg(e.to_string()))?;
         }
         std::fs::write(&jj_repo, REPO_POINTER).map_err(|e| HistoryError::msg(e.to_string()))?;
-        let _ = std::fs::remove_file(tl.join(".jj"));
+        let _ = std::fs::remove_file(history.join(".jj"));
         return Ok(());
     }
 
     if jj_repo.is_dir() {
-        std::fs::create_dir_all(&tl).map_err(|e| HistoryError::msg(e.to_string()))?;
-        if tl_repo.exists() {
+        std::fs::create_dir_all(&history).map_err(|e| HistoryError::msg(e.to_string()))?;
+        if history_repo.exists() {
             return Err(HistoryError::msg(format!(
                 "both {} and {} exist; resolve manually",
                 jj_repo.display(),
-                tl_repo.display()
+                history_repo.display()
             )));
         }
-        std::fs::rename(&jj_repo, &tl_repo).map_err(|e| HistoryError::msg(e.to_string()))?;
+        std::fs::rename(&jj_repo, &history_repo)
+            .map_err(|e| HistoryError::msg(e.to_string()))?;
         std::fs::write(&jj_repo, REPO_POINTER).map_err(|e| HistoryError::msg(e.to_string()))?;
         return Ok(());
     }
@@ -539,16 +551,43 @@ async fn ensure_repo_inner(dir: &Path) -> HistoryResult<()> {
             "jj init did not create .jj/repo directory",
         ));
     }
-    std::fs::create_dir_all(&tl).map_err(|e| HistoryError::msg(e.to_string()))?;
-    if tl_repo.exists() {
+    std::fs::create_dir_all(&history).map_err(|e| HistoryError::msg(e.to_string()))?;
+    if history_repo.exists() {
         return Err(HistoryError::msg(format!(
             "{} already exists after init",
-            tl_repo.display()
+            history_repo.display()
         )));
     }
-    std::fs::rename(&jj_repo, &tl_repo).map_err(|e| HistoryError::msg(e.to_string()))?;
+    std::fs::rename(&jj_repo, &history_repo).map_err(|e| HistoryError::msg(e.to_string()))?;
     std::fs::write(&jj_repo, REPO_POINTER).map_err(|e| HistoryError::msg(e.to_string()))?;
     Ok(())
+}
+
+/// Move the pre-rename directory into the canonical layout before jj loads
+/// the workspace. Both paths existing is ambiguous and must be repaired by a
+/// human; choosing either one could discard a valid sequence of Steps.
+fn migrate_legacy_history_dir(dir: &Path) -> HistoryResult<()> {
+    let legacy = legacy_timeline_dir(dir);
+    if !legacy.exists() {
+        return Ok(());
+    }
+
+    let history = history_dir(dir);
+    if history.exists() {
+        return Err(HistoryError::msg(format!(
+            "both legacy {} and canonical {} exist; resolve manually",
+            legacy.display(),
+            history.display()
+        )));
+    }
+
+    std::fs::rename(&legacy, &history).map_err(|e| {
+        HistoryError::msg(format!(
+            "cannot migrate {} to {}: {e}",
+            legacy.display(),
+            history.display()
+        ))
+    })
 }
 
 async fn load_workspace(dir: &Path) -> HistoryResult<(Workspace, Arc<ReadonlyRepo>)> {
@@ -708,7 +747,7 @@ fn message_for_paths(paths: &HashSet<String>) -> String {
     format!("save: {summary}{extra}")
 }
 
-/// Timeline list via jj's **default commit index + revset engine** and the
+/// History listing via jj's **default commit index + revset engine** and the
 /// **changed-path index** — not a hand-rolled DAG walk with per-commit tree
 /// diffs (that was the concurrency cliff under `_history`).
 async fn list_inner(dir: &Path) -> HistoryResult<Vec<HistoryEntry>> {
@@ -742,7 +781,7 @@ async fn list_inner(dir: &Path) -> HistoryResult<Vec<HistoryEntry>> {
 
         let files_summary = files_summary_from_index(repo.as_ref(), &commit).await?;
         // Seals that only touched `.jj` / `.jj.main-orphan` / `.deck` / …
-        // are Timeline noise from workspace moves — never content. Hide them
+        // are History noise from workspace moves — never content. Hide them
         // from `/list` so Hub /track and `/_history` stay readable.
         if files_summary.is_empty() {
             continue;
@@ -790,7 +829,7 @@ async fn files_summary_from_index(
         Some(paths) => Ok(paths
             .map(|p| p.as_internal_file_string().to_owned())
             .filter(|p| !is_machinery_path(p))
-            // Index lists paths, not A/M/D; Timeline strips the letter.
+            // Index lists paths, not A/M/D; History strips the letter.
             .map(|p| format!("M {p}"))
             .collect()),
         None => {
@@ -987,5 +1026,51 @@ fn format_timestamp(commit: &Commit) -> String {
     match Utc.timestamp_opt(secs, nsecs) {
         chrono::LocalResult::Single(dt) => dt.format("%Y-%m-%dT%H:%M:%S%z").to_string(),
         _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    fn temporary_depot(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("deckd-{name}-{}-{nonce}", std::process::id()))
+    }
+
+    #[test]
+    fn legacy_timeline_directory_migrates_to_history() {
+        let depot = temporary_depot("history-layout");
+        let legacy_repo = legacy_timeline_dir(&depot).join("repo");
+        std::fs::create_dir_all(&legacy_repo).unwrap();
+        std::fs::write(legacy_repo.join("proof"), b"kept").unwrap();
+
+        migrate_legacy_history_dir(&depot).unwrap();
+
+        assert!(!legacy_timeline_dir(&depot).exists());
+        assert_eq!(
+            std::fs::read(history_dir(&depot).join("repo/proof")).unwrap(),
+            b"kept"
+        );
+        std::fs::remove_dir_all(depot).unwrap();
+    }
+
+    #[test]
+    fn migration_refuses_two_history_directories() {
+        let depot = temporary_depot("history-layout-conflict");
+        std::fs::create_dir_all(legacy_timeline_dir(&depot)).unwrap();
+        std::fs::create_dir_all(history_dir(&depot)).unwrap();
+
+        let error = migrate_legacy_history_dir(&depot).unwrap_err();
+
+        assert!(error.to_string().contains("resolve manually"));
+        assert!(legacy_timeline_dir(&depot).exists());
+        assert!(history_dir(&depot).exists());
+        std::fs::remove_dir_all(depot).unwrap();
     }
 }

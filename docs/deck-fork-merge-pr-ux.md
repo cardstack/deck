@@ -1,10 +1,11 @@
-# Deck fork, pull request, and merge UX
+# Deck fork, review, and merge UX
 
 **Status: UX DIRECTION — protocol-backed.** This document specifies the
 familiar collaboration surface Deck should present over the implemented local
-Repository, Revision, Ref, and Pull Request protocol. It supersedes the UI rule
-that Deck should avoid the words _branch_, _pull request_, and _merge_. Those
-words are useful: people already know what they mean.
+Repository, Checkpoint, branch-head, and Review protocol. It supersedes the UI
+rule that Deck should avoid familiar branch/review/merge ceremony. Those
+concepts are useful; the Review noun avoids pretending that Deck is moving Git
+refs or pulling from a remote.
 
 Companions: [`deck-ui-spec.md`](deck-ui-spec.md),
 [`deck-hub-brief.md`](deck-hub-brief.md),
@@ -21,20 +22,20 @@ Companions: [`deck-ui-spec.md`](deck-ui-spec.md),
 Deck should look immediately legible to a GitHub user:
 
 - **Browse** owns repositories, code, branches, Versions, and Activity;
-- **Review** owns proposed changes expressed as Pull Requests;
-- a person can **Fork**, choose a branch, open a **Pull request**, review
+- **Review** owns proposed changes;
+- a person can **Fork**, choose a branch, open a **Review**, review
   changes, see checks, and press **Merge**;
-- a fork is private until its owner deliberately opens a pull request;
+- a fork is private until its owner deliberately opens a review;
 - conflicts and stale reviews have conventional, unmistakable states.
 
 Deck's advantage appears after orientation, not before it:
 
-- every pull request has a **Run this change** action;
+- every review has a **Run this change** action;
 - preview means executing the exact proposed Repository, not deploying an
   approximation;
 - dependency substitutions are visible;
 - a clean merge moves a pointer and copies no content;
-- hundreds of agent pull requests collapse to the exceptional few that need
+- hundreds of agent reviews collapse to the exceptional few that need
   attention.
 
 The product should not ask a new user to learn _offer_, _trial_, _seal_,
@@ -46,22 +47,22 @@ navigation.
 
 ## 1. Familiar outside, Deck inside
 
-| Familiar UI term   | Deck mechanism                                               | What the UI says                                               |
-| ------------------ | ------------------------------------------------------------ | -------------------------------------------------------------- |
-| Repository         | named collaboration boundary over one or more package trees  | Repository                                                     |
-| Owner              | publisher                                                    | Owner                                                          |
-| Branch             | isolated fork ref presented inside the same owner/repository | Branch                                                         |
-| Fork               | the same isolated fork primitive under a different owner     | Fork                                                           |
-| Commit             | durable Revision                                             | Revision in detail; commit-compatible wording in import/export |
-| Pull request       | durable source-ref → target-ref request                      | Pull request                                                   |
-| Merge commit       | Revision with target and source parents                      | Merge                                                          |
-| Release            | Version pointing at a treeHash and Revision                  | Version / Release                                              |
-| Actions/checks     | signed results bound to exact source + target Revisions      | Checks                                                         |
-| Deployment preview | exact proposed Repository + lock                             | Preview                                                        |
+| Familiar UI term   | Deck mechanism                                               | What the UI says                                                 |
+| ------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------- |
+| Repository         | named collaboration boundary over one or more package trees  | Repository                                                       |
+| Owner              | publisher                                                    | Owner                                                            |
+| Branch             | isolated fork ref presented inside the same owner/repository | Branch                                                           |
+| Fork               | the same isolated fork primitive under a different owner     | Fork                                                             |
+| Commit             | durable Checkpoint                                           | Checkpoint in detail; commit-compatible wording in import/export |
+| Pull request       | durable `deck-review-v2` source-head → target-head proposal  | Review                                                           |
+| Merge commit       | Checkpoint with target and source parents                    | Merge                                                            |
+| Release            | Version pointing at a treeHash and Checkpoint                | Version / Release                                                |
+| Actions/checks     | signed results bound to exact source + target Checkpoints    | Checks                                                           |
+| Deployment preview | exact proposed Repository + lock                             | Preview                                                          |
 
 Two distinctions must remain explicit:
 
-1. A **fork is not a pull request**. People fork to experiment privately.
+1. A **fork is not a review**. People fork to experiment privately.
 2. A **merge is not a release**. Merging changes a branch; releasing makes a
    semver promise.
 
@@ -142,9 +143,9 @@ Design rules:
 /browse?at=/<depot>/<publisher>/<package>        Repository / package code
 /browse?at=<exact-branch-Version>                branch package tree
 /review                                          proposed-change list
-/review?repository=<owner>/<repository>&number=N Pull Request
+/review?repository=<owner>/<repository>&number=N Review
 /review?repository=<upstream>&source=<fork>       propose fork main upstream
-/track?at=<Repository-member-address>            ref and Revision activity
+/track?at=<Repository-member-address>            ref and Checkpoint activity
 ```
 
 These are Hub viewer routes. Raw ESM continues to use the existing Deck URL
@@ -238,7 +239,7 @@ The primary **Fork** button opens a familiar confirmation rather than
 immediately enrolling the fork in an upstream queue.
 
 The fork records both its content base and, when the source is a mutable Deck
-package, the exact upstream Revision. **Review upstream** compares the fork's
+package, the exact upstream Checkpoint. **Review upstream** compares the fork's
 current `main` against that recorded base. The Review keeps the fork's real
 owner/package endpoint visible, while its package tree is mapped back onto the
 upstream package identity for preview and merge.
@@ -246,7 +247,7 @@ upstream package identity for preview and merge.
 ```text
 ┌─ Create a fork ──────────────────────────────────────────────────────────────┐
 │ A fork is your independent copy of acme/currencies.                         │
-│ It will not notify acme until you open a pull request.                       │
+│ It will not notify acme until you open a review.                       │
 │                                                                              │
 │ Owner          chris ▾                                                      │
 │ Repository     currencies                                                   │
@@ -262,7 +263,7 @@ After creation:
 
 ```text
 ┌─ chris / currencies ─────────────────────────────────────────────────────────┐
-│ forked from acme/currencies · 0 revisions ahead · 0 behind                  │
+│ forked from acme/currencies · no content changes yet                        │
 │                                                                              │
 │ [ Code ]  Branches 1  Versions 0  Activity       [ Review ] [ Sync fork ▾ ]│
 │                                                                [ Contribute ]│
@@ -272,7 +273,7 @@ After creation:
 **Contribute** is the deliberate transition from private work to upstream
 proposal. It appears only when the fork differs from upstream.
 
-### Branch versus fork in pull-request labels
+### Branch versus fork in review labels
 
 The compare control follows the convention people already know:
 
@@ -285,18 +286,18 @@ base: acme/currencies:main       ←       compare: chris:add-myr
 ```
 
 The short `owner:branch` label is sufficient when repository names match.
-The detail popover carries the full source repository and exact Revision.
+The detail popover carries the full source repository and exact Checkpoint.
 
 ---
 
-## 5. Open a pull request
+## 5. Open a review
 
 ```text
-┌─ Open a pull request ────────────────────────────────────────────────────────┐
+┌─ Open a review ────────────────────────────────────────────────────────┐
 │ base repository: acme/currencies      base: main ▾                          │
 │ head repository: acme/currencies      compare: add-myr ▾                    │
 │                                                                              │
-│ ✓ Able to merge      2 revisions      3 files      +42 −6                   │
+│ ✓ Able to merge      3 files      +42 −6                                    │
 │                                                                              │
 │ Title   Add Malaysian Ringgit formatting                                    │
 │ ┌──────────────────────────────────────────────────────────────────────────┐ │
@@ -305,43 +306,43 @@ The detail popover carries the full source repository and exact Revision.
 │                                                                              │
 │ REVIEW THE RUNNING RESULT                                                    │
 │ ┌──────────────────────────────────────────────────────────────────────────┐ │
-│ │ Preview URL  /run?with=acme/currencies=acme/currencies:add-myr@<rev>   │ │
+│ │ Preview URL  /run?with=acme/currencies=acme/currencies:add-myr@<checkpoint> │ │
 │ │ [ Run proposed change ]  [ Compare with main ]                          │ │
 │ └──────────────────────────────────────────────────────────────────────────┘ │
 │                                                                              │
-│ Reviewers  Add…       Draft ☐                         [ Create pull request ]│
+│ Reviewers  Add…       Draft ☐                         [ Create review ]│
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The exact source Revision is captured when the request opens. A later source
-update becomes an explicit pull-request event and makes Revision-bound checks
+The exact source Checkpoint is captured when the request opens. A later source
+update becomes an explicit review event and makes Checkpoint-bound checks
 or approvals stale.
 
 ---
 
-## 6. Pull request overview
+## 6. Review overview
 
 The page should look conventional at first glance and unmistakably Deck on
 the second.
 
 ```text
 ┌─ Add Malaysian Ringgit formatting  #418 ──────────────────────── Open ──────┐
-│ chris wants to merge 2 revisions into acme:main from acme:add-myr           │
+│ chris wants to merge 3 changed files into acme:main from acme:add-myr       │
 │                                                                              │
 │ [ Conversation ]  Changes 3  Preview  Checks 4                              │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ ┌─ RUNNABLE PULL REQUEST ─────────────────────────────────────────────────┐ │
-│ │ This preview executes source revision 9a4f2c1 against main 31c72d8.     │ │
+│ ┌─ RUNNABLE REVIEW ───────────────────────────────────────────────────────┐ │
+│ │ This preview executes source Checkpoint 9a4f2c1 against main 31c72d8.   │ │
 │ │ [ Run proposed change ] [ Side-by-side with main ] [ Copy exact URL ]  │ │
 │ └──────────────────────────────────────────────────────────────────────────┘ │
 │                                                                              │
-│ chris opened this pull request                                      18m     │
+│ chris opened this review                                      18m     │
 │ Adds MYR metadata and locale-aware formatting.                              │
 │                                                                              │
 │ deck/check-links        ✓ passed       exact dependency closure             │
 │ deck/data-shape         ✓ passed       181 currency records                 │
 │ ui/preview              ✓ passed       artifact available                   │
-│ amy approved            ✓ approved     source revision 9a4f2c1              │
+│ amy approved            ✓ approved     source Checkpoint 9a4f2c1            │
 │                                                                              │
 │ ┌─ Ready to merge ────────────────────────────────────────────────────────┐  │
 │ │ ✓ All required checks passed                                           │  │
@@ -354,12 +355,12 @@ the second.
 
 ### The four tabs
 
-| Tab          | Job                                                             |
-| ------------ | --------------------------------------------------------------- |
-| Conversation | intent, review events, approvals, ref changes                   |
-| Changes      | file and semantic data diff                                     |
-| Preview      | exact running result, import substitutions, side-by-side run    |
-| Checks       | results bound to source Revision + target Revision + suite tree |
+| Tab          | Job                                                                 |
+| ------------ | ------------------------------------------------------------------- |
+| Conversation | intent, review events, approvals, ref changes                       |
+| Changes      | file and semantic data diff                                         |
+| Preview      | exact running result, import substitutions, side-by-side run        |
+| Checks       | results bound to source Checkpoint + target Checkpoint + suite tree |
 
 GitHub makes the diff primary because source is what it can show reliably.
 Deck should give **Preview** equal rank because running the exact proposal is
@@ -395,7 +396,7 @@ JSON/data diff:
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-Review comments bind to `(sourceRevision, path, semantic key or line)`. If
+Review comments bind to `(sourceCheckpointHash, path, semantic key or line)`. If
 the source moves and the location cannot be mapped confidently, the comment
 stays visible as **Outdated** rather than floating onto unrelated bytes.
 
@@ -404,11 +405,11 @@ stays visible as **Outdated** rather than floating onto unrelated bytes.
 ## 8. Preview: Deck's signature interaction
 
 ```text
-┌─ Preview pull request #418 ─────────────────────────────────────────────────┐
-│ main 31c72d8                                      pull request 9a4f2c1      │
+┌─ Preview review #418 ─────────────────────────────────────────────────┐
+│ main 31c72d8                                      review 9a4f2c1      │
 │ ┌───────────────────────────────┐  ┌─────────────────────────────────────┐ │
 │ │                               │  │                                     │ │
-│ │        RUNNING MAIN           │  │       RUNNING PULL REQUEST          │ │
+│ │        RUNNING MAIN           │  │          RUNNING REVIEW             │ │
 │ │                               │  │                                     │ │
 │ │  180 currencies              │  │  181 currencies                    │ │
 │ │                               │  │  MYR · Malaysian Ringgit · RM      │ │
@@ -424,9 +425,9 @@ stays visible as **Outdated** rather than floating onto unrelated bytes.
 
 The preview banner must always show:
 
-- pull-request number;
-- exact source Revision;
-- target Revision it was resolved against;
+- review number;
+- exact source Checkpoint;
+- target Checkpoint it was resolved against;
 - changed dependency bindings;
 - one action to return to the unmodified target.
 
@@ -476,11 +477,11 @@ Approved 9a4f2c1 · current source b71e833               [ Request review ]
 ## 10. Merge
 
 ```text
-┌─ Merge pull request #418 ───────────────────────────────────────────────────┐
+┌─ Merge review #418 ───────────────────────────────────────────────────┐
 │                                                                              │
 │ Method       ● Merge commit                                                  │
 │              ○ Fast-forward when possible                                   │
-│              ○ Squash into one Revision                                     │
+│              ○ Squash into one Checkpoint                                     │
 │                                                                              │
 │ Result       acme/currencies:main                                            │
 │ Source       acme/currencies:add-myr at 9a4f2c1                              │
@@ -496,9 +497,9 @@ Successful landing:
 
 ```text
 ┌─ Merged ─────────────────────────────────────────────────────────────────────┐
-│ amy merged revision e42bc90 into acme/currencies:main just now              │
+│ amy merged Checkpoint e42bc90 into acme/currencies:main just now            │
 │                                                                              │
-│ [ Run merged result ] [ View merge Revision ] [ Open release proposal ]     │
+│ [ Run merged result ] [ View merge Checkpoint ] [ Open release proposal ]     │
 │                                                        [ Delete branch ]     │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -514,7 +515,7 @@ change is now on the target branch and can be run.
 Default list:
 
 ```text
-┌─ Review · Pull requests ─────────────────────────────────────────────────────┐
+┌─ Review · Reviews ─────────────────────────────────────────────────────┐
 │ [ 12 Open ]  184 Closed           Filters ▾       Sort: recently updated ▾  │
 │                                                                              │
 │ ✓ Add MYR formatting                     acme:add-myr          Ready     18m │
@@ -607,7 +608,7 @@ Build the UX in three slices.
 
 Add static, typed fixtures representing:
 
-- clean pull request;
+- clean review;
 - draft;
 - source updated after review;
 - real conflict with paths/JSON keys;
@@ -615,32 +616,31 @@ Add static, typed fixtures representing:
 - merged request;
 - 200-request agent queue summarized to exceptions.
 
-Build the repository shell, pull-request list, detail, changes, preview, and
+Build the repository shell, review list, detail, changes, preview, and
 merge dialog against `examples/collaboration`. The same validation state must
 round-trip through the collaboration implementation; the UI does not own a second
 model of repository state.
 
 ### Slice U1 — read protocol objects
 
-- Repository member, file, Revision, branch, and Version data from Hub
+- Repository member, file, Checkpoint, branch, and Version data from Hub
   endpoints over the protocol store.
-- Existing forks and `forkedFrom` records projected as compatibility pull
-  requests.
+- Existing forks and `forkedFrom` records projected as compatibility Reviews.
 - Existing `mergeTrees` result projected into per-package ready/conflict state.
 - the captured Repository and lock power the Preview tab; `?with=` remains a
-  temporary trial mechanism, not the pull request identity.
-- Existing checks, signatures, and Timeline facts displayed read-only.
+  temporary trial mechanism, not the review identity.
+- Existing checks, signatures, and History facts displayed read-only.
 
 This slice proves the product with real Deck content and durable refs before
 write actions are enabled.
 
-### Slice U2 — durable pull requests
+### Slice U2 — durable reviews
 
-The local core now has Pull Request openings, append-only events, exact
+The local core now has Review openings, append-only events, exact
 preview, Repository merge, and crash-recoverable merge completion. Bind those
 objects to the Hub. The conditional object-store adapter already covers S3
-branch refs, Pull Request numbering, openings, and event heads. Hosted fork,
-review, merge, and close actions still require the authenticated origin API.
+branch refs, Review numbering, openings, and event heads. Hosted fork,
+review, merge, and close actions still require the authenticated realm API.
 The visual contract does not change.
 
 The executable terminal tour in
@@ -655,13 +655,13 @@ A first-time GitHub user should complete this without documentation:
 
 1. Open `acme/currencies` and recognize a repository.
 2. See that **Fork** and **New branch** are separate, familiar actions, and
-   that neither opens a pull request.
+   that neither opens a review.
 3. As a team member, create an `acme/currencies:add-myr` branch; as an
    outside contributor, create `chris/currencies` as a fork.
 4. Understand that both work lines have identical isolation even though the
    UI names them differently.
 5. Press **Contribute** and compare base/head.
-6. Open a pull request.
+6. Open a review.
 7. Run the exact proposal beside main.
 8. Read code or semantic JSON changes.
 9. See checks and approval state.
@@ -670,7 +670,7 @@ A first-time GitHub user should complete this without documentation:
 
 An experienced Deck user should additionally be able to prove:
 
-- which exact source and target Revisions were reviewed;
+- which exact source and target Checkpoints were reviewed;
 - which Repository hash and member treeHashes executed in Preview;
 - which dependency bindings changed;
 - why an approval became stale;

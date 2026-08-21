@@ -89,7 +89,7 @@ export interface PackageLocation {
   npmName?: string;
 }
 
-// Read a path relative to a tree root (live depot or a Timeline Step).
+// Read a path relative to a tree root (live depot or a History Step).
 // Returns undefined when the path is absent — same contract as history
 // `fileAt`.
 export type TreeFileReader = (
@@ -106,7 +106,7 @@ export interface ResolveOptions {
   // npm name → layout. Built automatically when omitted.
   locate?: Map<string, PackageLocation>;
   // When set, live (versionless) entry resolution reads package.json from
-  // this tree instead of `depotDir` — how a Timeline Step binds siblings
+  // this tree instead of `depotDir` — how a History Step binds siblings
   // to that Step's own bytes.
   readTreeFile?: TreeFileReader;
 }
@@ -1139,7 +1139,7 @@ async function locateFromTree(options: {
   return index;
 }
 
-// Rewrite versionless (live) import-map targets into a Timeline Step URL.
+// Rewrite versionless (live) import-map targets into a History Step URL.
 // Dist-tags and exact Versions keep their `@` segment and are not rewritten
 // — they already name store identity. A Step page that said workspace:*
 // must bind the sibling *at that Step*, not today's working tree.
@@ -1192,7 +1192,7 @@ export function rewriteImportMapIntoStep(
   };
 }
 
-// Unfrozen edges from any tree — live depot or Timeline Step — given its
+// Unfrozen edges from any tree — live depot or History Step — given its
 // decks and a file reader. workspace:* and dist-tags skip the freeze;
 // ranges do not appear here.
 export async function unfrozenBindingsFromTree(options: {

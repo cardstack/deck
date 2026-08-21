@@ -14,8 +14,8 @@
     "ui/activity/": "/hub/ui/activity/",
     "ui/nav": "/hub/ui/nav/nav.js",
     "ui/nav/": "/hub/ui/nav/",
-    "ui/timeline": "/hub/ui/timeline/timeline.js",
-    "ui/timeline/": "/hub/ui/timeline/",
+    "ui/history": "/hub/ui/history/history.js",
+    "ui/history/": "/hub/ui/history/",
     "ui/tour": "/hub/ui/tour/tour.js",
     "ui/tour/": "/hub/ui/tour/"
   },

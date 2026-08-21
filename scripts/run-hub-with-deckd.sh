@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start packages/deckd then the Deck Hub with Timeline via deckd.
+# Start packages/deckd then the Deck Hub with every-save History.
 # JS stay identity ESM (main's live pipeline) — no esbuild/derived serve.
 # Usage: ./scripts/run-hub-with-deckd.sh
 set -euo pipefail
@@ -25,7 +25,7 @@ echo "→ building deckd in $DECKD_ROOT"
 # Keep artifacts in-tree (sandbox may redirect CARGO_TARGET_DIR).
 (cd "$DECKD_ROOT" && unset CARGO_TARGET_DIR && CARGO_TARGET_DIR="$DECKD_ROOT/target" cargo build --quiet)
 
-echo "→ deckd on $DECKD_URL (Timeline only; identity JS on Hub)"
+echo "→ deckd on $DECKD_URL (every-save History; identity JS on Hub)"
 ("$DECKD_ROOT/target/debug/deckd") &
 DECKD_PID=$!
 trap 'kill $DECKD_PID 2>/dev/null || true' EXIT

@@ -24,7 +24,7 @@ import {
 //       app.js
 //     importmap.json                    the depot lock (not a deck)
 //     .deck/store/{_objects/,_trees/,<publisher>/<package>/meta.json}
-//     .deck/timeline/                   seals for the whole depot (via deckd)
+//     .deck/history/                    every-save History for the depot (via deckd)
 //
 // Both dot-directories are ignored by the tree hash, so a depot carries its
 // own versions and its own history without either one changing what the

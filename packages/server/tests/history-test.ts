@@ -13,7 +13,7 @@ import type {
 import { createDeckServer } from '../src/server.ts';
 
 // A backend with no daemon: the routes are the subject here, so history is
-// a fixture. Live Timeline integration is covered by deckd / historyd tests.
+// a fixture. Live History integration is covered by deckd / historyd tests.
 const SEALS: Record<string, Record<string, string>> = {
   vvvvvvvv: { 'app.js': 'export const v = 1;\n' },
   wwwwwwww: { 'app.js': 'export const v = 2;\n', 'extra.js': 'more\n' },
@@ -204,7 +204,7 @@ module('history routes: serving states that were never published', function (
       kind: 'sealed-tree',
       deckd: true,
       depots: ['demo'],
-      note: 'Every save is sealed by deckd. GET /<depot>/_history lists seals; /<depot>/_history/<changeId>/<path> serves any of them, published or not.',
+      note: 'Every settled save is captured by deckd. GET /<depot>/_history lists Steps; /<depot>/_history/<changeId>/<path> serves any of them, published or not.',
     });
   });
 });
@@ -230,14 +230,14 @@ module('history routes: a server without a backend', function (hooks) {
     await rm(storeDir, { recursive: true, force: true });
   });
 
-  test('a depot with no Timeline says so plainly rather than pretending to have one', async function (assert) {
+  test('a depot with Version history only says so plainly', async function (assert) {
     let response = await fetch(`${origin}/demo/_history`);
     assert.strictEqual(response.status, 404);
     let error = (await response.json()).errors[0];
     assert.strictEqual(error.code, 'no-history');
-    // The wording is the vocabulary ruling's: a depot has a Timeline, or it
-    // has Versions only. Never "tier".
-    assert.true(/no Timeline/.test(error.detail), error.detail);
+    // The wording is the vocabulary ruling's: a depot has every-save History,
+    // or it has Version history only. Never "tier".
+    assert.true(/Version history only/.test(error.detail), error.detail);
     assert.false(/tier/i.test(error.detail), error.detail);
 
     let body = await (await fetch(`${origin}/_packages`)).json();

@@ -1,4 +1,4 @@
-//! Timeline trait — opaque change ids, same contract as Deck's HistoryBackend.
+//! History backend — opaque change ids, same contract as Deck's HistoryBackend.
 
 use std::future::Future;
 use std::path::Path;
@@ -40,7 +40,7 @@ pub struct RestorePlan {
 }
 
 #[derive(Debug, Error)]
-pub enum TimelineError {
+pub enum HistoryBackendError {
     #[error("not found: {0}")]
     #[allow(dead_code)]
     NotFound(String),
@@ -52,8 +52,8 @@ pub enum TimelineError {
     Io(#[from] std::io::Error),
 }
 
-pub trait Timeline: Send + Sync {
-    fn ensure<'a>(&'a self, dir: &'a str) -> BoxFuture<'a, Result<(), TimelineError>>;
+pub trait HistoryBackend: Send + Sync {
+    fn ensure<'a>(&'a self, dir: &'a str) -> BoxFuture<'a, Result<(), HistoryBackendError>>;
 
     /// Fire-and-forget remember: schedule an async collapsed seal. Returns
     /// immediately; many notes across many depots must not block the caller.
@@ -61,16 +61,16 @@ pub trait Timeline: Send + Sync {
         &'a self,
         dir: &'a str,
         path: &'a str,
-    ) -> BoxFuture<'a, Result<(), TimelineError>> {
+    ) -> BoxFuture<'a, Result<(), HistoryBackendError>> {
         let _ = (dir, path);
-        Box::pin(async { Err(TimelineError::Invalid("note not supported".into())) })
+        Box::pin(async { Err(HistoryBackendError::Invalid("note not supported".into())) })
     }
 
     /// Seal any pending async notes for `dir` now. No-op when nothing pending.
     fn flush_notes<'a>(
         &'a self,
         dir: &'a str,
-    ) -> BoxFuture<'a, Result<Option<String>, TimelineError>> {
+    ) -> BoxFuture<'a, Result<Option<String>, HistoryBackendError>> {
         let _ = dir;
         Box::pin(async { Ok(None) })
     }
@@ -80,41 +80,50 @@ pub trait Timeline: Send + Sync {
         dir: &'a str,
         message: &'a str,
         actor: Option<&'a Actor>,
-    ) -> BoxFuture<'a, Result<Option<String>, TimelineError>>;
+    ) -> BoxFuture<'a, Result<Option<String>, HistoryBackendError>>;
 
-    fn list<'a>(&'a self, dir: &'a str) -> BoxFuture<'a, Result<Vec<HistoryEntry>, TimelineError>>;
+    fn list<'a>(
+        &'a self,
+        dir: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<HistoryEntry>, HistoryBackendError>>;
 
     fn file_at<'a>(
         &'a self,
         dir: &'a str,
         revision_id: &'a str,
         path: &'a str,
-    ) -> BoxFuture<'a, Result<Option<Vec<u8>>, TimelineError>>;
+    ) -> BoxFuture<'a, Result<Option<Vec<u8>>, HistoryBackendError>>;
 
     fn file_list_at<'a>(
         &'a self,
         dir: &'a str,
         revision_id: &'a str,
-    ) -> BoxFuture<'a, Result<Vec<String>, TimelineError>>;
+    ) -> BoxFuture<'a, Result<Vec<String>, HistoryBackendError>>;
 
     fn restore_plan<'a>(
         &'a self,
         dir: &'a str,
         revision_id: &'a str,
-    ) -> BoxFuture<'a, Result<RestorePlan, TimelineError>>;
+    ) -> BoxFuture<'a, Result<RestorePlan, HistoryBackendError>>;
 }
 
-pub fn timeline_dir(depot: &Path) -> std::path::PathBuf {
+pub fn history_dir(depot: &Path) -> std::path::PathBuf {
+    depot.join(".deck").join("history")
+}
+
+/// Pre-rename storage location. This is only an input to the one-way migration
+/// performed by `ensure`; new history is never written here.
+pub fn legacy_timeline_dir(depot: &Path) -> std::path::PathBuf {
     depot.join(".deck").join("timeline")
 }
 
 pub fn auto_track_fileset() -> &'static str {
     // `.jj.*` covers jj workspace leftovers (e.g. `.jj.main-orphan`) left
-    // when relocating `.jj/repo` under `.deck/timeline/`.
+    // when relocating `.jj/repo` under `.deck/history/`.
     r#"'all() ~ glob:".deck/**" ~ glob:".deck" ~ glob:".jj/**" ~ glob:".jj" ~ glob:".jj.*" ~ glob:".jj.*/**" ~ glob:".git/**" ~ glob:".git" ~ glob:".gitignore" ~ glob:"node_modules/**" ~ glob:"node_modules" ~ glob:".DS_Store" ~ glob:".boxel-history/**" ~ glob:".boxel-history"'"#
 }
 
-/// Machinery / VCS paths that must never appear in Timeline tree listings or
+/// Machinery / VCS paths that must never appear in History tree listings or
 /// restore plans — even if an older seal accidentally tracked them.
 ///
 /// Any path segment named `.jj` or starting with `.jj.` is machinery: the

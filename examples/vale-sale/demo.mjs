@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// VALE sample sale — one live branch, Timeline seals, no releases.
+// VALE sample sale — one live branch, History seals, no releases.
 //
 //   pnpm --filter @cardstack/deck-example-vale-sale demo
 //   open the printed /site/vale/sale/index.html

@@ -4,7 +4,7 @@
 //   pnpm --filter @cardstack/deck-example-potluck demo
 //   pnpm --filter @cardstack/deck-example-potluck steps
 //
-// DEFAULT IS ADDITIVE. Re-running this must not delete Notes, Claims, Timeline
+// DEFAULT IS ADDITIVE. Re-running this must not delete Notes, Claims, History
 // seals, or published versions. `RESET=1` is the only path that wipes the
 // store — and even then it leaves `<actor>/notes/` and `.deck/claims/` alone.
 import { access, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -66,7 +66,7 @@ const buildMode = await demoBuildMode({
   label: 'POTLUCK',
 });
 if (buildMode === 'rebuild') {
-  // Store only — never Notes, Claims, or Timeline seals.
+  // Store only — never Notes, Claims, or History seals.
   await rm(storeDir, { recursive: true, force: true });
   console.log('   RESET=1 — wiped .deck/store; Notes and Claims kept');
 }

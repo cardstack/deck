@@ -434,7 +434,7 @@ module('store: content addressing and pruning', function (hooks) {
     );
   });
 
-  // A list of versions is only a timeline if the versions carry times, and
+  // A list of versions is only ordered history if the versions carry times, and
   // the two available times mean different things. The upstream instant is a
   // fact about the library; the local one is a fact about this machine. They
   // are years apart for anything vendored, so a reader that treats either as

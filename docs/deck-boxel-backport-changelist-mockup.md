@@ -4,7 +4,10 @@
 [`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md) in the Deck
 repo — protocol questions close there first). Product context:
 [`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md)
-(**How we execute**, **An app is a decklist**).
+(**How we execute**, **An app is a decklist**). Multi-branch substrate:
+[`deck-boxel-branch-index-backport.md`](deck-boxel-branch-index-backport.md).
+Binding local/AWS storage contract:
+[`deck-storage-backends.md`](deck-storage-backends.md).
 
 This is a story of the work, told as stacked pull requests. It was written
 after walking today’s Boxel tree (`runtime-common`, `realm-server`, `host`)
@@ -14,103 +17,111 @@ will actually get when each slice lands.
 
 It is a design of the work — not a measured diff. The `+ / −` counts under
 each commit are order-of-magnitude guesses after reading the real files;
-they tell you *where the mass is*, not what to put in a spreadsheet.
+they tell you _where the mass is_, not what to put in a spreadsheet.
 
-**This doc owns the numbering.** PR 0–14 below are the only identifiers;
-the team brief groups them and does not number anything of its own. If you
-see a "Phase 5" anywhere, it is stale.
+**This doc owns the older product-benefit PR numbering.** PR 0–14 stays stable
+for existing cross-references. The readiness ruling adds A0–A3 as execution
+aliases for PR 0/1/3/1b and B0–B7 as branch-substrate slices. If you see a
+"Phase 5" anywhere, it is stale.
 
-**Campaign order beats numeric order.** Do not blindly merge 0→14. Prefer:
+**Campaign order beats numeric order.** Do not blindly merge 0→14. Finish R0
+in Deck, then prefer:
 
-- **Product spine:** PR 1 → **PR 3** (versioned addresses) → **PR 1b** (thin
-  verbs) → PR 4c (host restore)
-- **Infra spine:** PR 1 → PR 4a (Steps on write) → PR 5 (CLI 3-way)
+- **Product spine:** R0 → A0/PR 0 → PR 1 → **PR 3** (versioned addresses) →
+  **PR 1b** (thin verbs) → B0–B3 realm/storage/index substrate → PR 4c
+- **Infra spine:** R0 → A0/PR 0 → PR 1 → B0–B3 realm/storage/index substrate → PR 4a
+  (Steps on branch write) → PR 5 (CLI 3-way)
 
-PR 3 sits on the product spine because we ship on fully-qualified URLs (see
-**Naming**): the version lives in the path, so nothing can pin one until the
-realm server answers `@version` addresses.
+The finalized readiness decisions add **R0**, the Deck-side RRI gate, before
+the first clean Boxel stack **A0–A3**: A0 = PR 0, A1 = PR 1, A2 = PR 3, and
+A3 = PR 1b. Finish and record R0, cut A0 alone from fetched `origin/main`,
+then stack A1–A3. These aliases describe execution order; the older PR numbers
+below remain stable for cross-references.
 
-Timeline is **sliced** (4a–4d + PR 5), not one epic. Vendoring, minify,
+PR 3 sits on the product spine because an exact Version RRI still needs an
+immutable HTTP representation. A1 selects the RRI; A2/PR 3 makes it fetchable.
+
+History is **sliced** (4a–4d + PR 5), not one epic. Vendoring, minify,
 Matrix, and review tools are **off the critical path**.
+
+**2026-08-21 sequencing correction:** PR 4a must not first introduce a
+realm-global History. Before its Step hook, land `main` compatibility,
+realm-contained local/AWS storage, branch refs, branch-qualified index
+generations, and atomic source + completed index cloning as specified in
+`deck-boxel-branch-index-backport.md` B0–B3.
+The numbering in this older mockup stays stable, but those substrate commits
+are a hard prerequisite to 4a. Merge later uses one target write batch and
+adds one target Step; it does not replay the source branch's Steps.
 
 Sample artifacts you can open beside this doc:
 
-- [`artifacts/backport-remix-decklist.json`](artifacts/backport-remix-decklist.json) — **what to ship**: URL pins, scopes, `extends`
-- [`artifacts/backport-remix-decklist-rri.json`](artifacts/backport-remix-decklist-rri.json) — the same decklist after the RRI migration
+- [`artifacts/backport-remix-decklist.json`](artifacts/backport-remix-decklist.json) — **what to ship**: canonical RRI pins, RRI scopes, `extends`
+- [`artifacts/backport-remix-decklist-browser.json`](artifacts/backport-remix-decklist-browser.json) — derived absolute browser projection; never authored or merged
 - [`artifacts/backport-gallery-scene.gts`](artifacts/backport-gallery-scene.gts) — a gallery card on the newer `three`
 
 ---
 
-## Naming — build on URLs now, move to RRI when it lands
+## Naming — RRI is identity; URL is transport
 
-**Read this before the samples.** Every example below is written in RRI
-notation because that is where we are going. It is *not* what the first PRs
-should ship, and the difference is deliberate.
+**Read this before the samples.** R0 makes Core RRI-native before A0 vendors
+it, so the backport writes scoped RRIs from its first durable object. There is
+no URL-first migration stage.
 
 ### What exists today
 
-Boxel has **RRI** (`RealmResourceIdentifier`): a branded string that is
-either a **scoped identifier** (`@cardstack/base/card-api`) or a **full
-URL**. `VirtualNetwork` maps the scoped form to a serve URL. Three prefixes
-are registered — `@cardstack/base/`, `@cardstack/catalog/`,
-`@cardstack/skills/` — and the
-[RRI migration](https://linear.app/cardstack/project/cardstackbase-defea0d67319)
-that built it is at Phase 3 of 5 (Phase 3 itself 94%).
+Current Boxel `origin/main` has **RRI** (`RealmResourceIdentifier`),
+`VirtualNetwork.resolveRRI`, scoped realm mappings, RRI-preserving relative
+resolution, and canonical RRI dependency tracking (#5776). Production already
+registers platform mappings such as `@cardstack/base/`,
+`@cardstack/catalog/`, and `@cardstack/skills/`.
 
-**There is no version segment in that grammar, and no `@catalog/` or
-`@workspace/` prefix.** `resolveRRI`'s spec covers scoped identifiers, URLs,
-relative resolution, and `$thisRealm/` — nothing else. Unmapped user realms
-deliberately stay in URL form.
+What is missing is general authority: every mutable realm needs a stable RRI,
+every exact imported Version needs an exact RRI claim, and mappings must be
+selected through the importing branch's lock instead of one global prefix map.
+Those are A1/B1 responsibilities, not reasons to author URLs temporarily.
 
 ### The ruling
 
-**Ship the backport on fully-qualified URLs. Let the RRI migration move us to
-aliases afterwards.** The goal now is buildability and runnability, not final
-notation.
-
-This costs nothing in capability, because the version does not need an
-identifier grammar to live in — it lives in the **path**:
+**Scoped RRI is the canonical logical identity.** Use npm-shaped scoped roots:
 
 ```text
-https://app.boxel.ai/catalog/lib/three@0.169.0/build/three.module.js
+mutable realm/package      @acme/gallery/
+resource                   @acme/gallery/scene
+exact package Version      @catalog/three@0.169.0/
+exact package resource     @catalog/three@0.169.0/build/three.module.js
 ```
 
-That is Deck's own serve grammar, specified in `deck-at-rest.md` and covered
-by `deck conform`. So the dependency moves off the `@cardstack/base` migration
-and onto **PR 3**, the package-serve handler — a new read-only route rather
-than a change to a 94%-complete persistence migration. Verified end to end in
-the Deck repo: scopes, sibling-realm isolation, `extends` flattening and
-specifier resolution all work with fully-qualified URLs on both sides.
-
-`extends` accepts all three forms **today** (Deck W1, amended 2026-08-09), so
-the later swap needs no Deck change:
+Branches and Checkpoints do not alter the RRI. They alter `RealmViewContext`,
+which resolves the same logical RRI to an internal transport view:
 
 ```text
-acme/blog@1.2.3                              depot-local
-https://app.example/catalog/acme/blog@1.2.3/ fully qualified   ← ship this
-@catalog/acme/blog@1.2.3/                    scoped alias      ← later, free
+@acme/gallery/scene + main
+  → https://app.boxel.ai/workspace/acme/gallery/scene
+
+@acme/gallery/scene + branch improve-nav
+  → https://app.boxel.ai/workspace/acme/gallery/__deck/branch/<token>/scene
 ```
 
-### Reading the samples
+The canonical lock is composed from the applicable authored root and nested
+`importmap.json` files and contains exact RRI targets and importer-RRI scope
+keys. A1 projects it deterministically into the URL-valued import map native
+ESM consumes. That projection is disposable derived delivery state; it does
+not get reviewed, merged, or hashed as the Repository's lock authority.
 
-| Sample notation | Ship as | Becomes |
-| --- | --- | --- |
-| `@catalog/lib/three@0.169.0/build/three.module.js` | `https://app.boxel.ai/catalog/lib/three@0.169.0/build/three.module.js` | itself, once the prefix exists |
-| `@workspace/acme/gallery/scene` | `https://app.boxel.ai/workspace/acme/gallery/scene` | itself |
-| `@cardstack/base/card-api` | **unchanged — this one is real today** | unchanged |
-| `https://app.boxel.ai/…` | unchanged | may alias later |
+### Reading and compatibility
 
-`@cardstack/base/card-api` is the exception: that prefix is registered,
-`identify()` already emits it, and the base realm's startup identity already
-flipped to it (CS-12048). Authors keep writing it.
+- Source imports, card/code refs, Repository member roots, locks, index keys,
+  fixtures, events, and UI use scoped RRI form.
+- Exact Versions place `@version` on the RRI package name, for example
+  `@catalog/three@0.169.0/`; a mutable realm stays `@acme/gallery/`.
+- URL-form RRIs remain readable for old Checkpoints and foreign intake. Reads do
+  not silently rewrite durable history.
+- Absolute URLs appear in HTTP requests and the generated browser import map
+  only.
 
-The swap, when it comes, rewrites **decklist values** — one `importmap.json`
-per deck, not card JSON scattered across the index — and Deck's classifier
-(`leave` / `rebind` / `rewrite`, PR 2) is exactly the tool for it.
-
-Old published content that still says `https://cardstack.com/base/…` keeps a
-**permanent** VN read-mapping — published Versions never change, so that
-compat layer is not a temporary flag. New authoring prefers `@cardstack/base/…`.
+`@cardstack/base/card-api` is already canonical today. Old published content
+that says `https://cardstack.com/base/…` keeps its permanent read mapping;
+published Versions never change.
 
 ---
 
@@ -135,8 +146,12 @@ a **Touch** list with dry-run diffs (blast radius), then **Do** / **Don’t** /
 1b  Thin install / remix / use (fixture) →  early K5          ← product spine
  2  Classify URLs on publish             →  Track C; parallel OK
  3  Serve versioned addresses            →  K3; PREREQUISITE for any version pin
+B0  V2 collaboration objects inside each realm
+B1  Local FS + AWS S3 Files/conditional-S3 backends and branch heads
+B2  Immutable branch-qualified index generations + query projections
+B3  Atomic source + index + deckd History initialization for branch/fork
 4a  Steps on one write path              →  K1 start          ← hinge slices
-4b  Timeline HTTP + restore through write
+4b  History HTTP + restore through write
 4c  Host: list / restore Steps
 4d  Agent writes → Steps + claims
  5  CLI sync becomes three-way merge     →  K4
@@ -153,7 +168,36 @@ a **Touch** list with dry-run diffs (blast radius), then **Do** / **Don’t** /
 
 **K10** is the destination of the whole stack, not a separate ticket.
 
-**Cut hard?** Product: **1 → 3 → 1b → 4c**. Infra: **1 → 4a → 5**.
+**Cut hard?** Product: **R0 → A0 → 1 → 3 → 1b → B0–B3 → 4c**. Infra:
+**R0 → A0 → 1 → B0–B3 → 4a → 5**.
+
+---
+
+## R0 — Deck Core speaks RRI, Checkpoint, and Review V2 before vendoring
+
+**Not a Boxel PR. Blocks A0.** Current Boxel `origin/main` has RRI, but current
+Deck Core still validates Repository members as `owner/package` and proves
+scopes after they have become URL projections. Work-plan W11 closes that gap
+in Deck first:
+
+- add RRI parse/normalize/relative-resolution primitives to browser-safe Core;
+- write RRI-native locks and importer scopes;
+- add V2 Repository/manifest, Checkpoint, branch-head, and Review objects;
+- bind Checkpoints to exact deckd History and index generations while allowing
+  ordinary Steps to advance a branch head without commit ceremony;
+- make all collaboration paths relative to the owning realm's `.deck/`;
+- accept a host transport projector instead of storing absolute URLs as
+  logical identity; and
+- keep V1 Repository, Revision, Pull Request, and URL-form objects readable
+  without rehashing them.
+
+**Done when.** V2 Repository and RRI lock hashes are unchanged across two URL
+projections; Checkpoint/branch-head/Review V2 round-trip; a Step can advance a
+head without changing its latest Checkpoint; legacy hashes remain readable;
+and RRI conformance is independently green.
+
+Record the exact clean Deck commit. That commit, not this planning worktree or
+the stale `deck/at-rest-poc` vendor tree, is A0's source.
 
 ---
 
@@ -179,14 +223,15 @@ import { resolveSpecifier } from '@cardstack/deck';
 import { mergeTrees, publishToStore } from '@cardstack/deck/node';
 ```
 
-**Depends on.** Clean Boxel `main` **and** the Deck work-plan gates:
-`extends`, classifier, provenance, bare/hermetic, lean trim, foreign
-`deck conform`, scopes proof. If review would reopen those, stop and fix
-Deck — do not “design in the monorepo PR.”
+**Depends on.** Clean Boxel `main` **and R0/W11 green at a recorded clean Deck
+commit**, after the existing gates: `extends`, classifier, provenance,
+bare/hermetic, lean trim, foreign `deck conform`, scopes proof. If review
+would reopen those, stop and fix Deck — do not “design in the monorepo PR.”
 
 ### Commit — Add `@cardstack/deck` to the workspace
 
-**Story.** Copy or workspace-link the **lean** Core into `packages/deck`.
+**Story.** Copy the **lean** Core from the recorded R0 commit into
+`packages/deck`.
 Export two surfaces and wire the three consumers. Do not call any Deck API
 from Boxel yet — if behavior changes in this PR, something went wrong. Prefer
 the trimmed cone (~protocol + serve helpers + history + conform), not the
@@ -210,7 +255,8 @@ that proves the host graph does not pull `node:fs`.
 **Don’t.** Bring Hub, examples, teaching CLI, `vendor-npm`, minify/`derive`,
 or rebase-daemon. “Helpfully” start rewriting the resolver in the same PR.
 
-**Done when.** `pnpm` install and build succeed; no realm behavior change.
+**Done when.** `pnpm` install and build succeed; RRI V2 Core tests and
+conformance remain green; no realm behavior changes.
 
 ---
 
@@ -219,8 +265,8 @@ or rebase-daemon. “Helpfully” start rewriting the resolver in the same PR.
 **Why.** This PR is where Boxel has to internalize a Deck thesis that is
 easy to miss: **an app is a decklist** — an import map of pins (RRI /
 Version), not a private copy of every dependency. Today
-`VirtualNetwork.resolveImport` walks import-map prefixes and ignores *who
-asked*. A realm cannot honestly hold two majors of the same library at
+`VirtualNetwork.resolveImport` walks import-map prefixes and ignores _who
+asked_. A realm cannot honestly hold two majors of the same library at
 once, so remix copies whole trees — the only way to get a private `three`.
 Deck’s answer is importer-aware resolution plus import-map **scopes**,
 keyed by the importer’s RRI prefix. Remix becomes “write a decklist”
@@ -233,39 +279,22 @@ shipped the model.
 K3 / K11, and the “app = decklist” product story.
 
 **Authors see.** A decklist, and card code that still looks like normal GTS.
-**Ship the first form** — see **Naming**; the second is the same decklist
-after the RRI migration, and nothing in Deck has to change between them.
+The canonical form is RRI-native from the start:
 
 ```json
 {
   "imports": {
-    "three": "https://app.boxel.ai/catalog/lib/three@0.169.0/build/three.module.js",
-    "@cardstack/base/": "https://app.boxel.ai/base@1.12.0/"
-  },
-  "scopes": {
-    "https://app.boxel.ai/workspace/acme/gallery/legacy-viewer/": {
-      "three": "https://app.boxel.ai/catalog/lib/three@0.160.0/build/three.module.js"
-    }
-  },
-  "deck": {
-    "extends": "https://app.boxel.ai/catalog/chris/gallery-board@2.1.0/"
-  }
-}
-```
-
-```json
-{
-  "imports": {
-    "three": "@catalog/lib/three@0.169.0/build/three.module.js",
+    "three": "@catalog/three@0.169.0/build/three.module.js",
+    "three/addons/": "@catalog/three@0.169.0/examples/jsm/",
     "@cardstack/base/": "@cardstack/base@1.12.0/"
   },
   "scopes": {
-    "@workspace/acme/gallery/legacy-viewer/": {
-      "three": "@catalog/lib/three@0.160.0/build/three.module.js"
+    "@acme/gallery/legacy-viewer/": {
+      "three": "@catalog/three@0.160.0/build/three.module.js"
     }
   },
   "deck": {
-    "extends": "@catalog/chris/gallery-board@2.1.0/"
+    "extends": "@chris/gallery-board@2.1.0/"
   }
 }
 ```
@@ -282,11 +311,11 @@ Two details worth knowing before you write the resolver against these:
   `…/gallery` silently governs `…/gallery-legacy/…`, which resolves a
   neighbouring deck to the wrong version with no error. Deck's resolver
   enforces it; a Boxel adapter that re-implements matching must too.
-- **`@cardstack/base/` is real today** and stays as written in both forms.
-  Only the *value* it maps to gains a version.
+- **`@cardstack/base/` is real today.** The lock maps that stable RRI prefix
+  to the exact Version RRI `@cardstack/base@1.12.0/`.
 
 ```gts
-// This module’s RRI: @workspace/acme/gallery/scene  →  three@0.169
+// This module’s RRI: @acme/gallery/scene → three@0.169
 import * as THREE from 'three';
 import { CardDef, field, contains } from '@cardstack/base/card-api';
 
@@ -297,11 +326,12 @@ export class GalleryScene extends CardDef {
 ```
 
 ```gts
-// @workspace/acme/gallery/legacy-viewer/scene  →  three@0.160 via scopes
+// @acme/gallery/legacy-viewer/scene → three@0.160 via RRI scopes
 import * as THREE from 'three';
 ```
 
-Full samples: the two artifacts linked at the top.
+Full samples: the canonical lock and its derived browser projection linked at
+the top.
 
 **Depends on.** PR 0 (you can stub, but calling Deck’s `resolveSpecifier` is
 the point).
@@ -309,8 +339,9 @@ the point).
 ### Commit — Thread the importer into resolution
 
 **Story.** Change resolution from “global prefix table” to “this specifier,
-from that module.” The second argument is the importer’s RRI (or URL that VN
-can unresolve to one). Scope keys are importer RRI prefixes. Prefer making
+from that module.” The second argument is the importer’s canonical scoped RRI.
+Legacy URL inputs are normalized through VN before resolution. Scope keys are
+importer RRI prefixes. Prefer making
 Boxel’s virtual network a thin adapter over `@cardstack/deck`’s
 `resolveSpecifier` rather than forking the algorithm again. Cache keys in
 the loader must include the importer — otherwise the wrong major wins forever
@@ -332,13 +363,13 @@ behavior change until a scopes fixture appears.
 
 **Don’t.** Open `realm.ts`. Break today’s one-`three` realms.
 
-**Done when.** Unit tests cover old prefix behavior *and* two scopes for
+**Done when.** Unit tests cover old prefix behavior _and_ two scopes for
 one bare name resolving differently by importer RRI.
 
 ### Commit — Acceptance: two live majors of one library
 
 **Story.** This is the K8 gate, not a nice-to-have. Build a fixture realm
-where one module’s RRI sits under `@workspace/…/gallery/` (newer `three`)
+where one module’s RRI sits under `@acme/gallery/` (newer `three`)
 and another under `…/legacy-viewer/` (older `three`). Both load. No esm.sh
 query-string version hack, no `@ts-expect-error`. If this fails, the
 resolver work is not done — stop and fix it.
@@ -362,7 +393,7 @@ gate** for K8 (coexistence). Product remix UI is the next PR.
 ## PR 1b — Thin decklist verbs (early product win)
 
 **Why.** If “app = decklist” is the thesis, authors must see it **before**
-Timeline, Matrix, or catalog-authority theater. Install / remix / use
+History, Matrix, or catalog-authority theater. Install / remix / use
 (upgrade may be stubby) mutate the app’s import map — `extends` + pins —
 and must not full-copy trees. A fixture LibSpec is enough; pretty catalog
 pages wait for PR 12 polish.
@@ -372,7 +403,7 @@ pages wait for PR 12 polish.
 **Authors see.**
 
 ```text
-Fixture LibSpec → @catalog/lib/three@0.169.0
+Fixture LibSpec → @catalog/three@0.169.0
 ────────────────────────────────────────────
   [ Use ]      create instance, pin exact
   [ Install ]  add pin to my decklist
@@ -387,7 +418,7 @@ Catalog → @catalog/chris/gallery-board@2.1.0 → [Remix]
 ```
 
 **Depends on.** PR 1 and **PR 3** (a pin needs a servable versioned address).
-Does **not** depend on Timeline (PR 4*) or Matrix.
+Does **not** depend on History (PR 4*) or Matrix.
 
 ### Commit — Map helpers
 
@@ -425,7 +456,7 @@ packages/host/app/services/realm.ts                   +20 / -5
 
 **Do.** Align product copy with “map, not copy.” Kill full-copy fallback.
 
-**Don’t.** Wait for GitHub mirror, Matrix, or Timeline. Build the full
+**Don’t.** Wait for GitHub mirror, Matrix, or History. Build the full
 review product. Quietly keep full-copy “just in case.”
 
 **Done when.** Author can install and remix from the fixture without a
@@ -520,14 +551,13 @@ packages/postgres/migrations/….ts (additive only)        +40 / -0
 
 ---
 
-## PR 3 — Serve versioned addresses
+## PR 3 — Resolve and serve exact Version RRIs
 
-**On the product spine.** Was "optional early"; the URL-first ruling (see
-**Naming**) moved it. The version lives in the path, so until the realm
-server answers `…/three@0.169.0/…` there is nothing for a decklist to pin
-and PR 1b has no fixture to install from. Still small — a read-only handler
-— but it is now a prerequisite, not a nice-to-have.
-
+**On the product spine.** A1 can select
+`@catalog/three@0.169.0/`, but until the realm server resolves that claim to
+an immutable `…/three@0.169.0/…` representation there is nothing native ESM
+can fetch and PR 1b has no fixture to install. This stays a small read-only
+handler plus a registry gate.
 
 **Why.** Third-party libraries should be first-class, policy-gated addresses
 in our world — not forever-links to esm.sh. The crawl and corpus migration
@@ -535,14 +565,14 @@ can live on a hosted Deck outside the monorepo. Boxel still needs a **serve
 door** and a thin registry gate so republishing the same name at a different
 treeHash is a conscious act.
 
-**Unlocks.** **K3** on the serve side, and the address space everything else
-pins into: those packages become cacheable pins authors can put in a decklist
-as fully-qualified URLs today, aliases later.
+**Unlocks.** **K3** on the serve side, and the exact RRI claim space everything
+else pins into. Authors and locks retain RRIs; the resolver produces immutable
+transport URLs.
 
 **Authors see.** A Spec in the catalog and a fetchable Version:
 
 ```text
-RRI:   @catalog/lib/three@0.169.0/build/three.module.js
+RRI:   @catalog/three@0.169.0/build/three.module.js
 Serve: https://app.boxel.ai/catalog/lib/three@0.169.0/build/three.module.js
        Cache-Control: public, max-age=31536000, immutable   (once PR 6 lands)
 ```
@@ -553,7 +583,7 @@ Serve: https://app.boxel.ai/catalog/lib/three@0.169.0/build/three.module.js
     "attributes": {
       "title": "three.js",
       "description": "JavaScript 3D library",
-      "moduleHref": "@catalog/lib/three@0.169.0/build/three.module.js"
+      "moduleHref": "@catalog/three@0.169.0/build/three.module.js"
     },
     "meta": {
       "adoptsFrom": {
@@ -600,11 +630,11 @@ the registry gate has a failing test if you skip the policy check.
 ### Commit — Start the `deck conform` CI job
 
 **Story.** This is the first Deck-shaped HTTP surface, so it is where the
-program gate starts *running* instead of being an intention. Add a CI job
+program gate starts _running_ instead of being an intention. Add a CI job
 pointing `deck conform <base-url>` at a deck-enabled fixture realm. Most
 checks will not apply yet — that is expected; conform reports
 `not applicable` per law rather than failing. Tighten as PR 6 (cache classes)
-and PR 4b (Timeline) land.
+and PR 4b (History) land.
 
 **Touch.**
 
@@ -620,7 +650,7 @@ so a later PR shrinking the not-applicable list is visible.
 “it barely checks anything” — the point is that it exists and cannot regress.
 
 **Done when.** CI runs `deck conform` against the fixture and fails if any
-*applicable* law fails.
+_applicable_ law fails.
 
 ### Commit — LibSpec content (catalog)
 
@@ -630,7 +660,7 @@ is the versioned package RRI. No new card type — `spec.gts` already carries
 
 **Touch.** Catalog content (separate content PR is fine) · roughly `+200 / -0`.
 
-**Do.** Point `moduleHref` at `@catalog/lib/…@version/…`, not a bare CDN.
+**Do.** Point `moduleHref` at `@catalog/<package>@<version>/…`, not a bare CDN.
 
 **Don’t.** Invent a LibSpec card class.
 
@@ -638,30 +668,92 @@ is the versioned package RRI. No new card type — `spec.gts` already carries
 
 ---
 
-## PR 4a — Steps on one write path ← hinge start
+## B0–B3 — Realm-contained collaboration substrate
 
-**Track B.** First Timeline slice. Wire Core; do **not** reimplement
+These slices are mandatory Boxel PRs between A0–A3 and History. They are not
+optional infrastructure and they expose no branch UI yet.
+
+### B0 — V2 protocol objects
+
+**Story.** Import RRI-native Repository, `deck-checkpoint-v2`, Review, branch
+head, and `mergeTrees` contracts from the exact Deck commit. Keep legacy
+`deck-revision-v1` and `deck-pull-request-v1` fixtures readable without
+rewriting their hashes.
+
+**Done when.** A Repository, Checkpoint, Review, and branch head round-trip
+through Boxel adapters with byte-identical local/AWS canonical JSON.
+
+### B1 — One realm, two storage backends
+
+**Story.** Put every Deck resource below the realm's `.deck/`: CAS store,
+branch refs, Reviews, completed indexes, branch workspaces, and deckd/jj
+History. Implement the regular-filesystem adapter for Desktop and the AWS
+adapter for hosted Boxel.
+
+On AWS, authored workspaces, index staging, and
+`.deck/history/repo` use S3 Files. Agents may read all `.deck` files, but their
+POSIX principal cannot write `.deck/store`, `.deck/indexes`, `.deck/refs`,
+`.deck/reviews`, or `.deck/releases`. Only realm-server's direct-S3
+credentials write those paths,
+using `If-None-Match: *` for immutable objects and `If-Match` for existing
+branch refs. A bucket-global parallel protocol tree is forbidden.
+
+**Done when.** The same object/ref conformance suite passes locally and on S3;
+an agent can inspect a branch ref as a file, cannot overwrite it through POSIX,
+and a direct-S3 ref update appears in the realm's S3 Files view.
+
+### B2 — Exact index generations
+
+**Story.** Give every completed index a canonical generation manifest/hash.
+Carry it in `RealmViewContext`, Checkpoints, Reviews, and branch heads. Treat
+Postgres/SQLite rows as query projections of that generation.
+
+**Done when.** Two generations for the same Realm RRI coexist and Browse,
+Run, search, caches, jobs, prerendering, and events select the right one.
+
+### B3 — Atomic branch/fork initialization
+
+**Story.** Create a branch or fork by materializing exact source, cloning the
+completed index semantically, and asking deckd to initialize a distinct jj
+History from the exact source `historyHead`. Same-realm branches may initially
+share an immutable index generation; cross-authority forks rebase
+authority-sensitive index data.
+
+**Done when.** The real fixture proves divergent source, Browse, Run, search,
+index isolation, independent `.deck/history/repo`, and fork RRI rebasing on
+both local filesystem and AWS backends. The branch is invisible until all
+three initializations complete.
+
+---
+
+## PR 4a — Steps on one branch write path ← hinge start
+
+**Track B.** First History slice. Wire Core; do **not** reimplement
 merge/store in realm-server.
 
-**Why.** Editable realms need a tape. This slice only: after a successful
-write batch, record a **Step** (debounced). No host UI, no claims UX, no
-CLI. Versions-only remains OK for some read-only catalog mounts — not for
-working realms once this lands.
+**Why.** Editable realm branches need a tape. This slice only: after a
+successful branch-qualified write batch, record a **Step** (debounced). No
+host UI, no claims UX, no CLI. Versions-only remains OK for some read-only
+catalog mounts — not for working realms once this lands.
 
 **Unlocks.** Start of **K1**. Data plane for later slices.
 
-**Authors see.** Nothing in host yet — engineers see Steps in store/tests.
+**Authors see.** Nothing in host yet — engineers see Steps through deckd and
+the realm's inspectable `.deck/history/`.
 
-**Depends on.** PR 0. Pairing with PR 1 / 1b is nice; not required.
+**Depends on.** PR 0 plus B0–B3 of
+`deck-boxel-branch-index-backport.md`. Pairing with PR 1 / 1b is nice; not
+required.
 
 ### Commit — History façade + surgical write hooks
 
 **Story.** Create `realm-history.ts` as the façade: `recordStep`,
 `listSteps`, `restoreStep`, `publishVersion`, via `@cardstack/deck/node`.
-In `realm.ts`, after successful `_batchWriteUnlocked` and delete paths,
-call `recordStep` with actor metadata when present. Debounce (~500ms
-quiet). Reuse notify / broadcast — no parallel bus. Stay inside
-`withWriteLock`. Surgical hooks only in the large `realm.ts`.
+In `realm.ts`, after successful `_batchWriteUnlocked` and delete paths, call
+`recordStep` with branch and actor metadata when present. Debounce (~500ms
+quiet). Reuse branch-qualified notify / broadcast — no parallel bus. Stay
+inside the `(Realm RRI, branch)` write lock. Surgical hooks only in the large
+`realm.ts`.
 
 **Touch.**
 
@@ -677,33 +769,36 @@ Document the debounce constant.
 **Don’t.** Reformat `realm.ts`. Treat a claim refresh as a Step. Ship host
 restore UI (that is **4c**).
 
-**Done when.** Two writes produce Timeline entries; the façade can restore
-in unit tests even if HTTP is the next PR.
+**Done when.** Two writes to one branch produce History entries; another
+branch's source, index, and History do not move. The façade can restore in
+unit tests even if HTTP is the next PR.
 
 ---
 
-## PR 4b — Timeline HTTP + restore through write
+## PR 4b — History HTTP + restore through write
 
 **Why.** Realm-server needs list Steps / Versions, file-at-Step, and
 restore **through** normal `Realm.write` so indexing follows. Attach a
-Timeline per **editable** realm; Versions-only mounts OK for RO catalog.
+History per **editable** realm; Versions-only mounts OK for RO catalog.
 
-**Runtime decided (2026-08-09): the `jj` binary in the realm-server image.**
-Deck's history package offers two backends — the jj CLI (one subprocess per
-operation) and `historyd` (jj-lib over localhost HTTP, measured ~5–6x faster
-per call). Ship the binary: no second process to deploy, supervise or
-version, and Steps are debounced so the fork/exec cost stays off the hot
-path. `historyd` is the upgrade if profiles ever say so, and the contract is
-identical, so swapping is configuration. Treat this as a **deployment** task
-with an owner, not a line in a handler: the image needs `jj`, and a realm
-whose Timeline cannot start must degrade to `kind: 'none'` with a printed
-reason rather than failing writes.
+**Runtime decided (superseding the 2026-08-09 jj-CLI choice): Deck's
+`HistoryBackend` connected to deckd.** Run one supervised deckd per
+realm-server host. Every branch has a stable opaque source directory, and its
+selected realm view exposes `.deck/history/repo` as deckd's durable jj History
+identity. On hosted AWS the repository is written through S3 Files. Treat
+`.deck/timeline/` only as a one-way legacy migration input. Do not attach a `.jj`
+repository to the realm-global root and do not ship jj CLI as an intermediate
+backend. The daemon may manage its internal jj-lib store under branch
+machinery, which source snapshots and clones exclude. A read-only imported
+catalog realm may have `kind: 'none'`. A mutable realm is a repository and
+must not accept writes when its deckd History cannot settle them; return a
+clear unavailable error rather than silently dropping every-save safety.
 
 **Unlocks.** Remote restore API for host and CLI.
 
 **Depends on.** PR 4a.
 
-### Commit — Server Timeline + history HTTP
+### Commit — Server History + history HTTP
 
 **Story.** Invent `realm-history*` on the server. HTTP list/restore. Optionally
 bridge `realm-file-changes-listener` so events can carry step ids.
@@ -731,7 +826,7 @@ matches the earlier Step.
 ## PR 4c — Host: list and restore Steps
 
 **Why.** Authors need one history list and restore confirmation. Vocabulary
-is Step / Version / Timeline — never “jj” or “seal” in chrome. This is the
+is Step / Version / History — never “jj” or “seal” in chrome. This is the
 **product-spine** end of Tape (with 1b on Map).
 
 **Unlocks.** User-visible **K1** restore.
@@ -808,7 +903,7 @@ Ship CLI sync here (PR 5).
 
 ## PR 5 — CLI checkpoints and 3-way sync
 
-**The last Timeline slice / Track B.** Infra spine end: **1 → 4a → 5**.
+**The last History slice / Track B.** Infra spine end: **1 → 4a → 5**.
 
 **Which CLI.** `packages/boxel-cli` in the monorepo — **the only one**. The
 standalone `cardstack/boxel-cli` repo is being retired (decision 2026-08-09),
@@ -834,11 +929,11 @@ boxel history ./workspace/acme/gallery
 boxel history ./workspace/acme/gallery -r 3
 
 boxel milestone ./workspace/acme/gallery -n opening-night
-# → Version @workspace/acme/gallery@0.3.0  (catalog RRI after publish)
+# → Version @acme/gallery@0.3.0
 
 boxel sync ./workspace/acme/gallery
-# mergeTrees(base=@workspace/acme/gallery@0.3.0, local, remote)
-# conflict: @workspace/acme/gallery/scene
+# mergeTrees(base=@acme/gallery@0.3.0, local, remote)
+# conflict: @acme/gallery/scene
 # conflict: BlogPost/opening-night.json
 ```
 
@@ -851,10 +946,10 @@ before                                    after
 
 **Depends on.** PR 4b (4c nice for humans testing the same realm).
 
-### Commit — Checkpoints speak Timeline
+### Commit — Checkpoints speak History
 
 **Story.** `CheckpointManager` spawns git against `.boxel-history/.git`.
-Replace the backend with realm Timeline APIs: create → Step, restore →
+Replace the backend with realm History APIs: create → Step, restore →
 `restoreStep`, list → Steps. `markMilestone` becomes “publish / tag a
 Version,” not a git tag. Keep the class’s command-facing API stable where
 you can, so the `realm/*` callers don’t churn for sport — `find-checkpoint.ts`
@@ -897,7 +992,7 @@ list paths and write nothing for those files.
 
 ### Commit — History and milestone commands
 
-**Story.** Point `history` and `milestone` at realm Timeline/Versions.
+**Story.** Point `history` and `milestone` at realm History/Versions.
 Document the old footgun in help text: stop watch before restore.
 
 **Touch.**
@@ -951,7 +1046,7 @@ curl -sI \
 
 Decklists keep pinning RRIs; HTTP just finally tells the truth about them.
 
-**Depends on.** PR 4a (so exact Version URLs exist).
+**Depends on.** PR 3/A2 (so exact Version RRIs have immutable URL projections).
 
 ### Commit — L12 cache classes on the serve path
 
@@ -995,7 +1090,6 @@ repeat without evidence.
 **Demoted.** Ship only after PR 6 cache classes are trusted. Easy to
 gold-plate; not on either spine.
 
-
 **Why.** Because exact Versions never change, minify and gzip are safe and
 worth it. Live must stay readable source for authors and agents.
 
@@ -1004,9 +1098,9 @@ worth it. Live must stay readable source for authors and agents.
 **Authors see.**
 
 ```text
-RRI      @catalog/lib/three@0.169.0/build/three.module.js
-derive   @catalog/lib/three@0.169.0/build/three.module.min.js
-live     @workspace/acme/gallery/scene  → always source
+RRI      @catalog/three@0.169.0/build/three.module.js
+derive   @catalog/three@0.169.0/build/three.module.min.js
+live     @acme/gallery/scene  → always source
 ```
 
 **Depends on.** PR 6.
@@ -1037,7 +1131,6 @@ packages/realm-server/tests/…                         +80 / -0
 ## PR 8 — Base realm via Deck
 
 **Highest blast radius. Only after PR 4c restore works.**
-
 
 **Why.** `https://cardstack.com/base/` is a special snowflake. Base should
 be a pinned Deck Version like everything else — while authors keep writing
@@ -1111,8 +1204,8 @@ packages/realm-server/tests/… base pin                 +80 / -0
 
 ## PR 9 — Agent presence in preview
 
-**Why.** Agents already write realms. People need to see *who is working
-where* without digging through the Timeline. Claims and touch heat are that
+**Why.** Agents already write realms. People need to see _who is working
+where_ without digging through the History. Claims and touch heat are that
 signal — standing presence, not toast spam. A claim without a Step is “about
 to work”; a Step without a claim is “something landed.”
 
@@ -1126,7 +1219,7 @@ to work”; a Step without a claim is “something landed.”
 │  ┌──────────────────────────────────────────────┐ │
 │  │                 (canvas)                      │ │
 │  └──────────────────────────────────────────────┘ │
-│  ● vale  on  @workspace/acme/gallery/scene  18m left│
+│  ● vale  on  @acme/gallery/scene  18m left│
 │    denser lighting on the hero mesh                 │
 └─────────────────────────────────────────────────────┘
 ```
@@ -1140,12 +1233,12 @@ GET /workspace/acme/gallery/_activity
   "claims": [
     {
       "actor": "vale",
-      "at": "@workspace/acme/gallery/scene",
+      "at": "@acme/gallery/scene",
       "text": "denser lighting on the hero mesh",
       "minutesLeft": 18
     }
   ],
-  "heat": [{ "path": "@workspace/acme/gallery/scene", "score": 0.82 }]
+  "heat": [{ "path": "@acme/gallery/scene", "score": 0.82 }]
 }
 ```
 
@@ -1175,7 +1268,7 @@ packages/runtime-common/realm.ts                      +30 / -5
 ### Commit — Preview chrome
 
 **Story.** Consume activity in the existing preview canvas. Standing row:
-actor, RRI path, claim text; optional link into Timeline.
+actor, RRI path, claim text; optional link into History.
 
 **Touch.**
 
@@ -1202,18 +1295,18 @@ design; do not block bare/hermetic on it.
 
 ```bash
 curl -OJ 'https://app.boxel.ai/_download-realm?realm=https://app.boxel.ai/workspace/acme/gallery/'
-# → pack whose provenance.source is @workspace/acme/gallery/
+# → pack whose provenance.source is @acme/gallery/
 ```
 
 ```json
 {
   "provenance": {
-    "source": "@workspace/acme/gallery/",
+    "source": "@acme/gallery/",
     "treeHash": "a3f1…c90",
     "mode": "bare",
     "decklist": {
       "imports": {
-        "three": "@catalog/lib/three@0.169.0/build/three.module.js"
+        "three": "@catalog/three@0.169.0/build/three.module.js"
       }
     }
   }
@@ -1315,7 +1408,7 @@ PR without Base-Version                     bot/CI closes on RO catalog
 boxel share ./workspace/acme/gallery \
   --repo cardstack/gallery-mirror \
   --branch share/vale/denser-lighting
-# Base-Version: @workspace/acme/gallery@0.3.0
+# Base-Version: @acme/gallery@0.3.0
 # treeHash: a3f1…c90
 # Deck-Tip: live
 # Actor: vale
@@ -1375,7 +1468,7 @@ share/gather as the interim truck” story has no CLI behind it.
 
 **Decide before relying on it.** Either the interim truck is the mirror
 export plus `Base-Version` trailers alone, with no CLI verbs, or
-`packages/boxel-cli` gains share/gather as *new* commands — a feature, not a
+`packages/boxel-cli` gains share/gather as _new_ commands — a feature, not a
 rewrite, and it should be scoped as one.
 
 ---
@@ -1437,7 +1530,7 @@ auditable pointer move.
 ```text
 Matrix room  #catalog-submissions
 ─────────────────────────────────
-vale  proposed  @workspace/vale/gallery@0.4.0-dev.3/
+vale  proposed  @vale/gallery@0.4.0-dev.3/
       base: @catalog/chris/gallery-board@2.1.0/
       treeHash: b77c…019
       why: denser hero lighting — run the offer before merging
@@ -1517,7 +1610,7 @@ exposed from PR 4 / PR 9.
 **Authors see.**
 
 ```text
-Review  ·  @workspace/vale/gallery@0.4.0-dev.3/
+Review  ·  @vale/gallery@0.4.0-dev.3/
         vs @catalog/chris/gallery-board@2.1.0/
 ────────────────────────────────────────────────
   scene.gts                      |  ++ lighting rig
@@ -1555,17 +1648,18 @@ packages/realm-server (only if a GET is missing)      +50 / -0
 
 ## Using this as an agent prompt
 
-1. Respect **campaign order** (see top): do not start Timeline before PR 1b
-   unless you are on the infra spine on purpose.  
+1. Respect **campaign order** (see top): finish R0/W11 and record its Deck
+   commit, then cut A0–A3 from current `origin/main`; never start History
+   before B1–B3 branch/index identity, even on the infra spine.
 2. Pick **one commit** — not a whole multi-commit PR unless it is tiny.
-   Timeline: one of **4a / 4b / 4c / 4d**, not “all of PR 4.”  
-3. Paste the commit’s **Story**, **Touch**, **Do**, **Don’t**, and **Done when**.  
+   History: one of **4a / 4b / 4c / 4d**, not “all of PR 4.”
+3. Paste the commit’s **Story**, **Touch**, **Do**, **Don’t**, and **Done when**.
 4. Include the parent PR’s **Authors see** (and the RRI primer if names are
-   involved) so the agent optimizes for the user-visible outcome.  
-5. Point at `docs/artifacts/` when implementing PR 1 / 1b.  
+   involved) so the agent optimizes for the user-visible outcome.
+5. Point at `docs/artifacts/` when implementing PR 1 / 1b.
 6. If the task needs a protocol design debate, stop and open the Deck
    [`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md) — do
-   not invent answers in the Boxel PR.  
+   not invent answers in the Boxel PR.
 7. Prove **Done when** (and program gates: wiring-only, import not fork,
    author remix-without-copy) before the next commit.
 
@@ -1573,21 +1667,21 @@ packages/realm-server (only if a GET is missing)      +50 / -0
 
 ## Appendix — rough change volume
 
-| PR | Scale | Where the mass is |
-| --- | --- | --- |
-| 0 | S | Lean dependency wiring |
-| 1 | M | Virtual network + loader + coexistence fixture |
-| **1b** | **M** | **Thin verbs + host remix-as-map** (product spine) |
-| 2 | M | Publish handler (parallel) |
-| **3** | **S–M** | **Serve handlers; corpus outside** (spine — the address space) |
-| **4a–4d** | **L sliced** | **Write path → HTTP → host → claims** |
-| 5 | L | CLI rewrite (`packages/boxel-cli` — the only CLI) |
-| 6 | S | Headers + tests |
-| 7 | S–M | Derive pipeline (demoted) |
-| 8 | S code / **XL blast** | Base pin — after 4c |
-| 9 | S | Activity + preview |
-| 10 | L | Intake dominates download |
-| 11 | M | Mirror job + GH share/gather interim |
-| 12 | S–M | Catalog verb polish (after 1b) |
-| 13 | M | Matrix; after A+B (demoted) |
-| 14 | L content | Review product — trails tape |
+| PR        | Scale                 | Where the mass is                                              |
+| --------- | --------------------- | -------------------------------------------------------------- |
+| 0         | S                     | Lean dependency wiring                                         |
+| 1         | M                     | Virtual network + loader + coexistence fixture                 |
+| **1b**    | **M**                 | **Thin verbs + host remix-as-map** (product spine)             |
+| 2         | M                     | Publish handler (parallel)                                     |
+| **3**     | **S–M**               | **Serve handlers; corpus outside** (spine — the address space) |
+| **4a–4d** | **L sliced**          | **Write path → HTTP → host → claims**                          |
+| 5         | L                     | CLI rewrite (`packages/boxel-cli` — the only CLI)              |
+| 6         | S                     | Headers + tests                                                |
+| 7         | S–M                   | Derive pipeline (demoted)                                      |
+| 8         | S code / **XL blast** | Base pin — after 4c                                            |
+| 9         | S                     | Activity + preview                                             |
+| 10        | L                     | Intake dominates download                                      |
+| 11        | M                     | Mirror job + GH share/gather interim                           |
+| 12        | S–M                   | Catalog verb polish (after 1b)                                 |
+| 13        | M                     | Matrix; after A+B (demoted)                                    |
+| 14        | L content             | Review product — trails tape                                   |

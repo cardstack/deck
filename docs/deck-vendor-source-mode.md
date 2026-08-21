@@ -210,9 +210,9 @@ keeps serving the bytes it always served.
 
 The fork is free while it is undiverged, and **nearly free once it
 diverges**: the store addresses content per FILE, store-wide, so an edited
-revision costs only the files it changed. Measured on three: two edits
-across two auto-published revisions cost **2,821 bytes**, against the
-438 KB per revision the earlier one-zip-per-tree store charged (§8.1).
+Version costs only the files it changed. Measured on three: two edits
+across two auto-published Versions cost **2,821 bytes**, against the
+438 KB per Version the earlier one-zip-per-tree store charged (§8.1).
 
 **2 — Upgrading keeps your patch.**
 Re-vendor `0.161.0` as a new base and the rebase daemon three-way merges
@@ -315,17 +315,17 @@ Then the loop the whole design exists for, verified in a browser:
 
 | Step | Result |
 | --- | --- |
-| app imports `acme/three` `^0.160.0`, locked to `@0.160.0` | renders — `REVISION 160`, `SphereGeometry defaults 32×16` |
+| app imports `acme/three` `^0.160.0`, locked to `@0.160.0` | renders — `VERSION 160`, `SphereGeometry defaults 32×16` |
 | `deck fork --from acme/three@0.160.0 --as you/three --use-in you/app` | 375 files, **0.16 s** |
 | edit `src/geometries/SphereGeometry.js` and `src/constants.js` **inside three** | auto-published `you/three@0.160.0-dev.2`, sealed |
-| reload | `REVISION 160-you-forked`, `defaults 6×4`, the sphere is visibly faceted |
+| reload | `VERSION 160-you-forked`, `defaults 6×4`, the sphere is visibly faceted |
 | `GET /site/acme/three@0.160.0/src/constants.js` | still `'160'` — the pinned original never moved |
 
 Load cost of the module tree, measured in the page: **248 requests,
 1.13 MB, last module at 102 ms** (localhost, so latency-free — see §6).
 
 Store cost, measured: `acme/three` 438,064 bytes for one pack;
-`you/three` **438,223 and 438,227** for the two dev revisions after a
+`you/three` **438,223 and 438,227** for the two dev Versions after a
 two-character edit. That is the per-tree addressing limit, stated plainly.
 
 ### 8.1 Per-file storage — the wart, and the fix
@@ -347,7 +347,7 @@ Measured on the same three.js loop:
 | --- | --- | --- |
 | vendor three@0.160.0 | 438,064 B (1 pack) | **360,641 B** (374 objects, 1 tree) |
 | fork, undiverged | +438 KB (second copy) | **0 B** |
-| 2 edits → 2 dev revisions | +876 KB | **+2,821 B** |
+| 2 edits → 2 dev Versions | +876 KB | **+2,821 B** |
 | `?format=pack` | stored bytes | rebuilt — 438,064 B, same treeHash, same Content-Digest, `deck verify` passes |
 
 Per-file is *smaller* even for the first copy, because a zip pays a local
@@ -387,7 +387,7 @@ app.js        import * as THREE from 'acme/three';   ← unchanged
 ```
 
 Verified in a browser: with the app's source untouched, the page renders
-`REVISION 160-you-forked · defaults 6×4`, while
+`VERSION 160-you-forked · defaults 6×4`, while
 `/site/acme/three@0.160.0/src/constants.js` still serves `'160'`.
 
 A bare `you/three` means `live`, which is what a fork wants. An alias that

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Smoke-test deckd against a temp depot. Requires: curl, jq, deckd on :8787, jj.
-# Timeline-only layout check (identity JS; esbuild plane optional).
+# History-only layout check (identity JS; esbuild plane optional).
 set -euo pipefail
 BASE="${DECKD_URL:-http://127.0.0.1:8787}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,14 +15,15 @@ curl -sf "$BASE/health" | grep -q ok
 curl -sf -X POST "$BASE/ensure" -H 'content-type: application/json' \
   -d "{\"dir\":\"$DEPOT\"}" >/dev/null
 
-# Thin stub: .jj/repo is a file pointer; store under .deck/timeline/repo.
-test -d "$DEPOT/.deck/timeline/repo"
+# Thin stub: .jj/repo is a file pointer; store under .deck/history/repo.
+test -d "$DEPOT/.deck/history/repo"
 test -f "$DEPOT/.jj/repo"
 test -d "$DEPOT/.jj/working_copy"
 test ! -L "$DEPOT/.jj"
-test ! -e "$DEPOT/.deck/timeline/.jj"
+test ! -e "$DEPOT/.deck/history/.jj"
+test ! -e "$DEPOT/.deck/timeline"
 test ! -e "$DEPOT/.git"
-grep -q '\.deck/timeline/repo' "$DEPOT/.jj/repo"
+grep -q '\.deck/history/repo' "$DEPOT/.jj/repo"
 
 CHANGE=$(curl -sf -X POST "$BASE/seal" -H 'content-type: application/json' \
   -d "{\"dir\":\"$DEPOT\",\"message\":\"first\",\"actor\":{\"name\":\"vale\",\"email\":\"vale@boxel.ai\"}}" \

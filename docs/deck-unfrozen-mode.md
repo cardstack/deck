@@ -8,7 +8,7 @@
 [`deck-live-autopublish.md`](deck-live-autopublish.md)
 (the live URL and the auto-publish that `dev` follows),
 [`deck-daemon.md`](deck-daemon.md)
-(Timeline backend; Steps are served runnable from their own trees).
+(History backend; Steps are served runnable from their own trees).
 
 ---
 
@@ -30,8 +30,8 @@
 >
 > Live pages also inject unfrozen edges (`workspace:*` and dist-tags)
 > straight from `package.json` when the lock has no pin for them — less
-> indirection for try-it-out. Ranges still require the lock. A Timeline
-> Step does the same from **that Step's** trees, rewriting live URLs into
+> indirection for try-it-out. Ranges still require the lock. A Step in
+> History does the same from **that Step's** trees, rewriting live URLs into
 > `/_history/<rev>/…` so siblings bind the Step, not today's working tree.
 >
 > `live` as a URL, a browse kind, and a read synonym of `workspace:*` is
@@ -42,37 +42,37 @@
 
 ## 1. Why "always latest" is not a convention
 
-Semver versions are immutable names. `*`, `^1.0.0`, and `>=1` are *sets* of
+Semver versions are immutable names. `*`, `^1.0.0`, and `>=1` are _sets_ of
 versions. They are resolved once (install / lock) and then frozen. They do
 not mean "re-pick on every load."
 
 npm's lookalikes are also install-time:
 
-| You write | What it is | What happens |
-| --- | --- | --- |
-| `"foo": "latest"` | dist-tag (movable alias) | Resolved at install, then locked. Not a runtime pointer. |
-| `"foo": "*"` | range: any stable version | Highest non-prerelease, then locked. |
-| `"foo": "workspace:*"` | workspace protocol | Local sibling, whatever it is right now. |
+| You write              | What it is                | What happens                                             |
+| ---------------------- | ------------------------- | -------------------------------------------------------- |
+| `"foo": "latest"`      | dist-tag (movable alias)  | Resolved at install, then locked. Not a runtime pointer. |
+| `"foo": "*"`           | range: any stable version | Highest non-prerelease, then locked.                     |
+| `"foo": "workspace:*"` | workspace protocol        | Local sibling, whatever it is right now.                 |
 
 npm discourages `"latest"` in `package.json` because without a lockfile two
 installs can disagree. There is no npm flag that means "this instance always
 tracks HEAD."
 
 Deck already split that into three volatilities, and `latest` is the
-*least* live of the moving ones. Overloading `latest` to mean live head is
+_least_ live of the moving ones. Overloading `latest` to mean live head is
 the mix-up the Hub copy treats as a bug.
 
 ---
 
 ## 2. Three levels of volatility
 
-| You write | You get |
-| --- | --- |
-| `"workspace:*"` | Working tree. Bytes on disk. No version segment. |
-| `"dev"` | Dist-tag the auto-publish moves. Newest `-dev.N` seal. |
-| `"latest"` | Dist-tag on a **stable** Version. **Not live.** Can never point at a prerelease. |
-| `"*"` | Highest stable Version (may differ from whatever is tagged `latest`). |
-| `"^1.0.0"` | Highest compatible stable. |
+| You write       | You get                                                                          |
+| --------------- | -------------------------------------------------------------------------------- |
+| `"workspace:*"` | Working tree. Bytes on disk. No version segment.                                 |
+| `"dev"`         | Dist-tag the auto-publish moves. Newest `-dev.N` seal.                           |
+| `"latest"`      | Dist-tag on a **stable** Version. **Not live.** Can never point at a prerelease. |
+| `"*"`           | Highest stable Version (may differ from whatever is tagged `latest`).            |
+| `"^1.0.0"`      | Highest compatible stable.                                                       |
 
 `latest` (npm dist-tag) ≠ live head ≠ highest version. `latest` can lag
 behind a higher version if the publisher tagged an older one, and it can
@@ -90,10 +90,10 @@ There is no session-wide "vibe mode" switch. The mode is **per edge**.
 Four spellings for the same thing is three too many. They were not four
 words for one job — they were two jobs plus two leftovers.
 
-| Job | Write this | Why |
-| --- | --- | --- |
-| Same specifier, this depot's working tree | `"ui/nav": "workspace:*"` | npm's protocol. Hub already writes it. The lock ruling said not to invent a parallel key. |
-| This specifier, *that* deck's working tree | `"acme/palette": "you/palette@live"` | Alias. `deck fork --use-in` already writes this. You need a spec token after `@`. |
+| Job                                        | Write this                           | Why                                                                                       |
+| ------------------------------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Same specifier, this depot's working tree  | `"ui/nav": "workspace:*"`            | npm's protocol. Hub already writes it. The lock ruling said not to invent a parallel key. |
+| This specifier, _that_ deck's working tree | `"acme/palette": "you/palette@live"` | Alias. `deck fork --use-in` already writes this. You need a spec token after `@`.         |
 
 ```json
 {
@@ -127,11 +127,11 @@ words for one job — they were two jobs plus two leftovers.
 
 ### What the lock actually does with those
 
-| You write | Lock writes | Floats? |
-| --- | --- | --- |
-| `workspace:*` / `you/palette@live` | `/hub/ui/nav/nav.js` (no `@version`) | yes — every save |
-| `dev` / `latest` | `/hub/acme/confetti@latest/…` | yes — tag URL; browser 302s |
-| `*` / `^1.0.0` | `/hub/acme/confetti@1.2.0/…` | no — exact pin |
+| You write                          | Lock writes                          | Floats?                     |
+| ---------------------------------- | ------------------------------------ | --------------------------- |
+| `workspace:*` / `you/palette@live` | `/hub/ui/nav/nav.js` (no `@version`) | yes — every save            |
+| `dev` / `latest`                   | `/hub/acme/confetti@latest/…`        | yes — tag URL; browser 302s |
+| `*` / `^1.0.0`                     | `/hub/acme/confetti@1.2.0/…`         | no — exact pin              |
 
 The live-head bind skips the freeze. A dist-tag **stays a tag** in the
 lock so a new publish under that tag is visible without `deck lock
@@ -145,8 +145,9 @@ that.
 deck lock --depot ./work/site --continuous
 ```
 
-That sets `"deck": { "continuous": true }` on the depot-root
-`importmap.json`. The watcher re-runs `--update` on each auto-publish.
+That sets `"deck": { "continuous": true }` on the applicable authored
+`importmap.json` (root default or the app/package-local map). The watcher
+re-runs `--update` on each auto-publish.
 Pins stay exact; they just move. Depot-owner pins that beat the
 suggestion:
 
@@ -210,13 +211,13 @@ Vibe coding wants both. They are not the same specifier.
 - Live HTML injects those unfrozen edges from `package.json` without a
   lock pin. Ranges still need the lock.
 
-**Timeline Step identity:**
+**History Step identity:**
 
 - A historical HTML page under `/<depot>/_history/<rev>/…` resolves from
   **that Step's** depot lock (if any) plus **that Step's** `package.json`
   unfrozen edges — not today's working tree.
 - Versionless targets are rewritten into `/_history/<rev>/…`, so
-  `workspace:*` binds the sibling *at that Step*. Dist-tags and exact
+  `workspace:*` binds the sibling _at that Step_. Dist-tags and exact
   Versions keep store identity (`@latest`, `@1.2.0`).
 - No lock file is required: a Step with only `package.json` unfrozen
   edges is still runnable.

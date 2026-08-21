@@ -39,7 +39,7 @@ function mockHistory(notes: string[]): HistoryBackend {
   };
 }
 
-module('sealOnWatch cutover (deckd owns Timeline)', function () {
+module('sealOnWatch cutover (deckd owns History)', function () {
   test('deckd history: publish/HMR path does not noteMutation or flush', async function (assert) {
     assert.timeout(15_000);
     let work = await mkdtemp(join(tmpdir(), 'deck-seal-on-watch-'));
@@ -83,7 +83,7 @@ module('sealOnWatch cutover (deckd owns Timeline)', function () {
     );
     assert.false(
       notes.includes('__flush__'),
-      'deckd kind must not flush Timeline from Node watch',
+      'deckd kind must not flush History from Node watch',
     );
 
     controller.close();

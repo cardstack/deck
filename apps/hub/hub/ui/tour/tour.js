@@ -5,14 +5,14 @@
 // <deck-keys>. Next / Prev / Exit are the bar (and ← → esc).
 //
 // Beats may `prepare` a real interaction: list-browse, open volatility,
-// scrub Timeline, scroll a feed, expand a review fold — show, don't narrate.
+// scrub History, scroll a feed, expand a review fold — show, don't narrate.
 import { driver } from 'driver.js';
 
 const STORAGE = 'deck.hub.tour';
 const TOUR_PARAM = 'tour';
 
 /** @typedef {'none' | 'list-browse' | 'dropdown' | 'scroll' | 'scrub'} Interaction */
-/** @typedef {'open-vol' | 'expand-review' | 'scroll-feed' | 'list-browse' | 'scrub-timeline'} Prepare */
+/** @typedef {'open-vol' | 'expand-review' | 'scroll-feed' | 'list-browse' | 'scrub-history'} Prepare */
 
 /** @typedef {{
  *   chapter: number,
@@ -183,19 +183,19 @@ const CHAPTERS = [
         go: '/run?at=/vale-sale/vale/sale/index.html',
         label: 'sale',
         claim:
-          'Past is not a backup — it is a URL you can load in this frame. Watch the page; the tape is underneath.',
+          'Past is not a backup — it is a URL you can load in this frame. Watch the page; History is underneath.',
       },
       {
         chapter: 4,
         title: 'The hour you abandoned is still an address',
         page: 'run',
-        element: '[data-role="timeline"], .tl',
+        element: '[data-role="history"], .tl',
         go: '/run?at=/vale-sale/vale/sale/index.html',
-        label: 'timeline',
+        label: 'history',
         claim:
-          'Scrub back one seal. The iframe follows /_history/<id>/…. Going back is reading and running an address.',
+          'Scrub back one Step. The iframe follows /_history/<id>/…. Going back is reading and running an address.',
         interaction: 'scrub',
-        prepare: 'scrub-timeline',
+        prepare: 'scrub-history',
       },
       {
         chapter: 4,
@@ -205,7 +205,7 @@ const CHAPTERS = [
         go: '/track?at=/vale-sale',
         label: 'saved rows',
         claim:
-          'Saved rows deep-link into browse. The hour you abandon is sealed too — in case you were wrong.',
+          'Saved rows deep-link into browse. The hour you abandon remains in History too — in case you were wrong.',
         interaction: 'scroll',
         prepare: 'scroll-feed',
       },
@@ -426,8 +426,8 @@ function runPrepare(kind) {
     section.scrollIntoView({ block: 'center', behavior: 'smooth' });
     return;
   }
-  if (kind === 'scrub-timeline') {
-    let tape = document.querySelector('[data-role="timeline"]');
+  if (kind === 'scrub-history') {
+    let tape = document.querySelector('[data-role="history"]');
     if (!tape) return;
     tape.scrollIntoView({ block: 'center', behavior: 'smooth' });
     // Click ◀ once the stage has painted — same control as keyboard `[`.

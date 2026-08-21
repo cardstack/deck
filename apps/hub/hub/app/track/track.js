@@ -13,7 +13,7 @@
 //
 // So every row is an action, in the past tense:
 //
-//   saved       a settled edit was sealed as a Step on the Timeline
+//   saved       a settled edit was sealed as a Step on the History
 //   auto-saved  the watcher published that save as `-dev.N`, unasked
 //   published   somebody cut an immutable version on purpose
 //   released    a dist-tag moved onto one. No bytes copied; a name changed.
@@ -235,7 +235,7 @@ async function collect(scope, { historyLimit = HISTORY_PAGE } = {}) {
             })
             // Machinery is not content, wherever it turns up.
             //
-            // `.deck/` holds the store; `.jj` / `.jj.main-orphan` are Timeline
+            // `.deck/` holds the store; `.jj` / `.jj.main-orphan` are History
             // stubs and jj workspace leftovers. DEFAULT_IGNORE / `.jj.*` exist
             // so they never enter a tree — but older seals may still list them.
             // Filtering here keeps /track honest: a change to machinery is not

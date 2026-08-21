@@ -9,7 +9,7 @@
     "highlight-js": "esm",
     "@tanstack/table-core": "browser",
     "ui/activity": "workspace:*",
-    "ui/timeline": "workspace:*",
+    "ui/history": "workspace:*",
     "ui/tour": "workspace:*"
   }
 }

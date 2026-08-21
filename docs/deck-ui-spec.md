@@ -205,7 +205,7 @@ nothing points at them; adopting copies nothing. *(all four)*
 changes; sealed views never change under the user. *(W1 primary)*
 
 **R9 — Degraded capability is stated, never faked.** No jj → say Versions
-only and how to get a Timeline; a backend that cannot enumerate → say so, never show an
+only and how to enable every-save History; a backend that cannot enumerate → say so, never show an
 empty tree. *(all four)*
 
 **R10 — Data decks are first-class, not code decks with JSON in them.** A

@@ -490,7 +490,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         tier: 1,
         kind: 'content-addressed-packs',
         deckd: false,
-        note: 'Versions are pointers in meta.json → a tree in _trees/, whose files live once each in _objects/. No seals between publishes: attach deckd for /<depot>/_history/<changeId>.',
+        note: 'Versions are pointers in meta.json → a tree in _trees/, whose files live once each in _objects/. Attach deckd to retain every settled save at /<depot>/_history/<changeId>.',
       };
     }
     return {
@@ -501,7 +501,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         .filter((depot) => depot.history)
         .map((depot) => depot.name)
         .sort(),
-      note: 'Every save is sealed by deckd. GET /<depot>/_history lists seals; /<depot>/_history/<changeId>/<path> serves any of them, published or not.',
+      note: 'Every settled save is captured by deckd. GET /<depot>/_history lists Steps; /<depot>/_history/<changeId>/<path> serves any of them, published or not.',
     };
   }
 
@@ -1543,7 +1543,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
           res,
           404,
           'no-history',
-          `depot ${depot.name} has no Timeline — no history backend is attached, so its Versions are its history`,
+          `depot ${depot.name} has Version history only — no every-save History backend is attached`,
         );
         return;
       }
@@ -2148,7 +2148,7 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
               exports,
               baseApi: mapEntry?.baseApi ?? null,
               // Which seal this version was cut from, when the pack was
-              // sealed by a watcher with a Timeline — the link from a published
+              // captured by a watcher with History — the link from a published
               // version back into `/<depot>/_history/<changeId>`.
               sealChangeId: packlist.provenance?.sealChangeId ?? null,
               // L9/L10: who endorsed these BYTES. Public keys are not

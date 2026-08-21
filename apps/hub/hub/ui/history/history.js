@@ -1,8 +1,8 @@
-// The Timeline — a horizontal scrubber over Steps.
+// The History — a horizontal scrubber over Steps.
 //
 // Vocabulary from docs/deck-step-version-vocabulary.md: a **Step** is one
 // settled save on the depot's every-save tape, a **Version** is an immutable
-// published tree, and the **Timeline** is the tape itself.
+// published tree, and the **History** is the tape itself.
 //
 // WHY A SCRUBBER AND NOT A DROPDOWN. A dropdown of 138 change ids answers
 // "which one" and refuses to answer the question people actually have, which
@@ -17,8 +17,8 @@
 //   run      steps that touched ANYTHING IN THE  you are watching the
 //            PAGE'S CLOSURE                      assembled thing
 //
-// A palette change is a step on the run timeline for a canvas page — it
-// changes what renders — and is not a step on the browse timeline for
+// A palette change is a Step in the run History for a canvas page — it
+// changes what renders — and is not a Step in the browse History for
 // canvas.js, because those bytes never moved. Same depot, same instant, two
 // correct answers, and the difference is exactly what the two lenses mean.
 //
@@ -75,7 +75,7 @@ export function stepsFor(steps, prefixes) {
  *
  * This folded by elapsed time and that was wrong twice over. At ninety
  * seconds it swallowed a whole working session — forty-five Steps became two
- * notches, and a timeline with two notches is not a timeline. Shrinking the
+ * notches, and History with two notches is not useful History. Shrinking the
  * window did not fix the idea.
  *
  * THE IDEA WAS WRONG FOR AGENTS. Time-folding assumes rapid saves are one
@@ -179,10 +179,10 @@ export function stepBy(steps, current, delta) {
  * and none on the work. This is an index, not a clock; the clock is printed
  * beside it.
  */
-export function timelineHtml({ steps, current, label = 'timeline', busy }) {
+export function historyHtml({ steps, current, label = 'history', busy }) {
   if (!steps.length) {
     return (
-      `<div class="tl" data-role="timeline">` +
+      `<div class="tl" data-role="history">` +
       `<span class="tl-label">${esc(label)}</span>` +
       `<span class="dim">no steps here yet</span></div>`
     );
@@ -227,7 +227,7 @@ export function timelineHtml({ steps, current, label = 'timeline', busy }) {
     .join('');
 
   return (
-    `<div class="tl" data-role="timeline"${busy ? ' data-busy="1"' : ''}>` +
+    `<div class="tl" data-role="history"${busy ? ' data-busy="1"' : ''}>` +
     `<span class="tl-label">${esc(label)}</span>` +
     `<button class="tl-jump" data-role="step-by" data-by="-10" title="back ten">◀◀</button>` +
     `<button class="tl-jump" data-role="step-by" data-by="-1" title="back one">◀</button>` +
@@ -407,7 +407,7 @@ export function attachScrub(root, { onScrub, onCommit } = {}) {
 /**
  * HOW FAST WAS THAT — measured, not claimed.
  *
- * Scrubbing a timeline is pleasant rather than painful because every Step
+ * Scrubbing History is pleasant rather than painful because every Step
  * address is immutable, so the whole closure is `immutable`-cached after the
  * first visit. That is a real property of the protocol and it is invisible
  * unless somebody prints it, so this prints it: wall clock for the frame, how
@@ -444,7 +444,7 @@ export function measureFrame(frame, into) {
   );
 }
 
-export const TIMELINE_CSS = `
+export const HISTORY_CSS = `
 .tl {
   display: flex; align-items: center; gap: 1ch;
   padding: calc(var(--row, 1.5) * .3em) 0;
@@ -465,7 +465,7 @@ export const TIMELINE_CSS = `
    are three wide bars and ninety are ninety thin ones — the tape is always
    the same length and only its resolution changes, which is what makes the
    position of the marker mean something at a glance. An earlier version
-   capped notch width and right-aligned them, so a short timeline was a few
+   capped notch width and right-aligned them, so short History was a few
    small marks adrift in an empty rule, and read as broken. */
 .tl-track {
   flex: 1; display: flex; align-items: stretch;
@@ -473,7 +473,7 @@ export const TIMELINE_CSS = `
   border-bottom: 1px solid var(--line);
 }
 /* Capped, so twelve steps read as a tape rather than a bar chart. Without a
-   maximum, a short timeline stretches each notch to 80px and the row stops
+   maximum, short History stretches each notch to 80px and the row stops
    looking like time at all. */
 .tl-notch {
   flex: 1 1 0; min-width: 2px; padding: 0;
@@ -511,10 +511,10 @@ export const TIMELINE_CSS = `
 .tl-pop-id { margin-top: .2em; }
 `;
 
-export function installTimelineStyles(doc = document) {
-  if (doc.querySelector('style[data-deck-timeline]')) return;
+export function installHistoryStyles(doc = document) {
+  if (doc.querySelector('style[data-deck-history]')) return;
   let style = doc.createElement('style');
-  style.dataset.deckTimeline = 'v1';
-  style.textContent = TIMELINE_CSS;
+  style.dataset.deckHistory = 'v1';
+  style.textContent = HISTORY_CSS;
   doc.head.append(style);
 }

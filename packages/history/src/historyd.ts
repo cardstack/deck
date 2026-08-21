@@ -9,7 +9,7 @@ import {
   type RestorePlan,
 } from './backend.ts';
 
-// The historyd / deckd backend: Timeline over localhost HTTP.
+// The historyd / deckd backend: every-save History over localhost HTTP.
 //
 // Wire surface (POST, JSON in/out):
 //   /ensure         {dir}                              → {}

@@ -1,21 +1,24 @@
 # Work plan: make the backport a one-way port
 
-**Status: LIVING DOC (Deck side)** (2026-08-09). Branch: `deck/backport-ready`.
+**Status: LIVING DOC (Deck side), RRI-NATIVE AMENDMENT** (2026-08-21).
+Planning branch: `codex/deck-fork-merge-pr-ux`.
 
 This is the **Deck-repo living doc** for the backport: protocol questions
 close **here** so Boxel PRs stay wiring. Paired with:
 
-| Doc | Role |
-| --- | --- |
-| [`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md) | Campaign order, tracks, program gates |
+| Doc                                                                                    | Role                                              |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| [`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md)                   | Campaign order, tracks, program gates             |
 | [`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md) | Boxel stacked PRs (product spine **1 → 1b → 4c**) |
 
 Appendix: [`deck-boxel-monorepo-change-register.md`](deck-boxel-monorepo-change-register.md)
 (file-level Boxel touch list).
 
-**Gate to Boxel PR 0:** W1–W10 (and lean Core) done — see §4 Status. If a
-Boxel review reopens an `extends` / classify / pack question, the fix lands
-in this repo first.
+**Gate to Boxel A0:** W1–W10 and lean Core are done; **W11 is now required and
+pending** — see §4 Status. Do not vendor Core into Boxel until the selected
+Deck commit contains the RRI-native durable boundary. If a Boxel review
+reopens an `extends` / classify / pack / RRI question, the fix lands in this
+repo first.
 
 ---
 
@@ -48,7 +51,7 @@ Three checks, all of them falsifiable:
 
 ## 1. Work items, in order
 
-### W1 — `extends` in a decklist  ▸ **first**
+### W1 — `extends` in a decklist ▸ **first**
 
 **What.** A decklist may name a parent Version and override entries;
 unnamed entries inherit.
@@ -59,7 +62,8 @@ realm is the source tree with `/realm.json` overridden, which is the same
 mechanism. Today each would be designed separately, in three different PRs.
 
 **Decisions to settle, not just code:**
-- resolution order, and whether a child may *remove* a parent entry
+
+- resolution order, and whether a child may _remove_ a parent entry
 - conflict rule when a parent's scope and a child's import disagree
 - depth limit, and whether a chain may fork
 - whether `extends` may name a tag or only an exact Version (L4 says the
@@ -70,10 +74,9 @@ demo remixes a deck by overriding one entry.
 
 **Amended (2026-08-09): a parent may be named in any address space.**
 `isExactParent` accepted only `pub/pkg@1.2.3`, which is how a DEPOT names its
-own decks — and that quietly made `extends` unusable anywhere else. A Boxel
-realm names a parent with a fully-qualified URL today and with a scoped alias
-(`@catalog/…`) once the RRI migration lands; both were refused, so remix (K8)
-and the four verbs (K5) could not have been wired at all.
+own decks — and that quietly made `extends` unusable anywhere else. Both URL
+and scoped-RRI parents were refused, so remix (K8) and the four verbs (K5)
+could not have been wired at all.
 
 The invariant L4 actually needs is that the version cannot MOVE. Where the
 parent lives is the host's business. All three forms are now accepted, with
@@ -81,13 +84,14 @@ the exactness check applied in each, and a trailing slash optional because a
 realm addresses a deck as a directory:
 
     acme/blog@1.2.3                              depot-local
-    https://app.example/catalog/acme/blog@1.2.3/ fully qualified
-    @catalog/acme/blog@1.2.3/                    scoped alias
+    @acme/blog@1.2.3/                            canonical scoped RRI
+    https://app.example/catalog/acme/blog@1.2.3/ legacy / foreign URL-form RRI
 
 Tags and ranges are still refused in every space, and so is a name with no
-version. Accepting the alias form now rather than later is deliberate: it
-means the RRI migration is a change of what Boxel writes, with no Deck
-change trailing behind it.
+version. **2026-08-21 backport ruling:** RRI support is present in Boxel
+`origin/main`, so new Boxel locks and `extends` values use the scoped form
+from the first PR. Absolute URLs survive only for compatibility, foreign
+intake, and the derived browser transport projection.
 
 ### W2 — the absolute-reference classifier
 
@@ -247,7 +251,7 @@ untouched — and every package specifier in every demo was re-resolved.
 **What.** Decide the published name, then rename everything at once.
 
 **Why.** Recommendation is `@cardstack/deck` — a scope Cardstack already
-publishes to, and the name it will have *after* it moves into the monorepo,
+publishes to, and the name it will have _after_ it moves into the monorepo,
 so relocating is a directory move with no consumer churn. Doing it in one
 pass keeps it out of every other diff.
 
@@ -258,7 +262,7 @@ before W6's entry consolidation, or the same import sites get touched twice.
 
 ### W9 — the L12 amendment
 
-**What.** Read-only serving applies to the Deck *surface*, not the process.
+**What.** Read-only serving applies to the Deck _surface_, not the process.
 
 **Why.** As written, the law would forbid the realm server from existing — a
 realm must accept writes. Better fixed here than discovered in review.
@@ -287,6 +291,7 @@ Restored: 59 passed, 0 failed, 3 not applicable.
 ### W10 — two proofs
 
 **What.**
+
 - The scopes demo: one card on `three@0.169.0` whose dependency resolves
   `0.160.0`, both live, no query string, no `@ts-expect-error`.
 - The streaming spike: can a pack be hashed while streamed (incremental hash
@@ -297,26 +302,32 @@ monorepo PR arrives demonstrated rather than argued. The second decides the
 512 MB / 10,000-entry ceiling, and therefore whether `bare` mode can replace
 the download button outright or must coexist with it.
 
-**Done, and the first proof found a bug.** The scopes case is now a test:
-one specifier, two versions, chosen by the importer's URL, with no query
-string and no second document — the `~/boxel-workspaces` shape exactly.
-Writing it surfaced a real defect in `resolveSpecifier`.
+**Done, and the first proof found a bug.** The scopes case is now a transport-
+level test: one specifier, two versions, chosen by the importer projection,
+with no query string and no second document — the `~/boxel-workspaces` shape
+exactly. Writing it surfaced a real defect in `resolveSpecifier`.
 
-Scope keys were matched by plain string prefix. The reference server emits
-`/site/…` keys and asks about `/site/…` module paths, so everything worked
-here. A host with its own loader asks about absolute URLs, and `/site/…`
-never prefixes `https://depot/site/…` — the scope was skipped in silence and
-the GLOBAL entry answered. Not an error: **the wrong version, resolved
-confidently.** Scope keys are URLs, and the import maps spec resolves them
-against a base before comparing; the importer is that base, and
-`resolveSpecifier` now does it. Ranking is by the length of the match after
-resolution rather than of the key as written, so a relative key that grows
-when resolved still outranks a broader absolute one. Three tests cover it,
-all three verified to fail against the old behaviour.
+Scope keys were matched by plain string prefix. The standalone reference
+server emits `/site/…` keys and asks about `/site/…` module paths, so
+everything worked there. A host with its own loader asks about absolute
+transport URLs, and `/site/…` never prefixes `https://depot/site/…` — the
+scope was skipped in silence and the GLOBAL entry answered. Not an error:
+**the wrong version, resolved confidently.** In that browser projection,
+scope keys are URLs and the import maps spec resolves them against a base
+before comparing; `resolveSpecifier` now does it. Ranking is by the length of
+the match after resolution rather than of the key as written, so a relative
+key that grows when resolved still outranks a broader absolute one. Three
+tests cover it, all three verified to fail against the old behaviour.
 
-This is precisely the failure P1 would have shipped: Boxel's loader deals in
-absolute URLs, so the very corpus that motivates scopes would have silently
-resolved to one version.
+For the Boxel backport, A1 places a canonical RRI resolver in front of that
+proven transport resolver. Authored scope keys and importers are RRIs; after a
+`RealmViewContext` is chosen, the deterministic browser projection must still
+pass this exact URL-level test. The proof remains useful without making URLs
+the durable lock identity.
+
+This is precisely the failure A1 would ship if its projection were wrong:
+Boxel's browser loader ultimately deals in absolute URLs, so the very corpus
+that motivates RRI scopes would have silently resolved to one version.
 
 **The streaming spike answers its question: one pass, no sort.**
 `packages/tools/spikes/streaming-hash.mjs`, at the cap — 9,999 files,
@@ -346,6 +357,67 @@ smaller than advertised: the packlist counts as an entry, so
 `MAX_ENTRIES = 10_000` means 9,999 tree files; and it counts against
 `MAX_TOTAL_SIZE`, spending ~1 MB of the 512 MB budget at that entry count.
 
+### W11 — RRI-native Checkpoint boundary ▸ **Boxel R0 gate**
+
+**What.** Make RRI the canonical logical identity in the browser-safe Core,
+not a Boxel-only wrapper around legacy Deck names:
+
+- add RRI parse/normalize/relative-resolution primitives without importing
+  Boxel runtime code;
+- write exact RRI values and importer-RRI scope keys in the canonical lock;
+- add `deck-repository-v2` and `deck-repository-manifest-v2`, with Repository
+  roots/members keyed by scoped RRI and local authoring paths kept separate;
+- add `deck-checkpoint-v2` and `deck-branch-head-v2`: a Checkpoint binds an
+  exact Repository, opaque deckd/jj `historyHead`, completed index generation,
+  and parent Checkpoints; a branch head may advance Repository/History/index on
+  every save without creating a Checkpoint;
+- add `deck-review-v2`, binding exact source/target/base Checkpoints and their
+  real index projections; Review is the product/protocol noun while GitHub
+  pull requests remain a possible syndicated representation;
+- make the resolver return an RRI before a host-supplied transport projector
+  turns it into a URL;
+- retain read-only V1 Repository, `deck-revision-v1`, `_revisions/`,
+  `deck-pull-request-v1`, and URL-form RRI compatibility without rewriting
+  their content hashes;
+- define every collaboration path relative to the owning realm's `.deck/`;
+  Deck Core must not require a bucket-global protocol namespace.
+
+The Boxel adapter uses its existing `RealmResourceIdentifier` and
+`RealmIdentifier` branded types at the boundary. Deck owns canonical protocol
+bytes; Boxel owns RRI authority registration, `RealmViewContext`, branch /
+Checkpoint selection, and `__deck` HTTP projection.
+
+**Why before A0.** Current Deck Core validates Repository members as
+`owner/package` and the proven resolver test operates on URL projections.
+Vendoring that shape first would force Repository hashes, fixtures, locks, and
+Boxel index identity and authored-event schema to migrate after the branch
+substrate lands. A temporary URL, `Revision`, or legacy-name write phase is
+precisely what this gate rejects.
+
+**Done when:**
+
+1. Core round-trips and hashes a V2 Repository whose roots and members are
+   scoped RRIs;
+2. Core round-trips `deck-checkpoint-v2` and `deck-branch-head-v2`, proving a
+   normal Step can advance the head without changing `latestCheckpointHash`;
+3. Core round-trips `deck-review-v2` against exact Checkpoints and keeps a
+   legacy Pull Request V1 fixture hash-stable;
+4. one canonical RRI lock resolves two exact Version RRIs by importer RRI;
+5. two different authority/view projectors produce different URLs from the
+   same lock without changing `lockHash` or `repositoryHash`;
+6. the existing URL-level scopes proof still passes against the projected
+   browser map;
+7. V1 Repository, Revision, and URL-form fixtures remain readable with their
+   original hashes;
+8. local fixture paths place store, refs, Reviews, indexes, and History below
+   one realm `.deck/`; and
+9. `deck conform` can test RRI resolution separately from HTTP projection.
+
+W11 does not implement AWS. It makes the bytes, relative realm paths, and
+storage interfaces backend-neutral. Boxel B1 then proves the same contract on
+the local filesystem and on S3 Files plus direct conditional S3 writes as
+specified in [`deck-storage-backends.md`](deck-storage-backends.md).
+
 ---
 
 ## 1a. Embroider lessons applied
@@ -353,18 +425,18 @@ smaller than advertised: the packlist counts as an entry, so
 From `deck-embroider-lessons.md`, read against the real repo at
 `~/Projects/embroider`:
 
-| | Lesson | State |
-| --- | --- | --- |
-| §4 | Dynamic import policy — only string-literal `import()` | **done.** The lexer now counts unanalyzable calls instead of skipping them, and conformance binds it under L6. Found and fixed a worse bug on the way: `import('./p/' + x)` was being recorded as a real edge to `./p/`. |
-| §3 | Compat out of `@cardstack/deck-server` | **done.** Lint rule over `packages/server/src/**`, verified to fire. |
-| §7 | Catalog verbs pull by default | already the model — `extends` (W1) is pull; remix is the copy-on-write escape hatch. |
-| §1 | Scenario suite over ugly real packages | not started. The highest-leverage remaining item. |
-| §5 | Graph performance budget in CI | not started. |
-| §6 | Tree-diff the watcher hot path | not started. |
-| §2 | Native-deck checklist | not started (doc). |
-| §8 | Ambiguity resolution table | not started (doc + tests). |
+|     | Lesson                                                 | State                                                                                                                                                                                                                    |
+| --- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| §4  | Dynamic import policy — only string-literal `import()` | **done.** The lexer now counts unanalyzable calls instead of skipping them, and conformance binds it under L6. Found and fixed a worse bug on the way: `import('./p/' + x)` was being recorded as a real edge to `./p/`. |
+| §3  | Compat out of `@cardstack/deck-server`                 | **done.** Lint rule over `packages/server/src/**`, verified to fire.                                                                                                                                                     |
+| §7  | Catalog verbs pull by default                          | already the model — `extends` (W1) is pull; remix is the copy-on-write escape hatch.                                                                                                                                     |
+| §1  | Scenario suite over ugly real packages                 | not started. The highest-leverage remaining item.                                                                                                                                                                        |
+| §5  | Graph performance budget in CI                         | not started.                                                                                                                                                                                                             |
+| §6  | Tree-diff the watcher hot path                         | not started.                                                                                                                                                                                                             |
+| §2  | Native-deck checklist                                  | not started (doc).                                                                                                                                                                                                       |
+| §8  | Ambiguity resolution table                             | not started (doc + tests).                                                                                                                                                                                               |
 
-The two that landed were the two that were *enforceable*. The rest are
+The two that landed were the two that were _enforceable_. The rest are
 either already true or need a body of fixtures behind them.
 
 ---
@@ -390,6 +462,7 @@ W6  one entry + types  ─┐
 W7  lean trim          ─┼─   packaging, best done together
 W8  naming             ─┘
 W9  L12 amendment            small, do it whenever
+W11 RRI durable boundary     final protocol gate before selecting the A0 vendor commit
 ```
 
 W1 and W2 are the two that other work waits on. Everything from W5 down is
@@ -399,21 +472,22 @@ packaging — real, but it does not block Boxel from starting.
 
 ## 4. Status
 
-| | Item | State |
-| --- | --- | --- |
-| — | Browser-safe Core surface, lint-enforced | **done** |
-| — | Resolver takes the importer | **done** |
-| W1 | `extends` | **done** — core, server, conformance, `examples/remix` |
-| W2 | absolute-reference classifier | **done** — `@cardstack/deck/classify`, conformance L11 |
-| W3 | provenance block | **done** — `PackProvenance`, `intakeReadiness`, conformance L11 |
-| W4 | pack modes `bare` / `hermetic` | **done** — `planPack` decides, `carryHermetic` carries, `deck pack --hermetic` drives it; `provenance.carried` verified on unpack |
-| W5 | foreign conformance | **done** — `--export` + at-rest excluded from foreign runs |
-| W6 | entries | **done** — `@cardstack/deck` (browser) + `/node`. `.d.ts` struck: Boxel consumes TS source (see W6 note). |
-| W7 | lean trim | **done** — `@cardstack/deck-tools`; Core 26 modules, `semver` only |
-| W8 | naming → `@cardstack/deck` | **done** |
-| W9 | L12 amendment | **done** — law reworded, conformance now re-reads the bytes after the refusals; the serve path also cannot reach `applyRebase` (W7) |
-| W10 | two proofs | **done** — scopes proof as a test (found and fixed a silent wrong-version bug in `resolveSpecifier`); streaming spike settled, one pass, ~8 MB held at the cap |
-| — | Embroider §3 and §4 | **applied** (see §1a) |
+|     | Item                                     | State                                                                                                                                                          |
+| --- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| —   | Browser-safe Core surface, lint-enforced | **done**                                                                                                                                                       |
+| —   | Resolver takes the importer              | **done**                                                                                                                                                       |
+| W1  | `extends`                                | **done** — core, server, conformance, `examples/remix`                                                                                                         |
+| W2  | absolute-reference classifier            | **done** — `@cardstack/deck/classify`, conformance L11                                                                                                         |
+| W3  | provenance block                         | **done** — `PackProvenance`, `intakeReadiness`, conformance L11                                                                                                |
+| W4  | pack modes `bare` / `hermetic`           | **done** — `planPack` decides, `carryHermetic` carries, `deck pack --hermetic` drives it; `provenance.carried` verified on unpack                              |
+| W5  | foreign conformance                      | **done** — `--export` + at-rest excluded from foreign runs                                                                                                     |
+| W6  | entries                                  | **done** — `@cardstack/deck` (browser) + `/node`. `.d.ts` struck: Boxel consumes TS source (see W6 note).                                                      |
+| W7  | lean trim                                | **done** — `@cardstack/deck-tools`; Core 26 modules, `semver` only                                                                                             |
+| W8  | naming → `@cardstack/deck`               | **done**                                                                                                                                                       |
+| W9  | L12 amendment                            | **done** — law reworded, conformance now re-reads the bytes after the refusals; the serve path also cannot reach `applyRebase` (W7)                            |
+| W10 | two proofs                               | **done** — scopes proof as a test (found and fixed a silent wrong-version bug in `resolveSpecifier`); streaming spike settled, one pass, ~8 MB held at the cap |
+| W11 | RRI-native durable boundary              | **pending / blocks A0** — V2 Repository RRI members, canonical RRI lock, host-supplied transport projection, V1/URL-form reads                                 |
+| —   | Embroider §3 and §4                      | **applied** (see §1a)                                                                                                                                          |
 
 ---
 
@@ -422,9 +496,10 @@ packaging — real, but it does not block Boxel from starting.
 Do **not** expand this file into a second PR novel. Boxel execution lives in
 the changelist + team brief. Short reminder:
 
-1. Lean Core drop (no Hub / vendor-npm / minify / rebase-daemon).  
-2. Resolver → **thin decklist verbs (1b)** before Timeline.  
-3. Timeline as slices (write → HTTP restore → host → claims → CLI).  
-4. Vendoring, minify, Matrix submission, review tools: off the critical path.  
+1. Finish W11, select that exact Deck commit, then make the Lean Core drop (no
+   Hub / vendor-npm / minify / rebase-daemon).
+2. Resolver → **thin decklist verbs (1b)** before History.
+3. History as slices (write → HTTP restore → host → claims → CLI).
+4. Vendoring, minify, Matrix submission, review tools: off the critical path.
 5. Program gates: wiring-only PRs, import-not-fork, `deck conform`, author
    remix-without-copy.

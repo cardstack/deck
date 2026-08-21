@@ -18,9 +18,10 @@ synthesized with Deck rulings). Companions:
 
 This note does not introduce a new protocol. It records why a
 **per-depot resolution manifest** is the right lockfile-equivalent, which
-problems it does *not* solve, how one shared browser runtime complicates
+problems it does _not_ solve, how one shared browser runtime complicates
 N depot locks, and what to build next — already encoded in standalone
-Deck as a depot-root `importmap.json`.
+Deck as a deterministic composition of realm-root and package/app-local
+`importmap.json` inputs.
 
 ---
 
@@ -40,8 +41,8 @@ and re-opens most classic lockfile problems, plus some npm never had.
 
 ## 1. What lockfiles solve in general
 
-A lockfile is a recorded answer to: *given these version ranges, what
-exact code am I running?* Six things go wrong without one:
+A lockfile is a recorded answer to: _given these version ranges, what
+exact code am I running?_ Six things go wrong without one:
 
 1. **Ranges re-resolve over time.** `^1.2.0` means something different on
    Tuesday than on Friday.
@@ -61,34 +62,34 @@ exact code am I running?* Six things go wrong without one:
 
 ### Lockfile-only (npm’s physical install model — not Deck’s)
 
-| Problem | Why it is not ours |
-| --- | --- |
-| `node_modules` layout / hoisting | Imports are URLs; no disk tree shape |
+| Problem                               | Why it is not ours                     |
+| ------------------------------------- | -------------------------------------- |
+| `node_modules` layout / hoisting      | Imports are URLs; no disk tree shape   |
 | Install speed / offline re-resolution | Listing graphs are small; depot-served |
-| Platform / optional / peer records | No per-OS binaries or npm peer quirks |
+| Platform / optional / peer records    | No per-OS binaries or npm peer quirks  |
 
 ### Shared — inherited the moment listings declare ranges
 
-| Problem | Why it arrives |
-| --- | --- |
-| Ranges drift over time | Same listing, different week → different deps |
-| Transitive deps float | Listing → listing chains |
-| Machines disagree | Sibling depots / workspaces “same” listing, different code |
-| Diamond deps | Overlapping ranges of a shared dep need one answer |
-| Tampered artifacts | Need integrity / immutability |
-| Unreviewable upgrades | No pin → no diff → no audit trail |
+| Problem                | Why it arrives                                             |
+| ---------------------- | ---------------------------------------------------------- |
+| Ranges drift over time | Same listing, different week → different deps              |
+| Transitive deps float  | Listing → listing chains                                   |
+| Machines disagree      | Sibling depots / workspaces “same” listing, different code |
+| Diamond deps           | Overlapping ranges of a shared dep need one answer         |
+| Tampered artifacts     | Need integrity / immutability                              |
+| Unreviewable upgrades  | No pin → no diff → no audit trail                          |
 
 **This middle region is the case for a lockfile-equivalent in Deck.**
 
 ### Deck-only — pinning cannot buy these
 
-| Problem | Why a lockfile is insufficient |
-| --- | --- |
-| Stored data outlives code | Instances persist; upgrades strand saved data |
-| Type identity is persisted | Adoption / field types are module-URL identities; two Versions = two types |
-| The registry is editable | A catalog is a depot; publishes can mutate unless policy forbids |
-| No single install moment | Live load + in-place edit — when is resolution recorded? |
-| Forks never upgrade | Remix diverges on copy; versioning’s job is an upgrade *path*, not only a pin |
+| Problem                    | Why a lockfile is insufficient                                                |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| Stored data outlives code  | Instances persist; upgrades strand saved data                                 |
+| Type identity is persisted | Adoption / field types are module-URL identities; two Versions = two types    |
+| The registry is editable   | A catalog is a depot; publishes can mutate unless policy forbids              |
+| No single install moment   | Live load + in-place edit — when is resolution recorded?                      |
+| Forks never upgrade        | Remix diverges on copy; versioning’s job is an upgrade _path_, not only a pin |
 
 ---
 
@@ -96,8 +97,8 @@ exact code am I running?* Six things go wrong without one:
 
 Record the exact Version and content hash of every module a depot
 resolved, and **replay until an explicit, diffable upgrade**. That is a
-lockfile wearing Deck clothes — the depot-root import map. It covers the
-six shared problems outright.
+lockfile wearing Deck clothes — the canonical composition of the realm's
+authored import maps. It covers the six shared problems outright.
 
 The right lobe still needs:
 
@@ -107,20 +108,21 @@ The right lobe still needs:
 
 Pinning alone buys none of those.
 
-### Encoding: depot-root `importmap.json`
+### Encoding: composed `importmap.json` inputs
 
 Already the ruling in this repo:
 
-> A package’s `package.json` is a suggestion. The depot’s `importmap.json`
-> is the only resolution authority.
+> A package’s `package.json` is a suggestion. The realm's canonical composed
+> import-map lock is the only resolution authority.
 
-The compiled lock is a web import map at depot root — `imports` /
-`scopes` / `integrity`, plus optional `deck` metadata. Suggestions come
-from each package’s `package.json` (and from whatever tooling can see is
-in use). An “upgrade” is a deliberate compile or mutate of that file (a
-structured transform language is a good fit), not silent re-resolution on
-every load. The map sits in the depot’s Timeline (`jj` / deckd), so
-restore of a past Step restores the lock with the tree.
+The compiled lock has web import-map shape — `imports` / `scopes` /
+`integrity`, plus optional `deck` metadata. Suggestions come from each
+package’s `package.json` (and from whatever tooling can see is in use). Root
+maps provide realm defaults; maps beside apps and packages provide more
+specific subtree pins. An “upgrade” is a deliberate structured mutation of
+the applicable authored input, not silent re-resolution on every load. Those
+files sit in the realm’s History (`jj` / deckd), so restore of a past Step
+restores every input needed to reproduce the composed lock.
 
 Serve injects **that depot’s** lock into documents it serves. A pack’s
 own thin map stays lineage, not consumer authority.
@@ -158,7 +160,7 @@ parent classloader.
    import `shared-lib`? Key by the requesting module’s depot (import-map
    `scopes` / nested loaders). Allowing multiple copies creates (2).
 2. **Module identity fracture** — two Versions ⇒ two module instances;
-   where types are module references, identity *is* type identity. Worst
+   where types are module references, identity _is_ type identity. Worst
    case: two kernels. Fix: host-pinned kernel tier.
 3. **Cross-depot data interop under skew** — a link typed at `Author@v2`
    vs an instance adopting `Author@v3`. Nominal typing says no. Need
@@ -178,13 +180,13 @@ parent classloader.
 
 ### Shape of the answer
 
-| Need | Mechanism |
-| --- | --- |
-| Coherent coexistence | Version-addressed (or content-addressed) module URLs |
-| Whose pin? | Depot-scoped resolution (import-map scopes / per-depot evaluation context) |
-| Kernel | Host-pinned singleton; depot locks cannot override |
-| Typed links under skew | Declared compat policy — fail loudly, or ETL / adapters |
-| Taxes either way | (5) environment divergence, (6) resource multiplication |
+| Need                   | Mechanism                                                                  |
+| ---------------------- | -------------------------------------------------------------------------- |
+| Coherent coexistence   | Version-addressed (or content-addressed) module URLs                       |
+| Whose pin?             | Depot-scoped resolution (import-map scopes / per-depot evaluation context) |
+| Kernel                 | Host-pinned singleton; depot locks cannot override                         |
+| Typed links under skew | Declared compat policy — fail loudly, or ETL / adapters                    |
+| Taxes either way       | (5) environment divergence, (6) resource multiplication                    |
 
 ### Sticky URLs vs lock — compare specificity (must decide)
 
@@ -200,24 +202,24 @@ CSS-style specificity sort; Deck defines one.
 
 #### Spec-shape rank (the `@` segment)
 
-| Rank | Concept | Syntax examples |
-| --- | --- | --- |
-| 3 — exact | One Version | `2.0.0`, `2.0.0-beta.1` |
-| 2 — range | Set of Versions | `2`, `2.x`, `^2.0.0`, `~2.0.0`, `>=2 <3`, `*` |
-| 1 — tag | Movable name | `latest`, `next`, `dev` |
-| 0 — none | No `@` / live tree | `/depot/pub/pkg/…` |
+| Rank      | Concept            | Syntax examples                               |
+| --------- | ------------------ | --------------------------------------------- |
+| 3 — exact | One Version        | `2.0.0`, `2.0.0-beta.1`                       |
+| 2 — range | Set of Versions    | `2`, `2.x`, `^2.0.0`, `~2.0.0`, `>=2 <3`, `*` |
+| 1 — tag   | Movable name       | `latest`, `next`, `dev`                       |
+| 0 — none  | No `@` / live tree | `/depot/pub/pkg/…`                            |
 
 Exact > range > tag. Specificity ≠ highest Version: exact `2.0.0` beats
 range `^2` even if `^2` currently selects `2.9.1`.
 
 #### Address kind (outer cascade)
 
-| Rank | Kind | Who usually writes it |
-| --- | --- | --- |
-| 4 | Absolute URL + `@…` | sticky `adoptsFrom` / ETL copy |
-| 3 | Absolute URL, versionless | live working tree |
-| 2 | Relative URL | in-depot authoring |
-| 1 | Bare specifier | resolved **only** via depot lock |
+| Rank | Kind                      | Who usually writes it            |
+| ---- | ------------------------- | -------------------------------- |
+| 4    | Absolute URL + `@…`       | sticky `adoptsFrom` / ETL copy   |
+| 3    | Absolute URL, versionless | live working tree                |
+| 2    | Relative URL              | in-depot authoring               |
+| 1    | Bare specifier            | resolved **only** via depot lock |
 
 #### Who wins: lock vs `adoptsFrom`
 
@@ -226,15 +228,15 @@ package (bare → map → URL). Higher cascade rank wins. Tie on kind →
 higher spec-shape rank wins. Tie again → normalized URL code-unit order
 (same idea as import-map scope sorting). Deterministic; no clock.
 
-| Adoption (`adoptsFrom`) | Lock would give | Winner | Why |
-| --- | --- | --- | --- |
-| `/cat/acme/invoice@2.0.0/invoice.gts` | `invoice` → `…@1.4.2/…` | **adoption** | kind 4 exact > bare→map |
-| `/cat/acme/invoice@2.0.0/…` | `invoice` → `…@2.0.0/…` (same) | either (same URL) | equal after normalize |
-| `/cat/acme/invoice@^2/…` | `invoice` → `…@2.0.0/…` | **adoption** | kind 4 > kind 1; lock exact does not rewrite an absolute URL |
-| `/cat/acme/invoice@latest/…` | `invoice` → `…@2.0.0/…` | **adoption** | absolute URL; map never rewrites it |
-| `invoice` (bare) | `invoice` → `…@1.4.2/…` | **lock** | bare is kind 1; map applies |
-| `../invoice` (relative) | (n/a until resolved) | resolve relative first, then compare | after resolve, often becomes absolute±`@` |
-| `/cat/acme/invoice/…` (live) | `invoice` → `…@1.4.2/…` | **adoption** | absolute URL still outranks bare→map |
+| Adoption (`adoptsFrom`)               | Lock would give                | Winner                               | Why                                                          |
+| ------------------------------------- | ------------------------------ | ------------------------------------ | ------------------------------------------------------------ |
+| `/cat/acme/invoice@2.0.0/invoice.gts` | `invoice` → `…@1.4.2/…`        | **adoption**                         | kind 4 exact > bare→map                                      |
+| `/cat/acme/invoice@2.0.0/…`           | `invoice` → `…@2.0.0/…` (same) | either (same URL)                    | equal after normalize                                        |
+| `/cat/acme/invoice@^2/…`              | `invoice` → `…@2.0.0/…`        | **adoption**                         | kind 4 > kind 1; lock exact does not rewrite an absolute URL |
+| `/cat/acme/invoice@latest/…`          | `invoice` → `…@2.0.0/…`        | **adoption**                         | absolute URL; map never rewrites it                          |
+| `invoice` (bare)                      | `invoice` → `…@1.4.2/…`        | **lock**                             | bare is kind 1; map applies                                  |
+| `../invoice` (relative)               | (n/a until resolved)           | resolve relative first, then compare | after resolve, often becomes absolute±`@`                    |
+| `/cat/acme/invoice/…` (live)          | `invoice` → `…@1.4.2/…`        | **adoption**                         | absolute URL still outranks bare→map                         |
 
 **Runtime:** the browser already implements the important half — import maps
 resolve **specifiers**; they do not remint an already-absolute module URL.
@@ -272,23 +274,23 @@ path). Force is one query param with two values naming **who wins**:
 /catalog/acme/invoice@2.0.0/invoice.gts?win=map    → import map / lock wins
 ```
 
-| `win=` | Meaning | Product metaphor |
-| --- | --- | --- |
-| `path` | This URL (the type path) wins the cascade even if spec-shape is weak | Final Cut — open as authored |
-| `map` | Depot import map / lock wins even over absolute+exact | SaaS desk — fleet rebind |
-| *(omitted)* | Run the normal compare (kind, then exact > range > tag) | default |
+| `win=`      | Meaning                                                              | Product metaphor             |
+| ----------- | -------------------------------------------------------------------- | ---------------------------- |
+| `path`      | This URL (the type path) wins the cascade even if spec-shape is weak | Final Cut — open as authored |
+| `map`       | Depot import map / lock wins even over absolute+exact                | SaaS desk — fleet rebind     |
+| _(omitted)_ | Run the normal compare (kind, then exact > range > tag)              | default                      |
 
 `path` means “this URL,” not “pathname only” (query/hash aside). `map`
 means the consumer lock (import map), which is part of Deck — the param
 is not named `deck`.
 
-| Rejected spellings | Why |
-| --- | --- |
-| `?deck=important` | `deck` is the whole system; the contest is path vs map |
-| `?instance=important` | Instance is the JSON; this URL is the type |
-| `?type=important` | Only forces one side; no symmetric `map` |
-| `…!important` in path | Not a clean URL segment |
-| Fragment `#…` | Often dropped before fetch / module resolve |
+| Rejected spellings    | Why                                                    |
+| --------------------- | ------------------------------------------------------ |
+| `?deck=important`     | `deck` is the whole system; the contest is path vs map |
+| `?instance=important` | Instance is the JSON; this URL is the type             |
+| `?type=important`     | Only forces one side; no symmetric `map`               |
+| `…!important` in path | Not a clean URL segment                                |
+| Fragment `#…`         | Often dropped before fetch / module resolve            |
 
 **Rules**
 
@@ -298,28 +300,28 @@ is not named `deck`.
 3. `win=path` and `win=map` together (or conflicting duplicates) → **fail
    loud** (two `!important`s).
 4. Strip `win` when fetching pack bytes so content-addressed identity
-   ignores the flag; keep it for the cascade compare and Timeline diffs.
+   ignores the flag; keep it for the cascade compare and History diffs.
 5. Reviewable, never an ambient host default.
 
 ---
 
 ## 5. Synthesis with rulings already landed
 
-| Thought-experiment claim | Deck standing |
-| --- | --- |
-| Per-consumer resolution manifest | Depot-root `importmap.json` is the lock ([package.json & depot lock](deck-package-json-and-depot-lock.md)) |
-| Suggestions vs authority | `package.json` suggests; lock decides |
-| Explicit upgrade surface | `deck lock` / `--update` / `--check`; optional continuous |
-| Skip freeze per edge | `workspace:*`, `@live`, tags — not “always latest” ([unfrozen mode](deck-unfrozen-mode.md)) |
-| Immutable publishes | L4; catalog may yank/select, never rewrite bytes ([who may intervene](deck-who-may-intervene.md)) |
-| Integrity | Import map `integrity` member |
-| Transitives compiled in | `scopes` — no runtime re-resolution of downstream wishes |
-| Try without rewriting the lock | `?with=` for one request |
-| Instances outlive code | Breaking Version ships migration ([breaking ships migration](deck-breaking-ships-its-migration.md)) |
-| Timeline restore includes the lock | Lock is an ordinary tree file under seals / Steps |
-| Serve injects consumer lock | Not the pack’s own map |
-| Remix ≠ versioned use | Consumption modes: copy vs pin vs use |
-| Two resolver layers | Semver (wish / URL segment) + import map (compiled pins) — §6 |
+| Thought-experiment claim          | Deck standing                                                                                              |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Per-consumer resolution manifest  | Depot-root `importmap.json` is the lock ([package.json & depot lock](deck-package-json-and-depot-lock.md)) |
+| Suggestions vs authority          | `package.json` suggests; lock decides                                                                      |
+| Explicit upgrade surface          | `deck lock` / `--update` / `--check`; optional continuous                                                  |
+| Skip freeze per edge              | `workspace:*`, `@live`, tags — not “always latest” ([unfrozen mode](deck-unfrozen-mode.md))                |
+| Immutable publishes               | L4; catalog may yank/select, never rewrite bytes ([who may intervene](deck-who-may-intervene.md))          |
+| Integrity                         | Import map `integrity` member                                                                              |
+| Transitives compiled in           | `scopes` — no runtime re-resolution of downstream wishes                                                   |
+| Try without rewriting the lock    | `?with=` for one request                                                                                   |
+| Instances outlive code            | Breaking Version ships migration ([breaking ships migration](deck-breaking-ships-its-migration.md))        |
+| History restore includes the lock | Lock is an ordinary tree file under seals / Steps                                                          |
+| Serve injects consumer lock       | Not the pack’s own map                                                                                     |
+| Remix ≠ versioned use             | Consumption modes: copy vs pin vs use                                                                      |
+| Two resolver layers               | Semver (wish / URL segment) + import map (compiled pins) — §6                                              |
 
 Standalone Deck proves the **middle lobe** in a browser. The **right
 lobe** (persisted types, multi-depot composition, catalog-as-depot) and
@@ -364,10 +366,10 @@ resolution flexibility vs complexity.
 
 Not one clever resolver — **two stacked, each simple**:
 
-| Layer | Job | Almost… |
-| --- | --- | --- |
-| **1. Semver** | Names what is compatible; ranges and exact Versions live in suggestions and in version-addressed URLs (`…@1.2.3/…`) | …version-in-name, but with the interop flex majors-in-path refuse: `^` / exact / tags, migration across minors, diamond answers |
-| **2. Import map** | Records *this consumer’s* frozen answer — specifier → exact URL (+ scopes, integrity) | …a lockfile; replay until explicit upgrade |
+| Layer             | Job                                                                                                                 | Almost…                                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Semver**     | Names what is compatible; ranges and exact Versions live in suggestions and in version-addressed URLs (`…@1.2.3/…`) | …version-in-name, but with the interop flex majors-in-path refuse: `^` / exact / tags, migration across minors, diamond answers |
+| **2. Import map** | Records _this consumer’s_ frozen answer — specifier → exact URL (+ scopes, integrity)                               | …a lockfile; replay until explicit upgrade                                                                                      |
 
 Semver is **almost** Go’s version-in-the-name: the Version segment is in
 the URL, coexistence is coherent, the graph stays bounded. The extra
@@ -392,9 +394,9 @@ major is a new module (`/v3`). That is not the same as Deck/npm
 `invoice@2`, which is a **range** (`>=2.0.0 <3.0.0`), not a rename.
 Exact pins stay `invoice@2.0.0`.
 
-| | Go (`…/invoice/v2` + `require v2.3.4`) | Deck (same name + semver + lock) |
-| --- | --- | --- |
-| **Pros** | Diamonds on major dissolve (v2 and v3 are different modules). Import graph shows the breaking line. Resolver stays dumb; MVS only negotiates within one major. Major migration is intentional (change every import path). | One product name across majors; lock records the answer. Interop flex: ranges, tags, deliberate `--update`, sticky exact URLs when needed. “Upgrade the desk” without renaming every adoption. Matches npm-shaped catalogs and two simple layers. |
+|          | Go (`…/invoice/v2` + `require v2.3.4`)                                                                                                                                                                                                                                                                           | Deck (same name + semver + lock)                                                                                                                                                                                                                                             |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pros** | Diamonds on major dissolve (v2 and v3 are different modules). Import graph shows the breaking line. Resolver stays dumb; MVS only negotiates within one major. Major migration is intentional (change every import path).                                                                                        | One product name across majors; lock records the answer. Interop flex: ranges, tags, deliberate `--update`, sticky exact URLs when needed. “Upgrade the desk” without renaming every adoption. Matches npm-shaped catalogs and two simple layers.                            |
 | **Cons** | Major upgrade is a rename tax across the codebase (and every sticky typed URL). Still needs a lock for minor/patch — version-in-name does not replace it. Poor fit when a consumer should move majors without rewriting instance identity. Awkward if the catalog treats `invoice` as one product across majors. | Diamonds across majors need a recorded choice (lock / scopes). Easy to pretend `invoice@2` is identity when it is a range. Shared runtime still needs kernel singleton + sticky-URL policy. More ways to be clever — and to get skew wrong if the lock is not the authority. |
 
 **Short take:** Go wins on simplicity of major coexistence; Deck wins on
@@ -417,7 +419,7 @@ catalog / composition work.
 3. **Compile or mutate** the lock on explicit upgrade (`deck lock` /
    `--update`; structured transforms for larger edits). No silent
    re-resolve on every GET for ranged edges.
-4. Keep the lock in Timeline so restore / scrub includes pins.
+4. Keep the lock in History so restore / scrub includes pins.
 5. Serve injects **this depot’s** map into HTML (and per-depot evaluation
    contexts), never a flattened “host sees everything” map as the only
    truth.
@@ -479,8 +481,9 @@ catalog / composition work.
 
 ## 8. One-line summary
 
-**A versioned catalog needs a per-depot lockfile-equivalent (depot-root
-import map) for the six inherited problems; it also needs immutable
+**A versioned catalog needs a per-realm lockfile-equivalent (the canonical
+composition of root and package/app-local import maps) for the six inherited
+problems; it also needs immutable
 Versions, migration, sticky typed URLs, a host-pinned kernel, and scoped
 composition — because persisted module types compose in one shared
 browser, not a `node_modules` tree.**

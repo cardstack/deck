@@ -201,7 +201,7 @@ does.
 1. **Where does the overlay live?** The published realm's `/realm.json`
    differs from the source's. As a decklist override, an intake transform, or
    a published-realm-specific config the tree does not carry at all?
-2. **Does the published realm get its own Timeline**, or does it borrow the
+2. **Does the published realm get its own History**, or does it borrow the
    source's and mark which Versions were published? The second is smaller and
    probably truer — publishing is an event on the source's history.
 3. **Index rows: rewrite or share?** Stage 1 rewrites, Stage 3 shares.

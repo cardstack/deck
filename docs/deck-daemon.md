@@ -1,8 +1,8 @@
-# deckd — Timeline + build daemon
+# deckd — History + build daemon
 
 **Status: RULING + OPEN QUESTIONS** (2026-08-09).
 
-Deck-owned long-lived process that attaches a **Timeline** to a depot and
+Deck-owned long-lived process that attaches a **History** to a depot and
 (optionally) runs **derived build work** (esbuild, AMD, and friends) so the
 realm server / `deck serve` HTTP surface stays thin and read-only.
 
@@ -18,7 +18,7 @@ jj-lib source used for spikes / dependency work:
 `lib/`). That tree is **not** where AMD or esbuild live.
 
 **Implementation:** [`packages/deckd/`](../packages/deckd/) — historyd-compatible
-HTTP, Timeline under `.deck/timeline`, jj-lib in-process with a watchexec-shaped
+HTTP, History under `.deck/history`, jj-lib in-process with a watchexec-shaped
 FS seal plane (`jj_cli` feature optional).
 
 ---
@@ -27,15 +27,15 @@ FS seal plane (`jj_cli` feature optional).
 
 Today:
 
-| Concern | Where it lives |
-| --- | --- |
-| Versions / claims | `<depot>/.deck/store`, `.deck/claims` |
-| Timeline Steps | top-level `<depot>/.jj/` via jj CLI, or external **historyd** |
-| Boxel edit history | often a separate `.boxel-history` git story |
-| AMD / expensive transform | Boxel realm-server lifecycle (request-adjacent) |
-| Minify derived releases | Tools/`derive`, **terser** (A2) |
+| Concern                   | Where it lives                                                |
+| ------------------------- | ------------------------------------------------------------- |
+| Versions / claims         | `<depot>/.deck/store`, `.deck/claims`                         |
+| History Steps             | top-level `<depot>/.jj/` via jj CLI, or external **historyd** |
+| Boxel edit history        | often a separate `.boxel-history` git story                   |
+| AMD / expensive transform | Boxel realm-server lifecycle (request-adjacent)               |
+| Minify derived releases   | Tools/`derive`, **terser** (A2)                               |
 
-Problems: two (or three) hidden directories; Timeline backend unsupervised;
+Problems: two (or three) hidden directories; History backend unsupervised;
 compile cost on the wrong process; serve path tempted to grow Embroider-shaped
 compat forever.
 
@@ -59,7 +59,7 @@ machinery directory, build pain at settle/seal time — not on GET.
 
 deckd may:
 
-1. **Timeline** — ensure repo, seal Step, list, file-at, restore-plan
+1. **History** — ensure repo, seal Step, list, file-at, restore-plan
    (today’s historyd surface, gaps closed — see §3).
 2. **Build plane** — run named, versioned **derived** transforms (esbuild
    graph work, AMD, etc.), cache outputs under `.deck/build/`.
@@ -77,36 +77,61 @@ deckd must **not**:
 Target layout:
 
 ```text
-<depot>/
-  <publisher>/<package>/…          live content (hashed + served)
+<realm>/
+  <authored realm tree>/…          existing default-branch content (hashed + served)
+  package.json                     conventional package metadata where present
+  importmap.json                   optional root resolution input
+  apps/<name>/…                    existing app-local trees and maps
+  packages/<scope>/<name>/…        existing package-local trees and maps
   .deck/
+    repository.json                optional multi-package manifest
     store/                         Versions (unchanged role)
+    refs/                          branch/published heads
+    reviews/                       Review objects and events
+    indexes/                       completed index generations
     claims/                        WIP claims
     policy.json                    optional
-    timeline/
-      repo/                        jj op store + internal git  ← durable Timeline
+    history/
+      repo/                        jj op store + internal git  ← durable History
+    branches/<opaque-id>/
+      source/                      non-default branch materialization
+      history/repo/                branch-local jj History
+      index-staging/               derived private build state
     build/                         reserved (derived plane later; unused for now)
   .jj/                             jj workspace stub ONLY (not a symlink)
-    repo                           file: "../.deck/timeline/repo"
+    repo                           file: "../.deck/history/repo"
     working_copy/                  jj WC state (jj requires this next to .jj)
 ```
 
-- **No** `.jj` → `.deck/timeline` symlink.
-- **No** empty `.deck/timeline/.jj` nested-repo marker.
-- Durable Timeline bytes live only under `.deck/timeline/repo/`.
+The default branch stays at the realm root, matching Boxel's existing
+`deck/at-rest-poc` layout. Only non-default branches require the new
+`.deck/branches/<opaque-id>/` locations. Their `source/` directory clones the
+authored realm tree without `.deck`, `.jj`, or `.git`; it preserves ordinary
+package boundaries and all applicable import-map inputs.
+
+- **No** `.jj` → `.deck/history` symlink.
+- **No** empty `.deck/history/.jj` nested-repo marker.
+- Durable History bytes live only under `.deck/history/repo/`.
 - Top-level `.jj/` remains a thin stub because stock jj discovers the
   workspace by that basename; jj-lib can later root the stub under `.deck`
-  and delete it. The stub’s `repo` *file* is jj’s supported out-of-tree
+  and delete it. The stub’s `repo` _file_ is jj’s supported out-of-tree
   pointer (same idea as git’s `gitdir:`), not a Deck hack.
-- No `.boxel-history` once Timeline is attached.
-- No colocated `.git` in the depot (no-gitlink law).
+- No `.boxel-history` once History is attached.
+- No colocated `.git` in the realm (no-gitlink law).
+
+All Deck resources remain inside the owning realm. A selected non-default
+branch view projects its physical History as `/.deck/history/repo`, so deckd,
+agents, and UI keep one stable path even though the host uses an opaque branch
+directory. On AWS, this realm tree is on S3 Files. Agents can inspect History;
+only deckd's POSIX principal writes the jj repository.
 
 `DEFAULT_IGNORE` / `snapshot.auto-track` exclude `.deck` so the store is never
 sealed into itself; `file-list-at` / restore also filter machinery paths.
 
 **Migration:** `ensure` converts symlink or full-`.jj` layouts to the thin
-stub. Prefer a **fresh depot** for deckd experiments — do not share Timeline
-state with older demos.
+stub. It also atomically renames a lone legacy `.deck/timeline/` directory to
+`.deck/history/` and rewrites the pointer. If both directories exist, it
+refuses to choose and preserves both for manual repair.
 
 ### R4 — Identity vs derived (AMD / esbuild)
 
@@ -134,21 +159,21 @@ at most it waits on deckd or returns a clear not-ready.
 
 - HTTP Deck / realm **surface**: read-only for what a later GET returns.
 - deckd is a **sidecar** that may write under `.deck/` (and the live tree only
-  via restore replay rules already defined for Timeline).
+  via restore replay rules already defined for History).
 - Transforms are RPC to deckd (`/ensure-build`), not `PUT` handlers on the
   serve origin.
 
 ### R7 — Campaign fit
 
 Not inside lean Core drop, resolver, or thin decklist verbs (PR 1 / 1b).
-Treat as **Track D — Build**, after or parallel to Timeline slices:
+Treat as **Track D — Build**, after or parallel to History slices:
 
-| Slice | Outcome |
-| --- | --- |
-| **D0** | Layout only: Timeline under `.deck/timeline`; kill top-level `.jj` / `.boxel-history` |
-| **D1** | Own supervised deckd Timeline (historyd contract + gaps) |
-| **D2** | Build plane later; until then identity JS only (main Hub pipeline) |
-| **D3** | Editable realms default to deckd; Versions-only remains for RO catalog mirrors |
+| Slice  | Outcome                                                                             |
+| ------ | ----------------------------------------------------------------------------------- |
+| **D0** | Layout only: History under `.deck/history`; kill top-level `.jj` / `.boxel-history` |
+| **D1** | Own supervised deckd History (historyd contract + gaps)                             |
+| **D2** | Build plane later; until then identity JS only (main Hub pipeline)                  |
+| **D3** | Editable realms default to deckd; Versions-only remains for RO catalog mirrors      |
 
 Boxel can keep shipping **jj CLI in-image** until D1; same `HistoryBackend`
 contract.
@@ -157,36 +182,36 @@ contract.
 
 ## 2. RPC surface (v1)
 
-Timeline (compat with today’s historyd client in
+History (compat with today’s historyd client in
 `packages/history/src/historyd.ts`):
 
-| Route | Body (sketch) | Result |
-| --- | --- | --- |
-| `POST /ensure` | `{ dir }` | `{}` — repo at `.deck/timeline` |
-| `POST /seal` | `{ dir, message, actor? }` | `{ changeId }` |
-| `POST /list` | `{ dir }` | `HistoryEntry[]` (incl. author when actor was set) |
-| `POST /file-at` | `{ dir, revisionId, path }` | bytes or not found |
-| `POST /file-list-at` | `{ dir, revisionId }` | paths — **close the CLI gap** |
-| `POST /restore-plan` | `{ dir, revisionId }` | `{ writes, deletes }` |
+| Route                | Body (sketch)               | Result                                             |
+| -------------------- | --------------------------- | -------------------------------------------------- |
+| `POST /ensure`       | `{ dir }`                   | `{}` — repo at `.deck/history`                     |
+| `POST /seal`         | `{ dir, message, actor? }`  | `{ changeId }`                                     |
+| `POST /list`         | `{ dir }`                   | `HistoryEntry[]` (incl. author when actor was set) |
+| `POST /file-at`      | `{ dir, revisionId, path }` | bytes or not found                                 |
+| `POST /file-list-at` | `{ dir, revisionId }`       | paths — **close the CLI gap**                      |
+| `POST /restore-plan` | `{ dir, revisionId }`       | `{ writes, deletes }`                              |
 
 Build (deferred — **not** on the Hub serve path):
 
-| Route | Body (sketch) | Result |
-| --- | --- | --- |
+| Route                | Body (sketch)                               | Result                                     |
+| -------------------- | ------------------------------------------- | ------------------------------------------ |
 | `POST /ensure-build` | `{ dir, tip?, transforms[], toolchain_id }` | derived cache under `.deck/build/` (later) |
-| `POST /artifact-at` | `{ dir, tip, path, … }` | derived bytes (later) |
+| `POST /artifact-at`  | `{ dir, tip, path, … }`                     | derived bytes (later)                      |
 
 **Near-term serve:** Hub / `deck serve` keep **main’s identity JS pipeline**
 (live ESM from the working tree / sealed packs). No esbuild, no
-`?derived=amd` hook in Deck. deckd’s job for D0–D1 is Timeline under
-`.deck/timeline` so Hub stops forking `jj` CLI.
+`?derived=amd` hook in Deck. deckd’s job for D0–D1 is History under
+`.deck/history` so Hub stops forking `jj` CLI.
 
 Default listen: `http://127.0.0.1:8787` (today’s `DECK_HISTORYD_URL`);
 `deck serve` stays on 8788. Env: `DECKD_URL` supersedes `DECK_HISTORYD_URL`
 when both set. With `DECKD_URL`, `createHistory` attaches **deckd** (not jj CLI).
 
 **Sealer cutover:** when `history.kind === 'deckd'`, Hub `watchAndPublish`
-defaults `sealOnWatch: false` — Versions + HMR only. Timeline seals come from
+defaults `sealOnWatch: false` — Versions + HMR only. History seals come from
 deckd’s FS watch plane (`notify` → debounce → jj-lib). jj / historyd keep
 Node-side note/flush.
 
@@ -194,12 +219,12 @@ Node-side note/flush.
 
 ## 3. Gaps vs today’s historyd (must close in D1)
 
-| Gap | Today | deckd |
-| --- | --- | --- |
-| `actor` on seal | dropped | persisted; `list` shows author |
-| `fileListAt` | absent | `/file-list-at` |
-| Supervision | unsupervised sibling | started/supervised by `deck serve` / realm-server |
-| Repo path | implicit `.jj` at `dir` | **`.deck/timeline` only** |
+| Gap             | Today                   | deckd                                             |
+| --------------- | ----------------------- | ------------------------------------------------- |
+| `actor` on seal | dropped                 | persisted; `list` shows author                    |
+| `fileListAt`    | absent                  | `/file-list-at`                                   |
+| Supervision     | unsupervised sibling    | started/supervised by `deck serve` / realm-server |
+| Repo path       | implicit `.jj` at `dir` | **`.deck/history` only**                          |
 
 ---
 
@@ -260,10 +285,12 @@ appear in derivation meta when used.
 - No minify in deckd at all — leave `deck derive` in Tools forever (fine;
   D2 does not require absorbing A/B delivery workstreams).
 
-### Q5 — One daemon for many depots, or one per realm?
+### Q5 — One daemon for many realm branches, or one per realm?
 
 **Recommendation:** **one deckd per host**, many `{ dir }` arguments (historyd
-model). Realm-server passes absolute depot paths.
+model). Realm-server passes the selected branch workspace path. One
+coordinated deckd writer owns each branch History at a time; hosted paths may
+be S3 Files mounts.
 
 **Other options:**
 
@@ -274,7 +301,7 @@ model). Realm-server passes absolute depot paths.
 
 ### Q6 — Seal source tip, projected tip, or both?
 
-**Recommendation:** Timeline **Steps always capture the live author tree**
+**Recommendation:** History **Steps always capture the live author tree**
 (what humans/agents edited). Build outputs live only under `.deck/build/` and
 are not Step content. A Version may point at source and optionally record
 `derivation` for a published derived tree.
@@ -283,7 +310,7 @@ are not Step content. A Version may point at source and optionally record
 
 - Seal after projecting into the live tree — mutates what authors see; easy to
   confuse with identity; discouraged.
-- Parallel Timeline for build artifacts — complexity with little product win.
+- Parallel History for build artifacts — complexity with little product win.
 
 ### Q7 — Failure mode when build fails?
 
@@ -297,14 +324,14 @@ failed” without losing restore. Never leave a half-written identity Version.
   for agent/debug restore.
 - Roll back live tree on build fail — hostile to authors.
 
-### Q8 — Name of Timeline subdirectory?
+### Q8 — Name of History subdirectory?
 
-**Recommendation:** `.deck/timeline/` (product word matches UI: Timeline).
+**Recommendation:** `.deck/history/` (product word matches UI: History).
 
 **Other options:**
 
 - `.deck/jj/` — honest about backend; leaks impl into paths.
-- `.deck/history/` — clashes with “History: Versions vs Timeline” chrome.
+- `.deck/history/` — clashes with “History: Versions vs History” chrome.
 
 ---
 
@@ -312,31 +339,31 @@ failed” without losing restore. Never leave a half-written identity Version.
 
 ```text
 HistoryBackend (TS)
-  ├─ jj CLI          → temporary Boxel/default until D1
-  ├─ historyd client → today’s external daemon (D1 replaces)
-  └─ deckd client    → Timeline + ensure-build (target)
+  ├─ jj CLI          → legacy fallback only
+  ├─ historyd client → legacy external compatibility
+  └─ deckd client    → official History + ensure-build backend
 ```
 
-Capability block grows: `{ jj, historyd, deckd, build? }`. Doctor copy:
-`History: Timeline · via deckd` (not “via jj” once D1 is default).
+Capability block is `{ jj, historyd, deckd, build? }`. Doctor copy:
+`History: Every save · via deckd` (not “via jj” once D1 is default).
 
 ---
 
 ## 6. What stays out of deckd
 
-| Stays elsewhere | Why |
-| --- | --- |
-| Hub UI / teaching demos | Tools |
-| Offer rebase daemon | Tools; write policy separate |
-| npm vendor corpus pipeline | Tools / ops |
-| Negotiated pack prune | undesigned |
-| Replacing import maps with a bundler identity | laws / at-rest |
+| Stays elsewhere                               | Why                          |
+| --------------------------------------------- | ---------------------------- |
+| Hub UI / teaching demos                       | Tools                        |
+| Offer rebase daemon                           | Tools; write policy separate |
+| npm vendor corpus pipeline                    | Tools / ops                  |
+| Negotiated pack prune                         | undesigned                   |
+| Replacing import maps with a bundler identity | laws / at-rest               |
 
 ---
 
 ## 7. Acceptance sketches
 
-**D0:** Timeline store under `.deck/timeline/repo`; thin `.jj/repo` file
+**D0:** History store under `.deck/history/repo`; thin `.jj/repo` file
 pointer (no symlink, no nested marker); sealed `file-list-at` has zero
 `.deck/**`; `tree-hash` unchanged; no-gitlink tests green; restore still
 replays forward.
@@ -347,14 +374,14 @@ replays forward.
 **D2 (deferred):** derived build plane under `.deck/build/` when Boxel needs
 it; Hub continues identity ESM until then.
 
-**D3:** new editable realm defaults to Timeline+deckd; RO catalog mount may
+**D3:** new editable realm defaults to History+deckd; RO catalog mount may
 stay Versions-only.
 
 ---
 
 ## 8. One-sentence summary
 
-**deckd** is Deck’s supervised sidecar: Timeline under **`.deck` only**
+**deckd** is Deck’s supervised sidecar: History under **`.deck` only**
 (replacing Hub’s jj CLI forks and top-level `.jj`), so Boxel/Deck stop growing
 extra hidden git folders. Derived build plane is optional later; identity JS
 stays on the Hub.

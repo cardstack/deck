@@ -2,10 +2,10 @@
 
 There is no separate kind of thing called a “Deck Repository.” A mutable Deck
 package is already a repository: it can be forked, branched, reviewed, and
-merged. The Revision, ref, and review objects in this document are the durable
+merged. The Checkpoint, ref, and review objects in this document are the durable
 collaboration layer for packages.
 
-`repository.json` handles only the additional case where several packages
+`.deck/repository.json` handles only the additional case where several packages
 must advance atomically. That is Deck’s content-addressed equivalent of a
 traditional monorepo—not an opt-in required for ordinary package work.
 
@@ -16,24 +16,31 @@ identity, records its base tree, and initializes that mutable package's
 preserving different ownership boundaries.
 
 When the source is itself mutable, a fork also records the exact source
-Revision. Opening a cross-owner Review uses that Revision as the three-way
+Checkpoint. Opening a cross-owner Review uses that Checkpoint as the three-way
 merge base. The Review retains the fork endpoint as authored metadata, but
 normalizes its one package tree into the upstream package member key before
-preview and merge. Imported packages have no mutable upstream Revision, so a
+preview and merge. Imported packages have no mutable upstream Checkpoint, so a
 fork of an import begins an independent repository rather than advertising a
 fake upstream Review. The Hub derives this base from the fork's stored lineage;
-it does not trust a browser-supplied Revision hash.
+it does not trust a browser-supplied Checkpoint hash.
 
-**Status: PROTOCOL V1 — local reference implementation plus conditional object
-store adapters.** This document defines the durable objects beneath Deck's
-familiar repository, branch, fork, pull request, and merge UX. The protocol
-deliberately introduces no new product noun. A repository containing several
-member packages is simply a monorepo.
+**Status: LEGACY V1 IMPLEMENTED; RRI/CHECKPOINT V2 REQUIRED BEFORE BOXEL A0.**
+The local reference implementation currently writes V1 Repository member names
+as `owner/package` and the legacy wire noun `deck-revision-v1`. Before Boxel A0,
+Deck gate R0 adds V2: durable member/root identities are RRIs and intentional
+collaboration points use `deck-checkpoint-v2`. V1 remains readable and
+hash-stable; new backport objects write V2. This document defines
+the durable objects beneath Deck's familiar repository, branch, fork, Review,
+and merge UX. The protocol deliberately introduces no new product
+noun. A repository containing several member packages is simply a monorepo.
 
 Companions: [`deck-laws.md`](deck-laws.md),
 [`deck-package-json-and-depot-lock.md`](deck-package-json-and-depot-lock.md),
 [`deck-cas-packages-vs-monorepos.md`](deck-cas-packages-vs-monorepos.md), and
-[`deck-fork-merge-pr-ux.md`](deck-fork-merge-pr-ux.md).
+[`deck-fork-merge-pr-ux.md`](deck-fork-merge-pr-ux.md). The Boxel mapping—one
+realm with multiple branch-specific source states, indexes, and Histories—is
+specified in
+[`deck-boxel-branch-index-backport.md`](deck-boxel-branch-index-backport.md).
 
 ---
 
@@ -42,28 +49,24 @@ Companions: [`deck-laws.md`](deck-laws.md),
 > **A Repository is the atomic collaboration boundary. A package remains the
 > independently addressable execution and release boundary.**
 
-A Repository Revision can therefore change one package or many packages. It
+A Repository Checkpoint can therefore change one package or many packages. It
 does not combine their source into one giant package and it does not make
 their dependency identities disappear.
 
 ```text
-Branch
-  │ mutable compare-and-swap ref
-  ▼
-Revision
-  │ immutable authored history event
-  ▼
-Repository
-  ├── roots
-  ├── member package name → treeHash
-  └── lockHash
-          │
-          ▼
-     exact import map
+Branch ── mutable compare-and-swap head ──▶ Repository
+  │                                           │
+  ├── historyHead ──▶ deckd/jj Step           ├── root RRIs
+  └── latestCheckpoint ──▶ Checkpoint ────────┤
+                                              ├── member package RRI → treeHash
+                                              └── lockHash
+                                                      │
+                                                      ▼
+                                                 exact import map
 ```
 
-The UI says Repository, Revision, Branch, Fork, Pull request, and Merge.
-`deck-repository-v1` is only a wire-format name.
+The UI says Repository, Checkpoint, Branch, Fork, Review, and Merge.
+`deck-repository-v2` is only a wire-format name.
 
 Runnable walkthrough: [`deck-repository-tour.md`](deck-repository-tour.md).
 
@@ -82,7 +85,8 @@ The Repository layer is above Deck's existing package laws:
 - `treeHash` still identifies one package tree.
 - a Version still points to a package `treeHash`.
 - `package.json` still declares package identity and dependency ranges.
-- the depot's `importmap.json` is still the exact execution lock.
+- the canonical composition of applicable import maps is still the exact
+  execution lock.
 - blobs and package trees remain content addressed and shared.
 
 The new layer answers a different question: **which exact package trees and
@@ -90,59 +94,78 @@ lock were reviewed and landed together?**
 
 ## 2. Exact lock object
 
-The lock object is the parsed JSON value of the depot's exact
-`importmap.json`, encoded with Deck canonical JSON and addressed by SHA-256.
-It includes `imports`, `scopes`, `integrity`, and any Deck-owned lock policy.
+The lock object is the canonical composed resolution result for the authored
+realm tree, encoded with Deck canonical JSON and addressed by SHA-256. Its
+inputs may include a root `importmap.json`, nested package/app import maps, and
+their declared inheritance. It includes the effective `imports`, `scopes`,
+`integrity`, and Deck-owned lock policy. Exact Version RRIs are values;
+importer RRIs are scope keys. `package.json` remains conventional package
+metadata and dependency suggestion; it is not itself the exact lock.
 
 ```text
-lockHash = sha256(canonical-json(importmap.json))
+lockHash = sha256(canonical-json(compose(authored import maps)))
 ```
 
-This is not another lock format. The browser import map remains the executable
-artifact. Storing it by hash makes the exact resolution closed over by a
-Repository and reconstructable on another machine.
+This is not another dependency decision or a parallel lock. For native ESM,
+Deck deterministically projects the same lock into a standard browser import
+map whose targets and scopes are absolute transport URLs. The RRI lock is the
+portable reviewed authority; the URL map is a derived delivery artifact.
+Storing the canonical lock by hash makes exact resolution closed over by a
+Repository and reconstructable on another machine without baking one host's
+origin into authored history.
 
 ## 3. Repository membership
 
-A hosted forge may keep repository membership as ordinary authenticated
-metadata. Local Deck uses a small authoring manifest so it can reconstruct the
-same boundary without a service:
+A hosted forge may project repository membership into authenticated query
+metadata. The canonical authoring manifest remains inside the owning realm at
+`.deck/repository.json`, so an agent can inspect and move the realm without a
+parallel service tree:
 
 ```json
 {
-  "schema": "deck-repository-manifest-v1",
-  "roots": ["app/dashboard"],
-  "members": ["acme/editor", "acme/theme", "app/dashboard"]
+  "schema": "deck-repository-manifest-v2",
+  "roots": ["@acme/dashboard/"],
+  "members": {
+    "@acme/editor/": "acme/editor",
+    "@acme/theme/": "acme/theme",
+    "@acme/dashboard/": "app/dashboard"
+  }
 }
 ```
 
-The manifest contains intent, not resolved identity. Sealing resolves each
-member to a `treeHash` and the import map to a `lockHash`.
+The manifest maps canonical member RRIs to local authoring paths. Those paths
+are placement intent, not durable identity. Sealing resolves each member to a
+`treeHash` and the effective composed resolution state to a `lockHash`.
 
-## 4. `deck-repository-v1`
+## 4. `deck-repository-v2`
 
 ```json
 {
-  "schema": "deck-repository-v1",
-  "roots": ["app/dashboard"],
+  "schema": "deck-repository-v2",
+  "roots": ["@acme/dashboard/"],
   "members": {
-    "acme/editor": "<treeHash>",
-    "acme/theme": "<treeHash>",
-    "app/dashboard": "<treeHash>"
+    "@acme/editor/": "<treeHash>",
+    "@acme/theme/": "<treeHash>",
+    "@acme/dashboard/": "<treeHash>"
   },
   "lockHash": "<sha256>"
 }
 ```
 
-- `roots` names runnable or publishable entry packages. Every root must be a
+- `roots` contains runnable or publishable package RRIs. Every root must be a
   member.
-- `members` maps independently addressable package names to exact package
+- `members` maps independently addressable package RRI roots to exact package
   trees. Membership means “may change and land atomically,” not “is imported
   at runtime.”
 - `lockHash` names the exact runtime closure.
 
-Names and roots are sorted in canonical form. A Repository must have at least
-one member. Hashes are lowercase SHA-256 hex.
+Member RRIs and roots are sorted in canonical form. A Repository must have at
+least one member. Hashes are lowercase SHA-256 hex.
+
+V1 objects keep their original `owner/package` member keys and hashes. A V1
+reader may expose a derived scoped RRI, but must not rewrite or rehash the
+stored object. V2 writers require scoped RRI roots and never emit the legacy
+member form.
 
 ```text
 dependency edge = this package is needed to run
@@ -152,13 +175,15 @@ member edge     = this package may change and land with this repository
 External dependencies occur in the lock but not in `members`. A repository
 with one member is ordinary. A repository with several members is a monorepo.
 
-## 5. `deck-revision-v1`
+## 5. `deck-checkpoint-v2`
 
 ```json
 {
-  "schema": "deck-revision-v1",
+  "schema": "deck-checkpoint-v2",
   "repositoryHash": "<sha256>",
-  "parents": ["<revisionHash>"],
+  "parents": ["<checkpointHash>"],
+  "historyHead": "<opaque deckd/jj change identity>",
+  "indexGenerationHash": "<sha256>",
   "author": {
     "id": "@chris:example.test",
     "name": "Chris"
@@ -168,54 +193,74 @@ with one member is ordinary. A repository with several members is a monorepo.
 }
 ```
 
-A Revision is immutable and content addressed. Parent order is meaningful:
+A Checkpoint is immutable and content addressed. Parent order is meaningful:
 the first parent is the target line; the second parent of a merge is the
 source line. Two authored events may point at the same Repository hash.
 
 This separation preserves both useful identities:
 
 - Repository hash: “are the executable bytes and resolution identical?”
-- Revision hash: “is this the same history event?”
+- Checkpoint hash: “is this the same history event?”
+
+`historyHead` binds the intentional collaboration point to the exact
+every-save History state that produced it. It is opaque to the collaboration
+protocol. `indexGenerationHash` binds the exact Browse/Run projection reviewed
+with that state. A normal save creates a deckd/jj Step and advances the branch
+head; it does not write a Checkpoint. Opening a Review, explicitly naming a
+milestone, and merging do write Checkpoints.
+
+The implemented legacy object remains readable as `deck-revision-v1` under
+`_revisions/`, with its original field names and canonical hash. Readers expose
+it as a legacy Checkpoint but never rewrite it in place. V2 writers use
+`deck-checkpoint-v2`, `checkpointHash`, and `_checkpoints/` exclusively.
 
 ## 6. Branches and forks
 
-A branch ref is mutable metadata:
+A branch head is mutable metadata and is also the settlement point for source,
+History, and the completed index:
 
 ```json
 {
-  "schema": "deck-ref-v1",
-  "revisionHash": "<sha256>",
-  "generation": 7
+  "schema": "deck-branch-head-v2",
+  "generation": 7,
+  "repositoryHash": "<sha256>",
+  "historyHead": "<opaque deckd/jj change identity>",
+  "indexGenerationHash": "<sha256>",
+  "latestCheckpointHash": "<sha256 or null>"
 }
 ```
 
 Ref address:
 
 ```text
-_refs/<owner>/<repository>/heads/<branch>.json
+<realm-root>/.deck/refs/heads/<branch-token>.json
 ```
+
+The realm root supplies owner/repository identity. A branch ref must not float
+in a bucket-global namespace. A cross-owner fork gets a new destination realm
+and therefore a new realm-local `.deck/` namespace.
 
 The update contract is compare-and-swap:
 
 ```text
-update(ref, expectedRevision, nextRevision)
+update(ref, expectedGeneration, nextHead)
 
-current == expected  → write next
-current != expected  → conflict; write nothing
+current generation == expected  → write next head
+current generation != expected  → conflict; write nothing
 ```
 
 Same owner and repository is presented as a branch. A different owner is
 presented as a fork. Both use isolated refs and identical ancestry rules.
 
 For a single-package cross-owner Review, source and target package identities
-differ by design. Deck records an immutable normalized source Revision whose
+differ by design. Deck records an immutable normalized source Checkpoint whose
 member key is the target package and whose tree is the fork's current tree.
-The Pull Request still names the real source endpoint. Existing preview,
+The Review still names the real source endpoint. Existing preview,
 three-way merge, and target-ref compare-and-swap then operate unchanged.
 
 ## 7. Merge
 
-A merge produces package trees first, then one Repository, then one Revision:
+A merge produces package trees first, then one Repository, then one Checkpoint:
 
 ```text
 base Repository ─┐
@@ -225,7 +270,7 @@ source Repository ┘                 │
                          new Repository hash
                                     │
                                     ▼
-                  Revision(parents=[target, source])
+                  Checkpoint(parents=[target, source])
                                     │
                                     ▼
                     CAS update target branch ref
@@ -242,31 +287,38 @@ The package merge algorithm remains `mergeTrees`. Repository merge adds:
 3. lock merge or deterministic re-lock;
 4. one final branch compare-and-swap.
 
-Conflicts are qualified by member package, for example
-`acme/editor/index.js`. A conflicted merge writes no Repository, Revision,
-branch ref, or pull-request state. Immutable package objects produced while
+Conflicts are qualified by member RRI, for example
+`@acme/editor/index.js`. A conflicted merge writes no Repository, Checkpoint,
+branch ref, or Review state. Immutable package objects produced while
 planning may already exist and are harmless because no ref reaches them.
 
 ## 8. At-rest layout
 
-The first local implementation extends the existing depot store:
+Each realm owns its protocol data. A host may physically aggregate realms in
+one bucket, but no Deck resource floats in a parallel protocol tree:
 
 ```text
-.deck/store/
-├── _objects/                         file blobs (existing)
-├── _trees/                           package trees (existing)
-├── _locks/<hh>/<lockHash>.json       exact import maps
-├── _repositories/<hh>/<hash>.json    Repository objects
-├── _revisions/<hh>/<hash>.json       Revision objects
-├── _refs/<owner>/<repo>/heads/*.json mutable branch refs
-├── _pull_requests/<hh>/<hash>.json   immutable request openings
-├── _pull_request_events/<hh>/*.json  append-only request events
-├── _pulls/<owner>/<repo>/<n>.json    mutable numbered request refs
-└── _pulls/<owner>/<repo>/_counter.json mutable number allocator
+<realm-root>/.deck/
+├── store/
+│   ├── _objects/                         file blobs
+│   ├── _trees/                           package trees
+│   ├── _locks/<hh>/<lockHash>.json       exact import maps
+│   ├── _repositories/<hh>/<hash>.json    Repository objects
+│   ├── _checkpoints/<hh>/<hash>.json     Checkpoint objects
+│   └── _revisions/<hh>/<hash>.json       legacy V1; read-only
+├── refs/heads/<branch-token>.json        mutable branch heads
+├── reviews/
+│   ├── objects/<hh>/<hash>.json          immutable Review openings
+│   ├── events/<hh>/<hash>.json           append-only Review events
+│   ├── numbers/<n>.json                  mutable numbered Review refs
+│   └── counter.json                      mutable number allocator
+├── indexes/<hh>/<generationHash>/…       completed index generations
+├── releases/objects/<hh>/<hash>.json     immutable published Releases
+└── history/repo/                         default-branch deckd/jj History
 ```
 
-Locks, repositories, and revisions are immutable write-once objects. Only refs
-need coordination.
+Locks, repositories, and Checkpoints are immutable write-once objects. Mutable
+branch heads, Review number refs/counters, and event heads need coordination.
 
 ## 9. Local and S3 Files persistence
 
@@ -274,7 +326,7 @@ need coordination.
 
 - Content-addressed writes use temporary file plus rename.
 - A branch update holds a per-ref exclusive directory lock, verifies the
-  expected Revision, and atomically renames the new ref.
+  expected generation, and atomically renames the new ref.
 - A failed expectation writes nothing.
 
 The local daemon should be the normal ref writer. A leftover lock after an
@@ -283,60 +335,72 @@ second writer silently steals.
 
 ### Deck with S3 Files
 
-S3 Files is appropriate for live/materialized package directories and local
-tool compatibility. It is not the authority for mutable collaboration refs.
+S3 Files is the hosted POSIX substrate for live package directories, index
+staging, and deckd's jj repository at `.deck/history/repo`. It is not the
+authority for mutable collaboration refs. The complete local/AWS split is
+specified in [`deck-storage-backends.md`](deck-storage-backends.md).
 
-- Immutable blobs, trees, locks, repositories, and revisions may be uploaded
-  through S3 or materialized through S3 Files; their hashes detect damage.
-- Branch and pull-request refs are read and written through the S3 object API.
+- Immutable blobs, trees, locks, repositories, Checkpoints, Reviews, and
+  completed index generations are written through direct S3 with
+  `If-None-Match: *`. S3 Files exposes them read-only for agent inspection.
+- Branch and Review refs are read and written through the S3 object API.
 - Immutable request openings, events, and numbered refs are created with
   `If-None-Match: *`.
-- Branch refs, the repository-local Pull Request counter, and Pull Request
+- Branch refs, the realm-local Review counter, and Review
   event heads move with `If-Match: <observed ETag>`.
 - A precondition failure is a concurrency conflict. Number and event writers
   reread and retry; a branch move reports the conflict to the merge caller.
+- Agents may read these realm-local objects as files through S3 Files. Their
+  POSIX principal cannot write `store/`, `indexes/`, `refs/`, or `reviews/`;
+  only the realm service's direct-S3 credentials mutate those subtrees.
+- Coordination reads use the direct object API. S3 Files reads are an
+  inspectable projection and may lag bucket synchronization.
 
-This is the small “origin” Deck needs: durable immutable objects plus
-conditional ref mutation. It does not require a Git server, routing database,
-or consensus service.
+This is the small durable coordination layer Deck needs: realm-local immutable
+objects plus conditional ref mutation. It is not a Git origin and does not
+require a Git server or commit-shaped history service.
 
-## 10. Pull requests
+## 10. Reviews
 
-A `deck-pull-request-v1` opening durably names:
+A `deck-review-v2` opening durably names:
 
-- source repository ref and captured source Revision;
-- target repository ref and captured target Revision;
+- source repository ref and captured source Checkpoint;
+- target repository ref and captured target Checkpoint;
 - author, title, body, and creation time.
 
 It must not contain package bytes. Those are already named by Repository and
 tree hashes.
 
 The opening is immutable and content addressed. A numbered mutable ref at
-`_pulls/<owner>/<repo>/<number>.json` names the opening, the newest event, its
+`.deck/reviews/numbers/<number>.json` names the opening, the newest event, its
 generation, and the visible state (`open`, `merged`, or `closed`). Events form
 an immutable backward chain:
 
 ```text
-Pull request #1 ref
+Review #1 ref
         │
         ▼
 merged ──▶ merge-started ──▶ reviewed ──▶ source-updated
 ```
 
-`source-updated` captures the new exact source Revision. `reviewed` binds its
-verdict to a Revision. `merge-started` records the prepared two-parent merge
-Revision before the target branch moves. `merged` records completion.
+`source-updated` captures the new exact source Checkpoint. `reviewed` binds its
+verdict to a Checkpoint. `merge-started` records the prepared two-parent merge
+Checkpoint before the target branch moves. `merged` records completion.
 
 The two-event merge sequence makes local recovery idempotent:
 
-1. write the merged Repository and merge Revision;
-2. append `merge-started(mergeRevisionHash)`;
+1. write the merged Repository and merge Checkpoint;
+2. append `merge-started(mergeCheckpointHash)`;
 3. compare-and-swap the target branch;
-4. append `merged(mergeRevisionHash)`.
+4. append `merged(mergeCheckpointHash)`.
 
 If the process stops after step 2 or 3, the next merge call reads
 `merge-started`, completes the missing ref update, and appends `merged`. It
-never creates a second merge Revision.
+never creates a second merge Checkpoint.
+
+The implemented `deck-pull-request-v1` opening/events remain readable with
+their original bytes and paths. R0/B0 migrate writers and UI to
+`deck-review-v2`; compatibility readers project legacy objects as Reviews.
 
 Preview runs the same Repository merge engine as Merge, using the captured
 target as base, the current target as “ours,” and the captured or explicitly
@@ -345,23 +409,27 @@ name the same Repository hash.
 
 ## 11. Implementation status
 
-| Layer                                                | Status                                          |
-| ---------------------------------------------------- | ----------------------------------------------- |
-| Canonical Repository, Revision, branch ref           | Implemented and tested                          |
-| Local compare-and-swap refs                          | Implemented and tested                          |
-| Conditional object-store branch adapter for S3       | Implemented and tested                          |
-| Multi-package Repository merge                       | Implemented and tested                          |
-| Durable Pull Request opening, events, preview, merge | Implemented and tested locally                  |
-| Crash recovery across branch + Pull Request refs     | Implemented                                     |
-| Depot-owned `repository.json` discovery              | Implemented                                     |
-| Agent CLI: init, branch, commit, review, merge       | Implemented                                     |
-| Generic Hub Browse and Review projection             | Implemented                                     |
-| Multi-package validation depot and guided tour       | Implemented                                     |
-| Hosted authentication and authorization              | Not implemented                                 |
-| Signed checks and required-review policy             | Event shape exists; enforcement not implemented |
-| S3 Pull Request numbering, creation, and event refs  | Implemented and tested                          |
-| Production AWS client, credentials, and Hub wiring   | Not implemented                                 |
-| Production Hub repository UI                         | Specified, not implemented                      |
+| Layer                                                    | Status                                          |
+| -------------------------------------------------------- | ----------------------------------------------- |
+| Legacy V1 Repository, Revision, and branch ref           | Implemented and tested                          |
+| RRI-native Repository, Checkpoint, and branch-head V2    | Required by R0; not yet implemented             |
+| Local compare-and-swap refs                              | Implemented and tested                          |
+| Conditional object-store branch adapter for S3           | Implemented and tested                          |
+| Multi-package Repository merge                           | Implemented and tested                          |
+| Legacy Pull Request V1 opening/events/preview/merge      | Implemented and tested locally                  |
+| Review V2 opening/events/preview/merge                   | Required by R0/B0; not yet implemented          |
+| Crash recovery across branch + Review refs               | Implemented in V1; must port to V2              |
+| Legacy depot-root `repository.json` discovery            | Implemented                                     |
+| Realm-owned `.deck/repository.json` discovery            | Required by R0; not yet implemented             |
+| Agent CLI: init, branch, commit, review, merge           | Implemented                                     |
+| Generic Hub Browse and Review projection                 | Implemented                                     |
+| Multi-package validation depot and guided tour           | Implemented                                     |
+| Hosted authentication and authorization                  | Not implemented                                 |
+| Signed checks and required-review policy                 | Event shape exists; enforcement not implemented |
+| S3 legacy Pull Request numbering/events                  | Implemented and tested                          |
+| Realm-local S3 Review numbering/events                   | Required by B1; not yet implemented             |
+| Production AWS object adapters and S3 Files/deckd wiring | Required by backport; not yet implemented       |
+| Production Hub repository UI                             | Specified, not implemented                      |
 
 The validation depot is the architectural test. UX must not invent state the protocol
 cannot reproduce.

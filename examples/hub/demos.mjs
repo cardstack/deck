@@ -136,7 +136,7 @@ export const DEMOS = [
       loudest thing on the page.`,
     look: [
       'The three sets are drawn as three small interfaces, from their own values. Agent A rounded the corners and picked a green accent; agent B added a warning colour. Nothing on the page chooses those — they come off the JSON.',
-      'Both component saves auto-publish and are <b>sealed</b> — this is the demo that runs a Timeline, so every save has a changeId, not just every publish.',
+      'Both component saves auto-publish and are <b>captured</b> — this demo has every-save History, so every save has a changeId, not just every publish.',
       'Round one: three different keys under one object. Both forks absorb upstream and keep their own addition. Nobody reviewed anything.',
       'Round two: the same two keys, two answers. Reported <code>conflicted</code>, and the fork’s tree hash is byte-identical before and after — a conflicted pass writes nothing at all.',
       'The rules live in <code>merge-policy.json</code>, published by upstream. <code>scale</code> is a set, so <code>union</code> keeps both intentions: 48 was the fork’s, 40 was upstream’s, and both survive.',

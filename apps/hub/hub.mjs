@@ -178,12 +178,12 @@ async function serveSidecar(depot, path, res) {
 
 // ---------------------------------------------------------------------------
 
-// Tier-2 Timeline is on via deckd; `DECK_HUB_HISTORY=0` turns it off.
+// Tier-2 History is on via deckd; `DECK_HUB_HISTORY=0` turns it off.
 const WANT_HISTORY = process.env.DECK_HUB_HISTORY !== '0';
 // Without DECKD_URL the Hub stays Versions-only — never a local jj watcher.
 if (WANT_HISTORY && !process.env.DECKD_URL && !process.env.DECK_HISTORYD_URL) {
   console.warn(
-    '   history: DECKD_URL unset — Timeline off (run ./scripts/run-hub-with-deckd.sh)',
+    '   history: DECKD_URL unset — History off (run ./scripts/run-hub-with-deckd.sh)',
   );
 }
 
@@ -200,7 +200,7 @@ let hub = {
       ).backend
     : undefined,
 };
-// Demo depots seal through the same deckd. /run loads Timeline from
+// Demo depots seal through the same deckd. /run loads History from
 // `/<demo>/_history` on THIS server — without a backend attached here that
 // route answers `no-history` even when seals exist on disk.
 let demos = await demoDepots();

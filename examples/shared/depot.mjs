@@ -48,7 +48,7 @@ export function demoOrigin(port, host = 'localhost') {
 }
 
 /**
- * A depot mount with a Timeline attached when the machine can do it.
+ * A depot mount with every-save History attached when the machine can do it.
  * Prints which of the two it got, because a capability that is quietly absent
  * is worse than one that is loudly absent.
  */

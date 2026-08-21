@@ -2,7 +2,7 @@
 name = "deckd"
 version = "0.1.0"
 edition = "2021"
-description = "Deck Timeline daemon — historyd-compatible HTTP over jj-lib (copied from jj-historyd)"
+description = "Deck History daemon — historyd-compatible HTTP over jj-lib (copied from jj-historyd)"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/christse/deck"
 readme = "README.md"
@@ -31,5 +31,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [features]
 default = []
 # Derived esbuild AMD plane (`/ensure-build`, `/artifact-at`). Off by default —
-# Timeline is the product; enable with `cargo run --features build`.
+# History is the product; enable with `cargo run --features build`.
 build = []

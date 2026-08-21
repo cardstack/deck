@@ -32,7 +32,7 @@ DECKD_URL=http://127.0.0.1:8787 node apps/hub/hub.mjs
 | `/track` | What changed? |
 
 **Rule:** if a control would write — skip it. Prefer subject, volatility,
-Timeline scrub, list browsing, and `?with=` trials. Prefer **live** paths
+History scrub, list browsing, and `?with=` trials. Prefer **live** paths
 over brittle `@exact` pins when the tip is enough.
 
 ---
@@ -44,7 +44,7 @@ While the tour is active:
 - **Theme highlight** — a cutout plus a pulsing ring. No popover over the UI.
 - **Caption in the bottom bar** — chapter · step · story line · exhibit.
 - Interactions are *exercised*: **list-browse**, **dropdown**, **scroll**,
-  **Timeline scrub**.
+  **History scrub**.
 - Chapter boundaries navigate with `?tour=1` and session state.
 
 ---
@@ -70,7 +70,7 @@ that flip is the lesson.
 | **List-browse** | Ch1 — `/browse?at=/two-agents` | Select a desk row (`agent-a` / `charts`) |
 | **Dropdown** | Ch2 — currencies `@latest`; Ch4 — vale/sale | Open the version `<select>` |
 | **Trial** | Ch3 — picker then `?with=` | Same page, rebound pin in the map |
-| **Timeline scrub** | Ch4 — `/run` vale/sale | Click ◀ on the Timeline (same as `[`) |
+| **History scrub** | Ch4 — `/run` vale/sale | Click ◀ on the History (same as `[`) |
 | **Scroll** | Ch4 — `/track?at=/vale-sale` | Scroll the change feed |
 
 ---
@@ -121,13 +121,13 @@ that flip is the lesson.
 **Use case:** skills / high-frequency iteration
 ([§4](deck-use-cases.md#4-skills-and-agent-capabilities)).
 
-Exhibit is **vale-sale** — visual page, deep `-dev.N` stack, real Timeline.
+Exhibit is **vale-sale** — visual page, deep `-dev.N` stack, real History.
 
 | Beat | Where | Look at | Prepare | Caption |
 | --- | --- | --- | --- | --- |
 | 1 | `/browse?at=/vale-sale/vale/sale` | volatility | open-vol | Auto-published `-dev.N` stack. Interesting states live between releases. |
 | 2 | `/run?at=/vale-sale/vale/sale/index.html` | stage | — | Past is a URL you can load in this frame. |
-| 3 | same run | Timeline | scrub-timeline | Scrub ◀ — iframe follows `/_history/<id>/…`. |
+| 3 | same run | History | scrub-history | Scrub ◀ — iframe follows `/_history/<id>/…`. |
 | 4 | `/track?at=/vale-sale` | feed | scroll-feed | Saved rows deep-link into browse. |
 
 ---
@@ -149,7 +149,7 @@ Second script later: “edit, seal, publish.”
 | Symptom | Likely cause |
 | --- | --- |
 | Blank demo frames | Sidecar origin down — restart Hub with `DECKD_URL` |
-| No Timeline | deckd down — Versions still work |
+| No History | deckd down — Versions still work |
 | Thin volatility / feed | Re-seed demos / re-run example `demo.mjs` |
 | Divergent Step | Restart Hub after pulling history fixes |
 

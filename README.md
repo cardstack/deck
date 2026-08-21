@@ -255,7 +255,7 @@ of them in full.
 Open [deckbook.html](deckbook.html) (or `http://localhost:<port>/deckbook.html`
 on a running server) for a teaching tour of the protocol against what this
 reference implementation actually runs — vocabulary, address space, live loop,
-store/packs, Versions and the Timeline, vendor, fork/lock/offers, HTTP + CLI
+store/packs, Versions and the History, vendor, fork/lock/offers, HTTP + CLI
 maps, four
 use cases worked end to end at the command line, and honest status.
 
@@ -268,7 +268,7 @@ Design set in [docs/](docs/) — start with:
   here is commentary, design history, or a record of how something was
   measured. An implementation implements Deck by passing the suite.
 - [deck-at-rest.md](docs/deck-at-rest.md) — what a depot looks like on
-  disk: layout, store, addresses, and what the Timeline adds. The earlier
+  disk: layout, store, addresses, and what the History adds. The earlier
   ratified version is kept unedited at
   [reference/at-rest-protocol-v2.md](reference/at-rest-protocol-v2.md).
 - [deck-in-motion.md](docs/deck-in-motion.md) — the other half: offers,
@@ -279,7 +279,7 @@ Design set in [docs/](docs/) — start with:
   is one suite Version against one tree hash, you run it locally, and the
   result is a statement signed by a person. Designed, not built.
 - [deck-step-version-vocabulary.md](docs/deck-step-version-vocabulary.md)
-  — Version, Step and Timeline, and the words they replaced.
+  — Version, Step and History, and the words they replaced.
 - [deck-hub-typography.md](docs/deck-hub-typography.md) — the type
   system for the documentation pages.
 - [deck-cas-v2-spec.md](docs/deck-cas-v2-spec.md) — next CAS work:
@@ -309,7 +309,7 @@ Design set in [docs/](docs/) — start with:
   trie + optional `story=1` run/code/commentary) for gutters and the
   watch canvas. ([old heat note](docs/deck-heat-protocol.md) points here.)
 - [deck-step-version-vocabulary.md](docs/deck-step-version-vocabulary.md)
-  — **ruled.** UI: **Version** / **Step** / **Timeline**; imports:
+  — **ruled.** UI: **Version** / **Step** / **History**; imports:
   **Import** / **Pin** / **Entry** / **Leaf** / **Closure**.
 - [deck-pack-equivalence.md](docs/deck-pack-equivalence.md) — deck ⇄
   pack: four homes, treeHash identity, carriage modes, round-trip
@@ -374,12 +374,12 @@ into Tools.
   **three-way merge** (line-level for text, key-level for JSON), and
   **offers** — a fork with a recorded base, planned and rebased as a pure
   function.
-- **`packages/history`** — the Timeline behind one contract, attached
+- **`packages/history`** — the History behind one contract, attached
   through **deckd** (jj-lib over localhost HTTP). A dead daemon degrades to
   Versions only, with a printed reason. Restores replay forward as ordinary
   writes, so history only ever grows.
-- **`packages/deckd`** — Rust Timeline daemon (jj-lib + watchexec-shaped FS
-  seals). Hub attaches it via `DECKD_URL`; see `./scripts/run-hub-with-deckd.sh`.
+- **`packages/deckd`** — Rust History daemon (jj-lib + watchexec-shaped FS
+  captures). Hub attaches it via `DECKD_URL`; see `./scripts/run-hub-with-deckd.sh`.
 - **`packages/server`** — read-only zero-framework serving of depots:
   version-less = the working tree (`no-store`); exact = immutable +
   Content-Digest; range/tag = one 302 hop; bare/alias = 301; `?meta`

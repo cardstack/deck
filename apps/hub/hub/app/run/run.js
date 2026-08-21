@@ -19,12 +19,12 @@ import { resumeHubTour } from 'ui/tour';
 import {
   attachScrub,
   foldBursts,
-  installTimelineStyles,
+  installHistoryStyles,
   measureFrame,
   stepBy,
   stepsFor,
-  timelineHtml,
-} from 'ui/timeline';
+  historyHtml,
+} from 'ui/history';
 import {
   ago,
   activityCell,
@@ -37,7 +37,7 @@ import {
 
 installNavStyles();
 installActivityStyles();
-installTimelineStyles();
+installHistoryStyles();
 
 const app = document.getElementById('app');
 const keys = document.querySelector('deck-keys');
@@ -71,7 +71,7 @@ function isHubApp(at) {
 }
 
 /**
- * The Timeline for a running page: every Step that touched ANYTHING it loads.
+ * The History for a running page: every Step that touched ANYTHING it loads.
  *
  * Not just the page's own file. You are watching the assembled thing, and a
  * palette three decks away changes what you see — so "undo" has to mean "the
@@ -106,7 +106,7 @@ function stepsOf(depot) {
       depot,
       getJson(`/${depot}/${HISTORY}`)
         .then((body) => body.data.map((step) => step.attributes))
-        // Versions only, no Timeline. Not an error — fewer addresses.
+        // Version history only. Not an error — fewer addresses.
         .catch(() => []),
     );
   }
@@ -623,10 +623,10 @@ async function viewOne(input) {
 
   let map = await resolvedMap(url);
   let depotName = at.replace(/^\//, '').split('/')[0];
-  let timeline = foldBursts(
+  let history = foldBursts(
     stepsFor(await stepsOf(depotName), closureOf(at, map)),
   );
-  lastTimeline = timeline;
+  lastHistory = history;
   let scopes = Object.entries(map.scopes ?? {});
   let specifiers = Object.keys(map.imports ?? {}).filter((key) => !key.endsWith('/'));
   let answered = specifiers.map((key) =>
@@ -653,8 +653,8 @@ async function viewOne(input) {
     // grid rows, so a fifth child lands in an implicit row and the whole
     // pane grows a band of dead space. A grid with a fixed track list is a
     // contract about how many children it has.
-    timelineHtml({
-      steps: timeline,
+    historyHtml({
+      steps: history,
       current: currentStep(),
       label: 'undo',
     }) +
@@ -731,8 +731,8 @@ const stageWidth = () => localStorage.getItem(WIDTH_KEY) ?? '100%';
 const isFull = () => localStorage.getItem(FULL_KEY) === '1';
 const splitAt = () => Number(localStorage.getItem(SPLIT_KEY) ?? 62);
 
-/** The timeline the last render drew, so the keys and buttons agree with it. */
-let lastTimeline = [];
+/** The History the last render drew, so the keys and buttons agree with it. */
+let lastHistory = [];
 
 function applyStage() {
   let split = app.querySelector('[data-role="split"]');
@@ -914,9 +914,9 @@ addEventListener('keydown', (event) => {
     case 'f':
       return app.querySelector('[data-role="full"]')?.click();
     case '[':
-      return go({ step: stepBy(lastTimeline, currentStep(), -1) });
+      return go({ step: stepBy(lastHistory, currentStep(), -1) });
     case ']':
-      return go({ step: stepBy(lastTimeline, currentStep(), 1) });
+      return go({ step: stepBy(lastHistory, currentStep(), 1) });
     case 'r':
       return app.querySelector('[data-role="reload"]')?.click();
     default:
@@ -939,7 +939,7 @@ app.addEventListener('click', (event) => {
     // walks that same order — so `◀` (-1) is one step older and `▶` (+1) is
     // one newer, which is what the arrows point at. This negated the delta
     // and the buttons ran backwards: pressing "back" went forward.
-    return go({ step: stepBy(lastTimeline, currentStep(), Number(by.dataset.by)) });
+    return go({ step: stepBy(lastHistory, currentStep(), Number(by.dataset.by)) });
   }
 
   let width = event.target.closest('[data-role="width"]');

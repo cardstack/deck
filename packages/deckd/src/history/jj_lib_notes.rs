@@ -13,7 +13,7 @@
 //! ```text
 //! UserSettings::from_config(...)
 //! Workspace::init_internal_git(settings, workspace_root, object_hash)  // NOT colocated
-//!   → today creates <root>/.jj  — customize to <root>/.deck/timeline
+//!   → today creates <root>/.jj  — customize to <root>/.deck/history
 //!     (needs create_jj_dir override or init + relocate, same as CLI POC)
 //!
 //! seal:
@@ -37,11 +37,11 @@
 //!
 //! 1. Install a rustc that can build the sibling jj tree.
 //! 2. Uncomment `jj-lib` path dep in `Cargo.toml`.
-//! 3. Add `src/timeline/jj_lib.rs` implementing [`super::Timeline`].
-//! 4. Select backend with `DECKD_TIMELINE=jj-lib`.
+//! 3. Add `src/history/jj_lib.rs` implementing [`super::HistoryBackend`].
+//! 4. Select backend with `DECKD_HISTORY=jj-lib`.
 //!
 //! Do **not** maintain a long-lived full fork of jj-vcs/jj unless a lib patch
-//! for custom `.deck/timeline` without symlink is required upstream.
+//! for custom `.deck/history` without symlink is required upstream.
 
 #![allow(dead_code)]
 

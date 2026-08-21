@@ -2,14 +2,14 @@
 
 **Status: PROPOSAL** (2026-08-09). Companion to
 [`deck-depot-and-realm-backport.md`](deck-depot-and-realm-backport.md),
-[`deck-laws.md`](deck-laws.md), [`deck-at-rest-protocol.md`](deck-at-rest-protocol.md).
+[`deck-laws.md`](deck-laws.md), [`deck-at-rest.md`](deck-at-rest.md).
 
 ---
 
 ## 0. Why
 
 Boxel needs the **Deck contract** — laws, serve grammar, packs/store,
-Versions, Timeline (jj), restore — not the Hub UI, teaching demos, or
+Versions, History (jj), restore — not the Hub UI, teaching demos, or
 CLI sugar built to exercise this repo.
 
 Today that contract is mixed with operator chrome in one workspace.
@@ -55,7 +55,7 @@ and speak the HTTP grammar. Roughly today’s:
 ```
 packages/core/src/          # identity, pack, store, lock, merge, …
 packages/server/src/        # serve live / @exact / tag / history / activity
-packages/history/src/       # Timeline via jj or historyd; restore
+packages/history/src/       # History via jj or historyd; restore
 packages/conformance/       # L1–L12 black box
 ```
 
@@ -66,7 +66,7 @@ packages/conformance/       # L1–L12 black box
 - Import-map injection / resolution helpers needed to *serve* hermetically  
 - Watcher → auto-publish `-dev.N` (realm may replace the watcher; the
   publish/store APIs stay)  
-- Timeline: seal list, file-at-step, restore (append-only)  
+- History: seal list, file-at-step, restore (append-only)
 - Activity read path (`GET /_activity`) + claim file layout (writers may
   stay CLI/Tools)  
 - `deck conform` suite  
@@ -139,7 +139,7 @@ a contract, not a package archaeology dig.
 3. **Conformance runs against Core alone.** Hub is not required to say
    “this implements Deck.”
 4. **jj is a Core peer:** `@deck/history` documents `jj` (or historyd)
-   as a runtime peer; absence means Versions-only (Timeline off), which
+   as a runtime peer; absence means Versions-only (History off), which
    is already the product rule.
 
 ---
@@ -151,7 +151,7 @@ Boxel realm server
   └── Deck Core
         ├── store / pack / tree-hash (Versions)
         ├── serve grammar (live / @exact / tag / ?meta / digests)
-        ├── Timeline adapter (jj or Boxel’s history sidecar)
+        ├── History adapter (jj or Boxel’s history sidecar)
         └── conform suite (CI gate on the realm)
 ```
 
@@ -226,6 +226,6 @@ Disk for Core sources today: on the order of **~0.5 MB** (not counting
 ## 10. Summary
 
 Split the monorepo so **Deck Core** is the only thing Boxel backports —
-serve grammar, store/packs, Timeline/jj, conformance — and **Deck Tools**
+serve grammar, store/packs, History/jj, conformance — and **Deck Tools**
 holds Hub, CLI, and examples. Same protocol; clearer boundary; ~12k LOC
 (or ~8–10k lean) instead of “the whole Deck repo.”

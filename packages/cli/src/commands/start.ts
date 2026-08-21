@@ -185,7 +185,7 @@ that does not change the tree hash publishes nothing.
 
 --history records a Step for every save, including the states between
 publishes — that is what \`deck history\` lists and \`deck restore\` returns
-to. deckd (default) attaches Timeline via DECKD_URL and prints why if
+to. deckd (default) attaches every-save History via DECKD_URL and prints why if
 deckd is down; the live loop keeps working either way.
 
 --rebase keeps every open proposal merged against upstream, continuously.

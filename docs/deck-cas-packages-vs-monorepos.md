@@ -40,10 +40,10 @@ one convenient boundary: the repository.
 Deck splits them without losing the useful experience:
 
 - a **package tree** says what one package's bytes are;
-- a **Revision** says how one line of work reached those bytes;
+- a **Checkpoint** says how one line of work reached those bytes;
 - a **Version** says what compatibility promise those bytes carry;
 - a **depot lock** says which exact package trees execute together;
-- a **Repository Revision** says which package changes are atomic;
+- a **Repository Checkpoint** says which package changes are atomic;
 - a **pull request** says which work should enter which target;
 - an **HTTP URL** serves the exact ESM file the browser executes.
 
@@ -229,7 +229,7 @@ code graph:
 ```text
                          decision record
                                │
-issue ─────▶ pull request ─────▶ Revision ─────▶ treeHash
+issue ─────▶ pull request ─────▶ Checkpoint ─────▶ treeHash
                   │                │                │
                   │                │                └─ package files
                   │                └─ checks / reviews / authorship
@@ -273,8 +273,8 @@ ordinary files.
 Splitting a monorepo into conventional repositories reintroduces version-bump
 and submodule-pointer choreography. That is not the CAS model.
 
-During development, packages compose by exact tree or Revision identity.
-Changing a producer and three consumers creates one proposed Repository Revision.
+During development, packages compose by exact tree or Checkpoint identity.
+Changing a producer and three consumers creates one proposed Repository Checkpoint.
 No semver bump is required merely to make the repository coherent. Semver is
 assigned later, when somebody makes a compatibility promise to external
 consumers.
@@ -285,7 +285,7 @@ DEVELOPMENT                              RELEASE
 tree A2 + tree B4                        editor 3.0.0 ──▶ tree B4
         │                                dashboard 8.2.0 ──▶ tree A2
         ▼
-Repository Revision 91ce…
+Repository Checkpoint 91ce…
 one atomic repository change
 ```
 
@@ -388,17 +388,17 @@ app head    ──▶ old tree       visible for 40 ms
 app head    ──▶ new tree       visible later
 ```
 
-Deck needs an immutable **Repository** object, named by a Revision, that
+Deck needs an immutable **Repository** object, named by a Checkpoint, that
 records the complete member package set produced by one atomic change:
 
 ```json
 {
-  "schema": "deck-repository-v1",
-  "roots": ["app/dashboard"],
+  "schema": "deck-repository-v2",
+  "roots": ["@acme/dashboard/"],
   "members": {
-    "app/dashboard": "tree-app-new",
-    "acme/editor": "tree-editor-new",
-    "acme/theme": "tree-theme-unchanged"
+    "@acme/dashboard/": "tree-app-new",
+    "@acme/editor/": "tree-editor-new",
+    "@acme/theme/": "tree-theme-unchanged"
   },
   "lockHash": "sha256-of-import-map"
 }
@@ -410,10 +410,10 @@ The branch is one CAS-updated pointer:
 immutable package trees written first
               │
               ▼
-immutable Repository + Revision written second
+immutable Repository + Checkpoint written second
               │
               ▼
-acme/dashboard:main ── atomic CAS ──▶ new Revision
+acme/dashboard:main ── atomic CAS ──▶ new Checkpoint
 ```
 
 Readers see the complete old Repository or the complete new Repository,
@@ -475,7 +475,7 @@ intent             Add transaction API
 content            editor B → B2; dashboard A → A2
 resolution         exact import-map change
 execution          [ Run proposed Repository ]
-verification       checks bound to source + target Revisions
+verification       checks bound to source + target Checkpoints
 merge              one depot-head pointer move
 ```
 
@@ -515,7 +515,7 @@ In Deck:
 
 ```text
 treeHash 46bd…
-   ├─ branch Revision points here
+   ├─ branch Checkpoint points here
    ├─ Version 2.4.1 points here
    ├─ pull-request preview points here
    └─ exact HTTP module URL serves files from here
@@ -572,7 +572,7 @@ bundle.
 | ----------------------- | ---------------------------------------------------- | -------------------------------------------- |
 | Primary identity        | repository commit                                    | Repository hash + member treeHashes          |
 | Package boundary        | path/tool convention                                 | immutable addressed object                   |
-| Cross-package atomicity | one commit                                           | one Repository Revision pointer              |
+| Cross-package atomicity | one commit                                           | one Repository Checkpoint pointer              |
 | Branch isolation        | whole-repository worktree                            | Repository fork; unchanged objects shared    |
 | Unchanged content       | repeated in checkouts and artifacts; cached by tools | shared by identity                           |
 | Dependency selection    | package-manager rules + lockfile                     | depot import map                             |
@@ -584,8 +584,8 @@ bundle.
 | Global refactor         | native directory-wide tooling                        | operate on materialized Repository           |
 | Search/index            | repository-wide by default                           | catalog/index over addressed packages        |
 | Offline work            | complete clone/worktree                              | explicit materialized working set required   |
-| Coordination            | Git ref transaction + forge                          | CAS refs + durable Revision/request metadata |
-| Garbage collection      | Git reachability                                     | Versions + refs + requests + Revisions       |
+| Coordination            | Git ref transaction + forge                          | CAS refs + durable Checkpoint/request metadata |
+| Garbage collection      | Git reachability                                     | Versions + refs + requests + Checkpoints       |
 
 ---
 
@@ -609,7 +609,7 @@ authoritative Repository
   acme/theme/
         │ edit with ordinary tools
         ▼
-changed package trees + new Repository Revision
+changed package trees + new Repository Checkpoint
 ```
 
 On a laptop this can be ordinary local files. On AWS it can be an S3 Files
@@ -627,14 +627,17 @@ CAS is not a magic word. Moving the boundary creates real engineering work.
 
 ### 12.1 Durable coordination
 
-Immutable objects are easy. Mutable heads, pull requests, approvals, and
-atomic depot heads require authenticated compare-and-swap and durable event
-history. S3 Files alone does not supply this.
+Immutable objects are easy. Mutable heads, Reviews, approvals, and atomic realm
+heads require authenticated compare-and-swap and durable event history. S3
+Files supplies the inspectable POSIX view, but not conditional coordination.
+All objects remain below the owning realm's `.deck/`; agents may read them
+there, while the realm service writes protocol-owned subtrees through direct
+conditional S3 operations.
 
 ### 12.2 Repository-scale atomicity
 
 Per-package refs are insufficient for product changes spanning several
-packages. The Repository Revision and its atomic ref update are required before
+packages. The Repository Checkpoint and its atomic ref update are required before
 Deck can claim full monorepo parity.
 
 ### 12.3 Materialization and offline work
@@ -648,7 +651,7 @@ model.
 Removing the physical monorepo must not remove global understanding. Indexes
 must search a Repository or catalog, and refactoring tools must be able to
 materialize and update a multi-package closure as one proposed depot
-Revision.
+Checkpoint.
 
 ### 12.5 Small-object economics
 
@@ -658,8 +661,8 @@ preload closure computation remain necessary.
 
 ### 12.6 Garbage collection
 
-Reachability now crosses Versions, Revisions, refs, pull requests, depot
-Revisions, signatures, and retention policy. Deleting by “no Version points
+Reachability now crosses Versions, Checkpoints, refs, pull requests, depot
+Checkpoints, signatures, and retention policy. Deleting by “no Version points
 here” would destroy branch-only work.
 
 ### 12.7 Ecosystem compatibility
@@ -693,12 +696,12 @@ A credible transition does not begin by splitting every repository.
 
 ### Phase 3 — make branches Repository forks
 
-- Create durable Revisions and CAS refs.
+- Create durable Checkpoints and CAS refs.
 - Present same-owner forks as branches and cross-owner forks as forks.
-- Open pull requests against exact source and target Revisions.
+- Open pull requests against exact source and target Checkpoints.
 - Materialize only the packages a change needs.
 
-### Phase 4 — make the Repository Revision authoritative
+### Phase 4 — make the Repository Checkpoint authoritative
 
 - Land cross-package changes with one atomic depot-head update.
 - Generate a monorepo-shaped directory for legacy tools on demand.

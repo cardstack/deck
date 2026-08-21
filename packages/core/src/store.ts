@@ -74,7 +74,7 @@ export interface StoreVersionRecord {
   // the store-wide object and tree directories, and the pack is rebuilt on
   // demand. Both shapes are read; only the second is written.
   file?: string;
-  // WHEN, so a list of versions can be a timeline.
+  // WHEN, so a list of versions can be ordered history.
   //
   // Two different instants, and conflating them would be the bug. `publishedAt`
   // is when this version entered THIS store — the local event, true of every

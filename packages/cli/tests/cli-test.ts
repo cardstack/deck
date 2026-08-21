@@ -428,7 +428,10 @@ module('deck CLI end-to-end', function (hooks) {
       let ok = await probe.probe(source);
       probe.close();
       if (!ok) {
-        assert.ok(true, 'skipped — deckd is not running; Timeline is optional');
+        assert.ok(
+          true,
+          'skipped — deckd is not running; every-save History is optional',
+        );
         return;
       }
     }

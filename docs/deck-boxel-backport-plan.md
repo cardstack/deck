@@ -452,12 +452,14 @@ Delivers K9, half of K2, catalog-side K6.
 
 ### R3 — History into the realm server *(as proposed, and this is the hinge)*
 
-jj/historyd in `packages/realm-server`, versioned resolver, restore from
-tag/checkpoint, `boxel-cli` on Deck-style revisions.
+deckd/jj History per branch in `packages/realm-server`, versioned RRI
+resolver, restore from Step, and `boxel-cli` on Deck Checkpoints. Desktop uses
+the local filesystem; hosted Boxel uses realm-contained S3 Files plus direct
+conditional S3 refs as specified in `deck-storage-backends.md`.
 
 This is the first genuine monorepo PR and the one to rebase the `deck/*`
 branches onto. It delivers K1 and K4 together — and it should, because K4's
-3-way merge needs the merge base that K1's Versions provide. Doing them
+3-way merge needs the exact Checkpoint base that K1's History provides. Doing them
 separately means building the sync engine twice.
 
 Then, and only then, **R3.5: base realm via Deck** (K11), with restore
@@ -700,7 +702,7 @@ right for every release after it.
 
 1. **Version granularity on write (K1).** One Version per `Realm.write`, per
    debounced burst, or per explicit checkpoint? Deck's watcher debounces;
-   a realm write is already transactional. Storage growth and Timeline
+   a realm write is already transactional. Storage growth and History
    readability pull in opposite directions.
 2. **Does `boxel-cli` keep git?** `checkpoint-manager.ts` is git-backed. K4
    can either replace git with Deck Versions or keep git locally and

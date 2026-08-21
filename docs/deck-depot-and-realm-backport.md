@@ -4,11 +4,12 @@
 That word is Boxel’s. This note freezes the standalone terms and how they
 map when Deck is backported onto a realm server.
 
-Companions: `deck-at-rest.md` (still realm-shaped in places —
-historical), `deck-laws.md`, `packages/server` URL grammar,
+Companions: `deck-at-rest.md`, `deck-laws.md`, `packages/server` URL grammar,
 `deck-core-backport-split.md` (isolate backportable Core vs Tools),
 `deck-github-mirror-analysis.md` (depot↔GitHub monorepo mirror + intake),
-`deck-in-motion.md` (§3.7 cross-depot offer/rebase + Boxel/Matrix plan).
+`deck-in-motion.md` (§3.7 cross-depot offer/rebase + Boxel/Matrix plan),
+`deck-boxel-branch-index-backport.md` (one realm, multiple branch indexes),
+and `deck-storage-backends.md` (realm-contained Desktop/AWS persistence).
 
 ---
 
@@ -19,11 +20,11 @@ module trees (and JSON). It must work with no Boxel, no cards, no realm
 server. Using “realm” in the reference implementation teaches the wrong
 boundary and makes backport sound like a rename instead of an embedding.
 
-| Avoid in standalone Deck | Use instead |
-| --- | --- |
-| realm (mount / URL slot) | **depot** |
-| RealmMount | DepotMount (or equivalent) |
-| “the realm’s store” | **the depot’s store** |
+| Avoid in standalone Deck | Use instead                |
+| ------------------------ | -------------------------- |
+| realm (mount / URL slot) | **depot**                  |
+| RealmMount               | DepotMount (or equivalent) |
+| “the realm’s store”      | **the depot’s store**      |
 
 Keep **realm** only in backport docs, meaning the Boxel construct.
 
@@ -87,12 +88,12 @@ A **realm** on a Boxel realm server is a **placement-free address space**:
 
 So:
 
-| | **Depot** (Deck standalone) | **Realm** (Boxel) |
-| --- | --- | --- |
-| Role | A **place** for sealed + live trees | A **dereferenceable** world of files/cards |
-| Layout | Convenient `publisher/package` shape | Anything anywhere |
-| Store | Depot-local CAS (`_objects` / `_trees` / meta) | Realm machinery + history + … |
-| Protocol | Deck serve / publish / lock / pack | Full realm server + (after backport) Deck |
+|          | **Depot** (Deck standalone)                    | **Realm** (Boxel)                          |
+| -------- | ---------------------------------------------- | ------------------------------------------ |
+| Role     | A **place** for sealed + live trees            | A **dereferenceable** world of files/cards |
+| Layout   | Convenient `publisher/package` shape           | Anything anywhere                          |
+| Store    | Depot-local CAS (`_objects` / `_trees` / meta) | Realm machinery + history + …              |
+| Protocol | Deck serve / publish / lock / pack             | Full realm server + (after backport) Deck  |
 
 **Depot ⊂ capabilities a realm can offer.** A depot does not need to become
 placement-free. A realm does not need to give up placement freedom to speak
@@ -110,13 +111,13 @@ When Deck is backported:
 
 Mapping:
 
-| Standalone Deck | On a deck-enabled realm |
-| --- | --- |
-| depot name | realm URL prefix / realm handle (one realm ↔ one Deck mount from the client’s view) |
-| publisher/package | **one** way to lay out decks inside the realm — not the only way paths exist |
-| `/<depot>/…/@pkg@1.2.3/…` | same serve grammar, rooted at the realm |
-| depot store | realm store / bookmarks as today, as long as L1–L12 hold |
-| `deck conform` | black-box against the realm’s Deck HTTP surface |
+| Standalone Deck           | On a deck-enabled realm                                                                                        |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| depot name                | Realm RRI authority plus its transport mapping; one Realm RRI ↔ one repository identity from the client’s view |
+| publisher/package         | **one** way to lay out decks inside the realm — not the only way paths exist                                   |
+| `/<depot>/…/@pkg@1.2.3/…` | exact Version RRI projected through the realm’s Deck HTTP surface                                              |
+| depot store               | realm-owned `.deck/store`, refs, Reviews, indexes, and deckd History                                           |
+| `deck conform`            | black-box against the realm’s RRI resolver and Deck HTTP projection                                            |
 
 ### 3.1 What backport must not do
 
@@ -127,10 +128,21 @@ Mapping:
 ### 3.2 What backport must do
 
 - Preserve Deck identity (`tree-hash-v1`), immutability, and pin/verify laws.
+- Keep every Deck resource below the owning realm's `.deck/`; authenticated
+  database rows may index/project those files but do not replace or relocate
+  them into a parallel global protocol tree.
+- On hosted AWS, let agents inspect `.deck` through S3 Files while denying
+  POSIX writes to protocol-owned store/index/ref/Review paths. realm-server
+  writes those paths through direct conditional S3; deckd writes only the
+  branch-local jj History through S3 Files.
 - Expose the Deck URL grammar (exact / tag / live / pack / digests).
 - Allow decks to be addressed even when their files are not under a tidy
   publisher folder — resolution goes through the realm map / decklist, not
   through folder layout alone.
+- Allow one realm to carry multiple branches. Each branch has its own mutable
+  source state, History, and cloned index while retaining the same Realm RRI,
+  transport mapping, ownership, and ACL. See
+  `deck-boxel-branch-index-backport.md`.
 
 ### 3.3 Cross-realm offer / rebase (in-motion on deck-enabled realms)
 
@@ -139,22 +151,23 @@ Across depots (and therefore across deck-enabled realms) the same three
 carriages apply — normative detail in `deck-in-motion.md` §3.7:
 
 1. **Public realm readable by both sides** — ordinary Deck GETs of offer
-   tip, upstream Version, digests.  
-2. **Out-of-band message of intent** — not wire protocol yet.  
+   tip, upstream Version, digests.
+2. **Out-of-band message of intent** — not wire protocol yet.
 3. **If the tip cannot be public:** a **Deck Pack** attached to that
    message; receiver unpacks, then local offer/rebase.
 
 **Boxel plan for (2):** use **Matrix** as the signal —
 
-| Piece | Role |
-| --- | --- |
-| Matrix **identity** | who is offering / who may accept |
-| Matrix **room** | where the negotiation lives |
-| Matrix **message** | message of intent (base Version, treeHash, why) |
+| Piece                                 | Role                                              |
+| ------------------------------------- | ------------------------------------------------- |
+| Matrix **identity**                   | who is offering / who may accept                  |
+| Matrix **room**                       | where the negotiation lives                       |
+| Matrix **message**                    | message of intent (base Version, treeHash, why)   |
 | optional **Deck Pack** on the message | case (3) when the offer tip is not world-readable |
 
-Realms stay **depot-shaped** for Deck (one realm ↔ one Deck mount from the
-client’s view). Realm **access control** decides who may **issue** an offer
+Realms stay one ownership/repository boundary for Deck. A realm may expose
+multiple branches with distinct indexes without pretending each branch is a
+different realm. Realm **access control** decides who may **issue** an offer
 and who may **run rebase / accept** a pointer move; public catalog realms
 are case (1). GitHub share/gather remains an interim stand-in until Matrix
 negotiation lands (`deck-github-mirror-analysis.md` §5b). Synthesis vs
@@ -181,14 +194,14 @@ new APIs say depot.**
 
 ## 5. One-line glossary
 
-| Term | One line |
-| --- | --- |
-| **server** | Process that mounts depots and serves Deck HTTP |
-| **depot** | Named place: live tree + store + URL prefix |
-| **publisher** | Namespace / ownership segment under a depot |
-| **deck / package** | Named module tree; versions point at treeHashes |
-| **realm** | Boxel placement-free world; may become deck-enabled |
-| **deck-enabled realm** | Realm that implements the Deck contract |
+| Term                   | One line                                            |
+| ---------------------- | --------------------------------------------------- |
+| **server**             | Process that mounts depots and serves Deck HTTP     |
+| **depot**              | Named place: live tree + store + URL prefix         |
+| **publisher**          | Namespace / ownership segment under a depot         |
+| **deck / package**     | Named module tree; versions point at treeHashes     |
+| **realm**              | Boxel placement-free world; may become deck-enabled |
+| **deck-enabled realm** | Realm that implements the Deck contract             |
 
 ---
 

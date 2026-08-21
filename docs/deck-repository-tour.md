@@ -4,6 +4,13 @@ This is the real workflow used by agents, the CLI, and Deck Hub. The Hub does
 not seed examples or keep parallel state. Every mutable package is implicitly
 a repository, and Hub reads the same refs and immutable objects the CLI writes.
 
+The running local reference currently writes V1 Repository member names such
+as `app/dashboard`; the commands below are therefore accurate today. Backport
+gate R0 upgrades the sealed durable object to RRI-native V2 before Boxel A0.
+CLI `--root` / `--member` arguments may remain local authoring paths, but V2
+sealing maps them to canonical roots such as `@acme/dashboard/`. The workflow
+and product nouns do not change.
+
 ## 1. Package first; grouping only when needed
 
 No initialization is required to branch an ordinary package. Its
@@ -24,8 +31,8 @@ deck repo-init \
   --member acme/theme
 ```
 
-`repo-init` writes `depot/repository.json`, captures all three packages and the
-depot import map into CAS, creates an immutable Repository and Revision, then
+`repo-init` writes the realm-owned `.deck/repository.json`, captures all three packages and the
+depot import map into CAS, creates an immutable Repository and Checkpoint, then
 creates `main`. Run it only for an atomic multi-package group; this checkout is
 already initialized. A single package never needs this file.
 
@@ -41,9 +48,9 @@ deck branch \
   --from main
 ```
 
-A Deck branch is a familiar named branch in one Repository. Internally it is a
-cheap ref over immutable Repository Revisions—the same content-addressed
-mechanism as a fork, with repository-local naming for team workflow.
+A Deck branch is a familiar named branch in one Repository. Internally its
+realm-local head names current Repository, deckd/jj History, and index state;
+the same branch/fork primitive uses repository-local naming for team workflow.
 
 Open Browse at:
 
@@ -54,7 +61,7 @@ http://localhost:8788/browse?at=/collaboration/app/dashboard
 The Repository panel lists the new branch immediately. Agent-side CLI changes
 are detected by Hub and sent over its live event stream.
 
-## 3. Change several packages and capture one commit
+## 3. Change several packages and capture one Checkpoint
 
 Edit any member directories. Then capture them atomically:
 
@@ -66,9 +73,15 @@ deck commit \
   --message "Prioritize delayed shipments"
 ```
 
-One Revision now points to one Repository containing exact tree hashes for
+One Checkpoint now points to one Repository containing exact tree hashes for
 every member. Packages remain individually addressable, but the composition
 lands as a unit.
+
+The current reference CLI keeps the Git-familiar verb `deck commit`, but the
+object it writes and the product noun are Checkpoint. Ordinary saves already
+produce deckd History Steps and do not require this command. `deck review`
+also captures the current settled branch as a Checkpoint when needed. A future
+`deck checkpoint` alias must not be documented as runnable until implemented.
 
 ## 4. Open a review
 
@@ -83,7 +96,7 @@ deck review \
 ```
 
 Visit [Review](http://localhost:8788/review?repository=acme/dashboard). The
-page shows exact package diffs, a runnable projection, Revision history, review
+page shows exact package diffs, a runnable projection, Checkpoint history, review
 events, and expandable canonical protocol objects.
 
 ## 5. Merge through the same protocol
@@ -95,30 +108,35 @@ deck merge \
   --number 1
 ```
 
-Deck computes the three-way merge from exact Revisions, creates a two-parent
-merge Revision, advances `main` with compare-and-swap, and appends immutable
+Deck computes the three-way merge from exact Checkpoints, creates a two-parent
+merge Checkpoint, advances `main` with compare-and-swap, and appends immutable
 `merge-started` and `merged` events. A conflict writes no partial result.
 
 Browse updates to the new main without a reload. Underneath, inspect:
 
 ```text
-depot/.deck/store/
-├── _refs/<owner>/<repo>/heads/*.json
-├── _repositories/<prefix>/<hash>.json
-├── _revisions/<prefix>/<hash>.json
-├── _pulls/<owner>/<repo>/<number>.json
-├── _pull_requests/<prefix>/<hash>.json
-└── _pull_request_events/<prefix>/<hash>.json
+<realm>/.deck/
+├── refs/heads/*.json
+├── store/_repositories/<prefix>/<hash>.json
+├── store/_checkpoints/<prefix>/<hash>.json
+├── reviews/numbers/<number>.json
+├── reviews/objects/<prefix>/<hash>.json
+├── reviews/events/<prefix>/<hash>.json
+├── indexes/<prefix>/<generationHash>/…
+└── history/repo/                         deckd/jj History
 ```
 
 The numbered file and branch heads are the small mutable coordination layer.
 Everything they name is immutable CAS and maps directly to conditional S3
-writes in a hosted deployment.
+writes in a hosted deployment. Agents can inspect these files through the
+realm's S3 Files view; only the realm service may mutate protocol-owned paths,
+using direct S3 preconditions.
 
 ## The agent request
 
 You can now ask: “Create a branch for this change, implement it, commit the
 Repository, open a review, and merge it after verification.” The agent should
 use these commands in order and report the branch, review number, and resulting
-main Revision. For ordinary package work, pass the package identity—for
+main Checkpoint. The explicit checkpoint command is optional before Review.
+For ordinary package work, pass the package identity—for
 example, `--repo app/dashboard`. No `repo-init` is involved.

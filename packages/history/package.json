@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Deck tier-2 history: Timeline via deckd under the auto-publish loop",
+  "description": "Deck every-save History via deckd under the auto-publish loop",
   "exports": {
     "./backend": "./src/backend.ts",
     "./historyd": "./src/historyd.ts",

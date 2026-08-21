@@ -13,7 +13,7 @@
 //   Notes   <depot>/<actor>/notes/     content in the tree
 //   Claims  <depot>/.deck/claims/      intent, outside the hash
 //
-// Timeline seals (`.jj`) go with RESET=1 because several demos ARE the
+// History seals (`.jj`) go with RESET=1 because several demos ARE the
 // history transcript; set RESET_HISTORY=0 to keep seals while refreshing
 // the store.
 
@@ -99,7 +99,7 @@ export async function resetDemoDepot({
   await mkdir(storeDirFor(depotDir), { recursive: true });
   console.log(
     '   RESET=1 — wiped .deck/store' +
-      (history ? ' and Timeline seals' : '') +
+      (history ? ' and History seals' : '') +
       '; Notes and Claims kept',
   );
 }
@@ -108,7 +108,7 @@ export async function resetDemoDepot({
  * Gate a demo rebuild.
  *
  *   'serve'   — store already has probe; skip build, just listen
- *   'seed'    — first run; build without wiping Notes/Claims/Timeline
+ *   'seed'    — first run; build without wiping Notes/Claims/History
  *   'rebuild' — RESET=1; wipe store (+ seals by default) then build
  *
  * @param {object} options

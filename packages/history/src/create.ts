@@ -1,7 +1,7 @@
 import { HistorydHistory } from './historyd.ts';
 import type { HistoryBackend } from './backend.ts';
 
-// Timeline attaches through deckd only. The old jj-cli fork path competed with
+// Every-save History attaches through deckd only. The old jj-cli fork path competed with
 // deckd's FS watcher, sealed `.deck/**` into the tape, and is gone.
 //
 // Attaching history is still OPTIONAL and never fatal: when deckd is down the
@@ -63,6 +63,6 @@ export async function createHistory(
   daemon.close();
   return {
     tier: 1,
-    detail: `history: no deckd at ${resolvedUrl} — Versions only, no Timeline (start packages/deckd)`,
+    detail: `history: no deckd at ${resolvedUrl} — Version history only (start packages/deckd for every-save History)`,
   };
 }

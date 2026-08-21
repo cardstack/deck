@@ -71,9 +71,9 @@ components at ordinary deck addresses.
 Repository identity and branches live in `/browse`, alongside the package tree
 they govern. A branch within an owner/repository uses the same isolated
 Repository ref as a fork, but the UI calls it a branch. `/review` begins with a
-proposed change: Pull Request review links lead back to exact `/browse`
+proposed change: Review links lead back to exact `/browse`
 comparisons, while Preview leads to `/run` with the proposed Repository's exact
-package Versions. **Underneath** exposes the ref, Revision, Repository, Pull
+package Versions. **Underneath** exposes the ref, Checkpoint, Repository, Pull
 Request opening, and append-only events behind those familiar labels.
 
 **`/read` is gone; `/track` replaces it.** Two moves, one reason each.
@@ -110,8 +110,8 @@ The first thing a person sees after `deck serve`. It answers J1, J2, J4.
 and the depots mounted with their honest on-disk paths. The layout *is* the
 address space, so showing the path is showing the truth, not a debug detail.
 
-**Per depot.** Deck count, version count, store object count and size, history
-history (a Timeline from jj colocated or historyd, or Versions only), and the
+**Per depot.** Deck count, version count, store object count and size, History
+(every-save History from deckd, or Version history only), and the
 most recent seal.
 
 **The river.** `/_live/events` as a stream of change events — deck name,

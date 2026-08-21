@@ -4,7 +4,7 @@
 order lives in [`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md)
 (**How we execute**) and
 [`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md)
-(product spine **1 → 1b → 4c**; Timeline sliced). Deck-side gates:
+(product spine **1 → 1b → 4c**; History sliced). Deck-side gates:
 [`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md).
 
 Companion for *why*: [`deck-boxel-backport-plan.md`](deck-boxel-backport-plan.md).
@@ -115,9 +115,9 @@ the existing suite is the gate.
 **Migration:** a table for Version pointers and Steps. Additive.
 
 **Open policy, not code:** one Version per write, per debounced burst, or per
-explicit checkpoint. Decides storage growth and Timeline readability.
+explicit checkpoint. Decides storage growth and History readability.
 
-**Deck Core supplies:** tree hash, store, pack, the Timeline adapter.
+**Deck Core supplies:** tree hash, store, pack, the History adapter.
 
 ### P3 — serve grammar and cache classes
 
@@ -208,7 +208,7 @@ run outside, on the hosted deck (Release 1b).
 | `boxel-cli/src/lib/checkpoint-manager.ts` | replace git (`rev-parse` `:257`, `show --stat` `:414`, `checkout <hash> -- .` `:454`) with Deck Versions |
 | `boxel-cli/src/commands/realm/sync.ts` | three-way merge; the `--prefer-local` / `--prefer-remote` / `--prefer-newest` strategies at `:588-590` become the *fallback* for genuine conflicts, not the only mechanism |
 | `boxel-cli/src/commands/realm/milestone.ts` | a milestone is a tag |
-| `boxel-cli/src/commands/realm/history.ts` | reads the realm's Timeline instead of git log |
+| `boxel-cli/src/commands/realm/history.ts` | reads the realm's History instead of git log |
 | `boxel-cli/src/lib/find-checkpoint.ts` | resolve by Version or tag |
 
 **Deck Core supplies:** `merge` (pure, already in the browser-safe set).
@@ -244,7 +244,7 @@ belongs in the deck repo.
 
 Normative design: [`deck-github-mirror-analysis.md`](deck-github-mirror-analysis.md)
 — **one GitHub monorepo per depot**, Versions remain in `.deck/store`,
-Timeline optional on `history`, catalog mirrors **read-only**, GitHub PRs
+Every-save History optional on `history`, catalog mirrors **read-only**, GitHub PRs
 only via **intake** (`Base-Version` + `mergeTrees` + publish; no AI).
 Human anytime path keeps legacy **`share` / `gather`** verbs (§5b) but
 not copy-overwrite. Implement export → share → gather before bot intake.
