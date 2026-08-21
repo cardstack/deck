@@ -1,15 +1,35 @@
 # Deck branch and review workflow tour
 
-This is the real workflow used by agents, the CLI, and Deck Hub. The Hub does
-not seed examples or keep parallel state. Every mutable package is implicitly
-a repository, and Hub reads the same refs and immutable objects the CLI writes.
+This is the real workflow used by agents, the CLI, and Deck Hub. The
+collaboration example is not a checked-in protocol snapshot: the launcher asks
+`scripts/replay-collaboration.mjs` to create it through the same commands and
+APIs an agent uses. Hub then reads those refs and immutable objects directly;
+it has no parallel fixture state.
 
 Deck writes only the RRI-native Repository/Checkpoint/Review protocol. CLI
 `--root` / `--member` arguments are local authoring paths; the manifest maps
 them to canonical roots such as `@acme/dashboard/`. URL-form identity,
 Revision, and Pull Request wire objects are not accepted aliases.
 
-## 1. Package first; grouping only when needed
+## 1. Rebuild the worked example from statements
+
+From the Deck checkout:
+
+```sh
+DECK_REPLAY_COLLABORATION=1 ./scripts/run-hub-with-deckd.sh
+```
+
+After deckd is ready, the replay itself takes about two seconds. It creates
+multiple attributed History revisions, a hermetically vendored two-module
+package, three branches, four Checkpoints, merged Review #1, and open
+approved Review #2. It then reads the state back and asserts the RRI lock, old
+History revision, two-parent merge, event chains, and clean three-package
+preview.
+
+The tracked input is under `examples/collaboration/scenario/`; the resulting
+realm under `examples/collaboration/depot/` is ignored generated state.
+
+## 2. Package first; grouping only when needed
 
 No initialization is required to branch an ordinary package. Its
 `publisher/package` name is its repository identity.
@@ -17,7 +37,7 @@ No initialization is required to branch an ordinary package. Its
 This validation case intentionally needs three packages to land atomically,
 so it has the optional monorepo-equivalent grouping:
 
-From the Deck checkout:
+The replay invokes this initialization command internally:
 
 ```sh
 deck repo-init \
@@ -31,12 +51,12 @@ deck repo-init \
   --index <completed-index-generation-hash>
 ```
 
-`repo-init` writes the realm-owned `.deck/repository.json`, captures all three packages and the
-depot import map into CAS, creates an immutable Repository and Checkpoint, then
-creates `main`. Run it only for an atomic multi-package group; this checkout is
-already initialized. A single package never needs this file.
+`repo-init` writes the realm-owned `.deck/repository.json`, captures all three
+packages and the depot import map into CAS, creates an immutable Repository and
+Checkpoint, then creates `main`. Run it only for an atomic multi-package group.
+A single package never needs this file.
 
-## 2. Ask an agent to make a branch
+## 3. Ask an agent to make another branch
 
 The direct command is:
 
@@ -44,7 +64,7 @@ The direct command is:
 deck branch \
   --depot examples/collaboration/depot \
   --repo acme/dashboard \
-  --name ops/delivery-exceptions \
+  --name you/delivery-exceptions \
   --from main
 ```
 
@@ -61,7 +81,7 @@ http://localhost:8788/browse?at=/collaboration/app/dashboard
 The Repository panel lists the new branch immediately. Agent-side CLI changes
 are detected by Hub and sent over its live event stream.
 
-## 3. Change several packages and capture one Checkpoint
+## 4. Change several packages and capture one Checkpoint
 
 Edit any member directories. Then capture them atomically:
 
@@ -69,7 +89,7 @@ Edit any member directories. Then capture them atomically:
 deck checkpoint \
   --depot examples/collaboration/depot \
   --repo acme/dashboard \
-  --branch ops/delivery-exceptions \
+  --branch you/delivery-exceptions \
   --message "Prioritize delayed shipments" \
   --history <deckd-head> \
   --index <completed-index-generation-hash>
@@ -79,17 +99,18 @@ One Checkpoint now points to one Repository containing exact tree hashes for
 every member. Packages remain individually addressable, but the composition
 lands as a unit.
 
-Ordinary saves produce deckd History Steps and advance the branch head without
-this command. `deck checkpoint` deliberately names the current Repository,
-History head, and completed index generation before Review.
+Ordinary saves produce addressable deckd History revisions without requiring a
+Checkpoint. `deck checkpoint` is the deliberate boundary that captures the
+current Repository, History head, and completed index generation on the named
+branch before Review.
 
-## 4. Open a review
+## 5. Open a review
 
 ```sh
 deck review \
   --depot examples/collaboration/depot \
   --repo acme/dashboard \
-  --source ops/delivery-exceptions \
+  --source you/delivery-exceptions \
   --target main \
   --title "Prioritize delayed shipments" \
   --body "Adds risk-ranked exceptions, owner routing, and alert tokens across the dashboard, queue component, and theme."
@@ -99,13 +120,16 @@ Visit [Review](http://localhost:8788/review?repository=acme/dashboard&depot=coll
 The page shows exact package diffs, a runnable projection, Checkpoint history,
 review events, and expandable canonical protocol objects.
 
-## 5. Merge through the same protocol
+The replay owns Review numbers 1 and 2, so this fresh follow-up becomes Review
+#3. Always use the number printed by `deck review` rather than assuming it.
+
+## 6. Merge through the same protocol
 
 ```sh
 deck merge \
   --depot examples/collaboration/depot \
   --repo acme/dashboard \
-  --number 1 \
+  --number 3 \
   --history <post-merge-deckd-head> \
   --index <post-merge-index-generation-hash>
 ```

@@ -425,8 +425,8 @@ name the same Repository hash.
 | Crash recovery across branch + Review refs               | Implemented                                     |
 | Realm-owned `.deck/repository.json` discovery            | Implemented                                     |
 | Agent CLI: init, branch, checkpoint, Review, merge       | Implemented and tested                          |
-| Generic Hub Browse and Review projection                 | Implemented against current objects              |
-| Multi-package validation depot and guided tour           | Implemented                                     |
+| Generic Hub Browse and Review projection                 | Implemented against current objects             |
+| Replay-built multi-package validation realm and tour     | Implemented; current APIs recreate and assert it |
 | Hosted authentication and authorization                  | Not implemented                                 |
 | Signed checks and required-review policy                 | Event shape exists; enforcement not implemented |
 | Realm-local conditional Review numbering/opening         | Implemented and tested                          |

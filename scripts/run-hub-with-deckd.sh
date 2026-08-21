@@ -42,6 +42,12 @@ curl -sf "$DECKD_URL/health" >/dev/null || {
 }
 echo "  deckd healthy"
 
+COLLABORATION_MARKER="$ROOT/examples/collaboration/depot/.deck/scenario-replay-v1.json"
+if [[ "${DECK_REPLAY_COLLABORATION:-0}" == "1" || ! -f "$COLLABORATION_MARKER" ]]; then
+  echo "→ replaying collaboration fixture through current Deck APIs"
+  node "$ROOT/scripts/replay-collaboration.mjs"
+fi
+
 echo "→ Hub on http://127.0.0.1:8788 (DECKD_URL=$DECKD_URL)"
 cd "$ROOT"
 exec env DECKD_URL="$DECKD_URL" DECK_DEMO_HTTP=1 node apps/hub/hub.mjs

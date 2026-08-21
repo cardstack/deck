@@ -165,10 +165,23 @@ export async function createRepositoryService({ depots, log = console.log, onCha
     let rriMembers = {};
     for (let [memberRRI, treeHash] of Object.entries(value.members)) {
       let name = storageName(entry, memberRRI);
-      if (!(await readStoreMeta(entry.depot.storeDir, name))?.versions?.[version]) {
+      let existing = (await readStoreMeta(entry.depot.storeDir, name))?.versions?.[version];
+      if (existing && existing.treeHash !== treeHash) {
+        throw new Error(`Repository projection collision: ${name}@${version}`);
+      }
+      if (!existing) {
         let bytes = await rebuildPack(realmDeckStoreDir(entry.realmDir), treeHash);
         if (!bytes) throw new Error(`missing package tree ${treeHash}`);
-        await publishToStore(entry.depot.storeDir, name, version, bytes);
+        try {
+          await publishToStore(entry.depot.storeDir, name, version, bytes);
+        } catch (error) {
+          // Several branches may point at the same immutable Repository and
+          // project it concurrently. The Version is already the desired fact
+          // when the winning writer stored this exact tree; anything else is
+          // still a real immutable-name collision.
+          existing = (await readStoreMeta(entry.depot.storeDir, name))?.versions?.[version];
+          if (existing?.treeHash !== treeHash) throw error;
+        }
       }
       members[name] = `/${entry.depot.name}/${name}@${version}`;
       rriMembers[memberRRI] = members[name];
