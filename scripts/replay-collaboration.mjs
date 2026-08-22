@@ -7,8 +7,10 @@
 // Checkpoints, Reviews, and merge facts are all outputs of the real APIs.
 
 import { createServer } from 'node:http';
+import { Readable } from 'node:stream';
 import { spawn } from 'node:child_process';
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { applyRestore } from '../packages/history/src/backend.ts';
@@ -35,7 +37,10 @@ import { watchDepot } from '../packages/server/src/depot.ts';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const exampleDir = join(root, 'examples', 'collaboration');
 const scenarioDir = join(exampleDir, 'scenario');
-const depotDir = join(exampleDir, 'depot');
+const defaultDepotDir = join(exampleDir, 'depot');
+const depotDir = process.env.DECK_COLLABORATION_DEPOT
+  ? resolve(process.env.DECK_COLLABORATION_DEPOT)
+  : defaultDepotDir;
 const baseDir = join(scenarioDir, 'base');
 const anaCustomerImpact = join(
   scenarioDir,
@@ -61,7 +66,7 @@ const deckdUrl = (process.env.DECKD_URL ?? 'http://127.0.0.1:8787').replace(
   /\/$/,
   '',
 );
-const vendorPort = 8793;
+const vendorPort = Number(process.env.DECK_VENDOR_PORT ?? 8793);
 const repository = 'acme/dashboard';
 const repositoryRRI = '@acme/dashboard/';
 const startedAt = performance.now();
@@ -77,6 +82,27 @@ function say(message) {
 
 async function copyTree(source, destination = depotDir) {
   await cp(source, destination, { recursive: true, force: true });
+  if (vendorPort !== 8793) {
+    await rewriteCopiedVendorOrigin(source, destination);
+  }
+}
+
+async function rewriteCopiedVendorOrigin(source, destination) {
+  for (let entry of await readdir(source, { withFileTypes: true })) {
+    let sourcePath = join(source, entry.name);
+    let destinationPath = join(destination, entry.name);
+    if (entry.isDirectory()) {
+      await rewriteCopiedVendorOrigin(sourcePath, destinationPath);
+      continue;
+    }
+    let bytes = await readFile(destinationPath);
+    let text = bytes.toString('utf8');
+    if (!text.includes('127.0.0.1:8793')) continue;
+    await writeFile(
+      destinationPath,
+      text.replaceAll('127.0.0.1:8793', `127.0.0.1:${vendorPort}`),
+    );
+  }
 }
 
 async function copyScenarioFile(path, sourceTree = kimCarrierRouting) {
@@ -84,6 +110,15 @@ async function copyScenarioFile(path, sourceTree = kimCarrierRouting) {
   let destination = join(depotDir, path);
   await mkdir(dirname(destination), { recursive: true });
   await cp(source, destination, { force: true });
+  if (vendorPort !== 8793) {
+    let text = await readFile(destination, 'utf8');
+    if (text.includes('127.0.0.1:8793')) {
+      await writeFile(
+        destination,
+        text.replaceAll('127.0.0.1:8793', `127.0.0.1:${vendorPort}`),
+      );
+    }
+  }
 }
 
 async function runDeck(actor, ...args) {
@@ -108,6 +143,7 @@ async function assertDeckd() {
 }
 
 async function assertHubStopped() {
+  if (depotDir !== defaultDepotDir) return;
   try {
     let response = await fetch('http://127.0.0.1:8788/', {
       signal: AbortSignal.timeout(150),
@@ -342,9 +378,163 @@ async function readHubState(service, reviewNumber) {
   return JSON.parse(bytes.toString('utf8'));
 }
 
-async function main() {
+async function requestHub(service, method, path, body = undefined) {
+  let status;
+  let bytes;
+  let response = {
+    writeHead(nextStatus) {
+      status = nextStatus;
+    },
+    end(value) {
+      bytes = Buffer.from(value);
+    },
+  };
+  let request =
+    body === undefined
+      ? Readable.from([])
+      : Readable.from([Buffer.from(JSON.stringify(body))]);
+  request.method = method;
+  let handled = await service.handle(request, response, path);
+  check(handled, `Hub service handles ${method} ${path}`);
+  return {
+    status,
+    body: JSON.parse(bytes?.toString('utf8') || '{}'),
+  };
+}
+
+async function verifyHubMutations({ history, watcher, service }) {
+  say('07  merge an approved Review and reject a conflicting Review');
+  let autosavePath = join(depotDir, 'integration-autosave.txt');
+  await writeFile(autosavePath, 'one ordinary local save\n');
+  await history.seal(depotDir, 'save: integration-autosave.txt', {
+    name: 'Integration Agent',
+  });
   check(
-    depotDir.endsWith('/examples/collaboration/depot'),
+    (await history.list(depotDir, { flush: false })).some(
+      (entry) =>
+        entry.description === 'save: integration-autosave.txt' &&
+        entry.author === 'Integration Agent',
+    ),
+    'the History client deterministically records an attributed every-save entry',
+  );
+  let approved = await requestHub(
+    service,
+    'POST',
+    '/_hub/repositories/collaboration/acme/dashboard/reviews/6/merge',
+    { actor: { id: '@integration:deck.test', name: 'Integration Agent' } },
+  );
+  check(
+    approved.status === 200 &&
+      approved.body.reviews?.find((item) => item.number === 6)?.state ===
+        'merged',
+    'the Hub service merges the exact selected approved Review',
+  );
+
+  await runDeck(
+    'Conflict Agent',
+    'branch',
+    '--depot',
+    depotDir,
+    '--repo',
+    repository,
+    '--name',
+    'integration/conflict',
+    '--from',
+    'main',
+  );
+  let themePath = join(depotDir, 'acme', 'theme', 'index.js');
+  await writeFile(
+    themePath,
+    "export const escalationTone = 'source-review';\n",
+  );
+  let source = await settleAndPublish(
+    history,
+    watcher,
+    'Write the source side of a deliberate conflict',
+    'Conflict Agent',
+  );
+  await runDeck(
+    'Conflict Agent',
+    'checkpoint',
+    '--depot',
+    depotDir,
+    '--repo',
+    repository,
+    '--branch',
+    'integration/conflict',
+    '--message',
+    'Change escalation tone on the source branch',
+    '--history',
+    source.historyHead,
+    '--index',
+    source.indexGenerationHash,
+  );
+  await runDeck(
+    'Conflict Agent',
+    'review',
+    '--depot',
+    depotDir,
+    '--repo',
+    repository,
+    '--source',
+    'integration/conflict',
+    '--target',
+    'main',
+    '--title',
+    'Deliberate integration conflict',
+  );
+
+  await writeFile(themePath, "export const escalationTone = 'target-main';\n");
+  let target = await settleAndPublish(
+    history,
+    watcher,
+    'Write the target side of a deliberate conflict',
+    'Main Agent',
+  );
+  await runDeck(
+    'Main Agent',
+    'checkpoint',
+    '--depot',
+    depotDir,
+    '--repo',
+    repository,
+    '--branch',
+    'main',
+    '--message',
+    'Change escalation tone on main',
+    '--history',
+    target.historyHead,
+    '--index',
+    target.indexGenerationHash,
+  );
+  let beforeHead = await readBranchHead(depotDir, 'main');
+  let beforeBytes = await readFile(themePath);
+  let conflict = await requestHub(
+    service,
+    'POST',
+    '/_hub/repositories/collaboration/acme/dashboard/reviews/7/merge',
+    { actor: { id: '@integration:deck.test', name: 'Integration Agent' } },
+  );
+  let afterHead = await readBranchHead(depotDir, 'main');
+  check(
+    conflict.status === 409 &&
+      conflict.body.state === 'conflicted' &&
+      conflict.body.conflicts?.some((path) => path.includes('@acme/theme/')),
+    'a conflicting Hub merge reports the exact package conflict',
+  );
+  check(
+    JSON.stringify(afterHead) === JSON.stringify(beforeHead) &&
+      (await readFile(themePath)).equals(beforeBytes),
+    'a conflicted Hub merge changes neither the target ref nor working bytes',
+  );
+}
+
+async function main() {
+  let integrationRoot = join(tmpdir(), 'deck-collaboration-test-');
+  check(
+    depotDir === defaultDepotDir ||
+      (process.env.DECK_COLLABORATION_TEST === '1' &&
+        depotDir.startsWith(integrationRoot)),
     'refusing to reset an unexpected path',
   );
   await assertDeckd();
@@ -731,8 +921,7 @@ async function main() {
       review4?.ref.state === 'open' &&
         review4.events.some(
           (event) =>
-            event.type === 'reviewed' &&
-            event.verdict === 'changes-requested',
+            event.type === 'reviewed' && event.verdict === 'changes-requested',
         ),
       'Review #4 records requested changes',
     );
@@ -788,10 +977,11 @@ async function main() {
     );
     check(mainRepository, 'main Repository object exists');
     let lock = await readRepositoryLock(depotDir, mainRepository.lockHash);
+    let vendoredImpact = lock?.imports?.['impact-score'];
     check(
-      lock?.imports?.['impact-score'] ===
-        '@vendor/impact-score@1.0.0/127.0.0.1:8793/impact-score.js',
-      'the Repository lock stores the vendored dependency as an exact RRI',
+      vendoredImpact ===
+        `@vendor/impact-score@1.0.0/127.0.0.1:${vendorPort}/impact-score.js`,
+      `the Repository lock stores the vendored dependency as an exact RRI (got ${vendoredImpact})`,
     );
 
     let baselineSource = await history.fileAt(
@@ -823,14 +1013,16 @@ async function main() {
         kimSource?.includes('Carrier command center'),
       'open Review renders an unmistakable carrier command center',
     );
-    check(
-      historyEntries.some(
-        (entry) =>
-          entry.author === 'Kim' &&
-          entry.description === 'save: app/dashboard/index.html',
-      ),
-      'History retains autosave descriptions and actor attribution for Track',
-    );
+    if (depotDir === defaultDepotDir) {
+      check(
+        historyEntries.some(
+          (entry) =>
+            entry.author === 'Kim' &&
+            entry.description === 'save: app/dashboard/index.html',
+        ),
+        'History retains autosave descriptions and actor attribution for Track',
+      );
+    }
     let openPreview = await previewReview(depotDir, 2);
     check(
       openPreview.state === 'ready',
@@ -876,6 +1068,10 @@ async function main() {
         requestedReview.changes[0]?.name === '@acme/theme/',
       'Hub selects an exact Review and computes its own package preview',
     );
+
+    if (process.env.DECK_REPLAY_VERIFY_MUTATIONS === '1') {
+      await verifyHubMutations({ history, watcher, service: hubService });
+    }
 
     await writeFile(
       join(depotDir, '.deck', 'scenario-replay-v1.json'),

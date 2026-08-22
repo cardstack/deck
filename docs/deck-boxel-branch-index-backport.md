@@ -535,6 +535,21 @@ made branch-aware later without migrating its identity twice.
 | **B6** | Three-way merge through one prepared target write batch, one target Step, and conditional head move                                                                             | Fixture items 7–9 and crash recovery         |
 | **B7** | Quiet branch selector, History context, Review/merge UX                                                                                                                         | UI only exposes already-real state           |
 
+### Deck confidence gate before R0
+
+The Deck source now carries a CI-safe collaboration replay as
+`pnpm test:collaboration`. It uses a disposable realm and private deckd, then
+exercises the public CLI and the real Hub Repository service together. The
+gate covers exact Review selection and projection, an attributed every-save
+History entry, an approved merge, a real three-way package conflict, and the
+conflict/no-write invariant. Focused Core tests separately prove that a
+conflicted Review does not move mutable state and that recovery rejects a
+pending merge after its target branch has moved.
+
+This is the pre-backport evidence for starting R0/A0. The twelve Boxel
+acceptance-fixture cases above still land progressively with B1–B6; the
+browser smoke remains B7 rather than being simulated in Deck.
+
 Likely Boxel seams:
 
 - `packages/runtime-common/realm.ts`: view context, branch-scoped adapter and

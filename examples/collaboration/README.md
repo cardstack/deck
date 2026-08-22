@@ -97,3 +97,25 @@ Review opens as an operational queue: four open Reviews with waiting,
 approved, and changes-requested dispositions, plus merged and closed work in
 the **all** filter. Select rows or use `j`/`k`; `r` runs the selected exact
 Repository and `m` merges it through the real Review endpoint.
+
+## Confidence test
+
+The same replay is also a repeatable integration test:
+
+```sh
+pnpm test:collaboration
+```
+
+It starts a private deckd on an unused port, rebuilds the scenario in a
+disposable realm below the system temporary directory, and removes that realm
+afterward. In addition to the read-side replay assertions, it:
+
+1. records an attributed every-save History entry;
+2. selects an exact Review and projects its exact package Versions;
+3. merges approved Review #6 through the Hub Repository service;
+4. creates independent source and target edits to the same package;
+5. proves the conflicting Review returns `409` and changes neither the target
+   branch head nor the working bytes.
+
+The root `pnpm test` command includes this confidence test. The ordinary demo
+realm and a running Hub are not touched.
