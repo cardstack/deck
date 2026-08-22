@@ -747,7 +747,18 @@ async function siblings(parsed) {
     `<div class="siblings"><b>also on this server</b> ` +
     related
       .map((deck) => {
-        let at = `/${parsed.depot}/${deck.publisher}/${deck.name}`;
+        let fallback =
+          !deck.live &&
+          (deck.distTags?.latest ??
+            Object.keys(deck.versions ?? {})
+              .sort()
+              .at(-1));
+        let at = addressOf({
+          depot: parsed.depot,
+          publisher: deck.publisher,
+          pkg: deck.name,
+          spec: fallback || undefined,
+        });
         let vs = addressOf({ ...parsed, path: undefined });
         return (
           `<a href="?at=${esc(at)}&vs=${esc(vs)}" data-at="${esc(at)}" data-vs="${esc(vs)}" ` +
@@ -1071,6 +1082,37 @@ const metaOf = (target) => {
     .then((body) => body.data?.attributes)
     .catch(() => undefined);
 };
+
+/**
+ * Resolve a version-less comparison target only when it has no live tree.
+ *
+ * A bare package address means live. Some packages are store-only, however,
+ * so there are no live bytes to compare. In that case the exact latest
+ * Version is the honest, addressable comparison target. Packages that do
+ * have a working tree remain live so unpublished edits stay visible.
+ */
+async function comparableTarget(target) {
+  if (
+    !target?.publisher ||
+    !target?.pkg ||
+    target.seal ||
+    target.spec
+  ) {
+    return target;
+  }
+  let meta = await getJson(
+    `/_packages/${target.depot}/${target.publisher}/${target.pkg}`,
+  )
+    .then((body) => body.data?.attributes)
+    .catch(() => undefined);
+  if (!meta || meta.live) return target;
+  let fallback =
+    meta.distTags?.latest ??
+    Object.keys(meta.versions ?? {})
+      .sort()
+      .at(-1);
+  return fallback ? { ...target, spec: fallback } : target;
+}
 
 const labelOf = (target) =>
   target.seal
@@ -1873,6 +1915,16 @@ async function viewAddress(input, vs) {
         .at(-1);
     if (fallback) parsed = { ...input, spec: fallback };
   }
+  let resolvedVs = vs;
+  if (vs.startsWith('/')) {
+    let target = await comparableTarget(parseAddress(vs));
+    resolvedVs = addressOf(target);
+    if (resolvedVs !== vs) {
+      let query = params();
+      query.set('vs', resolvedVs);
+      history.replaceState({}, '', `?${decodeURIComponent(query.toString())}`);
+    }
+  }
   let at = addressOf(parsed);
   let { data } = await getJson(`/_browse${at}`);
   let attrs = data.attributes;
@@ -1884,7 +1936,7 @@ async function viewAddress(input, vs) {
     `<main>${repositoryPanel(parsed, meta, repository)}<div class="facts" data-tour="facts">` +
     (meta
       ? volatility(parsed, meta, seals, repository?.state) +
-        compare(parsed, meta, seals, vs, repository?.state)
+        compare(parsed, meta, seals, resolvedVs, repository?.state)
       : '') +
     hash(attrs.treeHash) +
     (attrs.size !== undefined
@@ -1894,8 +1946,8 @@ async function viewAddress(input, vs) {
     `</div>`;
 
   // ── file, compared ──────────────────────────────────────────────────────
-  if (data.type === 'file' && vs) {
-    let target = otherSide(parsed, vs);
+  if (data.type === 'file' && resolvedVs) {
+    let target = otherSide(parsed, resolvedVs);
     let other = target.seal
       ? await fetch(addressOf(target))
           .then((response) =>
@@ -1951,8 +2003,8 @@ async function viewAddress(input, vs) {
   }
 
   // ── deck, compared ──────────────────────────────────────────────────────
-  if (vs && parsed.pkg && !parsed.path) {
-    let target = otherSide(parsed, vs);
+  if (resolvedVs && parsed.pkg && !parsed.path) {
+    let target = otherSide(parsed, resolvedVs);
     // Keep live as live. Substituting `latest` here used to hide unpublished
     // edits and, when there was no `latest`, produced the bogus "no manifest
     // for @live" note even though the digests were one ?meta away.
@@ -1970,7 +2022,14 @@ async function viewAddress(input, vs) {
     }
     return (
       head +
-      treeDiffView(parsed, vs, left, right, labelOf(target), labelOf(here)) +
+      treeDiffView(
+        parsed,
+        resolvedVs,
+        left,
+        right,
+        labelOf(target),
+        labelOf(here),
+      ) +
       `</main>`
     );
   }
