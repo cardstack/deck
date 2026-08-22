@@ -66,15 +66,20 @@ let deckdPort = await freePort();
 let vendorPort = await freePort();
 let deckdUrl = `http://127.0.0.1:${deckdPort}`;
 let output = [];
-let deckd = spawn('cargo', ['run', '--quiet'], {
-  cwd: join(root, 'packages', 'deckd'),
-  env: {
-    ...process.env,
-    DECKD_BIND: `127.0.0.1:${deckdPort}`,
-    RUST_LOG: 'deckd=warn',
+let deckdBinary = process.env.DECKD_BIN;
+let deckd = spawn(
+  deckdBinary ? resolve(root, deckdBinary) : 'cargo',
+  deckdBinary ? [] : ['run', '--quiet', '--locked'],
+  {
+    cwd: deckdBinary ? root : join(root, 'packages', 'deckd'),
+    env: {
+      ...process.env,
+      DECKD_BIND: `127.0.0.1:${deckdPort}`,
+      RUST_LOG: 'deckd=warn',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
   },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
+);
 deckd.stdout.on('data', (chunk) => output.push(chunk.toString()));
 deckd.stderr.on('data', (chunk) => output.push(chunk.toString()));
 

@@ -55,9 +55,17 @@ jobs:
         run: rustc --version && cargo --version
       - name: Build deckd
         run: cargo build --locked --manifest-path packages/deckd/Cargo.toml
+      - name: Preserve deckd for collaboration replay
+        uses: actions/upload-artifact@v4
+        with:
+          name: deckd-linux
+          path: packages/deckd/target/debug/deckd
+          if-no-files-found: error
+          retention-days: 1
 
   collaboration:
     name: Collaboration replay
+    needs: deckd-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -67,4 +75,13 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:collaboration
+      - uses: actions/download-artifact@v4
+        with:
+          name: deckd-linux
+          path: .ci/deckd
+      - name: Replay collaboration through the built deckd
+        env:
+          DECKD_BIN: .ci/deckd/deckd
+        run: |
+          chmod +x "$DECKD_BIN"
+          pnpm test:collaboration
