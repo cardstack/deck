@@ -11,9 +11,9 @@ Companions:
 - [`deck-daemon.md`](deck-daemon.md) — deckd and jj-backed History;
 - [`deck-collaboration-protocol.md`](deck-collaboration-protocol.md) —
   Repository, Checkpoint, branch, Review, and merge objects;
-- [`deck-boxel-branch-index-backport.md`](deck-boxel-branch-index-backport.md)
+- [`deck-boxel-branch-index-backport.md`](./plans/deck-boxel-branch-index-backport.md)
   — Boxel branch and index integration;
-- [`deck-boxel-host-publish-treehash.md`](deck-boxel-host-publish-treehash.md)
+- [`deck-boxel-host-publish-treehash.md`](./plans/deck-boxel-host-publish-treehash.md)
   — immutable release delivery.
 
 ---

@@ -1,8 +1,8 @@
 # Proposal: isolate Deck Core (backportable) from Tools
 
 **Status: PROPOSAL** (2026-08-09). Companion to
-[`deck-depot-and-realm-backport.md`](deck-depot-and-realm-backport.md),
-[`deck-laws.md`](deck-laws.md), [`deck-at-rest.md`](deck-at-rest.md).
+[`deck-depot-and-realm-backport.md`](../deck-depot-and-realm-backport.md),
+[`deck-laws.md`](../deck-laws.md), [`deck-at-rest.md`](../deck-at-rest.md).
 
 ---
 

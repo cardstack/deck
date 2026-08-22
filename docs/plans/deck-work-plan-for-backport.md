@@ -8,10 +8,10 @@ close **here** so Boxel PRs stay wiring. Paired with:
 
 | Doc                                                                                    | Role                                              |
 | -------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| [`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md)                   | Campaign order, tracks, program gates             |
-| [`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md) | Boxel stacked PRs (product spine **1 → 1b → 4c**) |
+| [`deck-boxel-backport-for-team.md`](./deck-boxel-backport-for-team.md)                   | Campaign order, tracks, program gates             |
+| [`deck-boxel-backport-changelist-mockup.md`](./deck-boxel-backport-changelist-mockup.md) | Boxel stacked PRs (product spine **1 → 1b → 4c**) |
 
-Appendix: [`deck-boxel-monorepo-change-register.md`](deck-boxel-monorepo-change-register.md)
+Appendix: [`deck-boxel-monorepo-change-register.md`](./deck-boxel-monorepo-change-register.md)
 (file-level Boxel touch list).
 
 **Gate to Boxel A0:** W1–W10 and lean Core are done; **W11 is now required and
@@ -226,7 +226,7 @@ negative-tested. Full suite **374 pass / 0 fail** against a 373 baseline —
 the extra test is a new one, see below.
 
 Two findings the move surfaced, both written up in
-[`deck-boxel-backport-plan.md`](deck-boxel-backport-plan.md) §7.6:
+[`deck-boxel-backport-plan.md`](./deck-boxel-backport-plan.md) §7.6:
 
 - **`walkSourceGraph` was in the wrong package.** Conformance calls it to
   check L6 — "a sealed deck resolves everything it contains" — and it knows
@@ -347,7 +347,7 @@ assuming it.
 
 **So the ceiling is the writer, not the identity** — an implementation limit,
 not a protocol one, and raising it touches no law. Two caveats recorded in
-[`deck-realm-download-as-pack.md`](deck-realm-download-as-pack.md) §8a:
+[`deck-realm-download-as-pack.md`](../deck-realm-download-as-pack.md) §8a:
 streaming reads sizes from the LOCAL header, which only a canonical pack
 guarantees, so foreign zips still need the buffered path; and `pack()` itself
 still materialises everything to deflate it (44 s, >1 GB peak at the cap).
@@ -414,7 +414,7 @@ precisely what this gate rejects.
 W11 does not implement AWS. It makes the bytes, relative realm paths, and
 storage interfaces backend-neutral. Boxel B1 then proves the same contract on
 the local filesystem and on S3 Files plus direct conditional S3 writes as
-specified in [`deck-storage-backends.md`](deck-storage-backends.md).
+specified in [`deck-storage-backends.md`](../deck-storage-backends.md).
 
 ---
 

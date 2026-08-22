@@ -4,13 +4,13 @@
 Deck branches. It refines the History backport plan; it does not introduce a
 second repository protocol.
 
-Companions: [`deck-collaboration-protocol.md`](deck-collaboration-protocol.md),
-[`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md), and
-[`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md).
+Companions: [`deck-collaboration-protocol.md`](../deck-collaboration-protocol.md),
+[`deck-boxel-backport-for-team.md`](./deck-boxel-backport-for-team.md), and
+[`deck-boxel-backport-changelist-mockup.md`](./deck-boxel-backport-changelist-mockup.md).
 Local filesystem and hosted AWS persistence are binding in
-[`deck-storage-backends.md`](deck-storage-backends.md).
+[`deck-storage-backends.md`](../deck-storage-backends.md).
 Host-mode publication and browser delivery are specialized in
-[`deck-boxel-host-publish-treehash.md`](deck-boxel-host-publish-treehash.md).
+[`deck-boxel-host-publish-treehash.md`](./deck-boxel-host-publish-treehash.md).
 
 ---
 

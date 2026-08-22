@@ -4,10 +4,10 @@
 multi-branch Realm backport for Boxel's published host mode.
 
 Companions:
-[`deck-boxel-branch-index-backport.md`](deck-boxel-branch-index-backport.md),
-[`deck-storage-backends.md`](deck-storage-backends.md),
-[`deck-laws.md`](deck-laws.md), and
-[`deck-tree-hash-v2-review.md`](deck-tree-hash-v2-review.md).
+[`deck-boxel-branch-index-backport.md`](./deck-boxel-branch-index-backport.md),
+[`deck-storage-backends.md`](../deck-storage-backends.md),
+[`deck-laws.md`](../deck-laws.md), and
+[`deck-tree-hash-v2-review.md`](../deck-tree-hash-v2-review.md).
 
 ---
 

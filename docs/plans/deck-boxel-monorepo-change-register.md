@@ -1,17 +1,17 @@
 # Monorepo change register — what Boxel must change, per benefit
 
 **Status: REGISTER** (2026-08-09) — **appendix** (file-level *what*). Execution
-order lives in [`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md)
+order lives in [`deck-boxel-backport-for-team.md`](./deck-boxel-backport-for-team.md)
 (**How we execute**) and
-[`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md)
+[`deck-boxel-backport-changelist-mockup.md`](./deck-boxel-backport-changelist-mockup.md)
 (product spine **1 → 1b → 4c**; History sliced). Deck-side gates:
-[`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md).
+[`deck-work-plan-for-backport.md`](./deck-work-plan-for-backport.md).
 
-Companion for *why*: [`deck-boxel-backport-plan.md`](deck-boxel-backport-plan.md).
-Also see [`deck-core-backport-split.md`](deck-core-backport-split.md),
-[`deck-publish-as-a-pointer.md`](deck-publish-as-a-pointer.md),
-[`deck-realm-download-as-pack.md`](deck-realm-download-as-pack.md),
-[`deck-catalog-cdn-delivery.md`](deck-catalog-cdn-delivery.md).
+Companion for *why*: [`deck-boxel-backport-plan.md`](./deck-boxel-backport-plan.md).
+Also see [`deck-core-backport-split.md`](./deck-core-backport-split.md),
+[`deck-publish-as-a-pointer.md`](../deck-publish-as-a-pointer.md),
+[`deck-realm-download-as-pack.md`](../deck-realm-download-as-pack.md),
+[`deck-catalog-cdn-delivery.md`](../deck-catalog-cdn-delivery.md).
 
 ---
 
@@ -242,7 +242,7 @@ belongs in the deck repo.
 
 ### K6 — Catalog authoritative, GitHub a read-only mirror
 
-Normative design: [`deck-github-mirror-analysis.md`](deck-github-mirror-analysis.md)
+Normative design: [`deck-github-mirror-analysis.md`](../deck-github-mirror-analysis.md)
 — **one GitHub monorepo per depot**, Versions remain in `.deck/store`,
 Every-save History optional on `history`, catalog mirrors **read-only**, GitHub PRs
 only via **intake** (`Base-Version` + `mergeTrees` + publish; no AI).
@@ -267,8 +267,8 @@ Making submission inter-realm means replacing `prCard` with a realm-native
 proposal that reads Deck data, not deleting the workflow.
 
 Normative cross-realm carriage (offers / rebase between deck-enabled
-realms): [`deck-depot-and-realm-backport.md`](deck-depot-and-realm-backport.md)
-§3.3 and [`deck-in-motion.md`](deck-in-motion.md) §3.7 — (1) public realm
+realms): [`deck-depot-and-realm-backport.md`](../deck-depot-and-realm-backport.md)
+§3.3 and [`deck-in-motion.md`](../deck-in-motion.md) §3.7 — (1) public realm
 readable by both sides, (2) out-of-band **Matrix** identity + room +
 message of intent, (3) Deck Pack attachment when the tip cannot be public.
 Realm ACL gates who may issue an offer and who may rebase/accept. GitHub

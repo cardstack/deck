@@ -38,7 +38,7 @@ Companions: [`deck-laws.md`](deck-laws.md),
 [`deck-fork-merge-pr-ux.md`](deck-fork-merge-pr-ux.md). The Boxel mapping—one
 realm with multiple branch-specific source states, indexes, and Histories—is
 specified in
-[`deck-boxel-branch-index-backport.md`](deck-boxel-branch-index-backport.md).
+[`deck-boxel-branch-index-backport.md`](./plans/deck-boxel-branch-index-backport.md).
 
 ---
 

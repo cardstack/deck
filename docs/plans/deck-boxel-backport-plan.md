@@ -2,9 +2,9 @@
 
 **Status: ANALYSIS + PROPOSED PHASING** (2026-08-09).
 
-Companions: [`deck-core-backport-split.md`](deck-core-backport-split.md) (what
-Boxel vendors), [`deck-depot-and-realm-backport.md`](deck-depot-and-realm-backport.md)
-(depot vs realm vocabulary), [`deck-laws.md`](deck-laws.md).
+Companions: [`deck-core-backport-split.md`](./deck-core-backport-split.md) (what
+Boxel vendors), [`deck-depot-and-realm-backport.md`](../deck-depot-and-realm-backport.md)
+(depot vs realm vocabulary), [`deck-laws.md`](../deck-laws.md).
 
 This note answers one question: **for each contribution Deck makes to Boxel,
 which monorepo subsystem has to change, how much, and in what order.**

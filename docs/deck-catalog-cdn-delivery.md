@@ -4,7 +4,7 @@
 [`deck-efficient-delivery-spec.md`](deck-efficient-delivery-spec.md) (minify
 variants, wire compression, modulepreload over H2/H3),
 [`deck-unpkg-comparison.md`](deck-unpkg-comparison.md),
-[`deck-boxel-backport-plan.md`](deck-boxel-backport-plan.md) (K2, K5, K8, K9).
+[`deck-boxel-backport-plan.md`](./plans/deck-boxel-backport-plan.md) (K2, K5, K8, K9).
 
 ---
 

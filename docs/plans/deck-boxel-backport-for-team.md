@@ -10,23 +10,23 @@ Internal numbering from our planning docs is kept in parentheses so you can matc
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **K1–K14**    | The fourteen product benefits we want from Deck in Boxel                                                                                                              |
 | **P1–P4**     | Four technical prerequisites that unlock most of those benefits                                                                                                       |
-| **PR 0–14**   | The older product-benefit stack in [`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md). Kept stable for existing cross-references. |
+| **PR 0–14**   | The older product-benefit stack in [`deck-boxel-backport-changelist-mockup.md`](./deck-boxel-backport-changelist-mockup.md). Kept stable for existing cross-references. |
 | **R0**        | Deck-side V2 gate (W11): RRI Repository/lock, Checkpoint, branch head, Review, realm-relative `.deck` paths, transport projector, compatibility reads.                |
 | **A0–A3**     | The first clean execution stack: current Lean Core, resolver/scopes, versioned serve, thin verbs.                                                                     |
-| **B0–B7**     | The branch/index/History/Review/merge substrate slices in [`deck-boxel-branch-index-backport.md`](deck-boxel-branch-index-backport.md).                               |
+| **B0–B7**     | The branch/index/History/Review/merge substrate slices in [`deck-boxel-branch-index-backport.md`](./deck-boxel-branch-index-backport.md).                               |
 | **Deck Core** | Protocol library: identity, packs, store, merge, serve grammar, optional timeline — not the Deck Hub app                                                              |
 
 **Two living docs for execution** (everything else is appendix):
 
 | Where          | Doc                                                                                    | Role                                                     |
 | -------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| **Deck repo**  | [`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md)                     | Protocol questions closed _here_ so Boxel PRs are wiring |
-| **Boxel work** | [`deck-boxel-backport-changelist-mockup.md`](deck-boxel-backport-changelist-mockup.md) | Stacked PRs, blast radius, agent prompts                 |
+| **Deck repo**  | [`deck-work-plan-for-backport.md`](./deck-work-plan-for-backport.md)                     | Protocol questions closed _here_ so Boxel PRs are wiring |
+| **Boxel work** | [`deck-boxel-backport-changelist-mockup.md`](./deck-boxel-backport-changelist-mockup.md) | Stacked PRs, blast radius, agent prompts                 |
 
-Appendix (why / deep dives): `deck-boxel-monorepo-change-register.md`, `deck-boxel-backport-plan.md`, `deck-depot-and-realm-backport.md`, [`deck-boxel-branch-index-backport.md`](deck-boxel-branch-index-backport.md) (one realm, multiple branch indexes), [`deck-storage-backends.md`](deck-storage-backends.md) (realm-contained Desktop + AWS storage), `deck-core-backport-split.md`, [`deck-daemon.md`](deck-daemon.md) (deckd / `.deck`-only History + build). Sample decklist + `.gts` under `docs/artifacts/`.
+Appendix (why / deep dives): `deck-boxel-monorepo-change-register.md`, `deck-boxel-backport-plan.md`, `deck-depot-and-realm-backport.md`, [`deck-boxel-branch-index-backport.md`](./deck-boxel-branch-index-backport.md) (one realm, multiple branch indexes), [`deck-storage-backends.md`](../deck-storage-backends.md) (realm-contained Desktop + AWS storage), `deck-core-backport-split.md`, [`deck-daemon.md`](../deck-daemon.md) (deckd / `.deck`-only History + build). Sample decklist + `.gts` under `docs/artifacts/`.
 
 Published host-mode fast path and immutable browser caching:
-[`deck-boxel-host-publish-treehash.md`](deck-boxel-host-publish-treehash.md).
+[`deck-boxel-host-publish-treehash.md`](./deck-boxel-host-publish-treehash.md).
 
 ---
 
@@ -49,7 +49,7 @@ The K1–K14 table is the destination. The **campaign** is shorter and stricter:
 | **A — Map**      | Resolver, decklist, thin verbs, LibSpec fixtures                                                      | Matrix, packs polish                                                       |
 | **B — Tape**     | History / Steps / Versions, restore, CLI merge                                                        | Catalog CDN                                                                |
 | **C — Carriage** | Classifier wiring, packs, GitHub share/gather interim                                                 | Base realm                                                                 |
-| **D — Build**    | **deckd**: History under `.deck` only; esbuild/AMD derived plane ([`deck-daemon.md`](deck-daemon.md)) | D0–D1 are required for per-branch History; only the D2 build plane may lag |
+| **D — Build**    | **deckd**: History under `.deck` only; esbuild/AMD derived plane ([`deck-daemon.md`](../deck-daemon.md)) | D0–D1 are required for per-branch History; only the D2 build plane may lag |
 
 5. **Program gates** (falsifiable — not fourteen local Done whens):
    - Monorepo PRs are wiring, not design debates.
@@ -70,7 +70,7 @@ The K1–K14 table is the destination. The **campaign** is shorter and stricter:
 
 The Q1–Q11 execution decisions, including RRI identity, URL grammar, and index cloning, are
 closed in
-[`deck-boxel-branch-index-backport.md`](deck-boxel-branch-index-backport.md#01-execution-decisions).
+[`deck-boxel-branch-index-backport.md`](./deck-boxel-branch-index-backport.md#01-execution-decisions).
 
 ### Latest-main cut plan
 
@@ -277,7 +277,7 @@ order** — not “list every K benefit once.”
 
 Before PR 0: `extends`, classifier, provenance, bare/hermetic,
 lean Core, foreign `deck conform`, scopes proof — see
-[`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md). If a
+[`deck-work-plan-for-backport.md`](./deck-work-plan-for-backport.md). If a
 Boxel PR needs a design debate, the work returns here.
 
 ---

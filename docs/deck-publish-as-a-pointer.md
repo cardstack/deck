@@ -4,7 +4,7 @@
 [`deck-catalog-cdn-delivery.md`](deck-catalog-cdn-delivery.md) (remix as a
 map, copy-on-write), [`deck-realm-download-as-pack.md`](deck-realm-download-as-pack.md)
 (re-homing and the absolute-reference classification),
-[`deck-boxel-backport-plan.md`](deck-boxel-backport-plan.md) (K1, K2, K8).
+[`deck-boxel-backport-plan.md`](./plans/deck-boxel-backport-plan.md) (K1, K2, K8).
 
 ---
 

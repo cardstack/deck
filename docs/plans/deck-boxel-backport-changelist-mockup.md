@@ -1,13 +1,13 @@
 # Bringing Deck into Boxel — proposed PR series
 
 **Living doc for Boxel wiring** (paired with
-[`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md) in the Deck
+[`deck-work-plan-for-backport.md`](./deck-work-plan-for-backport.md) in the Deck
 repo — protocol questions close there first). Product context:
-[`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md)
+[`deck-boxel-backport-for-team.md`](./deck-boxel-backport-for-team.md)
 (**How we execute**, **An app is a decklist**). Multi-branch substrate:
-[`deck-boxel-branch-index-backport.md`](deck-boxel-branch-index-backport.md).
+[`deck-boxel-branch-index-backport.md`](./deck-boxel-branch-index-backport.md).
 Binding local/AWS storage contract:
-[`deck-storage-backends.md`](deck-storage-backends.md).
+[`deck-storage-backends.md`](../deck-storage-backends.md).
 
 This is a story of the work, told as stacked pull requests. It was written
 after walking today’s Boxel tree (`runtime-common`, `realm-server`, `host`)
@@ -55,9 +55,9 @@ adds one target Step; it does not replay the source branch's Steps.
 
 Sample artifacts you can open beside this doc:
 
-- [`artifacts/backport-remix-decklist.json`](artifacts/backport-remix-decklist.json) — **what to ship**: canonical RRI pins, RRI scopes, `extends`
-- [`artifacts/backport-remix-decklist-browser.json`](artifacts/backport-remix-decklist-browser.json) — derived absolute browser projection; never authored or merged
-- [`artifacts/backport-gallery-scene.gts`](artifacts/backport-gallery-scene.gts) — a gallery card on the newer `three`
+- [`artifacts/backport-remix-decklist.json`](../artifacts/backport-remix-decklist.json) — **what to ship**: canonical RRI pins, RRI scopes, `extends`
+- [`artifacts/backport-remix-decklist-browser.json`](../artifacts/backport-remix-decklist-browser.json) — derived absolute browser projection; never authored or merged
+- [`artifacts/backport-gallery-scene.gts`](../artifacts/backport-gallery-scene.gts) — a gallery card on the newer `three`
 
 ---
 
@@ -203,7 +203,7 @@ the stale `deck/at-rest-poc` vendor tree, is A0's source.
 **Why.** Boxel should not reimplement tree identity, three-way merge, or pack
 format inside `runtime-common`. Those algorithms already exist — and the
 **decisions** around them are closed in
-[`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md). This PR
+[`deck-work-plan-for-backport.md`](./deck-work-plan-for-backport.md). This PR
 only makes a **lean** Core importable: browser-safe entry for the host and a
 Node entry for the realm server. No Hub, demos, teaching CLI, npm vendor
 pipeline, minify derive, or rebase-daemon.
@@ -1654,7 +1654,7 @@ packages/realm-server (only if a GET is missing)      +50 / -0
    involved) so the agent optimizes for the user-visible outcome.
 5. Point at `docs/artifacts/` when implementing PR 1 / 1b.
 6. If the task needs a protocol design debate, stop and open the Deck
-   [`deck-work-plan-for-backport.md`](deck-work-plan-for-backport.md) — do
+   [`deck-work-plan-for-backport.md`](./deck-work-plan-for-backport.md) — do
    not invent answers in the Boxel PR.
 7. Prove **Done when** (and program gates: wiring-only, import not fork,
    author remix-without-copy) before the next commit.

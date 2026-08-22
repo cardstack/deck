@@ -11,7 +11,7 @@ Companions: [`deck-at-rest.md`](deck-at-rest.md) (layout),
 [`deck-laws.md`](deck-laws.md) (L12 surface),
 [`deck-efficient-delivery-spec.md`](deck-efficient-delivery-spec.md) (A2 minify),
 [`deck-embroider-lessons.md`](deck-embroider-lessons.md) (pain at seal time),
-[`deck-boxel-backport-for-team.md`](deck-boxel-backport-for-team.md) (campaign).
+[`deck-boxel-backport-for-team.md`](./plans/deck-boxel-backport-for-team.md) (campaign).
 
 jj-lib source used for spikes / dependency work:
 `/Users/chris/Projects/jj` (upstream [`jj-vcs/jj`](https://github.com/jj-vcs/jj)
