@@ -11,7 +11,7 @@
 //
 // FOUR KINDS OF ADDRESS, one control.
 // ═══════════════════════════════════
-// L5 says a deck has three kinds of address. A depot with a Timeline has
+// L5 says a deck has three kinds of address. A depot with every-save History has
 // a fourth, and it is the one that matters most:
 //
 //   live      /<depot>/<pub>/<pkg>/<path>                every save, no-store
@@ -26,6 +26,7 @@
 // because choosing between them is the same act.
 import 'ui/nav';
 import { installNavStyles, onLiveChange, wrapTables } from 'ui/nav';
+import { resumeHubTour } from 'ui/tour';
 import {
   activityCell,
   activityScale,
@@ -37,11 +38,11 @@ import {
 import {
   attachScrub,
   foldBursts,
-  installTimelineStyles,
+  installHistoryStyles,
   stepBy,
   stepsFor,
-  timelineHtml,
-} from 'ui/timeline';
+  historyHtml,
+} from 'ui/history';
 import { diffLines, diffWordsWithSpace, structuredPatch } from 'diff';
 import hljs from 'highlight-js';
 import {
@@ -55,9 +56,10 @@ import { storeReactivityBindings } from '@tanstack/table-core/dist/store-reactiv
 
 installNavStyles();
 installActivityStyles();
-installTimelineStyles();
+installHistoryStyles();
 
 const app = document.getElementById('app');
+let repositoryMutationBusy = false;
 const keys = document.querySelector('deck-keys');
 const subject = document.querySelector('deck-subject');
 
@@ -81,17 +83,45 @@ const esc = (value) =>
 // the Hub is allowed to understand.
 // ---------------------------------------------------------------------------
 
+/** The compiled lock. Lives at the depot root, not inside a package. */
+const DEPOT_LOCK = 'importmap.json';
+
 const LANGUAGE = {
-  mjs: 'javascript', cjs: 'javascript', js: 'javascript', jsx: 'javascript',
-  ts: 'typescript', tsx: 'typescript', mts: 'typescript',
-  htm: 'xml', html: 'xml', svg: 'xml', vue: 'xml',
-  md: 'markdown', markdown: 'markdown',
-  yml: 'yaml', toml: 'ini', cfg: 'ini',
-  sh: 'bash', zsh: 'bash', bash: 'bash',
-  py: 'python', rb: 'ruby', rs: 'rust', kt: 'kotlin', gradle: 'groovy',
-  h: 'c', hpp: 'cpp', cc: 'cpp', mm: 'objectivec',
-  frag: 'glsl', vert: 'glsl', glsl: 'glsl',
-  gts: 'typescript', gjs: 'javascript', hbs: 'handlebars',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  js: 'javascript',
+  jsx: 'javascript',
+  json: 'json',
+  ts: 'typescript',
+  tsx: 'typescript',
+  mts: 'typescript',
+  htm: 'xml',
+  html: 'xml',
+  svg: 'xml',
+  vue: 'xml',
+  md: 'markdown',
+  markdown: 'markdown',
+  yml: 'yaml',
+  toml: 'ini',
+  cfg: 'ini',
+  sh: 'bash',
+  zsh: 'bash',
+  bash: 'bash',
+  py: 'python',
+  rb: 'ruby',
+  rs: 'rust',
+  kt: 'kotlin',
+  gradle: 'groovy',
+  h: 'c',
+  hpp: 'cpp',
+  cc: 'cpp',
+  mm: 'objectivec',
+  frag: 'glsl',
+  vert: 'glsl',
+  glsl: 'glsl',
+  gts: 'typescript',
+  gjs: 'javascript',
+  hbs: 'handlebars',
 };
 
 const loaded = new Map();
@@ -179,6 +209,10 @@ function parseAddress(at) {
     let [rev, ...tail] = rest;
     return { depot, seal: rev || true, path: tail.join('/') || undefined };
   }
+  // `/<depot>/importmap.json` is the lock, not a publisher named that.
+  if (second === DEPOT_LOCK && rest.length === 0) {
+    return { depot, path: DEPOT_LOCK };
+  }
   let [pkgAndSpec, ...tail] = rest;
   let out = { depot, publisher: second };
   if (pkgAndSpec) {
@@ -211,11 +245,14 @@ function addressOf({ depot, publisher, pkg, spec, path, seal }) {
  */
 function addressHtml(parsed) {
   let out = [];
-  if (parsed.depot) out.push(`<span class="s-depot">${esc(parsed.depot)}</span>`);
+  if (parsed.depot)
+    out.push(`<span class="s-depot">${esc(parsed.depot)}</span>`);
   if (parsed.seal) {
     out.push(`<span class="s-seal">${HISTORY}</span>`);
     if (parsed.seal !== true) {
-      out.push(`<span class="s-seal">${esc(String(parsed.seal).slice(0, 12))}</span>`);
+      out.push(
+        `<span class="s-seal">${esc(String(parsed.seal).slice(0, 12))}</span>`,
+      );
     }
   } else {
     if (parsed.publisher)
@@ -229,8 +266,7 @@ function addressHtml(parsed) {
       );
     }
   }
-  if (parsed.path)
-    out.push(`<span class="s-path">${esc(parsed.path)}</span>`);
+  if (parsed.path) out.push(`<span class="s-path">${esc(parsed.path)}</span>`);
   return out.join('<span class="sep">/</span>');
 }
 
@@ -255,7 +291,11 @@ function go(at, vs = currentVs(), replace = false) {
 // must not look alike (UI spec §12). An invalid spec can never resolve — no
 // future publish can rescue it — while a legal tag nobody has published yet is
 // a question of time.
-const PERMANENT = new Set(['invalid-version-spec', 'invalid-revision', 'not-found']);
+const PERMANENT = new Set([
+  'invalid-version-spec',
+  'invalid-revision',
+  'not-found',
+]);
 
 async function getJson(url) {
   let response = await fetch(url, { headers: { accept: 'application/json' } });
@@ -289,7 +329,7 @@ async function sealsOf(depot) {
 }
 
 // ---------------------------------------------------------------------------
-// The Timeline, in the reading lens
+// The History, in the reading lens
 //
 // /run has the same scrubber and scopes it differently, and the difference is
 // the whole reason both exist.
@@ -334,8 +374,12 @@ function atStep(parsed, changeId) {
   let within = scopeOf(parsed);
   if (!changeId) {
     // Back to live. A path under `_history` is depot-relative, so its first
-    // two segments are the publisher and package it lives in.
+    // two segments are the publisher and package it lives in — except the
+    // depot lock, which is one file at the root.
     if (!parsed.seal) return addressOf({ ...parsed, spec: undefined });
+    if (within === DEPOT_LOCK) {
+      return addressOf({ depot: parsed.depot, path: DEPOT_LOCK });
+    }
     let [publisher, pkg, ...rest] = within.split('/').filter(Boolean);
     return addressOf({
       depot: parsed.depot,
@@ -347,8 +391,8 @@ function atStep(parsed, changeId) {
   return `/${[parsed.depot, HISTORY, changeId, within].filter(Boolean).join('/')}`;
 }
 
-/** The Timeline the last render drew, so the keys agree with what is on screen. */
-let lastTimeline = [];
+/** The History the last render drew, so the keys agree with what is on screen. */
+let lastHistory = [];
 
 /**
  * The scrubber, or nothing at all.
@@ -357,13 +401,15 @@ let lastTimeline = [];
  * history, and a tape with no steps on it is furniture), and nothing on the
  * depot list, which is not an address in time.
  */
-async function timelineBar(parsed) {
+async function historyBar(parsed) {
   if (!parsed.depot) return '';
   let scope = scopeOf(parsed);
-  let steps = foldBursts(stepsFor(await sealsOf(parsed.depot), scope ? [scope] : []));
-  lastTimeline = steps;
+  let steps = foldBursts(
+    stepsFor(await sealsOf(parsed.depot), scope ? [scope] : []),
+  );
+  lastHistory = steps;
   if (!steps.length) return '';
-  return timelineHtml({
+  return historyHtml({
     steps,
     current: parsed.seal && parsed.seal !== true ? String(parsed.seal) : '',
     // Not "undo". /run frames a running app, where stepping back IS the undo
@@ -444,7 +490,8 @@ function crumbs(parsed) {
  * that is not a rearrangement — it is the wrong answer.
  */
 function byVersionDesc(a, b) {
-  let parts = (value) => value.split(/[.\-+]/).map((bit) => (/^\d+$/.test(bit) ? Number(bit) : bit));
+  let parts = (value) =>
+    value.split(/[.\-+]/).map((bit) => (/^\d+$/.test(bit) ? Number(bit) : bit));
   let left = parts(a);
   let right = parts(b);
   for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
@@ -505,17 +552,63 @@ function whenPublished(meta, version) {
  * of the software. Unknown sorts last rather than first: absent is not new.
  */
 export function publishedOrder(record) {
-  let when = Date.parse(record?.upstreamPublishedAt ?? record?.publishedAt ?? '');
+  let when = Date.parse(
+    record?.upstreamPublishedAt ?? record?.publishedAt ?? '',
+  );
   return Number.isFinite(when) ? when : -Infinity;
 }
 
-function addressOptions(parsed, meta, seals) {
+function repositoryVersionNote(repository, version) {
+  if (!repository) return '';
+  let branches = (repository.branches ?? []).filter(
+    (branch) => branch.projection?.version === version,
+  );
+  if (!branches.length) return '';
+  let main = branches.find((branch) => branch.name === 'main');
+  let merged =
+    main &&
+    (repository.reviews ?? []).find(
+      (review) =>
+        review.state === 'merged' &&
+        review.events?.some(
+          (event) =>
+            event.type === 'merged' &&
+            event.checkpointHash === main.checkpointHash,
+        ),
+    );
+  let labels = [];
+  if (main) {
+    labels.push(
+      merged
+        ? `main · merged Review #${merged.number}: ${merged.title}`
+        : 'main',
+    );
+  }
+  labels.push(
+    ...branches
+      .filter((branch) => branch !== main)
+      .map((branch) => branch.name),
+  );
+  return `${labels.join(' · ')} · `;
+}
+
+function addressOptions(parsed, meta, seals, repository) {
   let options = [];
   if (meta?.live) {
-    options.push({ value: '', label: 'live', note: 'bytes on disk · no-store', kind: 'live' });
+    options.push({
+      value: '',
+      label: 'live',
+      note: 'bytes on disk · no-store',
+      kind: 'live',
+    });
   }
   for (let [tag, version] of Object.entries(meta?.distTags ?? {})) {
-    options.push({ value: tag, label: tag, note: `→ ${version} · one hop`, kind: 'tag' });
+    options.push({
+      value: tag,
+      label: tag,
+      note: `→ ${version} · one hop`,
+      kind: 'tag',
+    });
   }
   // NEWEST FIRST, AND BY NUMBER. A lexical sort puts dev.10 between dev.1 and
   // dev.2, so the list read `dev.2, dev.10, dev.1` — which is not an ordering
@@ -525,7 +618,7 @@ function addressOptions(parsed, meta, seals) {
     options.push({
       value: version,
       label: version,
-      note: `${whenPublished(meta, version)}immutable · forever`,
+      note: `${repositoryVersionNote(repository, version)}${whenPublished(meta, version)}immutable · forever`,
       kind: 'exact',
     });
   }
@@ -542,9 +635,13 @@ function addressOptions(parsed, meta, seals) {
         // ago", and a picker whose entries are indistinguishable is a picker
         // you cannot use. The clock says which era, the id says which one.
         label: `${relative(seal.timestamp)} · ${seal.changeId.slice(0, 8)}`,
-        note: `${(seal.timestamp ?? '').slice(0, 16).replace('T', ' ')} · ${
-          seal.changeId.slice(0, 12)
-        } · ${seal.description?.replace(/^save:\s*/, '') ?? 'step'}`.slice(0, 78),
+        note: `${(seal.timestamp ?? '').slice(0, 16).replace('T', ' ')} · ${seal.changeId.slice(
+          0,
+          12,
+        )} · ${seal.description?.replace(/^save:\s*/, '') ?? 'step'}`.slice(
+          0,
+          78,
+        ),
         kind: 'seal',
       });
     }
@@ -556,20 +653,22 @@ function addressOptions(parsed, meta, seals) {
 function addressFor(parsed, value) {
   if (value.startsWith('seal:')) {
     let rev = value.slice(5);
-    let path = [parsed.publisher, parsed.pkg, parsed.path].filter(Boolean).join('/');
+    let path = [parsed.publisher, parsed.pkg, parsed.path]
+      .filter(Boolean)
+      .join('/');
     return `/${parsed.depot}/${HISTORY}/${rev}${path ? `/${path}` : ''}`;
   }
   return addressOf({ ...parsed, seal: undefined, spec: value || undefined });
 }
 
-function volatility(parsed, meta, seals) {
-  let options = addressOptions(parsed, meta, seals);
+function volatility(parsed, meta, seals, repository) {
+  let options = addressOptions(parsed, meta, seals, repository);
   if (!options.length) return '';
   let selected = parsed.seal ? `seal:${parsed.seal}` : (parsed.spec ?? '');
   let kind = parsed.seal ? 'seal' : selected === '' ? 'live' : 'sealed';
   let sealCount = options.filter((option) => option.kind === 'seal').length;
   return (
-    `<span class="vol" data-kind="${kind}"><label>version</label> ` +
+    `<span class="vol" data-tour="vol" data-kind="${kind}"><label>version</label> ` +
     `<select data-role="vol">` +
     options
       .map(
@@ -598,8 +697,8 @@ function volatility(parsed, meta, seals) {
  * so a comparison confined to one deck's version list can never express "what
  * did the fork change". The third is what you want at 2am.
  */
-function compare(parsed, meta, seals, vs) {
-  let options = addressOptions(parsed, meta, seals).filter(
+function compare(parsed, meta, seals, vs, repository) {
+  let options = addressOptions(parsed, meta, seals, repository).filter(
     (option) => option.value !== '',
   );
   let isAddress = vs.startsWith('/');
@@ -614,7 +713,9 @@ function compare(parsed, meta, seals, vs) {
           `${esc(option.label)}</option>`,
       )
       .join('') +
-    (isAddress ? `<option value="${esc(vs)}" selected>${esc(vs)}</option>` : '') +
+    (isAddress
+      ? `<option value="${esc(vs)}" selected>${esc(vs)}</option>`
+      : '') +
     `</select> <input data-role="vs-address" size="26" placeholder="…or a deck address" ` +
     `value="${esc(isAddress ? vs : '')}" /></span>`
   );
@@ -646,7 +747,18 @@ async function siblings(parsed) {
     `<div class="siblings"><b>also on this server</b> ` +
     related
       .map((deck) => {
-        let at = `/${parsed.depot}/${deck.publisher}/${deck.name}`;
+        let fallback =
+          !deck.live &&
+          (deck.distTags?.latest ??
+            Object.keys(deck.versions ?? {})
+              .sort()
+              .at(-1));
+        let at = addressOf({
+          depot: parsed.depot,
+          publisher: deck.publisher,
+          pkg: deck.name,
+          spec: fallback || undefined,
+        });
         let vs = addressOf({ ...parsed, path: undefined });
         return (
           `<a href="?at=${esc(at)}&vs=${esc(vs)}" data-at="${esc(at)}" data-vs="${esc(vs)}" ` +
@@ -793,7 +905,10 @@ function listing(parsed, attrs) {
       let at = addressOf({ ...parsed, path: entry.path });
       return (
         `<tr data-name="${esc(entry.name.toLowerCase())}">` +
-        activityCell(scale(heats[index].score), { last: heats[index].last, claims: heats[index].claims }) +
+        activityCell(scale(heats[index].score), {
+          last: heats[index].last,
+          claims: heats[index].claims,
+        }) +
         `<td><a href="?at=${esc(at)}" data-at="${esc(at)}" ` +
         `class="${entry.type === 'dir' ? 's-dir' : 's-file'}">` +
         `${esc(entry.name)}${entry.type === 'dir' ? '/' : ''}</a></td>` +
@@ -846,8 +961,12 @@ function blob(text, path) {
       let rest = lines.slice(CHUNK);
       requestIdleCallback(() => {
         element.insertAdjacentHTML('beforeend', lineSpans(rest, CHUNK));
-        if (location.hash) document.querySelector(location.hash)?.scrollIntoView();
+        linkifyJsonUrls(element, path);
+        if (location.hash)
+          document.querySelector(location.hash)?.scrollIntoView();
       });
+    } else {
+      linkifyJsonUrls(element, path);
     }
   };
   paint(text.split('\n').map(esc));
@@ -860,6 +979,88 @@ function blob(text, path) {
     }
   });
   return element;
+}
+
+/** `compiled 2h ago`, or `compiled` when the tape has not seen this file. */
+async function lockLabel(depot, atSeal) {
+  let seals = await sealsOf(depot);
+  if (atSeal) {
+    let step = seals.find((seal) => seal.changeId === atSeal);
+    return step?.timestamp
+      ? `compiled ${relative(step.timestamp)}`
+      : 'compiled';
+  }
+  let steps = stepsFor(seals, [DEPOT_LOCK]);
+  let when = steps[0]?.timestamp;
+  return when ? `compiled ${relative(when)}` : 'compiled';
+}
+
+/**
+ * Deck addresses in a lock or a package.json are doors, not strings.
+ *
+ * `/hub/ui/nav/nav.js` opens that file in this lens. `./start.js` opens the
+ * sibling in this package. A seal (`/_history/<changeId>/…`) is an address.
+ * An integrity hash is not — `sha256-…` base64 contains `/`, which is not a
+ * path.
+ */
+function linkifyJsonUrls(root, path) {
+  let leaf = (path ?? '').split('/').pop();
+  if (leaf !== DEPOT_LOCK && leaf !== 'package.json') return;
+  let here = parseAddress(currentAt());
+  let walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  let pattern =
+    /\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~@+/-]*)?|\.\/[A-Za-z0-9._~/@+-]+/g;
+  for (let node of nodes) {
+    if (node.parentElement?.closest('a')) continue;
+    let text = node.nodeValue ?? '';
+    pattern.lastIndex = 0;
+    if (!pattern.test(text)) continue;
+    pattern.lastIndex = 0;
+    let frag = document.createDocumentFragment();
+    let last = 0;
+    let match;
+    while ((match = pattern.exec(text))) {
+      if (match.index > last) frag.append(text.slice(last, match.index));
+      let raw = match[0];
+      if (!isLinkableAddress(text, match.index, raw)) {
+        frag.append(raw);
+      } else {
+        let at = raw.startsWith('./')
+          ? here.publisher && here.pkg
+            ? `/${here.depot}/${here.publisher}/${here.pkg}/${raw.slice(2)}`
+            : ''
+          : raw.replace(/\/+$/, '');
+        if (!at || at === '/') {
+          frag.append(raw);
+        } else {
+          let a = document.createElement('a');
+          a.href = `?at=${at}`;
+          a.dataset.at = at;
+          a.textContent = raw;
+          frag.append(a);
+        }
+      }
+      last = match.index + raw.length;
+    }
+    if (last < text.length) frag.append(text.slice(last));
+    node.parentNode?.replaceChild(frag, node);
+  }
+}
+
+/** Integrity `sha256-…` values contain `/`. Seals (`_history/`) do not. */
+function isLinkableAddress(text, index, raw) {
+  if (raw.includes('=') || raw.includes('+')) return false;
+  let before = text.slice(0, index);
+  if (/sha256-[A-Za-z0-9+/]*$/.test(before)) return false;
+  if (raw.startsWith('./')) return true;
+  let path = raw.replace(/\/+$/, '');
+  return (
+    path.includes('/_history/') ||
+    path.includes('@') ||
+    /\.[A-Za-z][A-Za-z0-9]+$/.test(path)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -881,6 +1082,37 @@ const metaOf = (target) => {
     .then((body) => body.data?.attributes)
     .catch(() => undefined);
 };
+
+/**
+ * Resolve a version-less comparison target only when it has no live tree.
+ *
+ * A bare package address means live. Some packages are store-only, however,
+ * so there are no live bytes to compare. In that case the exact latest
+ * Version is the honest, addressable comparison target. Packages that do
+ * have a working tree remain live so unpublished edits stay visible.
+ */
+async function comparableTarget(target) {
+  if (
+    !target?.publisher ||
+    !target?.pkg ||
+    target.seal ||
+    target.spec
+  ) {
+    return target;
+  }
+  let meta = await getJson(
+    `/_packages/${target.depot}/${target.publisher}/${target.pkg}`,
+  )
+    .then((body) => body.data?.attributes)
+    .catch(() => undefined);
+  if (!meta || meta.live) return target;
+  let fallback =
+    meta.distTags?.latest ??
+    Object.keys(meta.versions ?? {})
+      .sort()
+      .at(-1);
+  return fallback ? { ...target, spec: fallback } : target;
+}
 
 const labelOf = (target) =>
   target.seal
@@ -1044,7 +1276,9 @@ function reviewFile({ id, path, before, after, open = true, href, vs }) {
   if (beforeLines.at(-1) === '') beforeLines.pop();
   if (afterLines.at(-1) === '') afterLines.pop();
 
-  let patch = structuredPatch('a', 'b', before, after, '', '', { context: CONTEXT });
+  let patch = structuredPatch('a', 'b', before, after, '', '', {
+    context: CONTEXT,
+  });
   let added = 0;
   let removed = 0;
   let body = '';
@@ -1060,12 +1294,20 @@ function reviewFile({ id, path, before, after, open = true, href, vs }) {
     let flush = (addedLines) => {
       let paired = pairWords(pendingRemoved, addedLines);
       pendingRemoved.forEach((line, position) => {
-        body += diffLine('-', oldNumber - pendingRemoved.length + position, '',
-          paired ? paired[position][0] : esc(line));
+        body += diffLine(
+          '-',
+          oldNumber - pendingRemoved.length + position,
+          '',
+          paired ? paired[position][0] : esc(line),
+        );
       });
       addedLines.forEach((line, position) => {
-        body += diffLine('+', '', newNumber - addedLines.length + position,
-          paired ? paired[position][1] : esc(line));
+        body += diffLine(
+          '+',
+          '',
+          newNumber - addedLines.length + position,
+          paired ? paired[position][1] : esc(line),
+        );
       });
       pendingRemoved = [];
     };
@@ -1152,6 +1394,7 @@ async function viewDepots() {
     `<h1>depots on this server</h1>` +
     `<table><thead><tr><th class="heat-cell"></th><th>depot</th>` +
     `<th class="num">decks</th>` +
+    `<th>lock</th>` +
     `<th>history</th><th>on disk</th></tr></thead><tbody>` +
     scored
       .map(
@@ -1161,10 +1404,12 @@ async function viewDepots() {
           `<td><a class="s-depot" href="?at=/${esc(depot.name)}" ` +
           `data-at="/${esc(depot.name)}">${esc(depot.name)}</a></td>` +
           `<td class="num">${depot.packages.length}</td>` +
+          `<td><a class="s-file" href="?at=/${esc(depot.name)}/${DEPOT_LOCK}" ` +
+          `data-at="/${esc(depot.name)}/${DEPOT_LOCK}">${DEPOT_LOCK}</a></td>` +
           `<td>${
             depot.history
               ? `<a class="s-seal" href="?at=/${esc(depot.name)}/${HISTORY}" ` +
-                `data-at="/${esc(depot.name)}/${HISTORY}">Timeline</a>`
+                `data-at="/${esc(depot.name)}/${HISTORY}">History</a>`
               : '<span class="dim">Versions</span>'
           }</td>` +
           `<td class="dim">${esc(depot.dir)}</td></tr>`,
@@ -1205,7 +1450,10 @@ async function viewCatalog(parsed) {
       let newest = deck.distTags?.latest ?? versions.at(-1);
       return (
         `<tr data-name="${esc(`${deck.publisher}/${deck.name}`.toLowerCase())}">` +
-        activityCell(scale(heats[index].score), { last: heats[index].last, claims: heats[index].claims }) +
+        activityCell(scale(heats[index].score), {
+          last: heats[index].last,
+          claims: heats[index].claims,
+        }) +
         `<td><a href="?at=${esc(at)}" data-at="${esc(at)}">` +
         `${parsed.publisher ? '' : `<span class="s-publisher">${esc(deck.publisher)}</span><span class="sep">/</span>`}` +
         `<span class="s-package">${esc(deck.name)}</span></a></td>` +
@@ -1221,14 +1469,18 @@ async function viewCatalog(parsed) {
     .join('');
   return (
     crumbs(parsed) +
-    `<main><div class="facts">` +
+    `<main><div class="facts" data-tour="facts">` +
     `<div><b>decks</b> ${decks.length}</div>` +
     `<div><b>live</b> ${decks.filter((deck) => deck.live).length}</div>` +
     `<div><b>history</b> ${
       depot.history
         ? `<a class="s-seal" href="?at=/${esc(depot.name)}/${HISTORY}" data-at="/${esc(depot.name)}/${HISTORY}">${esc(depot.history)}</a>`
         : 'Versions only'
-    }</div></div>` +
+    }</div>` +
+    `<div><b>lock</b> <a class="s-file" href="?at=/${esc(depot.name)}/${DEPOT_LOCK}" ` +
+    `data-at="/${esc(depot.name)}/${DEPOT_LOCK}">${DEPOT_LOCK}</a>` +
+    ` <span class="dim">${esc(await lockLabel(depot.name))}</span></div>` +
+    `</div>` +
     filterBox(decks.length, 'decks') +
     `<table><thead><tr><th class="heat-cell"></th><th>deck</th>` +
     `<th class="num">versions</th>` +
@@ -1250,7 +1502,7 @@ async function viewSealLog(parsed) {
   if (!seals.length) {
     return (
       crumbs(parsed) +
-      `<main><p class="dim">History: Versions — no Timeline</p></main>`
+      `<main><p class="dim">Version history only</p></main>`
     );
   }
   let rows = seals
@@ -1269,7 +1521,7 @@ async function viewSealLog(parsed) {
     .join('');
   return (
     crumbs(parsed) +
-    `<main><div class="facts"><div><b>steps</b> ${seals.length}</div>` +
+    `<main><div class="facts" data-tour="facts"><div><b>steps</b> ${seals.length}</div>` +
     `<div><b>newest</b> <span class="s-seal">${esc(seals[0].changeId.slice(0, 12))}</span></div></div>` +
     filterBox(seals.length, 'steps') +
     `<table><thead><tr><th>step id</th><th>when</th><th class="num">files</th>` +
@@ -1285,7 +1537,7 @@ async function viewSeal(parsed, vs) {
   if (!attrs.filesAvailable) {
     return (
       crumbs(parsed) +
-      `<main><p class="dim">Timeline cannot list files for this step</p></main>`
+      `<main><p class="dim">History cannot list files for this step</p></main>`
     );
   }
   let files = attrs.files ?? [];
@@ -1294,7 +1546,9 @@ async function viewSeal(parsed, vs) {
   // decks arrives here rather than at a single file, and each row descends
   // into the per-file diff carrying both revisions with it.
   if (vs) {
-    let other = await getJson(vs.replace(/^\/([^/]+)\/_history\//, '/$1/_history/'))
+    let other = await getJson(
+      vs.replace(/^\/([^/]+)\/_history\//, '/$1/_history/'),
+    )
       .then((body) => body.data.attributes)
       .catch(() => undefined);
     if (!other?.filesAvailable) {
@@ -1322,7 +1576,9 @@ async function viewSeal(parsed, vs) {
     let seals = await sealsOf(parsed.depot);
     let record = seals.find((seal) => seal.changeId === parsed.seal);
     let touched = new Set(
-      (record?.filesSummary ?? []).map((line) => line.replace(/^[A-Z]\s+/, '').trim()),
+      (record?.filesSummary ?? []).map((line) =>
+        line.replace(/^[A-Z]\s+/, '').trim(),
+      ),
     );
     let rows = touched.size
       ? [...touched].sort()
@@ -1347,7 +1603,9 @@ async function viewSeal(parsed, vs) {
         // there.
         let [after, before] = await Promise.all([
           fetch(at).then((response) => (response.ok ? response.text() : '')),
-          fetch(against).then((response) => (response.ok ? response.text() : '')),
+          fetch(against).then((response) =>
+            response.ok ? response.text() : '',
+          ),
         ]);
         return { path, at, against, before, after };
       }),
@@ -1408,7 +1666,7 @@ async function viewSeal(parsed, vs) {
     .join('');
   return (
     crumbs(parsed) +
-    `<main><div class="facts">` +
+    `<main><div class="facts" data-tour="facts">` +
     `<div><b>step</b> <span class="s-seal">${esc(parsed.seal)}</span></div>` +
     `<div><b>backend</b> ${esc(attrs.backend)}</div>` +
     `<div><b>files</b> ${files.length}</div></div>` +
@@ -1444,7 +1702,9 @@ async function viewSealFile(parsed, vs) {
     // Absent on the other side means this save CREATED the file, which is a
     // real and common answer — every line is an addition. Treating a 404 as
     // an error here would make "added" look like a broken link.
-    let before = await fetch(vs).then((other) => (other.ok ? other.text() : ''));
+    let before = await fetch(vs).then((other) =>
+      other.ok ? other.text() : '',
+    );
     // A STRING, not `{html}`. The object form is the contract for "there is a
     // blob to stream in after paint", and render() will go looking for the
     // `#blob` element it implies. A diff has already rendered its own body.
@@ -1459,7 +1719,7 @@ async function viewSealFile(parsed, vs) {
   return {
     html:
       crumbs(parsed) +
-      `<main><div class="facts">` +
+      `<main><div class="facts" data-tour="facts">` +
       `<div><b>kind</b> step</div>` +
       `<div><b>step</b> <span class="s-seal">${esc(String(parsed.seal).slice(0, 12))}</span></div>` +
       `<div><b>size</b> ${esc(bytes(text.length))}</div></div>` +
@@ -1470,10 +1730,167 @@ async function viewSealFile(parsed, vs) {
   };
 }
 
+/**
+ * The compiled lock, as a file.
+ *
+ * It sits at the depot root rather than inside a package, so `_browse` and
+ * the package catalog never list it. Opening it still has to be the ordinary
+ * blob: syntax colour, a raw link, and the History scoped to this path so
+ * `[` / `]` walk the saves that rewrote the pins.
+ */
+async function viewDepotLock(parsed, vs) {
+  let url = addressOf(parsed);
+  let response = await fetch(url);
+  if (!response.ok) {
+    throw Object.assign(new Error(`${DEPOT_LOCK} is not in this depot`), {
+      code: 'file-not-found',
+    });
+  }
+  let text = await response.text();
+
+  if (vs) {
+    let before = await fetch(vs).then((other) =>
+      other.ok ? other.text() : '',
+    );
+    return (
+      crumbs(parsed) +
+      `<main>` +
+      fileDiffView(before, text, vs, url) +
+      `</main>`
+    );
+  }
+
+  return {
+    html:
+      crumbs(parsed) +
+      `<main><div class="facts" data-tour="facts">` +
+      `<div><b>lock</b> ${esc(await lockLabel(parsed.depot, parsed.seal && parsed.seal !== true ? String(parsed.seal) : undefined))}</div>` +
+      `<div><b>size</b> ${esc(bytes(text.length))}</div></div>` +
+      `<p class="raw"><a href="${esc(url)}">raw</a></p>` +
+      `<div id="blob"></div></main>`,
+    text,
+    path: parsed.path ?? DEPOT_LOCK,
+  };
+}
+
 /** `pzpsvyqoysw… /app/run/run.js` — enough of a seal address to tell two apart. */
 function shortSeal(address) {
   let match = String(address).match(/\/_history\/([^/]+)(\/.*)?$/);
   return match ? `${match[1].slice(0, 12)}…${match[2] ?? ''}` : String(address);
+}
+
+function repositoryActionDialog() {
+  return (
+    `<dialog class="repo-action-dialog" data-repository-dialog>` +
+    `<form data-repository-form>` +
+    `<header><div><span class="section-index">NEW</span><h2 data-repository-dialog-title></h2></div>` +
+    `<button type="button" class="repo-dialog-close" data-repository-dialog-close aria-label="Close">×</button></header>` +
+    `<label><span data-repository-dialog-label></span><input name="target" required autocomplete="off" spellcheck="false"></label>` +
+    `<p class="dim" data-repository-dialog-help></p>` +
+    `<p class="bad repo-dialog-error" data-repository-dialog-error role="alert"></p>` +
+    `<footer><button type="button" class="action" data-repository-dialog-close>Cancel</button>` +
+    `<button type="submit" class="action primary" data-repository-dialog-submit></button></footer>` +
+    `</form></dialog>`
+  );
+}
+
+async function repositoryContext(parsed, meta) {
+  if (!parsed.depot || !parsed.publisher || !parsed.pkg) return '';
+  let member = `${parsed.publisher}/${parsed.pkg}`;
+  let catalog = await getJson('/_hub/repositories').catch(() => ({
+    repositories: [],
+  }));
+  let candidates = catalog.repositories.filter(
+    (item) => item.depot === parsed.depot && item.members.includes(member),
+  );
+  let summary =
+    candidates.find((item) => item.kind === 'group' && item.initialized) ??
+    candidates.find(
+      (item) =>
+        item.kind === 'package' &&
+        item.repository === member &&
+        item.initialized,
+    ) ??
+    candidates.find(
+      (item) => item.kind === 'package' && item.repository === member,
+    ) ??
+    candidates.find((item) => item.kind === 'group');
+  if (!summary) return { member, catalog, summary, state: undefined };
+  let state = await getJson(summary.url).catch(() => undefined);
+  return { member, catalog, summary, state };
+}
+
+/** Branch and fork are one lineage control; mutability decides which verbs appear. */
+function repositoryPanel(parsed, meta, context) {
+  if (!context) return '';
+  let { member, catalog, summary, state } = context;
+  if (!summary && !meta?.live) {
+    return (
+      `<section class="repo-context repo-context-readonly" data-repository="${esc(member)}">` +
+      `<div class="repo-identity"><span class="s-publisher">${esc(parsed.publisher)}</span><span class="sep">/</span>` +
+      `<strong class="s-package">${esc(parsed.pkg)}</strong><span class="visibility">imported · read-only</span></div>` +
+      `<button class="repo-new primary" data-repository-action="fork" data-depot="${esc(parsed.depot)}" ` +
+      `data-from="${esc(member)}" data-spec="${esc(parsed.spec ?? '')}">Fork</button></section>` +
+      repositoryActionDialog()
+    );
+  }
+  if (!summary) return '';
+  if (!state) return '';
+
+  let open = state.reviews?.find((review) => review.state === 'open');
+  let upstream =
+    state.forkedFrom?.checkpointHash &&
+    catalog.repositories.find(
+      (item) =>
+        item.depot === state.depot &&
+        item.repository === state.forkedFrom.package &&
+        item.initialized,
+    );
+  let review = open
+    ? `Review #${open.number}`
+    : upstream
+      ? 'Review upstream'
+      : 'Reviews';
+  let reviewRepository = upstream?.repository ?? state.repository;
+  let reviewSource = upstream
+    ? `&source=${encodeURIComponent(state.repository)}`
+    : '';
+  let current = (state.branches ?? []).find(
+    (branch) => parsed.spec === branch.projection.version,
+  );
+  let branches = (state.branches ?? [])
+    .map((branch) => {
+      let at = branch.projection.members[member];
+      return (
+        `<a class="repo-option${current?.name === branch.name ? ' selected' : ''}" href="?at=${esc(at)}">` +
+        `<span>${esc(branch.name)}</span><code>${esc(branch.checkpointHash?.slice(0, 8) ?? 'working')}</code></a>`
+      );
+    })
+    .join('');
+  return (
+    `<section class="repo-context" data-repository="${esc(state.repository)}">` +
+    `<div class="repo-identity"><span class="s-publisher">${esc(state.owner)}</span>` +
+    `<span class="sep">/</span><strong class="s-package">${esc(state.name)}</strong>` +
+    (state.kind === 'group'
+      ? `<span class="visibility">${state.members.length}-package group</span>`
+      : '') +
+    (state.forkedFrom
+      ? `<span class="visibility">fork of ${esc(state.forkedFrom.package)}</span>`
+      : '') +
+    `</div>` +
+    `<div class="repo-controls"><details class="repo-switcher"><summary>${esc(current?.name ?? 'live')} <span>⌄</span></summary>` +
+    `<div class="repo-menu">${branches || '<span class="repo-empty">No branches yet</span>'}` +
+    `<div class="repo-menu-new"><b>New…</b>` +
+    `<button data-repository-action="branch" data-endpoint="${esc(summary.url)}">Branch here</button>` +
+    `<button data-repository-action="fork" data-depot="${esc(parsed.depot)}" data-from="${esc(member)}" data-spec="${esc(parsed.spec ?? '')}">Fork to my scope</button>` +
+    `</div></div></details>` +
+    (state.initialized
+      ? `<a class="repo-review" href="/review?repository=${encodeURIComponent(reviewRepository)}&depot=${encodeURIComponent(state.depot)}${reviewSource}">${review}</a>`
+      : '') +
+    `</div>` +
+    `</section>` +
+    repositoryActionDialog()
+  );
 }
 
 async function viewAddress(input, vs) {
@@ -1492,30 +1909,51 @@ async function viewAddress(input, vs) {
   let parsed = input;
   if (!input.spec && meta && !meta.live) {
     let fallback =
-      meta.distTags?.latest ?? Object.keys(meta.versions ?? {}).sort().at(-1);
+      meta.distTags?.latest ??
+      Object.keys(meta.versions ?? {})
+        .sort()
+        .at(-1);
     if (fallback) parsed = { ...input, spec: fallback };
+  }
+  let resolvedVs = vs;
+  if (vs.startsWith('/')) {
+    let target = await comparableTarget(parseAddress(vs));
+    resolvedVs = addressOf(target);
+    if (resolvedVs !== vs) {
+      let query = params();
+      query.set('vs', resolvedVs);
+      history.replaceState({}, '', `?${decodeURIComponent(query.toString())}`);
+    }
   }
   let at = addressOf(parsed);
   let { data } = await getJson(`/_browse${at}`);
   let attrs = data.attributes;
+  let repository = await repositoryContext(parsed, meta);
 
   let head =
     crumbs(parsed) +
     (await siblings(parsed)) +
-    `<main><div class="facts">` +
-    (meta ? volatility(parsed, meta, seals) + compare(parsed, meta, seals, vs) : '') +
+    `<main>${repositoryPanel(parsed, meta, repository)}<div class="facts" data-tour="facts">` +
+    (meta
+      ? volatility(parsed, meta, seals, repository?.state) +
+        compare(parsed, meta, seals, resolvedVs, repository?.state)
+      : '') +
     hash(attrs.treeHash) +
-    (attrs.size !== undefined ? `<div><b>size</b> ${esc(bytes(attrs.size))}</div>` : '') +
+    (attrs.size !== undefined
+      ? `<div><b>size</b> ${esc(bytes(attrs.size))}</div>`
+      : '') +
     (attrs.sha256 ? hash(attrs.sha256, 'sha256') : '') +
     `</div>`;
 
   // ── file, compared ──────────────────────────────────────────────────────
-  if (data.type === 'file' && vs) {
-    let target = otherSide(parsed, vs);
+  if (data.type === 'file' && resolvedVs) {
+    let target = otherSide(parsed, resolvedVs);
     let other = target.seal
       ? await fetch(addressOf(target))
           .then((response) =>
-            response.ok ? response.text().then((text) => ({ text })) : { missing: true },
+            response.ok
+              ? response.text().then((text) => ({ text }))
+              : { missing: true },
           )
           .catch(() => ({ missing: true }))
       : await getJson(`/_browse${addressOf(target)}`)
@@ -1565,15 +2003,17 @@ async function viewAddress(input, vs) {
   }
 
   // ── deck, compared ──────────────────────────────────────────────────────
-  if (vs && parsed.pkg && !parsed.path) {
-    let target = otherSide(parsed, vs);
+  if (resolvedVs && parsed.pkg && !parsed.path) {
+    let target = otherSide(parsed, resolvedVs);
     // Keep live as live. Substituting `latest` here used to hide unpublished
     // edits and, when there was no `latest`, produced the bogus "no manifest
     // for @live" note even though the digests were one ?meta away.
     let here = { ...parsed };
     let [left, right] = await Promise.all([metaOf(target), metaOf(here)]);
     if (!left || !right) {
-      let missing = [!right && labelOf(here), !left && labelOf(target)].filter(Boolean);
+      let missing = [!right && labelOf(here), !left && labelOf(target)].filter(
+        Boolean,
+      );
       return (
         head +
         `<p class="note">no digest inventory for ${missing.map(esc).join(' or ')}. ` +
@@ -1582,7 +2022,14 @@ async function viewAddress(input, vs) {
     }
     return (
       head +
-      treeDiffView(parsed, vs, left, right, labelOf(target), labelOf(here)) +
+      treeDiffView(
+        parsed,
+        resolvedVs,
+        left,
+        right,
+        labelOf(target),
+        labelOf(here),
+      ) +
       `</main>`
     );
   }
@@ -1621,19 +2068,22 @@ async function render() {
     else if (parsed.seal === true) out = await viewSealLog(parsed);
     else if (parsed.seal && !parsed.path) out = await viewSeal(parsed, vs);
     else if (parsed.seal) out = await viewSealFile(parsed, vs);
+    else if (parsed.path === DEPOT_LOCK && !parsed.pkg)
+      out = await viewDepotLock(parsed, vs);
     else if (parsed.pkg) out = await viewAddress(parsed, vs);
     else out = await viewCatalog(parsed);
 
     // The tape goes ABOVE the view, outside whatever that view builds, so it
     // is in the same place on every page rather than something each view has
     // to remember to include.
-    let tape = await timelineBar(parsed);
+    let tape = await historyBar(parsed);
     if (typeof out === 'string') {
       app.innerHTML = tape + out;
     } else {
       app.innerHTML = tape + out.html;
       document.getElementById('blob').append(blob(out.text, out.path));
-      if (location.hash) document.querySelector(location.hash)?.scrollIntoView();
+      if (location.hash)
+        document.querySelector(location.hash)?.scrollIntoView();
     }
   } catch (error) {
     app.innerHTML = errorView(parsed, error);
@@ -1679,9 +2129,16 @@ async function render() {
     hunk = -1;
     if (currentVs() && app.querySelector('pre.diff')) stepChange(1);
   }
+  maybeResumeTour();
 }
 
 let arrived = '';
+let tourResumed = false;
+function maybeResumeTour() {
+  if (tourResumed) return;
+  tourResumed = true;
+  resumeHubTour({ waitMs: 80 });
+}
 
 // ---------------------------------------------------------------------------
 // Keyboard
@@ -1752,10 +2209,10 @@ function parentAddress() {
  * and `live → tags → versions` is still an ordering through time.
  */
 function stepTime(delta) {
-  if (lastTimeline.length) {
+  if (lastHistory.length) {
     let parsed = parseAddress(currentAt());
     let here = parsed.seal && parsed.seal !== true ? String(parsed.seal) : '';
-    return go(atStep(parsed, stepBy(lastTimeline, here, delta)));
+    return go(atStep(parsed, stepBy(lastHistory, here, delta)));
   }
   return stepVolatility(delta);
 }
@@ -1776,7 +2233,8 @@ function stepChange(delta) {
     (line) => line.dataset.mark,
   );
   let hunks = marks.filter(
-    (line, index) => index === 0 || line.previousElementSibling !== marks[index - 1],
+    (line, index) =>
+      index === 0 || line.previousElementSibling !== marks[index - 1],
   );
   if (!hunks.length) return;
   hunk = Math.max(0, Math.min(hunks.length - 1, hunk + delta));
@@ -1786,12 +2244,16 @@ let hunk = -1;
 
 /** The legend, derived from what this view actually offers right now. */
 function bindings() {
-  let list = [[['j', 'k'], 'move'], ['↵', 'open'], ['u', 'up']];
+  let list = [
+    [['j', 'k'], 'move'],
+    ['↵', 'open'],
+    ['u', 'up'],
+  ];
   if (app.querySelector('[data-role="filter"]')) list.push(['/', 'filter']);
   // The legend is derived from the view, so it has to name what the keys
   // will ACTUALLY do here — the tape when there is one, the volatility list
   // when there is not. Two different moves through time, one pair of keys.
-  if (lastTimeline.length) list.push([['[', ']'], 'step']);
+  if (lastHistory.length) list.push([['[', ']'], 'step']);
   else if (select('vol')) list.push([['[', ']'], 'time travel']);
   if (select('vs')) list.push(['d', 'compare']);
   if (app.querySelector('pre.diff')) list.push([['n', 'p'], 'change']);
@@ -1907,7 +2369,54 @@ function expandGap(control) {
   control.outerHTML = html;
 }
 
-app.addEventListener('click', (event) => {
+app.addEventListener('click', async (event) => {
+  let closeRepositoryDialog = event.target.closest(
+    '[data-repository-dialog-close]',
+  );
+  if (closeRepositoryDialog) {
+    closeRepositoryDialog.closest('dialog')?.close();
+    return;
+  }
+  let repositoryAction = event.target.closest('[data-repository-action]');
+  if (repositoryAction) {
+    let dialog = app.querySelector('[data-repository-dialog]');
+    let form = dialog.querySelector('[data-repository-form]');
+    let action = repositoryAction.dataset.repositoryAction;
+    let packageName = repositoryAction.dataset.from?.split('/').at(-1);
+    Object.assign(form.dataset, {
+      action,
+      depot: repositoryAction.dataset.depot ?? '',
+      from: repositoryAction.dataset.from ?? '',
+      spec: repositoryAction.dataset.spec ?? '',
+      endpoint: repositoryAction.dataset.endpoint ?? '',
+    });
+    dialog.querySelector('[data-repository-dialog-title]').textContent =
+      action === 'fork' ? 'Create a fork' : 'Create a branch';
+    dialog.querySelector('[data-repository-dialog-label]').textContent =
+      action === 'fork' ? 'Fork to publisher/package' : 'Branch name';
+    dialog.querySelector('[data-repository-dialog-help]').textContent =
+      action === 'fork'
+        ? `Creates a mutable package from ${repositoryAction.dataset.from}. The source stays unchanged.`
+        : 'Creates an isolated line of work from main in this package.';
+    dialog.querySelector('[data-repository-dialog-submit]').textContent =
+      action === 'fork' ? 'Create fork' : 'Create branch';
+    dialog.querySelector('[data-repository-dialog-error]').textContent = '';
+    let input = form.elements.target;
+    input.value = action === 'fork' ? `me/${packageName}` : '';
+    input.pattern =
+      action === 'fork'
+        ? '[a-z0-9][a-z0-9._-]{0,63}/[a-z0-9][a-z0-9._-]{0,63}'
+        : '(?!.*\\.\\.)[a-z0-9][a-z0-9._/-]{0,127}';
+    input.title =
+      action === 'fork'
+        ? 'Use publisher/package with lowercase letters, numbers, dots, dashes, or underscores.'
+        : 'Start with a lowercase letter or number; then use lowercase letters, numbers, dots, dashes, underscores, or slashes.';
+    repositoryAction.closest('details')?.removeAttribute('open');
+    dialog.showModal();
+    input.focus();
+    input.select();
+    return;
+  }
   let gap = event.target.closest('.gap[data-gap]');
   if (gap) return expandGap(gap);
 
@@ -1920,7 +2429,9 @@ app.addEventListener('click', (event) => {
   if (by) {
     let parsed = parseAddress(currentAt());
     let here = parsed.seal && parsed.seal !== true ? String(parsed.seal) : '';
-    return go(atStep(parsed, stepBy(lastTimeline, here, Number(by.dataset.by))));
+    return go(
+      atStep(parsed, stepBy(lastHistory, here, Number(by.dataset.by))),
+    );
   }
 
   // The fold header now contains a link to the file itself, and the header is
@@ -1941,6 +2452,67 @@ app.addEventListener('click', (event) => {
   if (!link || event.metaKey || event.ctrlKey || event.shiftKey) return;
   event.preventDefault();
   go(link.dataset.at, link.dataset.vs ?? currentVs());
+});
+
+app.addEventListener('submit', async (event) => {
+  let form = event.target.closest('[data-repository-form]');
+  if (!form) return;
+  event.preventDefault();
+  let input = form.elements.target;
+  let value = input.value.trim();
+  let valid =
+    form.dataset.action === 'fork'
+      ? /^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._-]{0,63}$/.test(value)
+      : /^[a-z0-9][a-z0-9._/-]{0,127}$/.test(value) && !value.includes('..');
+  if (!valid) {
+    form.querySelector('[data-repository-dialog-error]').textContent =
+      input.title;
+    input.focus();
+    return;
+  }
+  let submit = form.querySelector('[type="submit"]');
+  let error = form.querySelector('[data-repository-dialog-error]');
+  submit.disabled = true;
+  error.textContent = '';
+  repositoryMutationBusy = true;
+  try {
+    let response =
+      form.dataset.action === 'fork'
+        ? await fetch('/_hub/forks', {
+            method: 'POST',
+            headers: {
+              accept: 'application/json',
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({
+              depot: form.dataset.depot,
+              from: form.dataset.from,
+              to: value,
+              ...(form.dataset.spec ? { spec: form.dataset.spec } : {}),
+            }),
+          })
+        : await fetch(`${form.dataset.endpoint}/branches`, {
+            method: 'POST',
+            headers: {
+              accept: 'application/json',
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ name: value, from: 'main' }),
+          });
+    let body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error ?? response.statusText);
+    if (form.dataset.action === 'fork') {
+      location.href = body.browseUrl;
+      return;
+    }
+    form.closest('dialog').close();
+    await render();
+  } catch (caught) {
+    error.textContent = caught.message;
+  } finally {
+    repositoryMutationBusy = false;
+    submit.disabled = false;
+  }
 });
 
 // Both controls are reachable from the keyboard, because both are buttons in
@@ -1982,7 +2554,8 @@ app.addEventListener('input', (event) => {
 function toggleSort(key, column) {
   let sorting = SORT_STATE.get(key) ?? [];
   let active = sorting[0];
-  if (!active || active.id !== column) SORT_STATE.set(key, [{ id: column, desc: false }]);
+  if (!active || active.id !== column)
+    SORT_STATE.set(key, [{ id: column, desc: false }]);
   else if (!active.desc) SORT_STATE.set(key, [{ id: column, desc: true }]);
   else SORT_STATE.delete(key);
   render();
@@ -2014,12 +2587,9 @@ app.addEventListener('change', (event) => {
   }
 });
 
-// Heat before the first paint, so no list renders undecorated and then jumps.
-// One small request, and every view reads it synchronously afterwards.
-await loadActivity();
-// And again whenever the depot moves. A decoration that only updates on
-// reload is a decoration that lies for as long as the tab stays open — which,
-// for the person watching an agent work, is the whole time.
+// List first, heat later. Waiting on `/_activity` gated the file catalog
+// behind a multi-depot seal walk — the bytes were ready in milliseconds and
+// the page sat on loading… anyway. Paint undecorated; decorate when ready.
 //
 // LISTS ONLY. Heat decorates rows; it does not appear in a blob or a diff, so
 // re-rendering one on every save buys nothing and costs everything — it
@@ -2027,9 +2597,19 @@ await loadActivity();
 // they had folded, several times a minute while an agent is running. Reading
 // code in a live depot has to be possible.
 onActivityChange(() => {
-  if (app.querySelector('pre.blob')) return;
+  if (app.querySelector('pre.blob') || app.querySelector('dialog[open]'))
+    return;
   render();
 });
-onLiveChange(() => loadActivity());
+onLiveChange(() => {
+  loadActivity();
+  if (
+    !repositoryMutationBusy &&
+    !app.querySelector('dialog[open]') &&
+    app.querySelector('[data-repository]')
+  )
+    render();
+});
 
 render();
+loadActivity();

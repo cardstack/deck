@@ -1,4 +1,4 @@
-# Deck at rest
+# Deck at rest inside a realm
 
 Written 2026-08-09. This document describes what a Deck depot looks like on
 disk, and what a second implementation must agree with. It uses ASD-STE100
@@ -14,8 +14,11 @@ are the agreement between two programs. `tree-hash-v1` and the Deck Pack are
 formats. The store layout in section 3, the command-line tool and the watcher
 are implementation: no law requires a server to store anything this way.
 
-Deck is not a federation protocol. Offers and endorsements addressed by tree
-hash are the parts that need two servers, and they are not finished.
+Deck's package-serving laws do not require federation. The first durable
+Repository, Checkpoint, and Ref layer is specified separately in
+[`deck-collaboration-protocol.md`](deck-collaboration-protocol.md). Its local review
+Request workflow and conditional object-store adapters are implemented;
+hosted identity, policy, and cross-server discovery remain unfinished.
 
 **The laws are the contract, not this document.** `docs/deck-laws.md` states
 the twelve laws. `packages/conformance` examines them, and it also examines a
@@ -30,76 +33,130 @@ laws and the conformance suite disagree, the suite is correct.
 The vocabulary changed in `docs/deck-step-version-vocabulary.md`. The
 important changes from v2:
 
-| now | was | why |
-| --- | --- | --- |
-| **Version** | sealed deck, seal | "Seal" was a noun for a published version, a noun for a history checkpoint, and a verb. Three meanings for one word. |
-| **Step** | seal, frame, tick | One capture of the working tree. One Step for each save. |
-| **Timeline** | history, the tape | The Steps in order. |
-| **Deck Pack** | cardpack | The file form is `.pack.zip`. The name `cardpack` belongs to the v0.2 implementation. |
-| **depot** | realm, collection | A directory that is also a URL space. |
-| **Import / Pin / Entry** | dependency, resolution | What a deck asks for, the exact address that answers, and the module a deck offers. |
+| now                      | was                    | why                                                                                                                  |
+| ------------------------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Version**              | sealed deck, seal      | "Seal" was a noun for a published version, a noun for a history checkpoint, and a verb. Three meanings for one word. |
+| **Step**                 | seal, frame, tick      | One capture of the working tree. One Step for each save.                                                             |
+| **History**              | timeline, the tape     | The Steps in order.                                                                                                  |
+| **Deck Pack**            | cardpack               | The file form is `.pack.zip`. The name `cardpack` belongs to the v0.2 implementation.                                |
+| **depot**                | realm, collection      | A directory that is also a URL space.                                                                                |
+| **Import / Pin / Entry** | dependency, resolution | What a deck asks for, the exact address that answers, and the module a deck offers.                                  |
 
-Words to avoid: *tier* for a level of history, *frame* or *tick* for a Step,
-and *seal* alone. Write *Version*, *Step*, or *to seal*.
+Words to avoid: _tier_ for a level of history, _frame_ or _tick_ for a Step,
+and _seal_ alone. Write _Version_, _Step_, or _to seal_.
 
 ---
 
 ## 2. The layout
 
-A depot is a directory. The layout of the directory is the URL space that the
-server supplies.
+A mutable Deck repository is rooted in one realm directory. A repository may
+contain one package or several member packages, but all of its Deck machinery
+is inside that realm. A host may aggregate many realms in one bucket or
+process; it must not move their Deck objects into a parallel global tree.
 
 ```
-<depot>/
-  <publisher>/<package>/…            the live tree — the files you edit
+<realm>/
+  <authored realm tree>/…            default-branch files you edit
+  package.json                       conventional package metadata, where applicable
+  importmap.json                     optional root resolution input
+  apps/<name>/…                      conventional app/package locations
+  packages/<scope>/<name>/…          conventional package locations
   .deck/
+    repository.json                 optional multi-package authoring manifest
     store/
       _objects/<aa>/<sha256>         one file's bytes, one time
       _trees/<aa>/<treeHash>.json    one tree's packlist, one time
+      _locks/<aa>/<lockHash>.json    one composed exact lock, one time
+      _repositories/<aa>/<hash>.json one Repository state, one time
+      _checkpoints/<aa>/<hash>.json  one authored Checkpoint, one time
+      _revisions/<aa>/<hash>.json    legacy V1 objects; read-only
       <publisher>/<package>/meta.json    Versions and dist-tags
+    refs/heads/<branch-token>.json   mutable branch heads
+    refs/published.json              optional mutable published Release ref
+    reviews/
+      objects/<aa>/<hash>.json       immutable Review openings
+      events/<aa>/<hash>.json        append-only Review events
+      numbers/<n>.json               mutable numbered Review refs
+      counter.json                   mutable number allocator
+    indexes/<aa>/<hash>/…            completed index generations
+    releases/
+      objects/<aa>/<hash>.json       immutable host Releases
+    branches/<opaque-id>/
+      source/                        non-default branch materialization
+      history/repo/                  branch-local jj History
+      transaction/                   prepared recovery records
+      index-staging/                 private index build files
     claims/<actor>.json              declared work in progress
     policy.json                      the cooldown policy
-  .jj/                               the Timeline, when a backend attached
+    history/
+      repo/                          default-branch every-save jj History
+  .jj/                               thin jj workspace stub; not durable identity
 ```
 
-**Target (deckd):** Timeline moves under `.deck/timeline/` and derived build
-cache under `.deck/build/` — **no top-level `.jj`**. See
-[`deck-daemon.md`](deck-daemon.md). Until that lands, `.jj/` above remains
-the reference layout.
+This deliberately keeps the filesystem shape proven by Boxel's
+`deck/at-rest-poc`: the default branch is the realm root, not
+`branches/main/source` and not a generated checkout. Existing paths remain
+valid. The examples above do not require every realm to contain `apps/`,
+`packages/`, a root `package.json`, or a root `importmap.json`.
+
+`package.json` and `importmap.json` have different, composable jobs.
+`package.json` lives at a conventional package boundary and carries identity,
+exports, and dependency suggestions. A root import map and any applicable
+nested import maps are authored resolution inputs. Deck resolves their
+inheritance and scopes and stores the canonical composed result as the exact
+lock object named by `lockHash`. A Checkpoint therefore closes over the
+effective lock, not over an assumption that one root file controls the whole
+realm.
+
+deckd stores default-branch History under `.deck/history/repo`; its small top-level
+`.jj/` workspace stub points there because stock jj discovers that basename.
+For a selected non-default branch, the realm view projects that branch's
+physical History as `/.deck/history/repo` too. Agents never need the opaque
+host path.
+Derived build cache lives under `.deck/build/`. See
+[`deck-daemon.md`](deck-daemon.md).
 
 Two rules make this work:
 
-1. **The store path and the URL path have the same shape.** A package at
-   `/<depot>/<publisher>/<package>@<version>/<file>` is stored under
-   `<depot>/.deck/store/<publisher>/<package>/`. Neither path has to be
+1. **The store path and the URL path have the same shape inside its realm.** A
+   package at `/<realm>/<publisher>/<package>@<version>/<file>` is stored under
+   `<realm>/.deck/store/<publisher>/<package>/`. Neither path has to be
    translated into the other.
 2. **The machinery is invisible to the tree hash.** `DEFAULT_IGNORE` excludes
    `.deck`, `.jj`, `.git`, `node_modules` and `.DS_Store`. A caller can add to
    that set. A caller cannot remove from it, because two implementations would
    then hash one directory differently.
 
-Copy the directory and you copy the live files, the Versions and the Timeline.
+Copy the realm directory and you copy its live files, branches, Versions,
+Reviews, indexes, and History. Creating a branch is narrower: clone the
+authored realm tree while excluding `.deck`, `.jj`, `.git`, and other
+implementation directories, then initialize the new branch's History and
+index through their owning services.
 
-**A depot is close to a monorepo**: many packages in one directory, one
-history, one thing to clone, and a change that crosses several packages is
-one change. Four differences are worth knowing.
+**A multi-package realm is close to a monorepo**: many packages in one
+repository boundary, one default branch, and a Checkpoint that can cross
+several packages. Four differences are worth knowing.
+
+The architectural argument for keeping that coherent development experience
+while replacing the monorepo as the storage and coordination boundary is in
+[`deck-cas-packages-vs-monorepos.md`](deck-cas-packages-vs-monorepos.md).
 
 - Each deck has its own version line. A monorepo usually versions everything
   together, or needs a tool so that it does not have to.
-- The directory layout *is* the URL space. A consumer imports one module from
+- The directory layout _is_ the URL space. A consumer imports one module from
   one deck, and no build step extracts it first.
 - The publisher segment lets two people hold the same package name in one
   depot. That is a fork inside the repository, and it costs nothing until the
   bytes differ.
-- There is no workspace file and no link step. A deck names another deck by
-  address, and `deck lock` turns the range into a pin.
+- There is no separate linking manifest or link step. A deck names another
+  deck by address, and `deck lock` turns the range into a pin.
 
 ---
 
 ## 3. The store
 
 The store is **content-addressed for each file**, and the objects belong to
-the whole store, not to one package.
+the realm, not to one package and not to a host-global parallel tree.
 
 - A Version is a **pointer**: a version number, and the tree hash it names.
 - A tree is a **packlist**: the paths in the tree, and the hash of each file.
@@ -161,31 +218,31 @@ depending on when it was asked.
 The publisher segment is the fork boundary. A path segment that starts with
 `_` is reserved for the protocol.
 
-| address | is | cache |
-| --- | --- | --- |
-| no version segment | the live tree | `no-store` |
-| `@<exact>` | one Version | `immutable` |
-| `@<range>` or `@<tag>` | a name for a Version | one redirect to the exact address |
-| `/_history/<changeId>/…` | one Step | `immutable` |
+| address                  | is                   | cache                             |
+| ------------------------ | -------------------- | --------------------------------- |
+| no version segment       | the live tree        | `no-store`                        |
+| `@<exact>`               | one Version          | `immutable`                       |
+| `@<range>` or `@<tag>`   | a name for a Version | one redirect to the exact address |
+| `/_history/<changeId>/…` | one Step             | `immutable`                       |
 
 A range never matches a prerelease. `latest` is a dist-tag on a stable
 Version, and `latest` is not live.
 
 ---
 
-## 5. The Timeline
+## 5. The History
 
 A depot has one of two answers, and the server **reports** which one. It does
 not pretend. Do not number these, and do not call them tiers: the two answers
 have names.
 
-- **Versions only.** Each settled save becomes an immutable `-dev.N` Version.
-  The Versions are the history. Always available.
-- **A Timeline.** Each save also becomes a Step, at
+- **Version history only.** Each settled save becomes an immutable `-dev.N`
+  Version. The Versions are coarse-grained history. Always available.
+- **Every-save History.** Each save also becomes a Step, at
   `/<depot>/_history/<changeId>/…`, and `deck history` and `deck restore`
   work. Available when a history backend is attached.
 
-A backend that is missing or has stopped leaves the depot with Versions only.
+A backend that is missing or has stopped leaves the depot with Version history only.
 The server prints the reason and does not stop the live loop. `/_packages`
 carries the answer for each depot, so a client asks instead of assuming.
 
@@ -228,7 +285,7 @@ after the fact**:
 Three decisions already constrain the answer:
 
 1. **There is no unpublish** (L4). A Version cannot be altered or removed, so
-   the only way to say it is bad is to say so *about* it. That is the same
+   the only way to say it is bad is to say so _about_ it. That is the same
    shape as an endorsement, and it is the correct shape.
 2. **A statement is addressed to the tree hash** (L9), so a revocation
    reaches every publisher that holds those bytes, exactly as an endorsement

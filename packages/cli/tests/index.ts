@@ -17,5 +17,6 @@ QUnit.on('runEnd', (runEnd) => {
 });
 
 await import('./cli-test.ts');
+await import('./repository-cli-test.ts');
 
 QUnit.start();

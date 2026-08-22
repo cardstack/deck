@@ -2,7 +2,7 @@
 //
 // Note what the imports say: `date-fns` and `zod`, the bare specifiers any
 // npm-shaped source writes. Neither is a deck name — the decks are
-// `lib/date-fns` and `lib/zod`. The decklist in importmap.json aliases them:
+// `lib/date-fns` and `lib/zod`. package.json aliases them:
 //
 //     "date-fns": "lib/date-fns@^4.1.0"
 //      ^ the import specifier    ^ the deck that answers to it

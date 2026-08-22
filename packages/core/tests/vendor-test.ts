@@ -5,6 +5,7 @@ import {
   urlToTreePath,
   vendorFromCdn,
   vendorImportMap,
+  vendorPackageJson,
 } from '../src/vendor.ts';
 
 // A fake CDN shaped like esm.sh: the entry redirects a range to a pinned
@@ -126,28 +127,28 @@ module('vendor: bring a CDN library in-house', function () {
     });
     let files = [
       {
+        path: 'package.json',
+        bytes: vendorPackageJson('three', '0.160.0', result.entryPath),
+      },
+      {
         path: 'importmap.json',
-        bytes: vendorImportMap(
-          'three',
-          '0.160.0',
-          result.entryPath,
-          'https://esm.sh/three@0.160.0',
-        ),
+        bytes: vendorImportMap('three', 'https://esm.sh/three@0.160.0'),
       },
       ...result.files,
     ];
     let opened = unpack(pack(files));
-    assert.strictEqual(opened.files.size, 4);
+    assert.strictEqual(opened.files.size, 5);
+    let pkg = JSON.parse(opened.files.get('package.json')!.toString());
+    assert.strictEqual(pkg.name, 'three');
+    assert.strictEqual(pkg.version, '0.160.0');
+    assert.strictEqual(pkg.exports['.'], `./${result.entryPath}`);
     let map = JSON.parse(opened.files.get('importmap.json')!.toString());
-    assert.strictEqual(map.deck.packages.three.version, '0.160.0');
-    assert.strictEqual(
-      map.deck.packages.three.entry,
-      `$DECK/${result.entryPath}`,
-    );
+    assert.strictEqual(map.deck.packages.three.version, undefined);
+    assert.strictEqual(map.deck.packages.three.entry, undefined);
     assert.strictEqual(
       map.deck.packages.three.vendoredFrom,
       'https://esm.sh/three@0.160.0',
-      'the canonical identity travels with the bytes',
+      'lineage travels with the bytes; identity lives in package.json',
     );
   });
 

@@ -80,6 +80,7 @@ module('package entries', function () {
       'intakeReadiness',
       'publishToStore',
       'verifyLinks',
+      'lockDepot',
     ]) {
       assert.strictEqual(
         typeof (node as Record<string, unknown>)[name],
@@ -142,6 +143,7 @@ module('package entries', function () {
       ['isValidDistTag', 'node'],
       // catalog verbs: ranges in, pins and scopes out
       ['lockDeck', 'node'],
+      ['lockDepot', 'node'],
       ['resolveDependencies', 'node'],
       ['resolveScopes', 'node'],
       ['parseDependencyValue', 'node'],

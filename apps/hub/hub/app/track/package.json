@@ -1,0 +1,13 @@
+{
+  "name": "track",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./track.js" },
+  "dependencies": {
+    "ui/nav": "workspace:*",
+    "@tanstack/table-core": "browser",
+    "@tanstack/query-core": "browser",
+    "ui/activity": "workspace:*",
+    "ui/tour": "workspace:*"
+  }
+}

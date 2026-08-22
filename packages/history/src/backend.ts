@@ -13,10 +13,9 @@ import { isIgnoredTreeSegment } from '@cardstack/deck/tree-hash';
 //   restore— move the live tree back to a sealed state
 //
 // The contract is deliberately narrow. Version registration stays in the
-// store's meta.json (bookmarks are NOT used), so the one feature historyd
-// lacks against the jj CLI never blocks this design.
+// store's meta.json (bookmarks are NOT used).
 //
-// A changeId is OPAQUE to every caller: both backends produce jj change ids,
+// A changeId is OPAQUE to every caller: deckd produces jj change ids,
 // but nothing outside this package may assume that.
 
 export interface HistoryEntry {
@@ -47,8 +46,8 @@ export interface HistoryActor {
 
 export interface HistoryBackend {
   // Which implementation is live — reported by the server's capability
-  // block so a client can tell a jj Timeline from a historyd Timeline.
-  readonly kind: 'jj' | 'historyd' | 'deckd';
+  // block. Production is deckd.
+  readonly kind: 'deckd';
   // Notes a file mutation for the debounced sealer. Fire-and-forget: a
   // burst of saves becomes ONE seal.
   noteMutation(dir: string, path: string): void;
@@ -64,16 +63,26 @@ export interface HistoryBackend {
   // The newest sealed changeId (not the working copy). Undefined before the
   // first seal.
   head(dir: string): Promise<string | undefined>;
-  list(dir: string): Promise<HistoryEntry[]>;
+  /**
+   * Newest-first.
+   * - `limit` caps how many seals are materialised.
+   * - `before` (change/commit id): only seals strictly older than this tip.
+   * - `flush: false` skips sealing the working copy first — required for
+   *   cheap read paths like `/_activity` that must not pay seal cost.
+   */
+  list(
+    dir: string,
+    options?: { limit?: number; before?: string; flush?: boolean },
+  ): Promise<HistoryEntry[]>;
   fileAt(
     dir: string,
     revisionId: string,
     path: string,
   ): Promise<Buffer | undefined>;
   restorePlan(dir: string, revisionId: string): Promise<RestorePlan>;
-  // Optional: the full tree listing at a revision. The jj CLI backend has
-  // it; historyd's protocol has no matching endpoint, so callers must treat
-  // its absence as "this backend cannot enumerate" — never as an empty tree.
+  // Optional: the full tree listing at a revision. deckd serves
+  // `/file-list-at`; callers must treat a missing capability as "cannot
+  // enumerate" — never as an empty tree.
   fileListAt?(dir: string, revisionId: string): Promise<string[] | undefined>;
   // Drops pending debounce timers so a process can exit promptly.
   close(): void;
@@ -154,9 +163,8 @@ function isRestorable(path: string): boolean {
   return !path.split('/').some((segment) => isIgnoredTreeSegment(segment));
 }
 
-// Per-directory serialization shared by both backends: every history
-// operation on a tree runs strictly after the previous one. jj has its own
-// working-copy lock, but a snapshot must never race a seal in-process.
+// Per-directory serialization: every history
+// operation on a tree runs strictly after the previous one.
 export class DirQueue {
   #queues: Map<string, Promise<unknown>> = new Map();
 
@@ -173,7 +181,7 @@ export class DirQueue {
   }
 }
 
-// The debounced sealer both backends share: a burst of saves collapses into
+// The debounced sealer: a burst of saves collapses into
 // one seal whose message names the paths that moved.
 export class SealDebouncer {
   #pending: Map<

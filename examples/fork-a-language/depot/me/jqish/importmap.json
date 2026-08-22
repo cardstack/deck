@@ -2,10 +2,10 @@
   "deck": {
     "packages": {
       "jqish": {
-        "version": "1.0.0-feel.0",
-        "entry": "$DECK/index.js",
-        "forkedFrom": { "deck": "lang/jqish", "version": "1.0.0" },
-        "changed": ["parse.js"]
+        "forkedFrom": {
+          "deck": "lang/jqish",
+          "version": "1.0.0"
+        }
       }
     }
   }

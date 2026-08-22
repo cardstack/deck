@@ -97,8 +97,6 @@ let mapBytes = Buffer.from(
       deck: {
         packages: {
           leaflet: {
-            version: VERSION,
-            entry: `$DECK/${vendored.entryPath}`,
             vendoredFrom: vendored.vendoredFrom,
           },
         },
@@ -245,8 +243,6 @@ let forkFiles = [...opened.files.entries()].map(([path, bytes]) =>
                 deck: {
                   packages: {
                     leaflet: {
-                      version: FORK_VERSION,
-                      entry: `$DECK/${vendored.entryPath}`,
                       // Provenance survives the fork: this is still Leaflet,
                       // and it still says where it came from. What changed is
                       // recorded beside it, not instead of it.
@@ -302,8 +298,6 @@ let topoPack = pack([
           deck: {
             packages: {
               'topojson-client': {
-                version: topo.pkg.version,
-                entry: `$DECK/${topo.entryPath}`,
                 vendoredFrom: topo.vendoredFrom,
               },
             },
@@ -338,6 +332,22 @@ if (!atlasBytes) {
 }
 let atlasPack = pack([
   {
+    path: 'package.json',
+    bytes: Buffer.from(
+      JSON.stringify(
+        {
+          name: 'world-atlas',
+          version: atlas.version,
+          type: 'module',
+          exports: { '.': './index.js' },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    ),
+  },
+  {
     path: 'importmap.json',
     bytes: Buffer.from(
       JSON.stringify(
@@ -345,8 +355,6 @@ let atlasPack = pack([
           deck: {
             packages: {
               'world-atlas': {
-                version: atlas.version,
-                entry: '$DECK/index.js',
                 vendoredFrom: {
                   registry: 'https://registry.npmjs.org',
                   name: atlas.name,

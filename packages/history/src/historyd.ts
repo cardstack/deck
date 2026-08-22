@@ -9,7 +9,7 @@ import {
   type RestorePlan,
 } from './backend.ts';
 
-// The historyd / deckd backend: Timeline over localhost HTTP.
+// The historyd / deckd backend: every-save History over localhost HTTP.
 //
 // Wire surface (POST, JSON in/out):
 //   /ensure         {dir}                              → {}
@@ -30,12 +30,10 @@ export interface HistorydOptions {
   baseUrl?: string;
   debounceMs?: number;
   onError?: (error: unknown) => void;
-  /** Wire label for Hub/_history meta. Defaults from DECKD_URL. */
-  kind?: 'historyd' | 'deckd';
 }
 
 export class HistorydHistory implements HistoryBackend {
-  readonly kind: 'historyd' | 'deckd';
+  readonly kind = 'deckd' as const;
   #base: string;
   #ensured: Set<string> = new Set();
   #queue = new DirQueue();
@@ -49,8 +47,6 @@ export class HistorydHistory implements HistoryBackend {
       process.env.DECK_HISTORYD_URL ??
       DEFAULT_URL
     ).replace(/\/$/, '');
-    this.kind =
-      options.kind ?? (process.env.DECKD_URL ? 'deckd' : 'historyd');
     this.#debouncer = new SealDebouncer({
       debounceMs: options.debounceMs ?? 400,
       seal: (dir, message) => this.seal(dir, message),
@@ -100,11 +96,20 @@ export class HistorydHistory implements HistoryBackend {
     });
   }
 
-  async list(dir: string): Promise<HistoryEntry[]> {
-    await this.flush(dir);
+  async list(
+    dir: string,
+    options?: { limit?: number; flush?: boolean },
+  ): Promise<HistoryEntry[]> {
+    if (options?.flush !== false) {
+      await this.flush(dir);
+    }
     return this.#queue.run(dir, async () => {
       await this.#ensure(dir);
-      return this.#post<HistoryEntry[]>('/list', { dir });
+      let entries = await this.#post<HistoryEntry[]>('/list', { dir });
+      if (options?.limit && options.limit > 0 && entries.length > options.limit) {
+        return entries.slice(0, options.limit);
+      }
+      return entries;
     });
   }
 

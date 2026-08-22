@@ -450,28 +450,19 @@ export async function planVendorTree(
   };
 }
 
-// The import map a vendored unit declares: its own package entry, its
-// aliased dependency records, and the provenance that makes it auditable.
+// Lineage only. Identity, entry, and ranges live in the unmodified
+// package.json in the same pack.
 export function vendorUnitImportMap(unit: VendoredUnit): Buffer {
   let name = unit.deck.split('/').at(-1)!;
   return Buffer.from(
     JSON.stringify(
       {
-        imports: {},
         deck: {
           packages: {
             [name]: {
-              version: unit.version,
-              entry: `$DECK/${unit.entry}`,
-              ...(Object.keys(unit.exports).length > 0
-                ? { exports: unit.exports }
-                : {}),
               vendoredFrom: unit.vendoredFrom,
             },
           },
-          ...(Object.keys(unit.dependencies).length > 0
-            ? { dependencies: unit.dependencies }
-            : {}),
         },
       },
       null,

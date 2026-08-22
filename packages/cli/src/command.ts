@@ -11,6 +11,7 @@ export type GroupId =
   | 'seal'
   | 'publish'
   | 'depend'
+  | 'repository'
   | 'propose'
   | 'endorse'
   | 'recall'
@@ -47,6 +48,11 @@ export const GROUPS: Group[] = [
     id: 'depend',
     title: 'depend',
     blurb: 'what a deck uses, and which bytes answer to it',
+  },
+  {
+    id: 'repository',
+    title: 'repository',
+    blurb: 'branch, checkpoint, review, and merge related packages atomically',
   },
   {
     id: 'propose',

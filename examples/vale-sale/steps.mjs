@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Walk the VALE sale page through ~40 Timeline Steps using the same jj seal
+// Walk the VALE sale page through ~40 History Steps using the same jj seal
 // path `deck history` flushes. No releases — live branch only.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -14,7 +14,7 @@ const type = join(depot, 'vale', 'type');
 
 const attachment = await createHistory({
   dir: depot,
-  kind: 'jj',
+  kind: 'deckd',
   onError: (error) => console.error(error),
 });
 if (!attachment.backend) {

@@ -144,7 +144,7 @@ module('map mode: recovering a tree from a bundle', () => {
       policy: OFF,
     });
     let map = JSON.parse(
-      mapVendorImportMap('demo', '1.0.0', result).toString('utf8'),
+      mapVendorImportMap('demo', result).toString('utf8'),
     );
     assert.strictEqual(map.deck.packages.demo.entry, undefined, 'no entry');
     assert.true(map.deck.packages.demo.sourceOnly);

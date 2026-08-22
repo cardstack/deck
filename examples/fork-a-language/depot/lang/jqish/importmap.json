@@ -1,7 +1,0 @@
-{
-  "deck": {
-    "packages": {
-      "jqish": { "version": "1.0.0", "entry": "$DECK/index.js" }
-    }
-  }
-}

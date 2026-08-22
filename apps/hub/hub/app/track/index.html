@@ -16,6 +16,9 @@
       addressable and deliberately not importable — the same shape the
       ProseMirror `src/` decks have, for the same reason.
     -->
+    <!-- Shell fill + theme before first paint / VT snapshot (kills white flash). -->
+    <link rel="stylesheet" href="/hub/ui/theme/boot.css" />
+    <script src="/hub/ui/theme/boot.js"></script>
     <link rel="stylesheet" href="/hub/type/commit-mono@5.3.0/font.css" />
 
     <!--
@@ -56,13 +59,24 @@
       designed yet.
     -->
     <link rel="stylesheet" href="/hub/ui/theme/theme.css" />
+    <!--
+      Cross-document View Transitions: opt-in here (not only in theme.css) so
+      Chrome/Safari can start the MPA transition before the stylesheet lands.
+      Named chrome + nested `view-transition-group` live in ui/theme.
+    -->
+    <style>
+      @media (prefers-reduced-motion: no-preference) {
+        @view-transition { navigation: auto; }
+      }
+    </style>
   </head>
   <body>
     <deck-nav app="track"></deck-nav>
     <deck-subject></deck-subject>
-    <div id="app" class="dim">loading…</div>
+    <!-- Empty until paint — keeps View Transitions off the boot message. -->
+    <div id="app" aria-busy="true"></div>
+    <p id="boot" class="hub-boot" hidden aria-live="polite">still loading…</p>
     <deck-keys></deck-keys>
-    <script type="module" src="/_live/hmr.js"></script>
     <script type="module" src="./track.js"></script>
   </body>
 </html>

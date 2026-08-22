@@ -8,9 +8,11 @@
   },
   "scripts": {
     "demo": "pnpm --filter @cardstack/deck-example-hub demo",
+    "replay:collaboration": "node scripts/replay-collaboration.mjs",
+    "test:collaboration": "node scripts/test-collaboration.mjs",
     "lint": "pnpm run --filter './packages/**' --if-present -r lint",
     "lint:fix": "pnpm run --filter './packages/**' --if-present -r lint:fix",
-    "test": "pnpm run --filter './packages/**' --if-present -r test"
+    "test": "pnpm run --filter './packages/**' --if-present -r test && pnpm test:collaboration"
   },
   "devDependencies": {
     "prettier": "catalog:"

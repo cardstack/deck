@@ -1,0 +1,13 @@
+{
+  "name": "gallery",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./gallery.js"
+  },
+  "dependencies": {
+    "std/tokens": "^1.0.0",
+    "ui/card": "^1.0.0",
+    "ui/pills": "^1.0.0"
+  }
+}

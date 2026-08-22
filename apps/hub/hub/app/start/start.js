@@ -14,15 +14,19 @@
 // that could be checked and was not is a sentence nobody has to believe.
 //
 // WHAT THIS PAGE IS NOT.
-// A tour. Every section here is short and ends in a link into /browse, /run
-// or /track, because reading about a runnable thing when the runnable thing
-// is one click away is the worst of both.
+// A self-contained tutorial. Every section here is short and ends in a link
+// into /browse, /run or /track, because reading about a runnable thing when
+// the runnable thing is one click away is the worst of both. The interactive
+// protocol stories (ui/tour) launch from the hero — live demos, not a Hub UI tutorial —
+// captions live in the bottom bar; it does not replace the live numbers
+// or the doctrine below.
 //
 // The long-form book still exists at /deckbook — captured transcripts, worked
 // use cases, the full CLI walkthrough. That page is a document. This one is
 // an instrument, and it is the one that has to be true right now.
 import 'ui/nav';
 import { installNavStyles, wrapTables } from 'ui/nav';
+import { mountTourButton, resumeHubTour } from 'ui/tour';
 import hljs from 'highlight-js';
 import bash from 'highlight-js/es/languages/bash.js';
 
@@ -92,42 +96,23 @@ function ago(when) {
 //     which is the claim, and this is the test of it
 // ---------------------------------------------------------------------------
 
+/**
+ * First paint — `/_packages` only.
+ *
+ * Activity and per-depot `/_history` used to sit on the critical path and
+ * turned this panel into a multi-second wait behind seal-log walks. Claims
+ * arrive in `enrichNow`; step totals are no longer fetched here (the History
+ * link is enough — counting every seal on start was the expensive lie).
+ */
 async function now() {
-  let [packages, activity] = await Promise.all([
-    getJson('/_packages').catch(() => ({ data: [] })),
-    getJson('/_activity?top=200&grain=file').catch(() => ({ foci: [] })),
-  ]);
+  let packages = await getJson('/_packages').catch(() => ({ data: [] }));
   let depots = packages.data ?? [];
-
-  // Steps come per depot and only where a history backend attached. A depot
-  // without one is not broken — its Versions ARE its history — so
-  // it reports no Timeline rather than zero Steps, which would be a lie
-  // about a tape that does not exist.
-  //
-  // ONE AT A TIME, not `Promise.all`. Twelve depots is twelve requests, a
-  // browser allows six per origin, and one of those six is already spent on
-  // the SSE stream that makes this page live. Firing them together does not
-  // make them finish sooner — they queue in the browser instead of on the
-  // server — and it takes every connection the page has, so anything else it
-  // needs is stuck behind a fan-out that exists only to fill a table.
-  //
-  // Sequential is slower in the best case and the only one that cannot starve
-  // the page in the worst.
-  let timelines = [];
-  for (let depot of depots) {
-    if (!depot.history) {
-      timelines.push({ depot: depot.name, steps: undefined });
-      continue;
-    }
-    let body = await getJson(`/${depot.name}/_history`).catch(() => undefined);
-    let steps = body?.data?.map((step) => step.attributes) ?? [];
-    timelines.push({
-      depot: depot.name,
-      steps: steps.length,
-      newest: steps[0]?.timestamp,
-    });
-  }
-  let tape = new Map(timelines.map((row) => [row.depot, row]));
+  let tape = new Map(
+    depots.map((depot) => [
+      depot.name,
+      { depot: depot.name, steps: undefined, newest: undefined },
+    ]),
+  );
 
   let decks = 0;
   let versions = 0;
@@ -148,12 +133,31 @@ async function now() {
       }
     }
   }
-  let claims = (activity.foci ?? []).flatMap((focus) =>
+
+  return {
+    depots,
+    tape,
+    decks,
+    versions,
+    vendored,
+    live,
+    claims: [],
+    steps: undefined,
+    newestVersion,
+  };
+}
+
+/** Claims only — after the depot table is already on screen. */
+async function enrichNow(state) {
+  let activity = await getJson('/_activity?top=200&grain=package').catch(
+    () => ({
+      foci: [],
+    }),
+  );
+  state.claims = (activity.foci ?? []).flatMap((focus) =>
     (focus.claims ?? []).map((claim) => ({ ...claim, at: focus.id })),
   );
-  let steps = timelines.reduce((sum, row) => sum + (row.steps ?? 0), 0);
-
-  return { depots, tape, decks, versions, vendored, live, claims, steps, newestVersion };
+  return state;
 }
 
 function statLine(state) {
@@ -185,11 +189,14 @@ function statLine(state) {
   return (
     `<div class="stats" data-role="stats">` +
     cells
-      .map(
-        ([value, label, href]) =>
+      .map(([value, label, href]) => {
+        let shown = value === undefined || value === null ? '—' : value;
+        return (
           `<a class="stat" href="${esc(href)}">` +
-          `<b>${value}</b><span>${esc(label)}</span></a>`,
-      )
+          `<b${value === undefined || value === null ? ' class="dim"' : ''}>${shown}</b>` +
+          `<span>${esc(label)}</span></a>`
+        );
+      })
       .join('') +
     `</div>`
   );
@@ -208,9 +215,14 @@ function depotTable(state) {
         `<td>${
           depot.history
             ? `<a class="s-seal" href="/browse?at=/${esc(depot.name)}/_history">` +
-              `${tape?.steps ?? 0} Step${tape?.steps === 1 ? '' : 's'}</a>` +
-              (tape?.newest ? ` <span class="dim">· ${esc(ago(tape.newest))}</span>` : '')
-            : `<span class="dim">Versions only — no Timeline</span>`
+              (tape?.steps == null
+                ? `History`
+                : `${tape.steps} Step${tape.steps === 1 ? '' : 's'}`) +
+              `</a>` +
+              (tape?.newest
+                ? ` <span class="dim">· ${esc(ago(tape.newest))}</span>`
+                : '')
+            : `<span class="dim">Version history only</span>`
         }</td>` +
         `<td><a href="/run?at=/${esc(depot.name)}">run →</a></td>` +
         `</tr>`
@@ -220,7 +232,7 @@ function depotTable(state) {
   return (
     `<table><thead><tr>` +
     `<th>depot</th><th class="num">decks</th><th class="num">live</th>` +
-    `<th>Timeline</th><th></th>` +
+    `<th>History</th><th></th>` +
     `</tr></thead><tbody>${rows}</tbody></table>`
   );
 }
@@ -264,7 +276,7 @@ Run Deck from this repository.</p>
 node packages/cli/bin/deck.js hello ./playground
 
 # or serve a directory that exists
-node packages/cli/bin/deck.js serve --root ./work --history auto</code></pre>
+node packages/cli/bin/deck.js serve --root ./work --history deckd</code></pre>
 
 <p>Open the URL that the command prints. Then change a file in a deck
 directory. The server does these steps for each change:</p>
@@ -287,6 +299,115 @@ a name to a state, use a different command:</p>
 
 <p>This command copies no bytes. The command gives a name to a state that is
 already in the store.</p>
+
+<h3>Work together on an ordinary package</h3>
+
+<p>Every mutable package is already a repository. It needs no
+<code>repository.json</code> and no initialization ceremony. Create a branch,
+edit the package, capture an intentional Checkpoint, open a Review, and merge
+it:</p>
+
+<pre class="term"><code>deck branch --depot ./work/site --repo acme/palette \\
+  --name fix/contrast --from main
+
+# edit ./work/site/acme/palette, then capture the branch
+deck checkpoint --depot ./work/site --repo acme/palette \\
+  --branch fix/contrast --message "Improve contrast"
+
+deck review --depot ./work/site --repo acme/palette \\
+  --source fix/contrast --target main --title "Improve contrast"
+
+deck merge --depot ./work/site --repo acme/palette --number 1</code></pre>
+
+<p>Browse shows the package, its branches, and its Checkpoint history. Review
+shows the exact source and target Checkpoints, the file differences, a runnable
+preview, and the merge result. Both surfaces read the same durable objects
+that the CLI writes.</p>
+
+<h3>Fork an imported package before changing it</h3>
+
+<p>An import is immutable input. Deck never gives an upstream package a
+writable branch in place. Forking materializes the chosen Version under your
+publisher, records its ancestry, and creates a mutable package repository:</p>
+
+<pre class="term"><code>deck fork --depot ./work/site \\
+  --from three/three@0.179.1 --as you/three --use-in you/app</code></pre>
+
+<p>A branch and a fork use the same cheap content-addressed ancestry. The
+difference is ownership: a branch stays inside one repository; a fork crosses
+into another publisher's package and can be reviewed back upstream when it
+has mutable upstream lineage.</p>
+
+<h3>Group packages only when they must land together</h3>
+
+<p>Most work stops at the package repository above. When a change to several
+packages and the exact import map must be atomic, use
+<code>deck repo-init</code>. It writes <code>repository.json</code> to name the
+members and roots. This is Deck's monorepo: a Repository Checkpoint points to
+several independently addressable package trees and one exact lock.</p>
+`;
+
+const SYSTEM = `
+<p class="lede">Deck has one content-addressed foundation and two kinds of
+state. Files, package trees, Versions, Repositories and Checkpoints are immutable
+objects. Branches, tags and Review heads are small mutable pointers to those
+objects. That division is the whole system.</p>
+
+<pre class="term"><code>files on disk
+     │
+     │ every settled save — automatic; no commit
+     ▼
+package tree ──hash──┬──▶ Version ──URL──▶ Browse + Run
+                     │
+                     └──▶ History Step ──▶ inspect · compare · restore
+                                            DAILY SAFETY
+
+chosen package tree(s) + exact import-map lock
+     │
+     │ deck checkpoint — intentional authorship
+     ▼
+Repository ◀── Checkpoint ◀── branch  (mutable compare-and-swap ref)
+
+source branch ──exact Checkpoint──┐
+                                ├──▶ Review ──preview──▶ Browse + Run
+target branch ──exact Checkpoint──┘       │
+                                       └──merge──▶ new two-parent Checkpoint
+                                                        │
+                                                        └──CAS──▶ target branch</code></pre>
+
+<table class="stack"><tbody>
+<tr><td><b>Package</b></td><td class="says">The independently addressable,
+runnable and releasable unit. A mutable package is implicitly a repository.</td></tr>
+<tr><td><b>Version</b></td><td class="says">A permanent semver name for one
+package tree. Automatic <code>-dev.N</code> Versions preserve every settled
+save.</td></tr>
+<tr><td><b>Step</b></td><td class="says">An observed filesystem capture in a
+depot History. It answers “what happened while work was in progress?”</td></tr>
+<tr><td><b>Checkpoint</b></td><td class="says">An intentional authored history
+event. It points to one Repository and its parent Checkpoints.</td></tr>
+<tr><td><b>Branch</b></td><td class="says">A named compare-and-swap ref inside
+one owner and repository.</td></tr>
+<tr><td><b>Fork</b></td><td class="says">The same isolation and ancestry
+mechanics across an ownership boundary. Imported packages are read-only until
+forked.</td></tr>
+<tr><td><b>Review</b></td><td class="says">Durable metadata connecting exact
+source and target Checkpoints, plus append-only review and merge events.</td></tr>
+<tr><td><b>Repository</b></td><td class="says">The atomic collaboration state.
+Usually it contains one package implicitly. A <code>repository.json</code>
+exists only when several packages and their lock must advance together.</td></tr>
+</tbody></table>
+
+<p><b>Distribution stays read-only.</b> HTTP serves live and immutable package
+addresses. The CLI and daemon author content-addressed objects and move refs.
+Local Deck coordinates ref updates with atomic files; an S3-backed Deck uses
+conditional object writes. Neither needs a Git object store.</p>
+
+<p><b>The Hub is an inspector for this state.</b> Browse answers what exists
+and which repository governs it. Run executes pages and follows library nodes
+into the pages that consume them, with an exact Version available as a
+no-store trial. Track shows automatic Steps and activity. Review shows proposed
+Checkpoint-to-Checkpoint changes and moves the target branch only after a clean
+merge.</p>
 `;
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -322,7 +443,7 @@ const ANY_SYSTEM = [
      marks it <code>immutable</code>, and the browser does not ask about it
      again. A second visit to the page transfers zero bytes. This is not a
      setting that somebody tuned. It is a result of the address, and the
-     timeline in <b>run</b> prints the number of bytes to show it.`,
+     transfer readout in <b>run</b> prints the number of bytes to show it.`,
     '/run',
     'see 0 KB',
   ],
@@ -338,15 +459,16 @@ const ANY_SYSTEM = [
     'read the catalog',
   ],
   [
-    'There is one kind of checkpoint',
-    `Many systems have three kinds: the undo in the editor, the milestone in
-     the tool, and the commit in the version control. Deck has one, and it is
-     the Step. To combine work that two people did at the same time, Deck
-     merges the two trees against the base tree that both started from. Deck
-     merges JSON as data, key by key. Two people who add different keys
-     therefore do not make a conflict.`,
+    'Automatic history and authored history stay connected',
+    `A Step is what the filesystem watcher observed on a save. A Checkpoint is
+     what a person or agent intentionally captured on a branch. Both point
+     into the same content-addressed store, so review can retain the authored
+     story without losing the work between Checkpoints. To combine concurrent
+     work, Deck merges package trees against the exact base Checkpoint. JSON is
+     merged as data, key by key, so two additions at different keys do not
+     conflict.`,
     '/track',
-    'see a merge',
+    'see the work',
   ],
   [
     'Install, upgrade, remix and use are four different operations',
@@ -354,9 +476,9 @@ const ANY_SYSTEM = [
      package. The differences appear later, and they are painful. In Deck the
      four stay separate. To use a deck, add one line to an import map. To
      install it, make that line an exact address. To upgrade it, change the
-     address. To remix it, fork the deck into your own publisher space; the
-     fork records the tree that it came from, so you can offer your changes
-     back.`,
+     address. To remix an imported package, fork it into your own publisher
+     space. The import stays read-only; the fork becomes a mutable package
+     repository and records the exact ancestry needed to review changes back.`,
     '/browse',
     'look at a fork',
   ],
@@ -371,14 +493,13 @@ const ANY_SYSTEM = [
   ],
   [
     'You can run a contribution before you accept it',
-    `A proposal is a fork that records the tree that it came from. A proposal
-     is therefore a Version, and you can run it. You do not have to imagine
-     the result of a difference between two files. Deck merges the clean
-     proposals. If a merge has a conflict, Deck reports the conflict and
-     changes nothing, because a machine that damages the work of a
-     contributor is worse than a machine that stops.`,
-    '/track?kind=proposed,conflicted',
-    'open proposals',
+    `A Review durably names exact source and target Checkpoints. Deck prepares
+     the same three-way Repository merge for Preview that it will use for
+     Merge, then hands the resulting exact package Versions to Run. You do not
+     have to infer the assembled result from a diff. If the merge conflicts,
+     Deck reports qualified package paths and advances no branch.`,
+    '/review',
+    'open Reviews',
   ],
   [
     'A fork copies no bytes until it differs',
@@ -424,22 +545,22 @@ const ANY_SYSTEM = [
     `Each change becomes a Step. An agent can also declare where it intends to
      work. A page that shows the result and a list that shows the changes can
      therefore both move while a person or an agent makes changes. This
-     application shows a simple form of this, with a frame and a timeline. A
+     application shows a simple form of this, with a frame and the History
+     scrubber. A
      system with a true preview surface can do more.`,
     '/run',
     'the running thing',
   ],
   [
     'Review tools can use more than a difference between two files',
-    `The protocol records who did the work, what they declared before they
-     started, what they wrote afterwards, and which tree each statement is
-     about. It identifies the tree by its content, not by the name of a
-     branch. A review tool that reads this has more to show than two columns
-     of text. This application shows the simple form: a review of several
-     files, marks on the words that changed, and hidden lines that you can
-     open.`,
-    '/browse',
-    'a review',
+    `A Review retains familiar source and target branch names while binding
+     them to exact immutable Checkpoints. Its event chain records source
+     updates, verdicts, merge preparation and completion. The Hub can
+     therefore show files, authored history, executable preview, merge state,
+     and the canonical objects underneath instead of reconstructing truth
+     from two moving branch names.`,
+    '/review',
+    'inspect a Review',
   ],
 ];
 
@@ -465,18 +586,78 @@ const ANY_SYSTEM = [
 // Each law carries which half it governs. Eleven of the twelve are at rest,
 // which is the clearest statement of where this system is finished.
 const LAWS = [
-  ['L1', 'rest', 'Identity', 'Identity is <code>tree-hash-v1</code> over the logical file tree, and nothing else enters it. Not zip framing, not compression, not the order bytes landed on disk, not the version anybody attached. Paths are Unicode NFC. Two trees with the same files hash the same on every implementation, forever.'],
-  ['L2', 'rest', 'Round trip', 'Packing and unpacking is lossless and byte-exact: <code>pack(unpack(P)) === P</code> for a canonical pack, and the treeHash survives the trip.'],
-  ['L3', 'rest', 'Pointer', 'Versions and dist-tags name treeHashes. Naming a state copies no bytes.'],
-  ['L4', 'rest', 'Immutability', 'A published exact version never changes, and re-publishing one is refused. There is no unpublish. The only way to say a version is bad is to say so <i>about</i> it.'],
-  ['L5', 'rest', 'Volatility', 'A deck has exactly three kinds of address and they are different URLs: no version segment is the working tree (<code>no-store</code>), <code>@&lt;exact&gt;</code> is one sealed state (<code>immutable</code>), and a range or tag is a name that costs one short hop. Ranges never match prereleases.'],
-  ['L6', 'rest', 'Hermeticity', 'A sealed deck resolves every specifier it contains — inside itself, or to a dependency it declares. Nothing reaches the live web at runtime. A deck that would need a CDN to work is refused rather than warned about.'],
-  ['L7', 'rest', 'Resolution', 'Exact before range, tags before ranges, and the same answer on every implementation given the same store.'],
-  ['L8', 'rest', 'Provenance', 'Where bytes came from travels with them, per version, and cannot be edited away by a later publish.'],
-  ['L9', 'rest', 'Endorsement', 'Signatures are about a <b>tree hash</b>, not about a package or a version — so a fork holding the same bytes reads the same endorsements.'],
-  ['L10', 'rest', 'Carry-over', 'A statement is addressed to a tree hash, so it applies wherever those exact bytes appear. Nothing is derived from a parent: the statement did not move, the content turned up in a second place.'],
-  ['L11', 'both', 'Fail closed', 'An unknown answer is not a safe answer. Unverifiable provenance, an unparsable publish time, a specifier that cannot be resolved: refuse, do not warn and continue.'],
-  ['L12', 'rest', 'Serving', 'The distribution surface is read-only — <code>GET</code> and <code>HEAD</code>. Every write goes through a tool that arranges state on disk; distribution follows. This is why declared activity is read from files rather than posted to an endpoint.'],
+  [
+    'L1',
+    'rest',
+    'Identity',
+    'Identity is <code>tree-hash-v1</code> over the logical file tree, and nothing else enters it. Not zip framing, not compression, not the order bytes landed on disk, not the version anybody attached. Paths are Unicode NFC. Two trees with the same files hash the same on every implementation, forever.',
+  ],
+  [
+    'L2',
+    'rest',
+    'Round trip',
+    'Packing and unpacking is lossless and byte-exact: <code>pack(unpack(P)) === P</code> for a canonical pack, and the treeHash survives the trip.',
+  ],
+  [
+    'L3',
+    'rest',
+    'Pointer',
+    'Versions and dist-tags name treeHashes. Naming a state copies no bytes.',
+  ],
+  [
+    'L4',
+    'rest',
+    'Immutability',
+    'A published exact version never changes, and re-publishing one is refused. There is no unpublish. The only way to say a version is bad is to say so <i>about</i> it.',
+  ],
+  [
+    'L5',
+    'rest',
+    'Volatility',
+    'A deck has exactly three kinds of address and they are different URLs: no version segment is the working tree (<code>no-store</code>), <code>@&lt;exact&gt;</code> is one sealed state (<code>immutable</code>), and a range or tag is a name that costs one short hop. Ranges never match prereleases.',
+  ],
+  [
+    'L6',
+    'rest',
+    'Hermeticity',
+    'A sealed deck resolves every specifier it contains — inside itself, or to a dependency it declares. Nothing reaches the live web at runtime. A deck that would need a CDN to work is refused rather than warned about.',
+  ],
+  [
+    'L7',
+    'rest',
+    'Resolution',
+    'Exact before range, tags before ranges, and the same answer on every implementation given the same store.',
+  ],
+  [
+    'L8',
+    'rest',
+    'Provenance',
+    'Where bytes came from travels with them, per version, and cannot be edited away by a later publish.',
+  ],
+  [
+    'L9',
+    'rest',
+    'Endorsement',
+    'Signatures are about a <b>tree hash</b>, not about a package or a version — so a fork holding the same bytes reads the same endorsements.',
+  ],
+  [
+    'L10',
+    'rest',
+    'Carry-over',
+    'A statement is addressed to a tree hash, so it applies wherever those exact bytes appear. Nothing is derived from a parent: the statement did not move, the content turned up in a second place.',
+  ],
+  [
+    'L11',
+    'both',
+    'Fail closed',
+    'An unknown answer is not a safe answer. Unverifiable provenance, an unparsable publish time, a specifier that cannot be resolved: refuse, do not warn and continue.',
+  ],
+  [
+    'L12',
+    'rest',
+    'Serving',
+    'The distribution surface is read-only — <code>GET</code> and <code>HEAD</code>. Every write goes through a tool that arranges state on disk; distribution follows. This is why declared activity is read from files rather than posted to an endpoint.',
+  ],
 ];
 
 const PROTOCOL = `
@@ -497,43 +678,44 @@ the same sense that a tarball and a digest are formats. The store layout, the
 command-line tool and the watcher are <b>implementation</b>, and the laws say
 so: nothing requires a server to store anything the way this one does.</p>
 
-<h3>At rest, and in motion</h3>
+<h3>Immutable content, durable collaboration</h3>
 
-<p>Deck has two halves, and they are not equally finished. To read them as
-one thing makes the settled half look provisional and the unsettled half look
-decided.</p>
+<p>Deck has two layers with different jobs. To collapse them makes immutable
+identity look mutable and collaboration state look less durable than it is.</p>
 
 <p><b>At rest</b> is what a byte, a tree and a Version <i>are</i>. The answer
 does not change with time, with who asks, or with what anybody intends to do
 next. This half is settled: the twelve laws state it, the conformance suite
 examines it, and you can write a second implementation of it today.</p>
 
-<p><b>In motion</b> is what people and agents do to each other's work: they
-propose, review, merge, declare and comment. The answers change by the
-minute, and more than one party is involved. This half is not settled.</p>
+<p><b>Collaboration</b> records what people and agents do to work. Repository,
+Checkpoint, branch-head, Review opening and event formats are implemented
+and tested locally. The mutable parts are deliberately small: a branch ref, a
+Review head, and its event pointer. Everything they name is immutable.</p>
 
-<p>The question that divides them: <b>does the answer change if nobody does
-anything?</b> A tree hash does not. A proposal does — it becomes old, it is
-rebased, and somebody accepts it or abandons it.</p>
+<p>The question that divides them is: <b>is this an object or a pointer?</b> A
+tree, Repository, Checkpoint and Review event never change. A branch or numbered
+Review ref can move, but only with compare-and-swap against the value its
+writer observed.</p>
 
 <table class="stack">
-<thead><tr><th></th><th>at rest — settled</th><th>in motion — not settled</th></tr></thead>
+<thead><tr><th></th><th>immutable objects</th><th>mutable coordination</th></tr></thead>
 <tbody>
 <tr><td>identity</td><td class="says">tree hash, packlist, object</td><td class="says">—</td></tr>
-<tr><td>naming</td><td class="says">Version, dist-tag, range</td><td class="says">—</td></tr>
+<tr><td>naming</td><td class="says">Version, Repository, Checkpoint</td><td class="says">dist-tag, range, branch head</td></tr>
 <tr><td>distribution</td><td class="says">the address grammar, the cache rules</td><td class="says">—</td></tr>
-<tr><td>time</td><td class="says">Step, Timeline</td><td class="says">the live loop that makes them</td></tr>
+<tr><td>time</td><td class="says">Step, Checkpoint, Review event</td><td class="says">History head, branch head, Review head</td></tr>
 <tr><td>provenance</td><td class="says">where bytes came from, and when</td><td class="says">—</td></tr>
 <tr><td>trust</td><td class="says">an endorsement of a tree hash</td><td class="says">whose endorsements you accept</td></tr>
-<tr><td>change</td><td class="says">—</td><td class="says">offer, rebase, conflict</td></tr>
+<tr><td>change</td><td class="says">Review opening and events</td><td class="says">branch, fork, Review, merge</td></tr>
 <tr><td>intent</td><td class="says">—</td><td class="says">claim</td></tr>
 <tr><td>talk</td><td class="says">—</td><td class="says">note, reply</td></tr>
 <tr><td>presence</td><td class="says">—</td><td class="says">activity</td></tr>
 <tr><td>testing</td><td class="says">the run record, over a tree hash</td><td class="says">running the suite, and who signs the result</td></tr>
 </tbody></table>
 
-<p>Two entries sit on the side that surprises people, and both split the same
-way: the record is at rest, the act that produced it is in motion.</p>
+<p>The same split applies throughout: the record is immutable; the act that
+produces it and the ref that selects it are mutable.</p>
 
 <p><b>A Step is at rest.</b> It is one immutable capture with an address, and
 it reads the same in a year. The watcher that makes Steps is in motion; the
@@ -559,26 +741,24 @@ freshness rule is hard because failing closed (L11) must not turn an
 unreachable list into a refusal to run. Do not build anything that depends on
 taking a signature back. See <code>docs/deck-at-rest.md</code> §7.</p>
 
-<p><b>The at-rest half is closed.</b> Do not add to it without a strong
+<p><b>The package at-rest half is closed.</b> Do not add to it without a strong
 reason: an artifact stored today must still verify under a reader written
 next year. If a new idea can be expressed as data at an address, it belongs
 in motion. That is how claims were built — files at a known path, read by an
 ordinary <code>GET</code>, and no change to identity, naming or serving.</p>
 
-<p>The in-motion half is where the unfinished work is. Notes are written but
-not read back. Signing can say yes and cannot yet say no. Automated testing
-is designed and not built — a suite is a deck, a run is one suite Version
-against one tree hash, you run it locally, and the result is a statement
-signed by a person rather than a mark issued by a service. Two runs of one
-pair that disagree is the useful signal, because it means the suite is not
-hermetic, and a service that runs the pair once cannot notice. See
-<code>docs/deck-testing.md</code>.</p>
+<p><b>The collaboration object model is implemented; hosting is unfinished.</b>
+Local Deck has Repository and Checkpoint objects, compare-and-swap branches,
+durable Reviews, executable previews, three-way merge, and crash recovery.
+Conditional object-store adapters implement the same ref contract for S3.
+What remains is production AWS wiring, identity and permissions, policy for
+required reviews and checks, and transport between independently administered
+servers. Those are origin concerns, not missing package identity.</p>
 
-<p>And one gap contains the others. The in-motion half has one large gap. Nothing here defines how a depot
-offers a change to a depot on <i>another machine</i>, or how a review travels
-between them. Until that exists, Deck in motion is a set of local
-conventions with a good data model, and Deck at rest is the part another
-implementation can join. See <code>docs/deck-in-motion.md</code>.</p>
+<p>Notes are written but not yet read back. Signing can say yes and cannot yet
+say no. Automated tests as signed statements are designed and not built. See
+<code>docs/deck-collaboration-protocol.md</code>,
+<code>docs/deck-in-motion.md</code>, and <code>docs/deck-testing.md</code>.</p>
 
 <h3>The shape of an address</h3>
 <pre class="term"><code>/&lt;depot&gt;/&lt;publisher&gt;/&lt;package&gt;[@&lt;spec&gt;]/&lt;path&gt;
@@ -607,26 +787,49 @@ ${LAWS.map(
 <tr><td><code>GET …@&lt;exact&gt;/&lt;path&gt;</code></td><td class="dim">one sealed state, <code>immutable</code>, with a content digest</td></tr>
 <tr><td><code>GET …@&lt;range|tag&gt;/&lt;path&gt;</code></td><td class="dim">exactly one redirect to the exact address</td></tr>
 <tr><td><code>GET …@&lt;exact&gt;?format=pack</code></td><td class="dim">the stored pack bytes, byte-exact (L2)</td></tr>
-<tr><td><code>GET /_packages</code></td><td class="dim">the catalog, and the capability truth — including whether each depot has a Timeline</td></tr>
+<tr><td><code>GET /_packages</code></td><td class="dim">the catalog, and the capability truth — including whether each depot has every-save History</td></tr>
 </tbody></table>
 
 <h3>What a server MAY answer</h3>
 <table><tbody>
-<tr><td><code>GET /&lt;depot&gt;/_history[/&lt;changeId&gt;/…]</code></td><td class="dim">the Timeline, when a history backend is attached. Absence means the depot has Versions only. It is not an error.</td></tr>
+<tr><td><code>GET /&lt;depot&gt;/_history[/&lt;changeId&gt;/…]</code></td><td class="dim">every-save History, when a history backend is attached. Otherwise the depot still has Version history.</td></tr>
 <tr><td><code>GET /&lt;depot&gt;/_offers</code></td><td class="dim">open proposals with their merge status</td></tr>
 <tr><td><code>GET /&lt;depot&gt;/_trees/&lt;treeHash&gt;/signatures</code></td><td class="dim">endorsements, addressed by tree (L9)</td></tr>
 <tr><td><code>GET /_activity</code></td><td class="dim">where work is happening, and what anyone declared</td></tr>
-<tr><td><code>GET /_live/events</code></td><td class="dim">a change bus</td></tr>
+<tr><td><code>GET /_live/state</code></td><td class="dim">a short-lived moving change snapshot for Hub chrome</td></tr>
+<tr><td><code>GET /_live/events</code></td><td class="dim">an optional SSE change bus for streaming clients</td></tr>
 </tbody></table>
 <p>A client MUST treat every one of these as optional and degrade rather than
 fail. The capability block in <code>/_packages</code> is how it finds out,
 and a server MUST NOT report a capability it does not have (L11).</p>
 
+<h3>What a collaboration adapter MUST preserve</h3>
+<p>The HTTP distribution surface stays read-only. Collaboration writes go
+through an authoring adapter, but local files and S3 objects obey the same
+contract:</p>
+<table class="stack"><tbody>
+<tr><td><b>immutable put</b></td><td class="says">Locks, Repositories,
+Checkpoints, Review openings and events are canonical, content addressed,
+and write-once.</td></tr>
+<tr><td><b>conditional ref update</b></td><td class="says">A branch moves only
+when its current generation equals the writer's expected generation. Local Deck
+uses an atomic rename; S3 uses <code>If-Match</code>.</td></tr>
+<tr><td><b>unique allocation</b></td><td class="says">Review numbers, openings
+and new event objects use create-if-absent. Concurrent writers reread and
+retry allocation; they do not overwrite.</td></tr>
+<tr><td><b>recoverable merge</b></td><td class="says">Deck records the prepared
+merge Checkpoint before advancing the target branch, then records completion.
+Retry completes the same merge rather than creating another.</td></tr>
+<tr><td><b>preview parity</b></td><td class="says">Preview and Merge use the
+same base, source, target and Repository merge engine, so an unchanged clean
+preview names the state that will land.</td></tr>
+</tbody></table>
+
 <h3>What is not specified</h3>
 <ul>
 <li>how a server stores anything — the store layout here is one implementation of L1–L4, not part of the contract</li>
 <li>which history backend provides Steps, or whether any does</li>
-<li>how writes happen. L12 says the distribution surface is read-only; it does not say what arranges the bytes</li>
+<li>which authoring transport exposes collaboration writes. The object and conditional-update semantics above are the contract; local CLI and hosted APIs are implementations</li>
 <li>authentication and authorisation, which are a deployment’s business</li>
 </ul>
 
@@ -653,7 +856,12 @@ const BOOK = [
      <table class="stack"><tbody>
      <tr><td><b>Version</b></td><td class="says">A published tree that does not change. A semver number addresses it.</td></tr>
      <tr><td><b>Step</b></td><td class="says">One capture of the working tree. The server records one Step for each save.</td></tr>
-     <tr><td><b>Timeline</b></td><td class="says">All the Steps of one depot, in order.</td></tr>
+     <tr><td><b>History</b></td><td class="says">All the Steps of one depot, in order.</td></tr>
+     <tr><td><b>Repository</b></td><td class="says">The exact package trees and lock that advance atomically. Every mutable package has an implicit one-member Repository.</td></tr>
+     <tr><td><b>Checkpoint</b></td><td class="says">An immutable authored history event pointing to one Repository and its parent Checkpoints.</td></tr>
+     <tr><td><b>branch</b></td><td class="says">A named mutable ref to a Checkpoint inside one owner and repository.</td></tr>
+     <tr><td><b>fork</b></td><td class="says">A mutable package under a different publisher, with exact source ancestry when available.</td></tr>
+     <tr><td><b>Review</b></td><td class="says">A durable proposal from one exact branch Checkpoint to another, with append-only events, preview and merge state.</td></tr>
      <tr><td><b>Import</b></td><td class="says">A specifier that a deck asks for.</td></tr>
      <tr><td><b>Pin</b></td><td class="says">The exact address that answers an Import.</td></tr>
      <tr><td><b>Entry</b></td><td class="says">The module that a deck offers as the way into itself.</td></tr>
@@ -661,48 +869,51 @@ const BOOK = [
      <tr><td><b>Closure</b></td><td class="says">Every module that a page reaches, directly or through another module.</td></tr>
      <tr><td><b>Deck Pack</b></td><td class="says">One tree and its packlist in one file. The file form is <code>.pack.zip</code>, and any zip tool opens it.</td></tr>
      <tr><td><b>depot</b></td><td class="says">A directory that is also a URL space.</td></tr>
-     <tr><td><b>deck</b></td><td class="says">A package. It is <code>&lt;publisher&gt;/&lt;name&gt;</code>, and it has an <code>importmap.json</code>.</td></tr>
+     <tr><td><b>deck</b></td><td class="says">A package. It is <code>&lt;publisher&gt;/&lt;name&gt;</code>, and it has a <code>package.json</code>.</td></tr>
      <tr><td><b>publisher</b></td><td class="says">The first segment of a deck name. It is the boundary at which a fork occurs.</td></tr>
-     <tr><td><b>offer</b></td><td class="says">A fork that records the tree it came from. You can run an offer.</td></tr>
+     <tr><td><b>offer</b></td><td class="says">The older package-level proposal view derived from fork lineage. New team workflows use a durable Review.</td></tr>
      <tr><td><b>tree hash</b></td><td class="says">The identity of a whole tree, calculated from its content. The code calls it <code>treeHash</code>.</td></tr>
      </tbody></table>
 
      <p>Three words are no longer in use. Write <b>Version</b>, <b>Step</b> or
      <b>to seal</b>, and never <i>seal</i> as a noun: it meant all three at
      once. Write <b>Step</b> and never <i>frame</i> or <i>tick</i>. Write
-     <b>Timeline</b> or <b>Versions only</b>, and never <i>tier</i>.</p>`,
+     <b>every-save History</b> or <b>Version history only</b>, and never <i>tier</i>.</p>`,
   ],
   [
     'The layout is the address',
     `<p>What <code>ls</code> shows and what the URL says are the same shape.
      A depot carries its machinery inside itself and the machinery is invisible
      to the tree hash, so copying the directory takes the live files, the
-     published Versions and the Timeline with it.</p>
+     published Versions and the History with it.</p>
      <pre class="term"><code>&lt;root&gt;/site/acme/palette/palette.js      on disk
        /site/acme/palette/palette.js     live — every save, no-store
        /site/acme/palette@1.1.0/palette.js
                                          a Version, immutable forever
        /site/_history/&lt;changeId&gt;/acme/palette/palette.js
                                          any Step it was ever in</code></pre>
-<p><b>A depot is close to a monorepo.</b> Many packages in one directory, one
-     history, one place to clone, and a change that crosses several of them is one
-     change. The differences are worth knowing:</p>
+<p><b>A depot is a package address space, not automatically a monorepo.</b>
+     It may contain many unrelated packages, forks and repositories. Each
+     mutable package is its own repository unless a <code>repository.json</code>
+     explicitly groups several packages so one Checkpoint can advance them and
+     their lock atomically.</p>
      <ul>
-     <li>Each deck in a depot has its own <b>version line</b>. A monorepo usually
-     either versions everything together or needs a tool to avoid it.</li>
+     <li>A package remains the independently addressable execution and release
+     boundary, even when it belongs to a multi-package Repository.</li>
      <li>The directory layout <b>is</b> the URL space, so a consumer can import
      one module from one deck without a build step that extracts it.</li>
-     <li>The <b>publisher</b> segment means two people can hold the same package
-     name in one depot. That is a fork inside the repository, and it costs
-     nothing until the bytes differ.</li>
-     <li>There is no workspace file and no link step. A deck depends on another
-     deck by address, and <code>deck lock</code> turns the range into a pin.</li>
+     <li>A dependency edge means “needed to run.” Repository membership means
+     “allowed to change and land atomically.” They are deliberately different.</li>
+     <li>There is no workspace link step. A package depends on another by
+     address, and the exact import map is the executable lock.</li>
      </ul>
 
-     <p><b>The publisher segment is the fork boundary.</b>
+     <p><b>The publisher segment is an ownership boundary.</b>
      <code>acme/palette</code> and <code>you/palette</code> are different decks
-     with different version lines in one depot, and an undiverged fork costs no
-     extra bytes.</p>`,
+     with different version lines in one depot. That is a fork. A named ref
+     such as <code>acme/palette:fix/contrast</code> stays inside the same
+     repository and is shown as a branch. Both are cheap because unchanged
+     objects are shared by hash.</p>`,
   ],
   [
     'Three levels of volatility',
@@ -760,16 +971,17 @@ const BOOK = [
      hit.</p>
 
      <p>The automatic publish chooses the next name for you. It reads the
-     version in your import map, and it adds the next number:</p>
-     <pre class="term"><code># importmap.json declares 1.5.0
+     version in your <code>package.json</code>, and it adds the next number:</p>
+     <pre class="term"><code># package.json declares 1.5.0
 # the store holds 1.5.0-dev.1 and 1.5.0-dev.2
 # the next save publishes:
 1.5.0-dev.3</code></pre>
      <p>To make the stable Version from that work, use
-     <code>deck release</code>. The stable Version must agree with the import
-     map: if the map declares <code>1.5.0</code>, you can release
-     <code>1.5.0</code>. To release <code>1.6.0</code>, first change the map.
-     That change is one line, and it is part of the tree that you seal.</p>`,
+     <code>deck release</code>. The stable Version must agree with
+     <code>package.json</code>: if it declares <code>1.5.0</code>, you can
+     release <code>1.5.0</code>. To release <code>1.6.0</code>, first change
+     the file. That change is one line, and it is part of the tree that you
+     seal.</p>`,
   ],
   [
     'The store',
@@ -785,14 +997,14 @@ const BOOK = [
      what keeps <code>pack(unpack(P)) === P</code> byte-exact.</p>`,
   ],
   [
-    'History: Versions, or a Timeline',
+    'History: every save, or Versions only',
     `<p>A depot has one of two answers, and the server <b>reports</b> which
      one. It does not pretend.</p>
      <table class="stack"><tbody>
      <tr><td><b>History: Versions</b></td><td class="says">Each settled save
      becomes an immutable <code>-dev.N</code> Version. The Versions are the
      history. Always available.</td></tr>
-     <tr><td><b>History: Timeline</b></td><td class="says">Each save also
+     <tr><td><b>History: Every save</b></td><td class="says">Each save also
      becomes a Step, at
      <code>/&lt;depot&gt;/_history/&lt;changeId&gt;/…</code>, and
      <code>deck history</code> and <code>deck restore</code> work. Available
@@ -814,13 +1026,16 @@ const BOOK = [
   --depot ./work/site --publisher acme --tag latest</code></pre>`,
   ],
   [
-    'Fork, lock, offer, rebase',
-    `<p>Contribution is a version you can run.</p>
+    'Fork, branch, Review, preview, merge',
+    `<p>Contribution is exact state you can inspect and run.</p>
      <pre class="term"><code>deck fork --depot ./work/site --from acme/palette --as you/palette --use-in you/app
 deck lock --depot ./work/site --publisher you --name app
-deck offers --depot ./work/site
-deck rebase --depot ./work/site</code></pre>
-     <p>Or try someone else’s deck in your app without checking anything out:</p>
+deck branch --depot ./work/site --repo you/palette --name fix/contrast
+deck checkpoint --depot ./work/site --repo you/palette --branch fix/contrast --message "Improve contrast"
+deck review --depot ./work/site --repo you/palette --source fix/contrast --title "Improve contrast"
+deck merge --depot ./work/site --repo you/palette --number 1</code></pre>
+     <p>To try another package in your app without creating durable review
+     state:</p>
      <pre class="term"><code>/site/you/app/index.html?with=acme/palette=you/palette</code></pre>
      <p>The server rewrites resolution for that one request. No checkout, no
      build, and it is never cached as sealed content.</p>`,
@@ -836,10 +1051,11 @@ deck rebase --depot ./work/site</code></pre>
      <tr><td><code>GET …@&lt;tag|range&gt;/…</code></td><td>one hop to exact</td></tr>
      <tr><td><code>?meta</code></td><td>machine-readable listing</td></tr>
      <tr><td><code>?format=pack</code></td><td>the stored pack bytes</td></tr>
-     <tr><td><code>GET /&lt;depot&gt;/_history</code></td><td>the Timeline</td></tr>
+     <tr><td><code>GET /&lt;depot&gt;/_history</code></td><td>the History</td></tr>
      <tr><td><code>GET /_packages</code></td><td>catalog and capability truth</td></tr>
      <tr><td><code>GET /_activity</code></td><td>where the work is, and who declared it</td></tr>
-     <tr><td><code>GET /_live/events</code></td><td>the change bus</td></tr>
+     <tr><td><code>GET /_live/state</code></td><td>a pollable moving change snapshot for Hub chrome</td></tr>
+     <tr><td><code>GET /_live/events</code></td><td>an optional SSE change bus for streaming clients</td></tr>
      </tbody></table>`,
   ],
 ];
@@ -860,10 +1076,12 @@ bytes: a CDN is someone else’s server that can change its mind, and vendoring
 makes the same graph yours, hermetic, and diffable. Deck can be your CDN;
 a CDN cannot be your registry.</td></tr>
 <tr><td><b>git</b></td><td class="dim">Both keep every state. Git keeps
-<i>commits you author</i>; Deck keeps <i>saves it observed</i>, automatically,
-and gives each one a URL that serves. Nothing here competes with branching and
-history rewriting — Deck’s Timeline is a tape of what actually happened, which
-is a different and smaller promise.</td></tr>
+<i>commits you author</i> in a repository object graph. Deck keeps automatic
+Steps and authored Checkpoints over the same content-addressed package trees,
+and gives every runnable state a URL. Deck now has familiar branches, forks,
+Reviews and three-way merge, but does not reproduce Git's staging area,
+working-copy checkout or history-rewriting model. Its branch refs select exact
+Repositories whose package trees remain directly importable.</td></tr>
 <tr><td><b>a bundler</b></td><td class="dim">There isn’t one, and that is
 not an omission. If you bundle, the bytes that run are not the bytes you
 wrote, and every other claim here depends on those being the same. You can
@@ -877,7 +1095,7 @@ to interpret.</td></tr>
 `;
 
 const CLI = `
-<p>Twenty-seven commands in eight groups, ordered the way the work happens.
+<p>Thirty-four commands in ten groups, ordered the way the work happens.
 <code>deck help</code> prints this map from the command records themselves, so
 it cannot drift from what exists.</p>
 <table class="fit stack"><tbody>
@@ -892,14 +1110,20 @@ it cannot drift from what exists.</p>
 <tr><td><b>depend</b></td><td class="dim">what a deck uses, and which bytes
 answer to it — <code>vendor</code> <code>vendor-tree</code> <code>lock</code>
 <code>verify-links</code></td></tr>
-<tr><td><b>propose</b></td><td class="dim">change someone else’s deck without a
-branch — <code>fork</code> <code>offers</code> <code>rebase</code></td></tr>
+<tr><td><b>repository</b></td><td class="dim">author durable collaboration
+state — <code>repo-init</code> <code>branch</code> <code>checkpoint</code>
+<code>review</code> <code>merge</code></td></tr>
+<tr><td><b>propose</b></td><td class="dim">materialize someone else's package
+under your ownership — <code>fork</code>; inspect older package offers with
+<code>offers</code> and <code>rebase</code></td></tr>
 <tr><td><b>endorse</b></td><td class="dim">who stands behind these bytes —
 <code>keygen</code> <code>sign</code> <code>verify-sig</code></td></tr>
 <tr><td><b>recall</b></td><td class="dim">every state the depot has been in —
 <code>history</code> <code>restore</code></td></tr>
 <tr><td><b>prove</b></td><td class="dim">the executable contract —
 <code>conform</code></td></tr>
+<tr><td><b>say</b></td><td class="dim">declare work and leave durable context —
+<code>claim</code> <code>note</code></td></tr>
 </tbody></table>
 `;
 
@@ -909,18 +1133,77 @@ const STATUS = [
   ['live serve and auto-publish', 'built', 'tested'],
   ['vendoring hermetic graphs, with a cooldown policy', 'built', 'tested'],
   ['lock, fork, merge, offers, rebase', 'built', 'tested'],
+  [
+    'Repository, Checkpoint and compare-and-swap branch heads',
+    'built',
+    'local and S3 adapters tested',
+  ],
+  [
+    'durable Reviews, exact preview, merge and recovery',
+    'built',
+    'implemented and tested locally',
+  ],
+  [
+    'single-package implicit repositories',
+    'built',
+    'no repository.json required',
+  ],
+  [
+    'multi-package repository.json grouping',
+    'built',
+    'atomic Repository Checkpoint and merge',
+  ],
+  [
+    'Hub Browse and Review projections',
+    'built',
+    'read the same durable objects as the CLI',
+  ],
   ['try-by-URL overrides', 'built', 'tested'],
   ['import-map injection and the change bus', 'built', 'tested'],
   ['history backends — Steps and restore', 'built', 'attaches when available'],
   ['publish times, local and upstream', 'built', 'tested'],
   ['the activity protocol — touch and declared claims', 'built', 'tested'],
   ['signatures on tree hashes', 'built', 'tested'],
-  ['minified derived Versions, and compression', 'built', 'reproducible: verify-derivation re-runs it and compares hashes'],
-  ['cross-depot dependency pins', 'not built', 'lock refuses them rather than guessing'],
-  ['notes and replies on a tree hash', 'not built', 'deck note writes them; /track does not read them'],
-  ['revocation, warning, incident', 'not built', 'a signature can say yes and cannot yet say no — deck-at-rest.md §7'],
-  ['test runs as signed statements', 'not built', 'designed in deck-testing.md'],
-  ['anything between two servers', 'not built', 'offers and reviews stay inside one depot'],
+  [
+    'minified derived Versions, and compression',
+    'built',
+    'reproducible: verify-derivation re-runs it and compares hashes',
+  ],
+  [
+    'cross-depot dependency pins',
+    'not built',
+    'lock refuses them rather than guessing',
+  ],
+  [
+    'notes and replies on a tree hash',
+    'not built',
+    'deck note writes them; /track does not read them',
+  ],
+  [
+    'revocation, warning, incident',
+    'not built',
+    'a signature can say yes and cannot yet say no — deck-at-rest.md §7',
+  ],
+  [
+    'test runs as signed statements',
+    'not built',
+    'designed in deck-testing.md',
+  ],
+  [
+    'production S3 credentials and Hub wiring',
+    'not built',
+    'conditional object-store contracts are tested',
+  ],
+  [
+    'identity, permissions, required checks and review policy',
+    'not built',
+    'formats exist; enforcement does not',
+  ],
+  [
+    'federation between independently administered servers',
+    'not built',
+    'no remote Review transport yet',
+  ],
 ];
 
 // ---------------------------------------------------------------------------
@@ -935,6 +1218,15 @@ function section(id, number, title, body) {
     `</section>`
   );
 }
+
+const DECK_MARK = `
+██████╗ ███████╗ ██████╗██╗  ██╗
+██╔══██╗██╔════╝██╔════╝██║ ██╔╝
+██║  ██║█████╗  ██║     █████╔╝ 
+██║  ██║██╔══╝  ██║     ██╔═██╗ 
+██████╔╝███████╗╚██████╗██║  ██╗
+╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝
+`.trim();
 
 /**
  * `state` may be undefined, and that is the normal first call.
@@ -959,7 +1251,6 @@ function view(state) {
       (cta ? `<a href="${esc(href)}">${esc(cta)} →</a>` : '') +
       `</li>`,
   ).join('');
-
 
   let book = BOOK.map(
     ([title, body]) =>
@@ -987,13 +1278,20 @@ function view(state) {
     [
       'now',
       'What this server is running right now',
+      `<p class="lede"><b>One public port.</b> Hub chrome and every runnable
+       demo enter through <code>*.localhost:${esc(location.port)}</code>.
+       A demo's virtual host preserves its sealed <code>/site/…</code> pins;
+       it does not start another server.</p>` +
       `<div data-role="now">${
-        state ? depotTable(state) + activeNote(state) : `<p class="dim">reading the depots…</p>`
+        state
+          ? depotTable(state) + activeNote(state)
+          : `<p class="dim">reading the depots…</p>`
       }</div>`,
     ],
+    ['system', 'How the whole Deck system fits together', SYSTEM],
     [
       'quickstart',
-      'Quickstart: from nothing to a running deck',
+      'Quickstart: run, branch, review and merge',
       QUICKSTART +
         // Said here, not in a closing section, because this is the paragraph
         // a reader has their hands on the keyboard for.
@@ -1007,10 +1305,9 @@ function view(state) {
       'What Deck gives any system',
       `<p class="lede">Each item below is a mechanism in this repository. No item
        is a plan. Each link goes to the place where you can examine the
-       item.</p>` +
-        `<ul class="bens">${benefit}</ul>`,
+       item.</p>` + `<ul class="bens">${benefit}</ul>`,
     ],
-    ['protocol', 'The protocol: laws, addresses, endpoints', PROTOCOL],
+    ['protocol', 'The protocol: content, collaboration and hosting', PROTOCOL],
     ['compare', 'How Deck differs from npm, CDNs, git and bundlers', COMPARE],
     ['book', 'Reference: vocabulary, addressing, storage, history', book],
     ['cli', 'Command reference', CLI],
@@ -1044,10 +1341,8 @@ function view(state) {
     // `<details>` and not a scripted menu: it opens without JavaScript, it is
     // focusable and announced by a screen reader for free, and the browser
     // already knows how to draw the state.
-    // `.prose` is the documentation type system, defined once in theme.css
-    // and specified in docs/deck-hub-typography.md. It governs this page and
-    // the Deckbook and touches nothing in the three lens apps.
-    `<div class="start prose">` +
+    // Same lattice as browse / run / track — one face, one size, no prose scale.
+    `<div class="start">` +
     // OPEN BY DEFAULT ON A WIDE SCREEN, AND IT HAS TO BE THE ATTRIBUTE.
     //
     // A closed `<details>` hides its children in the browser's own shadow
@@ -1061,78 +1356,118 @@ function view(state) {
     // contents and a desktop reader can still collapse it.
     `<details class="toc" data-role="toc"${WIDE.matches ? ' open' : ''}>` +
     `<summary>contents</summary>` +
-    // The Deckbook is the long form of this page and a separate document, so
-    // it belongs in the same contents list — marked as a departure rather
-    // than dressed up as one more section of this one.
     `<nav>${toc}` +
-    `<a class="toc-out" href="/deckbook"><i>↗</i>The Deckbook<br>` +
-    `<span class="dim">worked examples, full transcripts</span></a>` +
+    `<a class="toc-out" href="/deckbook">deckbook</a>` +
     `</nav>` +
     `</details>` +
     `<main class="start-main" data-role="main">` +
-    // WHAT IS THIS. The hero said "Everything here is runnable", which is a
-    // true and clever thing to notice about the page and tells a first-time
-    // reader nothing about what the project is. A landing page owes the
-    // reader the description before the observation.
     `<header class="hero">` +
-    // The mark, then the sentence. Only the NAME is the mark — "is" belongs to
-    // the sentence and takes the sentence's face, or the mark grows a word.
-    `<h1><b>DECK</b> is version management without the commit, package
-     management without the install, and cloud delivery without the deploy.</h1>` +
-    // The unifying assumption, before any mechanism. Three claims that each
+    `<p class="prompt"><span class="prompt-mark">hub</span>start</p>` +
+    `<pre class="deck-mark" role="img" aria-label="DECK">${DECK_MARK}</pre>` +
+    `<h1>version management without the commit<br>` +
+    `package management without the install<br>` +
+    `code collaboration without the clone<br>` +
+    `cloud delivery without the deploy</h1>` +
+    `<div class="doors">` +
+    `<a class="here" href="/deckbook">deckbook</a>` +
+    `<button type="button" data-role="tour">walk the stories</button>` +
+    `</div>` +
+    `<p class="lede"><b>Every save is kept.</b> After a short quiet period,
+     Deck gives the package tree an immutable automatic Version. When an
+     every-save History is attached, the same save is also an ordered Step: the exact
+     depot state, when it happened, and which files changed. You can inspect,
+     run, compare and restore work that was never committed. A later
+     <code>deck checkpoint</code> does a different job: it turns chosen package
+     state into an authored Repository Checkpoint for branch and Review
+     history.</p>` +
+    // The unifying assumption, before any mechanism. Four claims that each
     // sound like a separate trick are one claim said three times, and a
     // reader who does not get that in the second paragraph reads the rest as
     // a feature list.
-    `<p class="lede">One thing makes all three true: there is only one kind of
-     object here — a file, named by the hash of its own bytes, reachable at a
-     URL. A tree is a list of those names. A Version, a Step, a dependency, a
-     fork and a release are all pointers to trees. Commit, install and deploy
-     all do the same job: they move a copy to a second place that names things
-     differently. Here there is no second place.</p>` +
+    `<p class="lede">One foundation makes all four true: files and package
+     trees are named by their content and reachable at URLs. Versions,
+     Repositories and Checkpoints name immutable state above those trees.
+     Branches, tags and Review heads are the small mutable pointers. Execution,
+     distribution and collaboration therefore share one address space instead
+     of copying code through a repository, package registry and deployment
+     system that each names it differently.</p>` +
     // The same claim again, in the reader's own vocabulary. The grouping is
-    // the argument: `fork` and `pull request` land on one line because they
-    // are one thing, and `build`, `deploy` and `CDN` land on one line because
-    // they are none.
+    // The argument is the separation between immutable objects and the small
+    // mutable refs that select them. Familiar workflow nouns stay distinct,
+    // even when they share content-addressed mechanics underneath.
     `<dl class="isjust">` +
     [
-      ['A commit, a save, a snapshot are just',
-       'the hash of the tree, taken when you stopped typing.'],
-      ['A version, a tag, a release, a staging environment are just',
-       'pointers to one of those hashes. Moving a pointer copies nothing.'],
-      ['An import, an install, a lockfile, <code>node_modules</code> are just',
-       'an address in an import map, written into a file you can read.'],
-      ['A branch, a fork, a pull request are just',
-       'the same package under your own publisher, with the tree you started' +
-       ' from recorded. That record is the whole difference between a copy' +
-       ' and a proposal.'],
-      ['A code review, a preview environment are just',
-       'the page loaded with <code>?with=</code> pointing somewhere else, for' +
-       ' one request.'],
-      ['A merge is just',
-       'three trees: yours, theirs, and the one you both started from.'],
-      ['A revert, a rollback, a checkout are just',
-       'reading a different address. Nothing on disk changes.'],
-      ['A build, a bundle, a deploy, a CDN are just',
-       'absent — except the bundle, which is another version derived from the' +
-       ' first, at its own address.'],
+      [
+        'Every settled save becomes',
+        'an immutable automatic Version and—when attached—an ordered Step in History.',
+      ],
+      [
+        'A Checkpoint is',
+        'an authored immutable object pointing to exact Repository state.',
+      ],
+      [
+        'A version, a tag, a release, a staging environment are just',
+        'pointers to one of those hashes. Moving a pointer copies nothing.',
+      ],
+      [
+        'An import, an install, a lockfile, <code>node_modules</code> are just',
+        'an address in an import map, written into a file you can read.',
+      ],
+      [
+        'A mutable package is',
+        'already a one-package repository. No initialization file is required.',
+      ],
+      ['A branch is', 'a named ref inside the same owner and repository.'],
+      [
+        'A fork is',
+        'a mutable package under another publisher, sharing unchanged objects' +
+          ' and recording exact ancestry when the source is mutable.',
+      ],
+      [
+        'A Review is',
+        'durable source-to-target metadata bound to exact Checkpoints and an' +
+          ' append-only event history.',
+      ],
+      [
+        'A preview is',
+        'the exact proposed Repository projected into package Versions and run' +
+          ' through the ordinary resolver. <code>?with=</code> remains the' +
+          ' temporary substitution mechanism, not Review identity.',
+      ],
+      [
+        'A merge is',
+        'a three-way merge of base, target and source Repositories, followed by' +
+          ' one compare-and-swap move of the target branch.',
+      ],
+      [
+        'A revert, a rollback, a checkout are just',
+        'reading a different address. Nothing on disk changes.',
+      ],
+      [
+        'A build, a bundle, a deploy, a CDN are just',
+        'absent — except the bundle, which is another version derived from the' +
+          ' first, at its own address.',
+      ],
     ]
       .map(([term, is]) => `<dt>${term}</dt><dd>${is}</dd>`)
       .join('') +
     `</dl>` +
-    `<p class="lede">None of those is really a mechanism. They exist because
-     three systems each keep their own address space, and something has to
-     translate between them. With one address space, committing, installing
-     and deploying are not three things you do to code — they are three names
-     for pointing at it.</p>` +
+    `<p class="lede">The workflow nouns remain useful because they express
+     ownership, intent and mergeability. Deck unifies their storage mechanics,
+     not their meaning. A branch and a fork are both cheap refs over shared
+     content, but only a fork crosses ownership. A Review uses runnable content,
+     but it remains durable coordination rather than a query parameter.</p>` +
     `<p class="lede">What Deck specifies is small: the grammar of the address,
      the bytes that the address supplies, and how long a client may keep them.
      Twelve laws state it, and a test suite examines them. This server and its
      command-line tool are one implementation. If a different implementation
      obeys the test suite, that implementation is also Deck.</p>` +
-    `<p class="lede">The three lenses at the top of the page ask three
-     questions about one address: what the address is, what it does, and what
-     changed. The lenses are decks. This server supplies them from the store
-     that they show to you.</p>` +
+    `<p class="lede">The four working views ask different questions about the
+     same state. Browse asks what exists and who governs it. Run asks what an
+     exact graph does—and, for a library, which page makes it visible. Track
+     asks what happened while it changed. Review asks what is proposed, what
+     exact state was examined, and whether it merged. The views are decks
+     supplied from the store they inspect.</p>` +
     statLine(state) +
     `</header>` +
     sections
@@ -1207,12 +1542,21 @@ async function fillNow() {
     }
     return;
   }
-  let stats = app.querySelector('[data-role="stats"]');
-  if (stats) stats.outerHTML = statLine(state);
-  let slot = app.querySelector('[data-role="now"]');
-  if (slot) slot.innerHTML = depotTable(state) + activeNote(state);
-  // The depot table is new HTML, so it arrives without a scroll port.
-  wrapTables(app);
+  let paint = () => {
+    let stats = app.querySelector('[data-role="stats"]');
+    if (stats) stats.outerHTML = statLine(state);
+    let slot = app.querySelector('[data-role="now"]');
+    if (slot) slot.innerHTML = depotTable(state) + activeNote(state);
+    wrapTables(app);
+  };
+  // Packages first — table on screen — then claims without blocking.
+  paint();
+  try {
+    await enrichNow(state);
+    paint();
+  } catch {
+    // Claims are decoration; the table already answered "what is mounted".
+  }
 }
 
 addEventListener('keydown', (event) => {
@@ -1225,7 +1569,7 @@ addEventListener('keydown', (event) => {
 // NOT ON EVERY CHANGE. This page is the expensive one.
 //
 // A render here is thirteen-odd requests — the catalog, activity, and one
-// Timeline per depot — and `onLiveChange` fires about once a second while
+// History per depot — and `onLiveChange` fires about once a second while
 // somebody is editing. Wiring those together meant a render was always in
 // progress, the next one queued before it finished, and the page never
 // settled: permanently "loading…", server at nothing, nothing thrown. The
@@ -1248,6 +1592,8 @@ async function refresh() {
 }
 
 paint();
+mountTourButton(app);
+resumeHubTour({ waitMs: 120 });
 refresh();
 setInterval(refresh, REFRESH_MS);
 
@@ -1256,155 +1602,178 @@ setInterval(refresh, REFRESH_MS);
 // reader has opened or closed it themselves, that is their answer and resizing
 // a window is not a request to overrule it.
 let touched = false;
-app.addEventListener('toggle', (event) => {
-  if (event.target.matches?.('[data-role="toc"]')) touched = true;
-}, true);
+app.addEventListener(
+  'toggle',
+  (event) => {
+    if (event.target.matches?.('[data-role="toc"]')) touched = true;
+  },
+  true,
+);
 WIDE.addEventListener('change', (event) => {
   if (touched) return;
   let toc = app.querySelector('[data-role="toc"]');
   if (toc) toc.open = event.matches;
 });
 
-// IN THE HOUSE STYLE, WHICH MEANS ADDING ALMOST NOTHING.
-//
-// The theme's rules are one typeface at one size doing every job, colour only
-// where colour means something, measurement in `ch` and whole rows, and
-// structure from alignment rather than from boxes. A page of prose is exactly
-// where those get broken — the reflex is a bigger heading and a bordered code
-// block — so this sets no font sizes at all and draws one hairline per
-// section. Hierarchy comes from the numbered inverse marker the nav already
-// uses, and from the measure.
+// Same lattice as the four working views. One face, one size, colour only where it
+// means something. The mark is ASCII because this is a terminal; the Deckbook
+// door is inverse because that is how this surface says "go here" — the same
+// fill as the current nav tab.
 const START_CSS = `
-/* Page-specific layout only. Everything typographic — the two faces, the
-   scale, the rhythm, the measure, the tables — lives in the .prose block in
-   theme.css and is specified in docs/deck-hub-typography.md. If a rule here
-   is about type, it is in the wrong file. */
-
-.hero { padding: var(--s2) 0 var(--s4); }
-/* "Deck is" — THE SAME MARK AS THE ONE IN THE NAV.
-   The name appeared twice on the first screen in two different typefaces:
-   Commit Mono in the corner, the prose sans in the sentence. Two faces for
-   one word is two marks, and a reader has to decide whether they refer to
-   the same thing. So the name takes the vendored face wherever it appears,
-   at the same weight, in full-strength foreground and never in a hue from
-   the address palette — those hues mean depot, publisher and package, and
-   spending one on the product name makes the name read as a segment.
-
-   Tracking is lighter than the nav's .22em: that value is for four capitals
-   at 13px, and the same value at 31px pulls the word apart. */
-.hero h1 b {
-  font-family: var(--mono); font-weight: 700;
-  letter-spacing: .1em; color: var(--fg);
-  /* The mark is set in capitals wherever it appears, so the case is a rule
-     here and not a decision the copy makes. Tracking sits between the nav's
-     .22em and none: that value is tuned for 13px, and the same figure at
-     31px pulls four letters into four separate letters. */
-  text-transform: uppercase;
-  margin-right: .15em;
+.start { display: block; max-width: 108ch; }
+.start h2, .start h3 {
+  font-size: 1em; font-weight: 600; color: var(--fg);
+  margin: calc(var(--row) * 1.2em) 0 calc(var(--row) * .3em);
 }
-.lede { opacity: .9; }
+.start h2:first-child, .start h3:first-child { margin-top: 0; }
+.start .lede { color: var(--dim); max-width: 88ch; }
+.start pre.term {
+  background: var(--panel); padding: calc(var(--row) * .4em) 1.5ch;
+  overflow-x: auto; margin: calc(var(--row) * .8em) 0;
+}
+.start td.says, .start td.ok, .start td.todo { white-space: normal; max-width: 64ch; }
+.start td.ok { color: var(--green); font-weight: 600; }
 
-/* The counts. Doors, so each gets a door's hover; tabular figures so the
-   numbers sit in a row rather than jittering as they update. */
+.hero { padding: calc(var(--row) * .6em) 0 calc(var(--row) * 1.4em); }
+.deck-mark {
+  margin: 0 0 calc(var(--row) * .8em);
+  font-family: var(--mono); font-size: 15px; line-height: 1.05;
+  color: var(--fg); overflow-x: auto; user-select: none;
+  white-space: pre;
+}
+.hero .prompt { padding-top: 0; color: var(--dim); }
+.hero h1 {
+  font-size: 1em; font-weight: 400; color: var(--fg);
+  max-width: none; margin: 0 0 calc(var(--row) * .8em);
+  line-height: var(--row);
+}
+
+/* Same gesture as .deck-nav-here — filled chip, package hue, no box. */
+.doors {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0;
+  margin: 0 0 calc(var(--row) * 1em);
+}
+.doors .here, .doors button {
+  font: inherit; padding: 0 1ch; margin-right: 1ch;
+}
+.doors .here {
+  background: var(--a-package); color: var(--bg); font-weight: 600;
+  text-decoration: none;
+}
+.doors .here:hover {
+  background: var(--fg); color: var(--bg); text-decoration: none;
+}
+.doors button {
+  cursor: pointer; background: none; color: var(--dim); border: 0;
+}
+.doors button:hover { color: var(--fg); background: var(--sel); }
+
+.start .isjust { max-width: 88ch; margin: calc(var(--row) * .8em) 0; }
+.start .isjust dt { font-weight: 600; margin-top: calc(var(--row) * .5em); }
+.start .isjust dt:first-child { margin-top: 0; }
+.start .isjust dd { margin: 0; color: var(--dim); }
+@media (min-width: 60rem) {
+  .start .isjust {
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 42ch) minmax(0, 1fr);
+    column-gap: 3ch; align-items: baseline;
+  }
+  .start .isjust dt, .start .isjust dd {
+    margin-top: 0; padding: calc(var(--row) * .2em) 0;
+    border-top: 1px solid var(--line);
+  }
+  .start .isjust dt:first-of-type,
+  .start .isjust dt:first-of-type + dd { border-top: none; }
+}
+
 .stats {
-  display: flex; flex-wrap: wrap; gap: var(--s3);
-  padding: var(--s3) 0 0; margin-top: var(--s2);
+  display: flex; flex-wrap: wrap; gap: .2em 2.5ch;
+  padding: calc(var(--row) * .6em) 0 0; margin-top: calc(var(--row) * .6em);
   border-top: 1px solid var(--line);
 }
 .stat {
   display: flex; align-items: baseline; gap: .8ch; text-decoration: none;
-  font-size: var(--t-small);
 }
 .stat b {
-  color: var(--a-package); font-size: var(--t-h3); font-weight: 600;
+  color: var(--a-package); font-weight: 600;
   font-variant-numeric: tabular-nums;
-  font-family: var(--mono, ui-monospace, monospace);
 }
 .stat span { color: var(--dim); }
 .stat:hover b, .stat:hover span { color: var(--fg); }
 
-/* A section is a band, and the rule is the band's edge — the space above a
-   heading does the separating, the rule only confirms it. */
-.doc { padding-top: var(--s6); border-top: 1px solid var(--line); }
+.doc { padding-top: calc(var(--row) * 1.6em); border-top: 1px solid var(--line); }
 .doc:first-of-type { border-top: none; }
 .doc > h2 { margin-top: 0; }
 .doc-n {
   display: inline-block; min-width: 2.4ch; text-align: center;
   background: var(--fg); color: var(--bg);
-  font-size: var(--t-micro); font-weight: 600;
+  font-size: .82em; font-weight: 600;
   padding: .1em .5ch; margin-right: 1.5ch;
-  vertical-align: .25em;
+  vertical-align: .15em;
 }
-.doc-sub { padding-top: var(--s2); }
+.doc-sub { padding-top: calc(var(--row) * .6em); }
 
-/* The benefit list: a claim, its explanation, and the place to check it.
-   Not a table — each item is a short essay, and a table would force the
-   explanation into a cell that wants to be a paragraph. */
-.bens { list-style: none; padding: 0; margin: 0; max-width: none; }
-.ben {
-  padding: var(--s2) 0; border-bottom: 1px solid var(--line);
-  max-width: var(--measure);
-}
+.bens { list-style: none; padding: 0; margin: 0; }
+.ben { padding: calc(var(--row) * .6em) 0; border-bottom: 1px solid var(--line); max-width: 88ch; }
 .ben:last-child { border-bottom: none; }
-.ben > b { display: block; font-size: var(--t-body); margin-bottom: 4px; }
-.ben p { color: var(--fg); opacity: .88; margin: 0 0 var(--s1); }
-.ben a { font-size: var(--t-small); color: var(--a-package); }
+.ben > b { display: block; margin-bottom: 4px; }
+.ben p { color: var(--dim); margin: 0 0 calc(var(--row) * .3em); }
+.ben a { color: var(--a-package); }
 .todo { color: var(--a-live); font-weight: 600; }
-.prose td.ok { color: var(--green); font-weight: 600; }
 
 ul.plain { list-style: none; padding: 0; margin: 0; }
 ul.plain li { margin-bottom: 4px; }
 
-/* ── the contents rail ───────────────────────────────────────────────────
-   Wide screens get a sticky rail; narrow ones get a disclosure. One element
-   doing both, because two would be two states to keep in step and a
-   duplicate list for a screen reader to read twice. */
-.start { display: block; }
-
 .toc summary {
   cursor: pointer; color: var(--dim); list-style: none;
-  padding: var(--s1) 0; font-size: var(--t-small);
+  padding: calc(var(--row) * .3em) 0;
 }
 .toc summary::-webkit-details-marker { display: none; }
 .toc summary::before { content: '▸ '; }
 .toc[open] summary::before { content: '▾ '; }
-.toc nav { display: flex; flex-direction: column; padding-bottom: var(--s2); }
+.toc nav { display: flex; flex-direction: column; padding-bottom: calc(var(--row) * .6em); }
 .toc a {
   display: flex; gap: 1.2ch; text-decoration: none; color: var(--dim);
-  padding: 5px 0; font-size: var(--t-small); line-height: 1.35;
+  padding: calc(var(--row) * .15em) 0; line-height: 1.35;
 }
 .toc a i {
   font-style: normal; opacity: .55; min-width: 2ch;
   font-variant-numeric: tabular-nums;
-  font-family: var(--mono, ui-monospace, monospace);
 }
 .toc a:hover { color: var(--fg); }
 .toc a[data-here='1'] { color: var(--fg); font-weight: 600; }
 .toc a[data-here='1'] i { opacity: 1; color: var(--a-package); }
-/* A departure from this page, so it sits below a rule rather than in the
-   run of sections — the numbering stops and the arrow says why. */
+
+/* Same fill as the current nav tab — a destination, not a footnote. */
 .toc-out {
-  margin-top: var(--s2); padding-top: var(--s2) !important;
-  border-top: 1px solid var(--line);
+  margin-top: calc(var(--row) * .6em);
+  padding: 0 1ch !important;
+  align-self: start;
+  width: max-content;
+  background: var(--a-package); color: var(--bg) !important; font-weight: 600;
+  border-top: 0;
 }
-.toc-out i { color: var(--a-package); opacity: 1 !important; }
-.toc-out .dim { display: block; }
+.toc-out:hover {
+  background: var(--fg); color: var(--bg) !important; text-decoration: none;
+}
 
 @media (min-width: 62rem) {
   .start {
-    display: grid; grid-template-columns: 30ch minmax(0, 1fr); gap: 6ch;
-    align-items: start;
+    display: grid; grid-template-columns: 30ch minmax(0, 1fr); gap: 4ch;
+    align-items: start; max-width: none;
   }
   .toc {
-    position: sticky; top: var(--s3);
+    position: sticky; top: calc(var(--row) * .8em);
     max-height: 86vh; overflow-y: auto;
   }
   .toc summary { display: none; }
 }
 
 @media (max-width: 40rem) {
-  .stats { gap: var(--s2); }
-  .doc { padding-top: var(--s4); }
+  .deck-mark { font-size: 10px; }
+  .stats { gap: .2em 1.5ch; }
+  .doc { padding-top: calc(var(--row) * 1.1em); }
 }
 `;
 

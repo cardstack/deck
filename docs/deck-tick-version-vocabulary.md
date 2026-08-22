@@ -1,4 +1,4 @@
-# Tick · Version · Timeline → Step
+# Tick · Version · History → Step
 
 **Superseded** (2026-08-09). **Tick** renamed to **Step**.
 

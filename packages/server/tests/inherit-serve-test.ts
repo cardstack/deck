@@ -33,6 +33,32 @@ async function writeDeck(
 ): Promise<void> {
   let dir = join(depotDir, ...name.split('/'));
   await mkdir(dir, { recursive: true });
+  let pkgName = name.split('/')[1]!;
+  let deck = (map.deck ?? {}) as {
+    packages?: Record<string, { version?: string; entry?: string }>;
+    dependencies?: Record<string, string>;
+  };
+  let self = deck.packages?.[pkgName];
+  await writeFile(
+    join(dir, 'package.json'),
+    JSON.stringify(
+      {
+        name: pkgName,
+        version: self?.version ?? '0.1.0',
+        type: 'module',
+        ...(self?.entry
+          ? {
+              exports: {
+                '.': `./${self.entry.replace(/^\$DECK\//, '')}`,
+              },
+            }
+          : {}),
+        ...(deck.dependencies ? { dependencies: deck.dependencies } : {}),
+      },
+      null,
+      2,
+    ) + '\n',
+  );
   await writeFile(
     join(dir, 'importmap.json'),
     JSON.stringify(map, null, 2) + '\n',
@@ -40,6 +66,19 @@ async function writeDeck(
   for (let [path, text] of Object.entries(files)) {
     await writeFile(join(dir, path), text);
   }
+}
+
+async function writeDepotLock(imports: Record<string, string | null>): Promise<void> {
+  let pins: Record<string, string> = {};
+  for (let [key, value] of Object.entries(imports)) {
+    if (value !== null) {
+      pins[key] = value;
+    }
+  }
+  await writeFile(
+    join(depotDir, 'importmap.json'),
+    JSON.stringify({ imports: pins }, null, 2) + '\n',
+  );
 }
 
 async function publish(name: string, version: string) {
@@ -108,6 +147,11 @@ module('serving a deck that inherits', function (hooks) {
         imports: { 'blog/theme': '/site/you/my-blog/theme.js' },
       },
     );
+    await writeDepotLock({
+      'blog/post': '/site/acme/blog@1.0.0/post.js',
+      'blog/list': '/site/acme/blog@1.0.0/list.js',
+      'blog/theme': '/site/you/my-blog/theme.js',
+    });
 
     let html = await (
       await fetch(`${origin}/site/you/my-blog/index.html`)
@@ -134,6 +178,10 @@ module('serving a deck that inherits', function (hooks) {
         imports: { 'blog/list': null },
       },
     );
+    await writeDepotLock({
+      'blog/post': '/site/acme/blog@1.0.0/post.js',
+      'blog/list': null,
+    });
 
     let html = await (
       await fetch(`${origin}/site/you/lean-blog/index.html`)
@@ -146,7 +194,7 @@ module('serving a deck that inherits', function (hooks) {
 
   // L11. Serving a page whose map is silently missing everything it
   // inherited would surface as unrelated import failures in the browser.
-  test('a parent that is not in the store is not served as an empty map', async function (assert) {
+  test('the depot lock is what is served, even if a pack names a missing parent', async function (assert) {
     await writeDeck(
       'you/broken',
       { 'index.html': PAGE },
@@ -158,15 +206,13 @@ module('serving a deck that inherits', function (hooks) {
         imports: { own: '/site/you/broken/own.js' },
       },
     );
+    await writeDepotLock({ own: '/site/you/broken/own.js' });
 
     let response = await fetch(`${origin}/site/you/broken/index.html`);
-    assert.strictEqual(response.status, 500);
-    // Naming the parent is the difference between a fixable report and a
-    // morning spent bisecting import errors.
-    assert.true(
-      (await response.text()).includes('acme/nothing@9.9.9'),
-      'the error names the parent it could not reach',
-    );
+    assert.strictEqual(response.status, 200);
+    assert.deepEqual(injectedMap(await response.text()).imports, {
+      own: '/site/you/broken/own.js',
+    });
   });
 
   test('a deck with no parent is unaffected', async function (assert) {
@@ -178,6 +224,7 @@ module('serving a deck that inherits', function (hooks) {
         deck: { packages: { plain: { version: '0.1.0' } } },
       },
     );
+    await writeDepotLock({ thing: '/site/you/plain/thing.js' });
 
     let html = await (await fetch(`${origin}/site/you/plain/index.html`)).text();
     assert.deepEqual(injectedMap(html).imports, {

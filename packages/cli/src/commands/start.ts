@@ -61,15 +61,13 @@ Everything else in this CLI is a step you take later.`,
     if (!exists) {
       await mkdir(appDir, { recursive: true });
       await writeFile(
-        join(appDir, 'importmap.json'),
+        join(appDir, 'package.json'),
         JSON.stringify(
           {
-            imports: {},
-            deck: {
-              packages: {
-                [name]: { version: '0.1.0', entry: '$DECK/app.js' },
-              },
-            },
+            name,
+            version: '0.1.0',
+            type: 'module',
+            exports: { '.': './app.js' },
           },
           null,
           2,
@@ -174,7 +172,7 @@ const serve = defineCommand({
   summary: 'serve depots live, auto-publishing and sealing every save',
   usage: [
     'serve --root <dir> | --depot <dir> --as <name> ...',
-    '      [--port <p>] [--https|--http] [--history auto|jj|historyd|deckd|none]',
+    '      [--port <p>] [--https|--http] [--history auto|deckd|none]',
     '      [--rebase] [--onto <spec>]',
   ],
   detail: `--root is a directory OF depots: every child directory is one,
@@ -187,8 +185,8 @@ that does not change the tree hash publishes nothing.
 
 --history records a Step for every save, including the states between
 publishes — that is what \`deck history\` lists and \`deck restore\` returns
-to. auto attaches jj or historyd if the machine has one and prints why if
-it does not; the live loop keeps working either way.
+to. deckd (default) attaches every-save History via DECKD_URL and prints why if
+deckd is down; the live loop keeps working either way.
 
 --rebase keeps every open proposal merged against upstream, continuously.
 
@@ -204,7 +202,7 @@ editor; the server distributes what it finds.`,
         port: { type: 'string', default: DEFAULT_PORT },
         https: { type: 'boolean', default: true },
         http: { type: 'boolean', default: false },
-        history: { type: 'string', default: 'auto' },
+        history: { type: 'string', default: 'deckd' },
         rebase: { type: 'boolean', default: false },
         onto: { type: 'string' },
       },
@@ -218,7 +216,7 @@ editor; the server distributes what it finds.`,
       fail('each --depot <dir> needs a matching --as <name>');
     }
     if (!isValidHistoryKind(values.history!)) {
-      fail('--history must be auto, jj, historyd, deckd, or none');
+      fail('--history must be auto, deckd, or none');
     }
     // A root is a directory OF depots — every child directory is one,
     // named after itself, exactly as it is addressed.
@@ -291,7 +289,7 @@ editor; the server distributes what it finds.`,
         })`,
       );
       console.log(`  browse: ${origin}/  — depots, packages, versions`);
-      console.log(`  hmr:  ${origin}/_live/hmr.js → SSE /_live/events`);
+      console.log(`  hmr:  ${origin}/_live/hmr.js → poll /_live/state`);
       for (let depot of depots) {
         for (let deck of await discoverDecks(depot.dir)) {
           console.log(

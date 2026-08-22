@@ -1,0 +1,12 @@
+{
+  "name": "start",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./start.js" },
+  "dependencies": {
+    "ui/nav": "workspace:*",
+    "ui/activity": "workspace:*",
+    "ui/tour": "workspace:*",
+    "highlight-js": "esm"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "imports": {
+    "acme/editor": "/site/acme/editor/index.js",
+    "acme/theme": "/site/acme/theme/index.js",
+    "impact-score": "/site/vendor/impact-score@1.0.0/127.0.0.1:8793/impact-score.js"
+  },
+  "deck": {
+    "continuous": false,
+    "overrides": {}
+  }
+}

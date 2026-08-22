@@ -452,6 +452,12 @@ export async function vendorFromNpmSource(
     modules.push({ path: shimPath, size: bytes.length });
     rewritten.push(shimPath);
   }
+  // The unmodified npm manifest is the suggestion of record. Include the
+  // tarball bytes even when the module walk never imported them.
+  let manifest = pkg.files.get('package.json');
+  if (manifest && !files.some((file) => file.path === 'package.json')) {
+    files.push({ path: 'package.json', bytes: manifest });
+  }
   files.sort((a, b) => a.path.localeCompare(b.path));
   modules.sort((a, b) => a.path.localeCompare(b.path));
 

@@ -28,8 +28,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
-import { lockDeck } from '@cardstack/deck/lock';
 import { pack } from '@cardstack/deck/pack';
 import {
   publishToStore,
@@ -46,7 +44,7 @@ import {
   serveLive,
 } from '../shared/depot.mjs';
 import { storeDirFor } from '@cardstack/deck-server/depot';
-import { publishShared } from '../shared/publish.mjs';
+import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 import {
   demoBuildMode,
   ensurePristine,
@@ -74,20 +72,19 @@ const json = (value) => JSON.stringify(value, null, 2) + '\n';
 const deckDirOf = (deck) => join(depotDir, ...deck.split('/'));
 
 // The variations themselves are built in memory and published; nothing writes
-// them to the working tree. The one thing that IS written is each deck's lock,
-// because the live pages need real pins to resolve their bare specifiers — so
-// the reset blanks every `imports` block back to empty and lets the run
-// rebuild it. That keeps run N+1 identical to run 1 whichever variation the
-// last run promoted.
+// them to the working tree. Pins live on the depot-root lock.
 const DECKS = ['std/tokens', 'ui/card', 'app/gallery', 'app/preview', 'app/chooser'];
 // The three the variations touch — the ones a preview has to pin.
 const LAYERED = new Set(['std/tokens', 'ui/card', 'app/gallery']);
 const unlocked = Object.fromEntries(
   await Promise.all(
     DECKS.map(async (deck) => {
-      let relative = join(...deck.split('/'), IMPORT_MAP_PATH);
-      let map = JSON.parse(await readFile(join(depotDir, relative), 'utf8'));
-      return [relative, json({ ...map, imports: {} })];
+      let relative = join(...deck.split('/'), 'package.json');
+      try {
+        return [relative, await readFile(join(depotDir, relative), 'utf8')];
+      } catch {
+        return [relative, json({ name: deck.split('/')[1], version: '1.0.0', type: 'module' })];
+      }
     }),
   ),
 );
@@ -119,12 +116,7 @@ let [pills] = await publishShared(storeDir);
 
 async function publishFromDisk(deck, version, { tag } = {}) {
   let dir = deckDirOf(deck);
-  let locked = await lockDeck({ depotDir, depotName: DEPOT, storeDir, deckDir: dir });
-  if (locked.changed) {
-    await writeFile(join(dir, IMPORT_MAP_PATH), locked.text);
-  }
   let files = await readTreeFromDir(dir);
-  files.set(IMPORT_MAP_PATH, Buffer.from(locked.text, 'utf8'));
   return {
     record: await publishToStore(
       storeDir,
@@ -167,9 +159,9 @@ for (let variation of VARIATIONS) {
   }
   files.set(variation.file, Buffer.from(after, 'utf8'));
 
-  let map = JSON.parse(files.get(IMPORT_MAP_PATH).toString('utf8'));
-  map.deck.packages[variation.deck.split('/')[1]].version = NEXT;
-  files.set(IMPORT_MAP_PATH, Buffer.from(json(map), 'utf8'));
+  let pkg = JSON.parse(files.get('package.json').toString('utf8'));
+  pkg.version = NEXT;
+  files.set('package.json', Buffer.from(json(pkg), 'utf8'));
 
   let version = `${NEXT}-try.${variation.id}`;
   let record = await publishToStore(
@@ -221,11 +213,11 @@ console.log(`   same tree ${released.treeHash.slice(0, 12)}…, same stored obje
 
 // The app follows because its RANGE now resolves somewhere else. Nothing in
 // the app changed to make that happen.
-let relocked = await lockDeck({
+let relocked = await lockAndWrite({
   depotDir,
   depotName: DEPOT,
   storeDir,
-  deckDir: deckDirOf('app/gallery'),
+  update: true,
 });
 console.log(
   `   app/gallery re-locks: ${relocked.resolutions.map((r) => `${r.key} → ${r.imports[r.key] ?? r.imports[`${r.key}/`]}`).join(', ')}`,

@@ -228,17 +228,16 @@ function renderTruth() {
     truth.innerHTML = 'Store listing loaded.';
     return;
   }
-  truth.innerHTML = \`<strong>History: \${h.tier === 2 ? 'Timeline' : 'Versions only'}</strong> —
+  truth.innerHTML = \`<strong>History: \${h.tier === 2 ? 'Every save' : 'Versions only'}</strong> —
     \${esc(h.kind)}.
-    jj: <code>\${h.jj}</code>,
-    historyd: <code>\${h.historyd}</code>.
+    deckd: <code>\${h.deckd}</code>.
     \${esc(h.note)}
     Layout: <code>\${esc(catalogMeta.layout)}</code>\`;
 }
 
 function renderPkgList() {
   if (!packages.length) {
-    pkgList.innerHTML = '<div class="empty">No decks yet — create &lt;depot&gt;/&lt;publisher&gt;/&lt;package&gt;/importmap.json.</div>';
+    pkgList.innerHTML = '<div class="empty">No decks yet — create &lt;depot&gt;/&lt;publisher&gt;/&lt;package&gt;/package.json.</div>';
     return;
   }
   pkgList.innerHTML = packages.map((p) => {

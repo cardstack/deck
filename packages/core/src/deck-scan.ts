@@ -1,11 +1,12 @@
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { IMPORT_MAP_PATH } from './import-map.ts';
+import { PACKAGE_JSON_PATH } from './package-json.ts';
 
 // Finding the decks in a depot. The rule is the layout itself: a directory
-// two levels down holding an importmap.json IS a deck, addressed at
+// two levels down holding a package.json IS a deck, addressed at
 // `/<depot>/<publisher>/<package>/`. Nothing registers; nothing is
-// configured.
+// configured. The depot-root importmap.json is the lock, not a deck —
+// discovery never looks at depth 0.
 
 export interface DeckRef {
   publisher: string;
@@ -22,7 +23,7 @@ export async function discoverDecks(depotDir: string): Promise<DeckRef[]> {
   for (let publisher of await directoriesIn(depotDir)) {
     for (let name of await directoriesIn(join(depotDir, publisher))) {
       let dir = join(depotDir, publisher, name);
-      if (!(await isFile(join(dir, IMPORT_MAP_PATH)))) {
+      if (!(await isFile(join(dir, PACKAGE_JSON_PATH)))) {
         continue;
       }
       decks.push({

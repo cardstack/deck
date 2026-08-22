@@ -15,15 +15,16 @@
 // a readout, sitting directly below the thing doing the running.
 import 'ui/nav';
 import { installNavStyles, onLiveChange, wrapTables } from 'ui/nav';
+import { resumeHubTour } from 'ui/tour';
 import {
   attachScrub,
   foldBursts,
-  installTimelineStyles,
+  installHistoryStyles,
   measureFrame,
   stepBy,
   stepsFor,
-  timelineHtml,
-} from 'ui/timeline';
+  historyHtml,
+} from 'ui/history';
 import {
   ago,
   activityCell,
@@ -36,7 +37,7 @@ import {
 
 installNavStyles();
 installActivityStyles();
-installTimelineStyles();
+installHistoryStyles();
 
 const app = document.getElementById('app');
 const keys = document.querySelector('deck-keys');
@@ -50,7 +51,10 @@ const esc = (value) =>
 
 const params = () => new URLSearchParams(location.search);
 const currentAt = () => params().get('at') ?? '';
-const currentWith = () => params().getAll('with');
+// Run keeps substitutions as UI-only `sub` params. The framed document gets
+// Deck's protocol-level `with` query in `runTarget`; putting `with` on this
+// app document would ask the server to substitute app/run itself on reload.
+const currentWith = () => [...params().getAll('sub'), ...params().getAll('with')];
 /** Which Step the stage is showing. '' is live — a position, not a mode. */
 const currentStep = () => params().get('step') ?? '';
 
@@ -67,7 +71,7 @@ function isHubApp(at) {
 }
 
 /**
- * The Timeline for a running page: every Step that touched ANYTHING it loads.
+ * The History for a running page: every Step that touched ANYTHING it loads.
  *
  * Not just the page's own file. You are watching the assembled thing, and a
  * palette three decks away changes what you see — so "undo" has to mean "the
@@ -102,7 +106,7 @@ function stepsOf(depot) {
       depot,
       getJson(`/${depot}/${HISTORY}`)
         .then((body) => body.data.map((step) => step.attributes))
-        // Versions only, no Timeline. Not an error — fewer addresses.
+        // Version history only. Not an error — fewer addresses.
         .catch(() => []),
     );
   }
@@ -139,7 +143,7 @@ function go(next = {}) {
   let step = 'step' in next ? next.step : currentStep();
   if (at) query.set('at', at);
   if (step) query.set('step', step);
-  for (let value of withs) query.append('with', value);
+  for (let value of withs) query.append('sub', value);
   let text = query.toString();
   history.pushState({}, '', text ? `?${decodeURIComponent(text)}` : location.pathname);
   render();
@@ -160,42 +164,43 @@ async function getJson(url) {
 /**
  * Where a deck actually RUNS.
  *
- * The Hub mounts every demo depot under its example name so nine of them can
- * coexist, but each was sealed under the name `site`, and a pin names a
- * depot. Read from `/codelist/...` the bytes are right and the pins point at
- * an address this origin does not answer. So the Hub serves each demo depot a
- * second time, as `site`, on its own port — and this is where /run points the
- * frame. Same directory, same store, correct pins.
+ * The Hub mounts every demo depot under its example name so they can coexist,
+ * but each was sealed under the name `site`, and a pin names a depot. A
+ * virtual host gives each demo that truthful `/site` root while every request
+ * still enters through the Hub's one public port.
  */
-let ORIGINS = {};
-let ORIGIN_ERRORS = {};
-let ORIGINS_REACHABLE = false;
-
-async function loadOrigins() {
-  try {
-    let response = await fetch('/_hub/origins');
-    if (!response.ok) throw new Error(`/_hub/origins answered ${response.status}`);
-    let body = await response.json();
-    ORIGINS = body.origins ?? {};
-    ORIGIN_ERRORS = body.errors ?? {};
-    ORIGINS_REACHABLE = true;
-  } catch {
-    ORIGINS_REACHABLE = false;
-  }
+function demoOrigin(depot) {
+  let origin = new URL(location.origin);
+  origin.hostname = `${depot}.localhost`;
+  return origin.origin;
 }
 
 /**
- * Where a deck runs, or WHY IT CANNOT — never a quiet substitute.
+ * Where a deck runs.
  *
- * The Hub's own decks run at the Hub's origin, because that is the depot they
- * were sealed for. A demo runs at its second mount and nowhere else. When the
- * origin for a demo is unknown there is no fallback worth having: framing it
- * here would load an HTML page whose every import 404s, which renders as an
- * empty white box with nothing in the console the reader can see. Silence is
- * the one answer this must never give, so a missing origin returns a reason.
+ * The Hub's own decks run at the Hub host. A demo runs at
+ * `<depot>.localhost` on the same port, where its sealed `/site` pins resolve.
  */
 /** Concrete page last framed — scrubbing must not use a depot-only `?at=`. */
 let stageAt = '';
+
+/**
+ * A seal is a working-tree snapshot. `@1.2.3` is a store Version address —
+ * not a directory under `/_history/<id>/`. Browse already rebuilds Step
+ * addresses without the version segment; /run has to do the same or the
+ * iframe loads `…/app/form@0.1.0-dev.2/index.html` and the history backend
+ * correctly answers file-not-found.
+ */
+function sealPath(inner) {
+  return inner
+    .split('/')
+    .map((segment) => {
+      let at = segment.indexOf('@');
+      return at === -1 ? segment : segment.slice(0, at);
+    })
+    .filter(Boolean)
+    .join('/');
+}
 
 function runTarget(at, withs = currentWith(), step = currentStep()) {
   let [, depot, ...rest] = at.split('/');
@@ -216,33 +221,16 @@ function runTarget(at, withs = currentWith(), step = currentStep()) {
   // import map with its live pins rewritten to resolve inside the step, so
   // what loads is the page AND its dependencies as they actually were.
   if (step) {
+    let path = sealPath(inner);
     return {
       url:
         depot === 'hub'
-          ? `/hub/${HISTORY}/${step}/${inner}${suffix}`
-          : ORIGINS[depot]
-            ? `${ORIGINS[depot]}/site/${HISTORY}/${step}/${inner}${suffix}`
-            : undefined,
-      why: ORIGINS[depot] || depot === 'hub' ? undefined :
-        `No depot named ${depot} is mounted, so there is no origin to run it at.`,
+          ? `/hub/${HISTORY}/${step}/${path}${suffix}`
+          : `${demoOrigin(depot)}/site/${HISTORY}/${step}/${path}${suffix}`,
     };
   }
   if (depot === 'hub') return { url: `/${depot}/${inner}${suffix}` };
-  let origin = ORIGINS[depot];
-  if (origin) return { url: `${origin}/site/${inner}${suffix}` };
-  if (!ORIGINS_REACHABLE) {
-    return {
-      why:
-        'This Hub is not reporting where its demos run. That is what a stale ' +
-        'server looks like: an older process still holding this port. Stop it ' +
-        'and start again — `lsof -ti:8788 | xargs kill`.',
-    };
-  }
-  return {
-    why:
-      ORIGIN_ERRORS[depot] ??
-      `No depot named ${depot} is mounted, so there is no origin to run it at.`,
-  };
+  return { url: `${demoOrigin(depot)}/site/${inner}${suffix}` };
 }
 
 // ---------------------------------------------------------------------------
@@ -256,11 +244,12 @@ function runTarget(at, withs = currentWith(), step = currentStep()) {
 // a case it hides.
 // ---------------------------------------------------------------------------
 
-async function inventory() {
+async function inventory(depotName) {
   let { data } = await getJson('/_packages');
+  let depots = data.filter((depot) => !depotName || depot.name === depotName);
   let found = [];
   await Promise.all(
-    data.flatMap((depot) =>
+    depots.flatMap((depot) =>
       depot.packages.map(async (deck) => {
         let name = `${deck.publisher}/${deck.name}`;
         let version = deck.distTags?.latest ?? Object.keys(deck.versions ?? {}).at(-1);
@@ -361,17 +350,33 @@ async function resolvedMap(url) {
   }
 }
 
+/**
+ * Turn a runtime pin back into the address the Hub reads.
+ *
+ * Demo pages execute from a private origin where their depot is named
+ * `site`; the Hub mounts that same depot under its real name. Exposing the
+ * runtime path in Browse produced links to a depot that does not exist here.
+ */
+function hubAddress(url) {
+  let target = String(url).replace(/^\//, '').split('/');
+  if (target[0] === 'site') {
+    target[0] = currentAt().replace(/^\//, '').split('/')[0];
+  }
+  return `/${target.join('/')}`;
+}
+
 /** Every mapped URL becomes a link into /browse at that exact address. */
 function mapRows(table, indent = false) {
   return Object.entries(table)
     .filter(([specifier]) => !specifier.endsWith('/'))
     .map(([specifier, url]) => {
-      let target = url.replace(/^\//, '').split('/');
+      let address = hubAddress(url);
+      let target = address.replace(/^\//, '').split('/');
       let [depot, publisher, pkg] = target;
       return (
         `<tr data-name="${esc(specifier.toLowerCase())}">` +
         `<td class="${indent ? 'indent' : ''}">${esc(specifier)}</td>` +
-        `<td><a href="/browse?at=${esc(url)}">` +
+        `<td><a href="/browse?at=${esc(address)}">` +
         `<span class="s-depot">${esc(depot ?? '')}</span><span class="sep">/</span>` +
         `<span class="s-publisher">${esc(publisher ?? '')}</span><span class="sep">/</span>` +
         `<span class="s-package">${esc(pkg ?? '')}</span></a></td>` +
@@ -394,9 +399,11 @@ function mapRows(table, indent = false) {
  * deck's page. The subject does not change, the substitution is stated, and
  * the reader gets the thing they meant: the file they were reading, running.
  *
- * A deck with no page at all is the one honest refusal, and it is a fact
- * about that deck — the eleven ProseMirror `src/` decks publish no entry —
- * rather than a failure of the strip.
+ * A deck with no page continues across the graph instead: resolved import
+ * maps say which pages consume it, and `?with=` can place the selected
+ * Version into one of those pages without a checkout. Only a library with no
+ * reverse edge stops, and even then Run explains the edge it needs rather
+ * than presenting an error.
  */
 /**
  * Every page in one deck, by full path.
@@ -420,6 +427,213 @@ function pagesOf(deck) {
   return pagesCache.get(deck);
 }
 
+/**
+ * The package coordinate inside any Deck address.
+ *
+ * Paths and files are deliberately ignored: Run needs the graph node, not
+ * the particular source file through which somebody arrived at it.
+ */
+function packageCoordinate(at) {
+  let [depot, publisher, pkgAndSpec] = at.replace(/^\//, '').split('/');
+  if (!depot || !publisher || !pkgAndSpec) return;
+  let marker = pkgAndSpec.indexOf('@');
+  let pkg = marker === -1 ? pkgAndSpec : pkgAndSpec.slice(0, marker);
+  let version = marker === -1 ? '' : pkgAndSpec.slice(marker + 1);
+  return {
+    depot,
+    publisher,
+    pkg,
+    version,
+    identity: `${publisher}/${pkg}`,
+  };
+}
+
+/** The package coordinate named by one resolved import-map target. */
+function mappedCoordinate(target) {
+  let pathname;
+  try {
+    pathname = new URL(String(target), location.origin).pathname;
+  } catch {
+    return;
+  }
+  // At runtime the first segment is normally `site`, not the Hub's mount
+  // name. Publisher and package remain the protocol identity in both forms.
+  let [, , publisher, pkgAndSpec] = pathname.split('/');
+  if (!publisher || !pkgAndSpec) return;
+  let marker = pkgAndSpec.indexOf('@');
+  let pkg = marker === -1 ? pkgAndSpec : pkgAndSpec.slice(0, marker);
+  return {
+    publisher,
+    pkg,
+    version: marker === -1 ? '' : pkgAndSpec.slice(marker + 1),
+    identity: `${publisher}/${pkg}`,
+  };
+}
+
+async function forkedFromOf(at) {
+  let focus = packageCoordinate(at);
+  if (!focus) return;
+  let address =
+    `/${focus.depot}/${focus.identity}` +
+    (focus.version ? `@${focus.version}` : '');
+  let map = await fetch(`${address}/importmap.json`)
+    .then((response) => (response.ok ? response.json() : undefined))
+    .catch(() => undefined);
+  let entry = map?.deck?.packages?.[focus.pkg]?.forkedFrom;
+  let identity = entry?.package ?? entry?.deck;
+  return identity ? { identity, version: entry.version ?? '' } : undefined;
+}
+
+function consumerHref(page, focus, alreadyUsing, sourceIdentity) {
+  let query = new URLSearchParams({ at: page });
+  if (!alreadyUsing) {
+    let target = focus.version
+      ? `${focus.identity}@${focus.version}`
+      : focus.identity;
+    query.set(
+      'sub',
+      sourceIdentity === focus.identity
+        ? target
+        : `${sourceIdentity}=${target}`,
+    );
+  }
+  return `?${query.toString()}`;
+}
+
+/**
+ * Runnable pages whose resolved import map reaches this package.
+ *
+ * This is the missing half of Run. Most packages are libraries by design;
+ * asking only whether the package itself contains HTML turns most of the
+ * graph into dead ends. The import map already says where a library becomes
+ * visible, and `?with=` can put the selected Version into that page for one
+ * no-store trial without changing its lock.
+ */
+async function consumersOf(at) {
+  let focus = packageCoordinate(at);
+  if (!focus) return [];
+  let forkedFrom = await forkedFromOf(at);
+  let accepted = new Set([
+    focus.identity,
+    ...(forkedFrom ? [forkedFrom.identity] : []),
+  ]);
+  let pages = await inventory(focus.depot);
+  let found = await Promise.all(
+    pages.map(async (item) => {
+      let target = runTarget(item.at, [], '');
+      if (!target.url) return;
+      let map = await resolvedMap(target.url).catch(() => undefined);
+      if (!map) return;
+      let bindings = [
+        ...Object.entries(map.imports ?? {}),
+        ...Object.values(map.scopes ?? {}).flatMap((scope) =>
+          Object.entries(scope),
+        ),
+      ];
+      let matches = bindings
+        .map(([specifier, value]) => ({
+          specifier,
+          target: mappedCoordinate(value),
+        }))
+        .filter(
+          (binding) =>
+            binding.target && accepted.has(binding.target.identity),
+        );
+      if (!matches.length) return;
+      let alreadyUsing = matches.some(({ target }) => {
+        if (target.identity !== focus.identity) return false;
+        return focus.version
+          ? target.version === focus.version
+          : target.version === '';
+      });
+      let samePackage = matches.find(
+        ({ target }) => target.identity === focus.identity,
+      );
+      let sourceIdentity = samePackage?.target.identity ?? matches[0].target.identity;
+      return {
+        ...item,
+        specifiers: [...new Set(matches.map(({ specifier }) => specifier))],
+        current: [
+          ...new Set(
+            matches.map(({ target }) =>
+              `${target.identity}${target.version ? `@${target.version}` : ' live'}`,
+            ),
+          ),
+        ],
+        sourceIdentity,
+        alreadyUsing,
+        href: consumerHref(item.at, focus, alreadyUsing, sourceIdentity),
+      };
+    }),
+  );
+  return found.filter(Boolean);
+}
+
+function consumerView(input, consumers) {
+  let focus = packageCoordinate(input);
+  let selected = focus.version || 'live';
+  let rows = consumers
+    .map((consumer) => {
+      let relation = consumer.alreadyUsing
+        ? `already uses ${selected}`
+        : `currently uses ${consumer.current.join(', ')}`;
+      return (
+        `<tr data-name="${esc(`${consumer.at} ${consumer.specifiers.join(' ')}`.toLowerCase())}">` +
+        `<td><a href="${esc(consumer.href)}">` +
+        `<span class="s-publisher">${esc(consumer.publisher)}</span><span class="sep">/</span>` +
+        `<span class="s-package">${esc(consumer.deck.split('/')[1])}</span></a></td>` +
+        `<td><code>${esc(consumer.specifiers.join(', '))}</code></td>` +
+        `<td class="dim">${esc(relation)}</td>` +
+        `<td><a class="action run-action" href="${esc(consumer.href)}">` +
+        `${consumer.alreadyUsing ? 'Run where used' : `Run with ${esc(selected)}`} →</a></td></tr>`
+      );
+    })
+    .join('');
+  return (
+    `<main class="use-view">` +
+    `<div class="facts"><div><b>library</b> no page of its own</div>` +
+    `<div><b>used by</b> ${consumers.length} runnable ${consumers.length === 1 ? 'page' : 'pages'}</div></div>` +
+    `<div class="use-explainer"><h1>This package runs inside other pages.</h1>` +
+    `<p><code>${esc(focus.identity)}@${esc(selected)}</code> exports code rather than HTML. ` +
+    `Choose a consumer below and Deck will assemble that page with this ` +
+    `${focus.version ? 'exact Version' : 'live package'} in its import map.</p>` +
+    `<div class="use-flow"><span>page</span><i>imports</i>` +
+    `<strong>${esc(focus.identity)}@${esc(selected)}</strong><i>from</i><span>CAS</span></div>` +
+    `<p class="dim">The trial is <code>no-store</code> and changes no files or locks. ` +
+    `It is a runnable question, not a checkout.</p></div>` +
+    `<table><thead><tr><th>Run in</th><th>Imported as</th><th>Current pin</th>` +
+    `<th></th></tr></thead><tbody>${rows}</tbody></table>` +
+    `<p class="dim use-fallback"><a href="/browse?at=${esc(input)}">Browse this package</a> · ` +
+    `<a href="/track?at=${esc(input)}">See its History</a></p></main>`
+  );
+}
+
+function unusedLibraryView(input) {
+  let focus = packageCoordinate(input);
+  let selected = focus.version || 'live';
+  return (
+    `<main class="use-view">` +
+    `<div class="facts"><div><b>library</b> no page of its own</div>` +
+    `<div><b>graph consumers</b> 0</div></div>` +
+    `<div class="use-explainer"><h1>No consumer declared in the graph.</h1>` +
+    `<p><code>${esc(focus.identity)}@${esc(selected)}</code> is valid code, but no ` +
+    `page in <span class="s-depot">${esc(focus.depot)}</span> currently names it ` +
+    `in a resolved import map. Run does not guess from source text or computed ` +
+    `URLs, so it cannot prove a page in which to show this package.</p>` +
+    `<div class="use-flow"><strong>${esc(focus.identity)}</strong><i>add to</i>` +
+    `<span>import map</span><i>then load from</i><span>HTML page</span></div>` +
+    `<p class="dim">If a page loads this through a computed URL, that edge is ` +
+    `invisible to Deck. Add an ESM import and map its specifier to this package. ` +
+    `Run will discover the reverse edge automatically—no Run configuration ` +
+    `or special entry file is required.</p></div>` +
+    `<pre><code>import value from '${esc(focus.identity)}';\n\n` +
+    `{"imports":{"${esc(focus.identity)}":"/${esc(focus.depot)}/${esc(focus.identity)}${focus.version ? `@${esc(focus.version)}` : ''}/index.js"}}</code></pre>` +
+    `<p class="use-fallback"><a href="/browse?at=${esc(input)}">Browse this package</a> · ` +
+    `<a href="/run">Find a runnable page</a> · ` +
+    `<a href="/track?at=${esc(input)}">See its History</a></p></main>`
+  );
+}
+
 async function resolveRunnable(at) {
   if (/\.html?$/.test(at)) return { at };
   let parts = at.replace(/^\//, '').split('/');
@@ -430,7 +644,7 @@ async function resolveRunnable(at) {
   // a candidate, and there is usually more than one, so this never picks.
   if (!publisher || !pkgAndSpec) {
     let prefix = `/${parts.join('/')}`;
-    let under = (await inventory()).filter(
+    let under = (await inventory(depot)).filter(
       (item) => item.at === prefix || item.at.startsWith(`${prefix}/`),
     );
     if (!under.length) {
@@ -451,13 +665,7 @@ async function resolveRunnable(at) {
   let within = rest.join('/');
   let pages = await pagesOf(deck);
   if (!pages.length) {
-    return {
-      why:
-        `Nothing in ${pkgAndSpec} is a page, so there is nothing here to run. ` +
-        `That is a fact about the deck, not a missing feature — a deck can be ` +
-        `addressable, hashed and diffable and still have no entry a browser ` +
-        `can be pointed at.`,
-    };
+    return { library: true };
   }
 
   // DOWN BEFORE UP. The address is the most specific thing the reader has
@@ -519,6 +727,12 @@ async function viewOne(input) {
   if (!resolved.at) {
     subject.trail = addressTrail(input);
     subject.fact = '';
+    if (resolved.library) {
+      let consumers = await consumersOf(input);
+      return consumers.length
+        ? consumerView(input, consumers)
+        : unusedLibraryView(input);
+    }
     return (
       `<main><div class="err"><b>nothing to run</b> — ${esc(resolved.why)}</div>` +
       `<p class="dim"><a href="/browse?at=${esc(input)}">Read it in /browse</a>, ` +
@@ -600,10 +814,10 @@ async function viewOne(input) {
 
   let map = await resolvedMap(url);
   let depotName = at.replace(/^\//, '').split('/')[0];
-  let timeline = foldBursts(
+  let history = foldBursts(
     stepsFor(await stepsOf(depotName), closureOf(at, map)),
   );
-  lastTimeline = timeline;
+  lastHistory = history;
   let scopes = Object.entries(map.scopes ?? {});
   let specifiers = Object.keys(map.imports ?? {}).filter((key) => !key.endsWith('/'));
   let answered = specifiers.map((key) =>
@@ -630,8 +844,8 @@ async function viewOne(input) {
     // grid rows, so a fifth child lands in an implicit row and the whole
     // pane grows a band of dead space. A grid with a fixed track list is a
     // contract about how many children it has.
-    timelineHtml({
-      steps: timeline,
+    historyHtml({
+      steps: history,
       current: currentStep(),
       label: 'undo',
     }) +
@@ -650,10 +864,10 @@ async function viewOne(input) {
     `<button data-role="full" aria-pressed="${isFull() ? 'true' : 'false'}">Full</button>` +
     `<a class="popout" href="${esc(url)}" target="_blank" rel="noopener">Pop Out ↗</a>` +
     `</div>` +
-    `<div class="stagewrap"><iframe class="stage" data-role="stage" ` +
+    `<div class="stagewrap" data-tour="stage"><iframe class="stage" data-role="stage" ` +
     `src="${esc(url)}" title="${esc(at)}"></iframe></div>` +
     `<div class="grip" data-role="grip" title="drag to resize"></div>` +
-    `<div class="runsplit-under">` +
+    `<div class="runsplit-under" data-tour="graph">` +
     // "imports 1 · scopes 0" is two numbers and no meaning. What a reader
     // wants is the sentence those numbers are evidence for.
     `<p class="dim">${
@@ -708,8 +922,8 @@ const stageWidth = () => localStorage.getItem(WIDTH_KEY) ?? '100%';
 const isFull = () => localStorage.getItem(FULL_KEY) === '1';
 const splitAt = () => Number(localStorage.getItem(SPLIT_KEY) ?? 62);
 
-/** The timeline the last render drew, so the keys and buttons agree with it. */
-let lastTimeline = [];
+/** The History the last render drew, so the keys and buttons agree with it. */
+let lastHistory = [];
 
 function applyStage() {
   let split = app.querySelector('[data-role="split"]');
@@ -811,6 +1025,14 @@ async function render() {
   cursor = -1;
   wrapTables(app);
   keys.keys = bindings();
+  maybeResumeTour();
+}
+
+let tourResumed = false;
+function maybeResumeTour() {
+  if (tourResumed) return;
+  tourResumed = true;
+  resumeHubTour({ waitMs: 80 });
 }
 
 let cursor = -1;
@@ -883,9 +1105,9 @@ addEventListener('keydown', (event) => {
     case 'f':
       return app.querySelector('[data-role="full"]')?.click();
     case '[':
-      return go({ step: stepBy(lastTimeline, currentStep(), -1) });
+      return go({ step: stepBy(lastHistory, currentStep(), -1) });
     case ']':
-      return go({ step: stepBy(lastTimeline, currentStep(), 1) });
+      return go({ step: stepBy(lastHistory, currentStep(), 1) });
     case 'r':
       return app.querySelector('[data-role="reload"]')?.click();
     default:
@@ -908,7 +1130,7 @@ app.addEventListener('click', (event) => {
     // walks that same order — so `◀` (-1) is one step older and `▶` (+1) is
     // one newer, which is what the arrows point at. This negated the delta
     // and the buttons ran backwards: pressing "back" went forward.
-    return go({ step: stepBy(lastTimeline, currentStep(), Number(by.dataset.by)) });
+    return go({ step: stepBy(lastHistory, currentStep(), Number(by.dataset.by)) });
   }
 
   let width = event.target.closest('[data-role="width"]');
@@ -958,8 +1180,6 @@ app.addEventListener('input', (event) => {
   if (readout) readout.textContent = needle ? `${shown} shown` : '';
 });
 
-await loadOrigins();
-await loadActivity();
 onActivityChange(() => {
   // Only the index is decorated, and re-rendering while a demo is framed
   // would tear the iframe down and restart whatever it was doing.
@@ -968,3 +1188,4 @@ onActivityChange(() => {
 onLiveChange(() => loadActivity());
 
 render();
+loadActivity();

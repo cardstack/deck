@@ -12,6 +12,22 @@ and reachable today. What is *not* settled is the product: this document fixes
 the requirements and the invariants, and deliberately leaves information
 architecture and interaction patterns open, with directions to explore.
 
+> **Collaboration vocabulary update (2026-08-20).**
+> [`deck-fork-merge-pr-ux.md`](deck-fork-merge-pr-ux.md) supersedes this
+> document's instruction to avoid *branch*, *pull request*, and *merge* in
+> product UI. The familiar names are now deliberate. Internally, a branch and
+> an external fork use the same isolated fork primitive: same
+> owner/repository is presented as a **branch**; a different owner is
+> presented as a **fork**. A fork remains private until a pull request is
+> opened. A Repository may contain one or many independently addressable
+> member packages; a multi-package Repository is simply a monorepo. See
+> [`deck-collaboration-protocol.md`](deck-collaboration-protocol.md).
+
+Branch and fork are one lineage affordance in Browse. Mutable packages get a
+compact branch selector whose **New…** menu contains **Branch here** and
+**Fork to my scope**. Imported packages are read-only and expose **Fork** only.
+The full Review surface becomes prominent only after work exists.
+
 Read §1–§6 as constraints. Read §7–§8 as an invitation. Use §9 to check any
 design against all four workloads in about twenty minutes.
 
@@ -189,7 +205,7 @@ nothing points at them; adopting copies nothing. *(all four)*
 changes; sealed views never change under the user. *(W1 primary)*
 
 **R9 — Degraded capability is stated, never faked.** No jj → say Versions
-only and how to get a Timeline; a backend that cannot enumerate → say so, never show an
+only and how to enable every-save History; a backend that cannot enumerate → say so, never show an
 empty tree. *(all four)*
 
 **R10 — Data decks are first-class, not code decks with JSON in them.** A

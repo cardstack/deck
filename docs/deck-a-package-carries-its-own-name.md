@@ -3,8 +3,8 @@
 **Status: RULING** (2026-08-11). Companions:
 [`deck-a-package-resolves-through-its-own-map.md`](deck-a-package-resolves-through-its-own-map.md)
 (the same instinct applied to resolution),
-[`deck-name-derivation-ruling.md`](deck-name-derivation-ruling.md) (how names
-are derived when a fold is lossy),
+the planned name-derivation ruling (how names are derived when a fold is
+lossy),
 [`deck-multi-package-design.md`](deck-multi-package-design.md) (the design this
 corrects), [`deck-laws.md`](deck-laws.md) (paths are IDs).
 

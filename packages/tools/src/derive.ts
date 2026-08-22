@@ -157,21 +157,31 @@ export async function deriveMinified(options: {
     options: canonicalOptions(MINIFY_OPTIONS as Record<string, unknown>),
   };
 
-  // The derived tree declares its own version AND its lineage, inside the
-  // map, before hashing — so `derivedFrom` is part of what was sealed rather
-  // than metadata bolted on beside it. Manifest agreement also requires the
-  // declared version to match what is published.
+  // The derived tree declares its own version in package.json (manifest
+  // agreement) and its lineage in a thin import map, before hashing — so
+  // `derivedFrom` is part of what was sealed rather than metadata bolted
+  // on beside it.
+  let pkgIndex = files.findIndex((file) => file.path === 'package.json');
+  if (pkgIndex !== -1) {
+    let rewritten = rewritePackageJson(files[pkgIndex].bytes, version);
+    derivedBytes += rewritten.length - files[pkgIndex].bytes.length;
+    files[pkgIndex] = { path: 'package.json', bytes: rewritten };
+  }
   let mapIndex = files.findIndex((file) => file.path === 'importmap.json');
   if (mapIndex !== -1) {
     let rewritten = rewriteMap(files[mapIndex].bytes, packageName, {
-      version,
       derivedFrom: opened.treeHash,
       derivation,
     });
-    // The rewrite happens after the byte tally, so correct the tally rather
-    // than report a size for a tree that is not the one being returned.
     derivedBytes += rewritten.length - files[mapIndex].bytes.length;
     files[mapIndex] = { path: 'importmap.json', bytes: rewritten };
+  } else {
+    let lineage = rewriteMap(Buffer.from('{"imports":{}}\n', 'utf8'), packageName, {
+      derivedFrom: opened.treeHash,
+      derivation,
+    });
+    derivedBytes += lineage.length;
+    files.push({ path: 'importmap.json', bytes: lineage });
   }
 
   return {
@@ -183,6 +193,17 @@ export async function deriveMinified(options: {
     sourceBytes,
     derivedBytes,
   };
+}
+
+function rewritePackageJson(bytes: Buffer, version: string): Buffer {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>;
+  } catch {
+    return bytes;
+  }
+  parsed.version = version;
+  return Buffer.from(JSON.stringify(parsed, null, 2) + '\n', 'utf8');
 }
 
 function rewriteMap(

@@ -1,0 +1,93 @@
+{
+  "imports": {
+    "fields/due-date": "/site/fields/due-date@1.0.0/index.js",
+    "fields/due-date/": "/site/fields/due-date@1.0.0/",
+    "fields/handle": "/site/fields/handle@1.0.0/index.js",
+    "fields/handle/": "/site/fields/handle@1.0.0/",
+    "fields/meeting-slot": "/site/fields/meeting-slot@1.0.0/index.js",
+    "fields/meeting-slot/": "/site/fields/meeting-slot@1.0.0/",
+    "prosemirror-commands": "/site/lib/prosemirror-commands@1.7.2/dist/index.js",
+    "prosemirror-commands/": "/site/lib/prosemirror-commands@1.7.2/",
+    "prosemirror-history": "/site/lib/prosemirror-history@1.5.0/dist/index.js",
+    "prosemirror-history/": "/site/lib/prosemirror-history@1.5.0/",
+    "prosemirror-keymap": "/site/lib/prosemirror-keymap@1.2.3/dist/index.js",
+    "prosemirror-keymap/": "/site/lib/prosemirror-keymap@1.2.3/",
+    "prosemirror-model": "/site/lib/prosemirror-model@1.25.11/dist/index.js",
+    "prosemirror-model/": "/site/lib/prosemirror-model@1.25.11/",
+    "prosemirror-schema-basic": "/site/lib/prosemirror-schema-basic@1.2.4/dist/index.js",
+    "prosemirror-schema-basic/": "/site/lib/prosemirror-schema-basic@1.2.4/",
+    "prosemirror-state": "/site/lib/prosemirror-state@1.4.4/dist/index.js",
+    "prosemirror-state/": "/site/lib/prosemirror-state@1.4.4/",
+    "prosemirror-view": "/site/lib/prosemirror-view@1.42.2/dist/index.js",
+    "prosemirror-view/": "/site/lib/prosemirror-view@1.42.2/",
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js",
+    "ui/pills/": "/site/ui/pills@1.0.0/"
+  },
+  "scopes": {
+    "/site/fields/due-date@1.0.0/": {
+      "date-fns": "/site/lib/date-fns@4.1.0/index.js",
+      "date-fns/": "/site/lib/date-fns@4.1.0/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    },
+    "/site/fields/handle@1.0.0/": {
+      "nanoid": "/site/lib/nanoid@5.0.9/index.browser.js",
+      "nanoid/": "/site/lib/nanoid@5.0.9/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    },
+    "/site/fields/meeting-slot@1.0.0/": {
+      "luxon": "/site/lib/luxon@3.5.0/src/luxon.js",
+      "luxon/": "/site/lib/luxon@3.5.0/",
+      "zod": "/site/lib/zod@3.25.76/v3/index.js",
+      "zod/": "/site/lib/zod@3.25.76/"
+    },
+    "/site/lib/prosemirror-commands@1.7.2/": {
+      "prosemirror-transform": "/site/lib/prosemirror-transform@1.12.0/dist/index.js",
+      "prosemirror-transform/": "/site/lib/prosemirror-transform@1.12.0/"
+    },
+    "/site/lib/prosemirror-history@1.5.0/": {
+      "prosemirror-transform": "/site/lib/prosemirror-transform@1.12.0/dist/index.js",
+      "prosemirror-transform/": "/site/lib/prosemirror-transform@1.12.0/",
+      "rope-sequence": "/site/lib/rope-sequence@1.3.4/dist/index.js",
+      "rope-sequence/": "/site/lib/rope-sequence@1.3.4/"
+    },
+    "/site/lib/prosemirror-keymap@1.2.3/": {
+      "w3c-keyname": "/site/lib/w3c-keyname@2.2.8/index.js",
+      "w3c-keyname/": "/site/lib/w3c-keyname@2.2.8/"
+    },
+    "/site/lib/prosemirror-model@1.25.11/": {
+      "orderedmap": "/site/lib/orderedmap@2.1.1/dist/index.js",
+      "orderedmap/": "/site/lib/orderedmap@2.1.1/"
+    },
+    "/site/lib/prosemirror-state@1.4.4/": {
+      "prosemirror-transform": "/site/lib/prosemirror-transform@1.12.0/dist/index.js",
+      "prosemirror-transform/": "/site/lib/prosemirror-transform@1.12.0/"
+    },
+    "/site/lib/prosemirror-view@1.42.2/": {
+      "prosemirror-transform": "/site/lib/prosemirror-transform@1.12.0/dist/index.js",
+      "prosemirror-transform/": "/site/lib/prosemirror-transform@1.12.0/"
+    }
+  },
+  "integrity": {
+    "/site/fields/due-date@1.0.0/index.js": "sha256-Tp7k+S9ZPJqOOTFrTals+JCKVc5F57MLoPFL9q+vyMQ=",
+    "/site/fields/handle@1.0.0/index.js": "sha256-5+sL5uTMA3NMLwcB0XmHVIaJusw4k006ZX29vMWAsw4=",
+    "/site/fields/meeting-slot@1.0.0/index.js": "sha256-Zbn/qSmdisY+i0OGs374oCDrIuEsTGK15bJSyYjCqdY=",
+    "/site/lib/date-fns@4.1.0/index.js": "sha256-lhEwWFe0me1aIou35GmXOAg5AGYrwK4O/ppVu/cyfEQ=",
+    "/site/lib/luxon@3.5.0/src/luxon.js": "sha256-aV+60GoggRW6lbjZzMnTCTA4RdCYZfjYRhTeOwSKGaA=",
+    "/site/lib/nanoid@5.0.9/index.browser.js": "sha256-qQUrWPBP+P12vydzyRYeT8NGRNjM1qfRfUL25+OqTPQ=",
+    "/site/lib/orderedmap@2.1.1/dist/index.js": "sha256-x8u9NEgZkqjPgd+olRVnrVpYarP2lRHJK+2+IkH7iWk=",
+    "/site/lib/prosemirror-commands@1.7.2/dist/index.js": "sha256-yi7Quc9KkiNpb4Fkx1CXFwv8a06l2XapEY4jv0LKlEI=",
+    "/site/lib/prosemirror-history@1.5.0/dist/index.js": "sha256-cwWUdtQxc260rdv5ZM5TMzBqee7y2FKP9Cqd3nR46wk=",
+    "/site/lib/prosemirror-keymap@1.2.3/dist/index.js": "sha256-HuE3Rb6L7ccHkCJqrwuXyyTbcXcPQtncqb81g/3p0DE=",
+    "/site/lib/prosemirror-model@1.25.11/dist/index.js": "sha256-F+MAnLxou9maL3y84YumOOahbsqCys1iraE8P5nehsg=",
+    "/site/lib/prosemirror-schema-basic@1.2.4/dist/index.js": "sha256-udDxo0H1fri0Urz1FEPBQjZ7npozBYzc6jOGHj5SFqA=",
+    "/site/lib/prosemirror-state@1.4.4/dist/index.js": "sha256-1L1OmFIKvQuwFQQ22Eo4MthWqlljbqI6WUCdNZKXMKM=",
+    "/site/lib/prosemirror-transform@1.12.0/dist/index.js": "sha256-qlFLIqUj9aqXMKa800W52otV2qDsKPX67SpBvh2Yvjs=",
+    "/site/lib/prosemirror-view@1.42.2/dist/index.js": "sha256-m6FYfVpnt9foLSbK+/15dhq6rPiw4BrXLCardD7OAec=",
+    "/site/lib/rope-sequence@1.3.4/dist/index.js": "sha256-/+abLRRAK5BI9d8HLRvJVRXUx/D9/JuZdJz2c08jYKI=",
+    "/site/lib/w3c-keyname@2.2.8/index.js": "sha256-tknexPAcfF6wW+RkG1tpjGk4Ix7lCzjhei8Pgiyj3y4=",
+    "/site/lib/zod@3.25.76/v3/index.js": "sha256-PbLv0oXnMo2AFLVKf84/SGHrzcZV30BRcJLtAFCYNhc=",
+    "/site/ui/pills@1.0.0/pills.js": "sha256-lrX+8UWsimQ+3y8TZgeV0+aG8Fm3QECUlAPn4/GNAzk="
+  }
+}

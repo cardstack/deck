@@ -13,7 +13,7 @@
 //
 // So every row is an action, in the past tense:
 //
-//   saved       a settled edit was sealed as a Step on the Timeline
+//   saved       a settled edit was sealed as a Step on the History
 //   auto-saved  the watcher published that save as `-dev.N`, unasked
 //   published   somebody cut an immutable version on purpose
 //   released    a dist-tag moved onto one. No bytes copied; a name changed.
@@ -43,6 +43,7 @@
 // else here uses.
 import 'ui/nav';
 import { installNavStyles, onLiveChange, wrapTables } from 'ui/nav';
+import { resumeHubTour } from 'ui/tour';
 import { QueryClient } from '@tanstack/query-core';
 import {
   constructTable,
@@ -142,16 +143,38 @@ function parseAddress(at) {
   };
 }
 
-async function collect(scope) {
+/** First seal page — enough for a screen; more arrives on scroll. */
+const HISTORY_PAGE = 40;
+/** DOM window — do not paint thousands of entries at once. */
+const FEED_PAGE = 50;
+
+/**
+ * Collect change rows for the current scope.
+ *
+ * Seal logs are the expensive half. Unscoped `/track` used to fan out a full
+ * `jj log` across every demo depot and hang the Hub on multi-MB responses —
+ * so seals load only when `?at=` names a depot, and then only `historyLimit`
+ * newest seals (`/_history?limit=`). Scroll asks for more.
+ *
+ * @returns {{ rows: object[], sealsTruncated: boolean, historyLimit: number }}
+ */
+async function collect(scope, { historyLimit = HISTORY_PAGE } = {}) {
   let { data: depots } = await query(['packages'], '/_packages');
   let wanted = depots.filter((depot) => !scope.depot || depot.name === scope.depot);
   let rows = [];
+  let sealsTruncated = false;
 
   await Promise.all(
     wanted.map(async (depot) => {
       // ── versions ──────────────────────────────────────────────────────
       for (let deck of depot.packages) {
         for (let [version, record] of Object.entries(deck.versions ?? {})) {
+          // Repository projections are transport addresses created so a
+          // Review can run an exact multi-package tree. They are not package
+          // publication decisions, so showing them here would make merely
+          // opening Review look like six releases happened.
+          if (isRepositoryProjection(version)) continue;
+          let previous = previousVersion(deck, version);
           rows.push({
             // `vendored` is now sayable. It used to be guesswork, because
             // telling a vendored version from a hand-cut one meant reading
@@ -187,17 +210,34 @@ async function collect(scope) {
             upstream: deck.upstream,
             treeHash: record.treeHash,
             at: `/${depot.name}/${deck.publisher}/${deck.name}@${version}`,
-            // A version's natural comparison is the one before it.
-            vs: previousVersion(deck, version),
+            // A Version's natural comparison is the one before it, but a
+            // release can deliberately give an existing tree a stable name.
+            // That is a real event, not a content change. Sending it through
+            // Browse's diff surface can only produce "no differences", so
+            // keep the ancestry visible while reserving `vs` for changed
+            // trees.
+            vs:
+              previous && previous.treeHash !== record.treeHash
+                ? previous.at
+                : '',
+            sameTreeAs:
+              previous?.treeHash === record.treeHash
+                ? previous.version
+                : undefined,
           });
         }
       }
 
       // ── seals ─────────────────────────────────────────────────────────
-      if (depot.history) {
-        let seals = await query([depot.name, 'history'], `/${depot.name}/${HISTORY}`)
-          .then((body) => body.data)
-          .catch(() => []);
+      // Scope is the point: without a depot, skip the seal fan-out. Versions
+      // and offers still paint a useful river from `/_packages` alone.
+      if (depot.history && scope.depot) {
+        let body = await query(
+          [depot.name, 'history', historyLimit],
+          `/${depot.name}/${HISTORY}?limit=${historyLimit}`,
+        ).catch(() => ({ data: [], meta: {} }));
+        if (body.meta?.truncated) sealsTruncated = true;
+        let seals = body.data ?? [];
         seals.forEach((seal, index) => {
           let attrs = seal.attributes;
           // jj reports `A path` / `M path` / `D path` / `R old => new`, and
@@ -213,7 +253,7 @@ async function collect(scope) {
             })
             // Machinery is not content, wherever it turns up.
             //
-            // `.deck/` holds the store; `.jj` / `.jj.main-orphan` are Timeline
+            // `.deck/` holds the store; `.jj` / `.jj.main-orphan` are History
             // stubs and jj workspace leftovers. DEFAULT_IGNORE / `.jj.*` exist
             // so they never enter a tree — but older seals may still list them.
             // Filtering here keeps /track honest: a change to machinery is not
@@ -245,6 +285,8 @@ async function collect(scope) {
             publisher: touched[0]?.split('/')[0] ?? '',
             pkg: touched[0]?.split('/')[1] ?? '',
             id: attrs.changeId,
+            summary: attrs.description,
+            actor: attrs.author,
             what:
               decks.length === 1
                 ? decks[0]
@@ -296,7 +338,8 @@ async function collect(scope) {
           publisher: publisher ?? '',
           pkg: pkg?.split('@')[0] ?? '',
           id: attrs.offer,
-          what: `${attrs.state ?? 'open'} · against ${attrs.upstream ?? ''}`,
+          what: `${attrs.state === 'unresolvable' ? 'merge base missing' : attrs.state ?? 'open'} · against ${attrs.upstream ?? ''}`,
+          detail: attrs.detail,
           state: attrs.state,
           when: '',
           at: `/${depot.name}/${attrs.offer}`,
@@ -307,15 +350,34 @@ async function collect(scope) {
     }),
   );
 
-  return rows.filter((row) => inScope(row, scope));
+  return {
+    rows: rows.filter((row) => inScope(row, scope)),
+    sealsTruncated,
+    historyLimit,
+  };
 }
 
 function previousVersion(deck, version) {
-  let all = Object.keys(deck.versions ?? {}).sort();
-  let index = all.indexOf(version);
-  return index > 0
-    ? `/${deck.id.split('/')[0]}/${deck.publisher}/${deck.name}@${all[index - 1]}`
-    : '';
+  let all = Object.entries(deck.versions ?? {})
+    .filter(([candidate]) => !isRepositoryProjection(candidate))
+    .sort(
+      ([, left], [, right]) =>
+        (Date.parse(left.publishedAt ?? '') || 0) -
+        (Date.parse(right.publishedAt ?? '') || 0),
+    );
+  let index = all.findIndex(([candidate]) => candidate === version);
+  if (index <= 0) return;
+
+  let [previous, record] = all[index - 1];
+  return {
+    version: previous,
+    treeHash: record.treeHash,
+    at: `/${deck.id.split('/')[0]}/${deck.publisher}/${deck.name}@${previous}`,
+  };
+}
+
+function isRepositoryProjection(version) {
+  return /-repository\.[0-9a-f]{12}$/.test(version);
 }
 
 /**
@@ -584,7 +646,7 @@ function controls(all, kinds) {
   let noise = all.filter((row) => NOISE.includes(row.kind)).length;
   let showing = kinds.includes('auto-published');
   return (
-    `<div class="controls">` +
+    `<div class="controls" data-tour="controls">` +
     (noise
       ? `<button class="switch" data-role="noise"${showing ? ' aria-pressed="true"' : ''}>` +
         `<i></i>auto-publishes <b>${noise}</b></button>`
@@ -719,6 +781,7 @@ function entry(row) {
   if (row.count > 1) return groupEntry(row);
   let fresh = freshness(row.when);
   let browse = row.vs ? `/browse?at=${row.at}&vs=${row.vs}` : `/browse?at=${row.at}`;
+  let headline = row.summary || row.what;
   let detail =
     row.changes?.length
       ? row.changes
@@ -733,16 +796,20 @@ function entry(row) {
           ? ` <span class="dim">+${row.changes.length - 3}</span>`
           : '')
       : esc(row.detail ?? '');
+  let sameTree = row.sameTreeAs
+    ? `<span class="dim same-tree">same tree as ${esc(row.sameTreeAs)} · new name, zero bytes copied</span>`
+    : '';
   return (
     `<li class="entry" data-kind="${esc(row.kind)}" style="--fresh:${fresh.toFixed(3)}" ` +
     `data-name="${esc(
-      `${row.kind} ${row.depot} ${row.publisher} ${row.pkg} ${row.what}`.toLowerCase(),
+      `${row.kind} ${row.depot} ${row.publisher} ${row.pkg} ${row.what} ${row.summary ?? ''} ${row.actor ?? ''}`.toLowerCase(),
     )}">` +
     `<div class="entry-when">${esc(ago(row.when)) || '<span class="dim">—</span>'}</div>` +
     `<div class="entry-main">` +
     `<div class="entry-head">` +
     `<span class="verb"><i>${MARK[row.kind] ?? '·'}</i>${esc(row.kind)}</span> ` +
-    `<span class="s-package">${esc(row.what)}</span>` +
+    `<span class="s-package">${esc(headline)}</span>` +
+    (row.actor ? ` <span class="dim">by ${esc(row.actor)}</span>` : '') +
     `</div>` +
     `<div class="entry-sub">` +
     `<span class="s-depot">${esc(row.depot)}</span>` +
@@ -752,7 +819,9 @@ function entry(row) {
     (row.pkg
       ? `<span class="sep">/</span><span class="s-package">${esc(row.pkg)}</span>`
       : '') +
+    (row.summary ? ` <span class="dim">${esc(row.what)}</span>` : '') +
     (detail ? ` <span class="dim">${detail}</span>` : '') +
+    (sameTree ? ` ${sameTree}` : '') +
     // Provenance sits on the second line because it is a property of the
     // thing, not the event: `npm:three · published 2y ago` answers "what did
     // we take on", while the row's own timestamp answers "when did we".
@@ -837,33 +906,137 @@ function sortBar(current) {
   );
 }
 
+/** Feed state for infinite scroll — survives appends, resets on full render. */
+let feedState = {
+  all: [],
+  rows: [],
+  visible: 0,
+  historyLimit: HISTORY_PAGE,
+  sealsTruncated: false,
+  loadingMore: false,
+  observer: undefined,
+};
+
+function disconnectFeedObserver() {
+  feedState.observer?.disconnect();
+  feedState.observer = undefined;
+}
+
+function paintFeedWindow() {
+  let feed = app.querySelector('[data-tour="feed"]');
+  let more = app.querySelector('[data-role="feed-more"]');
+  if (!feed || feed.tagName !== 'UL') return;
+  let source = grouped() ? groupRuns(feedState.rows) : feedState.rows;
+  let slice = source.slice(0, feedState.visible);
+  feed.innerHTML = slice.map(entry).join('');
+  let canDom = feedState.visible < source.length;
+  let canFetch = feedState.sealsTruncated && Boolean(parseAddress(currentAt()).depot);
+  if (more) {
+    more.hidden = !(canDom || canFetch);
+    more.dataset.state = feedState.loadingMore
+      ? 'loading'
+      : canFetch && !canDom
+        ? 'fetch'
+        : 'more';
+    more.textContent = feedState.loadingMore
+      ? 'loading…'
+      : canFetch && !canDom
+        ? 'loading older saves…'
+        : 'scroll for more';
+  }
+}
+
+async function loadMoreFeed() {
+  if (feedState.loadingMore) return;
+  let sourceLen = (grouped() ? groupRuns(feedState.rows) : feedState.rows).length;
+  if (feedState.visible < sourceLen) {
+    feedState.visible = Math.min(sourceLen, feedState.visible + FEED_PAGE);
+    paintFeedWindow();
+    return;
+  }
+  if (!feedState.sealsTruncated) return;
+  let scope = parseAddress(currentAt());
+  if (!scope.depot) return;
+  feedState.loadingMore = true;
+  paintFeedWindow();
+  try {
+    let nextLimit = feedState.historyLimit + HISTORY_PAGE;
+    let collected = await collect(scope, { historyLimit: nextLimit });
+    let kinds = currentKinds();
+    let filtered = collected.rows.filter(
+      (row) => kinds.includes(row.kind) && !ATTENTION.includes(row.kind),
+    );
+    let { rows } = sortRows(filtered);
+    feedState.all = collected.rows;
+    feedState.rows = rows;
+    feedState.historyLimit = collected.historyLimit;
+    feedState.sealsTruncated = collected.sealsTruncated;
+    feedState.visible = Math.min(
+      (grouped() ? groupRuns(rows) : rows).length,
+      feedState.visible + FEED_PAGE,
+    );
+  } finally {
+    feedState.loadingMore = false;
+    paintFeedWindow();
+  }
+}
+
+function watchFeedScroll() {
+  disconnectFeedObserver();
+  let sentinel = app.querySelector('[data-role="feed-more"]');
+  if (!sentinel || typeof IntersectionObserver !== 'function') return;
+  feedState.observer = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMoreFeed();
+    },
+    { root: null, rootMargin: '240px', threshold: 0 },
+  );
+  feedState.observer.observe(sentinel);
+}
+
 async function render() {
   let at = currentAt();
   let scope = parseAddress(at);
   let kinds = currentKinds();
+  disconnectFeedObserver();
   app.innerHTML = `<main><p class="dim">collecting…</p></main>`;
   try {
-    let all = await collect(scope);
-    let filtered = all.filter(
+    let collected = await collect(scope, { historyLimit: HISTORY_PAGE });
+    let filtered = collected.rows.filter(
       (row) => kinds.includes(row.kind) && !ATTENTION.includes(row.kind),
     );
-    let { rows, sorting } = sortRows(filtered);
+    let { rows } = sortRows(filtered);
+    feedState = {
+      ...feedState,
+      all: collected.rows,
+      rows,
+      visible: Math.min(FEED_PAGE, (grouped() ? groupRuns(rows) : rows).length),
+      historyLimit: collected.historyLimit,
+      sealsTruncated: collected.sealsTruncated,
+      loadingMore: false,
+    };
+    let unscopedNote = !scope.depot
+      ? `<p class="dim" data-role="scope-hint">Saves load when you scope a depot — ` +
+        `open one from <a href="/browse">/browse</a> or add <code>?at=/depot</code>.</p>`
+      : '';
     app.innerHTML =
       scopeBar(scope, at) +
       `<main>` +
-      controls(all, kinds) +
-      attention(all) +
+      controls(collected.rows, kinds) +
+      attention(collected.rows) +
+      unscopedNote +
       (rows.length >= 25
         ? `<div class="filter"><b>filter</b> <input type="search" data-role="filter" ` +
           `size="24" placeholder="${rows.length} changes" autocomplete="off" /> ` +
           `<span class="dim" data-role="filter-count"></span></div>`
         : '') +
       (rows.length
-        ? `<ul class="feed">${(grouped() ? groupRuns(rows) : rows)
-            .map(entry)
-            .join('')}</ul>`
-        : `<p class="dim">nothing here</p>`) +
+        ? `<ul class="feed" data-tour="feed"></ul>` +
+          `<p class="dim feed-more" data-role="feed-more" hidden>scroll for more</p>`
+        : `<p class="dim" data-tour="feed">nothing here</p>`) +
       `</main>`;
+    paintFeedWindow();
+    watchFeedScroll();
   } catch (error) {
     app.innerHTML =
       `<main><div class="err"><b>${esc(error.code ?? 'error')}</b> — ` +
@@ -872,11 +1045,19 @@ async function render() {
   cursor = -1;
   wrapTables(app);
   keys.keys = bindings();
+  maybeResumeTour();
 }
 
 // ---------------------------------------------------------------------------
 // Keyboard
 // ---------------------------------------------------------------------------
+
+let tourResumed = false;
+function maybeResumeTour() {
+  if (tourResumed) return;
+  tourResumed = true;
+  resumeHubTour({ waitMs: 80 });
+}
 
 let cursor = -1;
 const rows$ = () => [...app.querySelectorAll('.entry:not([hidden])')];
@@ -1015,11 +1196,16 @@ app.addEventListener('input', (event) => {
 // announces every save on the SSE channel; the query cache just was not
 // listening.
 //
-// Invalidate rather than refetch: query-core then only re-fetches what is
-// actually mounted, and the seal log is the one query that grows.
+// Debounced: a save-storm used to call render() once a second and restack
+// multi-megabyte history fetches until the page never left "collecting…".
+let liveRefreshTimer;
 onLiveChange(() => {
   client.invalidateQueries();
-  render();
+  if (liveRefreshTimer) return;
+  liveRefreshTimer = setTimeout(() => {
+    liveRefreshTimer = undefined;
+    if (!document.hidden) render();
+  }, 1500);
 });
 
 // The clock keeps moving even when the depot does not, and every row is
@@ -1027,7 +1213,7 @@ onLiveChange(() => {
 // stays on screen for an hour. A minute is finer than the smallest unit the
 // feed prints, so nothing ever displays a time that has gone stale.
 setInterval(() => {
-  if (!document.hidden) render();
+  if (!document.hidden) paintFeedWindow();
 }, 60_000);
 
 render();

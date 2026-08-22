@@ -1,0 +1,8 @@
+{
+  "name": "jqish",
+  "version": "1.0.0-feel.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  }
+}

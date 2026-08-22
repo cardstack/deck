@@ -1,0 +1,11 @@
+{
+  "name": "sale",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./sale.js"
+  },
+  "dependencies": {
+    "vale/ui": "live"
+  }
+}

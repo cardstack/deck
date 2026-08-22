@@ -26,9 +26,14 @@ const HASH_B =
 function lib(body: string) {
   return [
     {
-      path: 'importmap.json',
+      path: 'package.json',
       bytes: Buffer.from(
-        JSON.stringify({ deck: { packages: { lib: { version: '1.0.0' } } } }),
+        JSON.stringify({
+          name: 'lib',
+          version: '1.0.0',
+          type: 'module',
+          exports: { '.': './lib.js' },
+        }),
       ),
     },
     { path: 'lib.js', bytes: Buffer.from(body) },

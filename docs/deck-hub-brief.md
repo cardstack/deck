@@ -2,17 +2,17 @@
 
 Status: **decided.** This resolves the information architecture that
 [deck-ui-spec.md](deck-ui-spec.md) deliberately left open, and specifies the
-four applications to build.
+five applications to build.
 
 Read that document first for requirements (§3), jobs to be done (§5),
 invariants (§4), constraints (§6), scale targets (§11) and the states that
 must exist (§12). None of it is repeated here. This brief adds: which
-direction won and why, the four apps, the journeys, the shared parts, the
+direction won and why, the five apps, the journeys, the shared parts, the
 stack, and what has to be built on the server to support it.
 
-Scope note: the nine demos under `examples/` are **out of scope** and are not
-modified. They keep their own processes, ports and depots. Hub work is
-additive.
+The examples under `examples/` keep their own depots and standalone runners.
+When the Hub mounts them, however, they are logical tenants of the Hub's one
+listener rather than extra processes or ports.
 
 ---
 
@@ -54,10 +54,10 @@ A two-position toggle is a control. A four-position one is a mode.
 
 ---
 
-## 2. The four apps
+## 2. The five apps
 
-One depot named `hub`, four decks under the `app/` publisher. They are not
-depots; they are four documents in one depot, which is why they can share
+One depot named `hub`, five decks under the `app/` publisher. They are not
+depots; they are five documents in one depot, which is why they can share
 components at ordinary deck addresses.
 
 | route | canonical address | centre of gravity | workloads |
@@ -66,6 +66,15 @@ components at ordinary deck addresses.
 | `/browse` | `/hub/app/browse/` | the tree at rest | W2, W3 |
 | `/run` | `/hub/app/run/` | the assembled, executing thing | W1, W4 |
 | `/track` | `/hub/app/track/` | what changed, and where | W3, W4 |
+| `/review` | `/hub/app/review/` | proposed changes and merge | W1, W2, W4 |
+
+Repository identity and branches live in `/browse`, alongside the package tree
+they govern. A branch within an owner/repository uses the same isolated
+Repository ref as a fork, but the UI calls it a branch. `/review` begins with a
+proposed change: Review links lead back to exact `/browse`
+comparisons, while Preview leads to `/run` with the proposed Repository's exact
+package Versions. **Underneath** exposes the ref, Checkpoint, Repository, Pull
+Request opening, and append-only events behind those familiar labels.
 
 **`/read` is gone; `/track` replaces it.** Two moves, one reason each.
 
@@ -101,8 +110,8 @@ The first thing a person sees after `deck serve`. It answers J1, J2, J4.
 and the depots mounted with their honest on-disk paths. The layout *is* the
 address space, so showing the path is showing the truth, not a debug detail.
 
-**Per depot.** Deck count, version count, store object count and size, history
-history (a Timeline from jj colocated or historyd, or Versions only), and the
+**Per depot.** Deck count, version count, store object count and size, History
+(every-save History from deckd, or Version history only), and the
 most recent seal.
 
 **The river.** `/_live/events` as a stream of change events — deck name,
@@ -191,22 +200,26 @@ and `.jj/`.
 
 ---
 
-### 2.3 `/run` — the assembled thing, and the toggle
+### 2.3 `/run` — the assembled thing and its package graph
 
 W1's home. J4, J9, J10, J12.
 
-**What is runnable.** Any deck that declares an entry and any HTML page in a
-depot, plus the nine demos. A deck with no declared entry — the ProseMirror
-`src/` decks are the reference case — appears as **readable, not runnable**,
-structurally, because the server refuses to import it. That refusal is L11 as
-a shape and belongs in the interface as a state, not a warning.
+**What is runnable.** HTML pages run directly. A library package does not
+pretend to be a page, but it is not a dead end: `/run` follows resolved import
+maps in reverse and lists the pages that consume it. Choosing one runs that
+page with the selected package or Version supplied as a no-store `?with=`
+trial. A package with no declared graph consumers explains that Run cannot
+prove computed-URL relationships, then shows the import-map edge needed to
+make it discoverable. This preserves L11's structural refusal without turning
+most of a package graph into errors or guessing from source text.
+Fork lineage participates in the lookup: a fork discovers pages that import
+its upstream and offers the asymmetric trial
+`?with=upstream/package=fork/package@Version`.
 
-**The toggle.**
-
-- **run** — the app in an iframe, with its resolved import map alongside.
-- **read** — the module graph of *exactly what is executing*: every node, the
-  volatility of every edge, and every node a link into `/browse` at the
-  address that answered.
+**The view.** The app runs in an iframe and its resolved import map sits below
+it: every node, the volatility of every edge, and every node a link into
+`/browse` at the canonical Hub address that answered. Runtime-only `site`
+mounts must never leak into those read links.
 
 The graph is the payoff. On any other package site "what am I actually
 running" is an inference; here it is a readout, because the import map the
@@ -222,12 +235,13 @@ badge.
 `variations` demo already works and the pattern that makes A/B/C choosing
 possible without a deploy.
 
-**Integration note.** The demos are separate processes on ports 8790–8798.
-They currently default to HTTPS with a self-signed leaf, which costs a
-click-through per port before an iframe will load. The Hub should launch them
-with `DECK_DEMO_HTTP=1` so `/run` works on first load; the HTTP/2 comparison
-stays available in `examples/three-js/bench.mjs`, where it is the subject
-rather than an obstacle.
+**One-port integration.** The Hub owns one listener. Each demo is a logical
+`site` mount selected by a virtual localhost host, for example
+`http://collaboration.localhost:8788/site/…`. This preserves the absolute
+`/site/…` pins each depot was sealed with and preserves iframe origin
+isolation, without one process or ephemeral port per demo. Hub chrome and the
+HMR client both poll the short-lived `/_live/state` snapshot, so many tabs do
+not exhaust the HTTP/1.1 connection pool.
 
 ---
 
@@ -521,8 +535,9 @@ Small, and none of it changes the protocol surface.
 3. **Module counts for the self-report.** `moduleClosure` already exists in
    `preload.ts`; expose the count per deck so `/start` can grade tree vs
    bundle without re-probing npm. *(small addition to `?meta`)*
-4. **Demo aggregation.** The Hub already polls the nine demo processes for
-   `/api/demos`. Keep it; `/run` consumes it.
+4. **Demo multiplexing — done.** One Node listener dispatches by Host to
+   unbound Deck server instances. The normal Hub host reads each depot by its
+   example name; `<example>.localhost` runs the same directory as `site`.
 5. **`tree` on `?meta` — done.** `files` was a list of paths, which answers
    *added* and *removed* and cannot answer *changed*. `tree` is the packlist
    verbatim (path, size, sha256), so a comparison is one request per side

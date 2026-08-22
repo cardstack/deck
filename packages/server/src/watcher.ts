@@ -2,7 +2,10 @@ import { watch, type FSWatcher } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { DEFAULT_IGNORE, isIgnoredTreeSegment } from '@cardstack/deck/tree-hash';
-import { parsePackages, IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
+import {
+  PACKAGE_JSON_PATH,
+  parsePackageJson,
+} from '@cardstack/deck/package-json';
 import { packFromDir } from '@cardstack/deck/pack';
 import {
   nextDevVersion,
@@ -17,11 +20,11 @@ import type { HistoryBackend } from '@cardstack/deck-history/backend';
 //
 //   file change → debounce (quiet period) → treeHash(dir)
 //     → unchanged since last publish? STOP (dedup)
-//     → [with a Timeline: seal the tree, take the changeId]
+//     → [with every-save History: capture the tree, take the changeId]
 //     → packFromDir → publish <base>-dev.<n>, tag `dev`
 //
-// <base> comes from the directory's own importmap.json — the map stays the
-// manifest, and bumping its version is the only edit a new line needs.
+// <base> comes from the directory's own package.json — bumping its version
+// is the only edit a new line needs.
 // Ranges never match prereleases, so auto-publishes are invisible to every
 // consumer who did not explicitly opt in via the `dev` tag or an exact pin.
 // Stable versions are NEVER auto-minted: semver intent is human.
@@ -31,11 +34,11 @@ import type { HistoryBackend } from '@cardstack/deck-history/backend';
 // recoverable too, and each published pack records the seal it was cut from.
 
 // Machinery writes land inside the watched tree. Treating them as edits
-// would make sealing feed itself: seal → .deck/timeline (or .jj) write →
+// would make capturing feed itself: capture → .deck/history (or .jj) write →
 // event → treeHash → seal. Named events under DEFAULT_IGNORE are dropped.
 // Nameless events are dropped too: on macOS, recursive fs.watch often
 // omits the filename for deep repo writes, and re-hashing the whole depot
-// on those is what wedged the Hub at 100% CPU after Timeline moved under
+// on those is what wedged the Hub at 100% CPU after History moved under
 // `.deck/`. A real editor save reports a path; mount already schedules once.
 function isMachineryWatchPath(path: string | undefined): boolean {
   if (!path) {
@@ -48,7 +51,7 @@ export interface WatchPublishEvent {
   name: string;
   version: string;
   treeHash: string;
-  // The Step this version was cut from, when a Timeline is attached.
+  // The Step this version was cut from, when every-save History is attached.
   sealChangeId?: string;
   // True when the tree was ALREADY published under this name: no new
   // version was minted, the `dev` tag simply points back at the one that
@@ -66,7 +69,7 @@ export interface WatchOptions {
   name: string;
   storeDir: string;
   debounceMs?: number;
-  // The Timeline. Absent: the store is still the history, just
+  // The History. Absent: the store is still the history, just
   // at published-state granularity.
   history?: HistoryBackend;
   // Where the history repo lives. A depot seals as ONE tree, the way a
@@ -75,8 +78,7 @@ export interface WatchOptions {
   // watched directory (a standalone deck is its own depot).
   historyDir?: string;
   // When false, this watcher publishes Versions + HMR only — it does not
-  // noteMutation / flush Timeline. Default: false for `history.kind ===
-  // 'deckd'` (deckd's FS watch owns seals); true for jj / historyd.
+  // noteMutation / flush History. Default false: deckd's FS watch owns seals.
   sealOnWatch?: boolean;
   onPublish?: (event: WatchPublishEvent) => void;
   // Fired as soon as a new treeHash is observed — before packing — so
@@ -107,9 +109,9 @@ export function watchAndPublish(options: WatchOptions): WatchController {
     onLiveChange,
     onError,
   } = options;
-  // deckd owns Timeline seals via its watchexec-shaped FS plane. Hub/Node
+  // deckd owns History seals via its watchexec-shaped FS plane. Hub/Node
   // watchers still publish + HMR; they must not double-note /flush.
-  let sealWithWatch = sealOnWatch ?? history?.kind !== 'deckd';
+  let sealWithWatch = sealOnWatch ?? false;
   // A store inside the watched tree feeds itself: publishing writes packs
   // into the tree, which changes its treeHash, which publishes again —
   // forever, with every pack swallowing the previous ones. Refuse it
@@ -198,14 +200,14 @@ export function watchAndPublish(options: WatchOptions): WatchController {
     onLiveChange?.({ name, treeHash });
     let base = '0.0.0';
     try {
-      let map = parsePackages(
-        await readFile(join(dir, IMPORT_MAP_PATH), 'utf8'),
+      let pkg = parsePackageJson(
+        await readFile(join(dir, PACKAGE_JSON_PATH), 'utf8'),
       );
-      // The map is keyed by the PACKAGE; the publisher comes from where the
-      // deck sits on disk, so moving a deck never edits its map.
-      base = map?.[name.split('/').at(-1)!]?.version ?? base;
+      if (pkg?.version) {
+        base = pkg.version;
+      }
     } catch {
-      // no map — dev line runs on 0.0.0
+      // no package.json — dev line runs on 0.0.0
     }
     let meta = await readStoreMeta(storeDir, name);
     // Content-addressed identity, taken seriously: a tree that is already
@@ -224,7 +226,7 @@ export function watchAndPublish(options: WatchOptions): WatchController {
       return;
     }
     let version = nextDevVersion(meta, base);
-    // Seal only when this watcher owns Timeline. With deckd, the daemon FS
+    // Seal only when this watcher owns History. With deckd, the daemon FS
     // plane seals; we still read head() for pack provenance (may lag one burst).
     let sealChangeId = history
       ? sealWithWatch

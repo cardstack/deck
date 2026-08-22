@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "vale/ui": "/site/vale/ui/index.js",
+    "vale/ui/": "/site/vale/ui/"
+  }
+}

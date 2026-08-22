@@ -25,7 +25,7 @@ export const DEMOS = [
     look: [
       'Both amendments land in 1.5.0 with zero conflicts. Nobody resolved anything.',
       'The fork rebases onto 1.5.0 and keeps its three internal codes.',
-      'The one conflict reported is <code>importmap.json</code> — both sides renamed the version. A machine can combine two sets of codes; it cannot decide what to CALL the combination.',
+      'The one conflict reported is <code>package.json</code> — both sides renamed the version. A machine can combine two sets of codes; it cannot decide what to CALL the combination.',
       'Every state is at rest at its own immutable URL. There is no write endpoint in this demo at all.',
     ],
     tries: [
@@ -119,7 +119,7 @@ export const DEMOS = [
     ],
     tries: [
       { label: 'the form at the working tree', path: '/site/app/library@1.0.0/index.html?with=you/ship-by' },
-      { label: 'a field deck’s lock', path: '/site/fields/swatch@1.0.0/importmap.json' },
+      { label: 'the depot lock', path: '/site/importmap.json' },
       { label: 'chroma-js 3.1.2', path: '/site/lib/chroma-js@3.1.2/index.js' },
       { label: 'chroma-js 2.6.0, at the same time', path: '/site/lib/chroma-js@2.6.0/index.js' },
     ],
@@ -136,7 +136,7 @@ export const DEMOS = [
       loudest thing on the page.`,
     look: [
       'The three sets are drawn as three small interfaces, from their own values. Agent A rounded the corners and picked a green accent; agent B added a warning colour. Nothing on the page chooses those — they come off the JSON.',
-      'Both component saves auto-publish and are <b>sealed</b> — this is the demo that runs a Timeline, so every save has a changeId, not just every publish.',
+      'Both component saves auto-publish and are <b>captured</b> — this demo has every-save History, so every save has a changeId, not just every publish.',
       'Round one: three different keys under one object. Both forks absorb upstream and keep their own addition. Nobody reviewed anything.',
       'Round two: the same two keys, two answers. Reported <code>conflicted</code>, and the fork’s tree hash is byte-identical before and after — a conflicted pass writes nothing at all.',
       'The rules live in <code>merge-policy.json</code>, published by upstream. <code>scale</code> is a set, so <code>union</code> keeps both intentions: 48 was the fork’s, 40 was upstream’s, and both survive.',
@@ -217,7 +217,7 @@ export const DEMOS = [
     tries: [
       { label: 'readable, not runnable', path: '/site/src/prosemirror-model@1.25.11/src/schema.ts' },
       { label: 'runnable, not readable', path: '/site/lib/prosemirror-model@1.25.11/dist/index.js' },
-      { label: "the app's scopes", path: '/site/app/editor/importmap.json' },
+      { label: "the depot lock's scopes", path: '/site/importmap.json' },
     ],
   },
 ];

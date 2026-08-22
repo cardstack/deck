@@ -54,7 +54,7 @@ That scaffolds a depot, serves it, and prints a URL. Open it, edit `app.js`,
 reload. Then the loop that runs for the rest of the day:
 
 ```bash
-deck serve --root ./work --history auto
+deck serve --root ./work --history deckd
 ```
 
 `--root` is a directory *of* depots: every child directory becomes one,
@@ -66,7 +66,7 @@ every save:
    seal, no noise. Touching a file is not a change.
 3. **Auto-publish** `<base>-dev.N`, tagged `dev`. Immutable from that
    instant.
-4. **Seal it as a Step** (when `jj`, historyd, or **deckd** is attached) —
+4. **Seal it as a Step** (when **deckd** is attached) —
    including the saves that did *not* publish, so the states between versions
    exist too. With `DECKD_URL`, deckd’s FS watch owns seals; Hub still
    publishes + HMR.

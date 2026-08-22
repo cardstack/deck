@@ -16,8 +16,8 @@ from this repository instead.
 | --- | --- | --- |
 | **Node** | ≥ 22 | required — the CLI is TypeScript with no build step, and relies on Node's native type stripping |
 | **pnpm** | 11 | required to install the workspace's dev dependencies (`packageManager` pins the exact version) |
-| **jj** | any recent | optional — Timeline via the jj CLI when no daemon is running |
-| **Rust / cargo** | stable | optional — only to build `packages/deckd`, the in-tree Timeline daemon |
+| **jj** | any recent | optional — History via the jj CLI when no daemon is running |
+| **Rust / cargo** | stable | optional — only to build `packages/deckd`, the in-tree History daemon |
 
 Verified on Node v24.17.0, pnpm 11.0.9, jj 0.43.0.
 
@@ -98,16 +98,16 @@ pnpm test && pnpm lint
 Expect 189 core, 22 history, 79 server, 4 conformance, 13 CLI — all
 passing — and no lint or type errors.
 
-## Check whether you got a Timeline
+## Check whether every-save History is active
 
 ```bash
 deck hello ./playground
 ```
 
 The banner it prints includes a line naming the history backend it attached
-to, or the reason it could not. `jj` present means a Timeline and a Step per
-save; anything else means Versions only, which is still every settled save as an
-immutable version.
+to, or the reason it could not. An attached deckd means every-save History and
+a Step per save; anything else means Versions only, which still keeps every
+settled save as an immutable version.
 
 ## Environment
 
@@ -115,7 +115,7 @@ immutable version.
 | --- | --- | --- |
 | `DECK_KEYRING` | `~/.deck/keys` | where `deck keygen` writes private keys. They never leave the machine |
 | `JJ_BIN` | `jj` | which `jj` binary to seal with when no daemon URL is set |
-| `DECKD_URL` | — | point the Timeline at in-tree **deckd** (`packages/deckd`, default listen `http://127.0.0.1:8787`). Preferred over `DECK_HISTORYD_URL` when both are set |
+| `DECKD_URL` | — | point the History at in-tree **deckd** (`packages/deckd`, default listen `http://127.0.0.1:8787`). Preferred over `DECK_HISTORYD_URL` when both are set |
 | `DECK_HISTORYD_URL` | — | legacy alias for an external historyd; same HTTP contract as deckd |
 
 To run Hub with deckd from this clone:
@@ -136,7 +136,7 @@ and [`docs/deck-daemon.md`](docs/deck-daemon.md).
 | `Cannot find package '@cardstack/deck'` | `pnpm install` has not run, or you are running a copy of `packages/cli` from outside the workspace |
 | `EADDRINUSE` from `deck serve` | the port is taken. `deck hello` walks forward up to ten ports on its own; `serve` does not, because a server you asked to be on 8788 should not quietly be somewhere else |
 | `deck: --realm is now --depot` | an old flag. It still works and will keep working; the message is a note, not a failure |
-| history reports Versions only | `jj` is not on PATH, and `DECKD_URL` / `DECK_HISTORYD_URL` point at nothing. The live loop is unaffected |
+| history reports Versions only | deckd is not running (`DECKD_URL` / `DECK_HISTORYD_URL` point at nothing). The live loop is unaffected |
 
 ## Uninstall
 

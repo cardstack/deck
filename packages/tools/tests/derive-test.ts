@@ -16,12 +16,27 @@ import {
 function sourcePack(version = '1.2.3') {
   return pack([
     {
+      path: 'package.json',
+      bytes: Buffer.from(
+        JSON.stringify(
+          {
+            name: 'ink',
+            version,
+            type: 'module',
+            exports: { '.': './ink.js' },
+          },
+          null,
+          2,
+        ) + '\n',
+      ),
+    },
+    {
       path: 'importmap.json',
       bytes: Buffer.from(
         JSON.stringify(
           {
             imports: {},
-            deck: { packages: { ink: { version, entry: '$DECK/ink.js' } } },
+            deck: { packages: { ink: {} } },
           },
           null,
           2,

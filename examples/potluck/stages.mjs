@@ -1,4 +1,4 @@
-// Ten intentional Stages for the potluck form Timeline.
+// Ten intentional Stages for the potluck form History.
 // Each Step should read differently: fields, design, language, errors, preview.
 
 const IMPORTMAP = `{

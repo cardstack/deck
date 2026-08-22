@@ -1,0 +1,11 @@
+{
+  "name": "card",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./card.js"
+  },
+  "dependencies": {
+    "std/tokens": "^1.0.0"
+  }
+}

@@ -14,10 +14,13 @@ let storeDir: string;
 function libPack(version: string) {
   return pack([
     {
-      path: 'importmap.json',
+      path: 'package.json',
       bytes: Buffer.from(
         JSON.stringify({
-          deck: { packages: { lib: { version, entry: '$DECK/lib.js' } } },
+          name: 'lib',
+          version,
+          type: 'module',
+          exports: { '.': './lib.js' },
         }),
       ),
     },
@@ -28,9 +31,32 @@ function libPack(version: string) {
 async function deckWith(
   name: string,
   map: Record<string, unknown>,
+  pkg: Record<string, unknown> = {},
 ): Promise<string> {
   let dir = join(root, name);
   await mkdir(dir, { recursive: true });
+  let deck = (map.deck ?? {}) as {
+    packages?: Record<string, { version?: string; entry?: string }>;
+    dependencies?: Record<string, string>;
+  };
+  let self = deck.packages?.app;
+  await writeFile(
+    join(dir, 'package.json'),
+    JSON.stringify(
+      {
+        name: 'app',
+        version: self?.version ?? '0.1.0',
+        type: 'module',
+        ...(self?.entry
+          ? { exports: { '.': `./${self.entry.replace(/^\$DECK\//, '')}` } }
+          : {}),
+        ...(deck.dependencies ? { dependencies: deck.dependencies } : {}),
+        ...pkg,
+      },
+      null,
+      2,
+    ),
+  );
   await writeFile(join(dir, 'importmap.json'), JSON.stringify(map, null, 2));
   return dir;
 }

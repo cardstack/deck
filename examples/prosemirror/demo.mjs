@@ -162,12 +162,7 @@ for (let row of WITH_SOURCE) {
             deck: {
               packages: {
                 [deckNameForNpm(row.name)]: {
-                  version: row.version,
-                  // NO ENTRY, on purpose. These are TypeScript sources: a
-                  // browser cannot run them and no transform here produces
-                  // something that can. A deck that declared an entry it
-                  // could not honour would be a lie the server would repeat,
-                  // so the server answers `no-entry-module` instead.
+                  sourceOnly: true,
                   vendoredFrom: {
                     registry: 'https://registry.npmjs.org',
                     name: row.name,
@@ -180,6 +175,20 @@ for (let row of WITH_SOURCE) {
                 },
               },
             },
+          },
+          null,
+          2,
+        ) + '\n',
+        'utf8',
+      ),
+    },
+    {
+      path: 'package.json',
+      bytes: Buffer.from(
+        JSON.stringify(
+          {
+            name: row.name,
+            version: row.version,
           },
           null,
           2,
@@ -213,9 +222,13 @@ for (let { spec, entry } of PACKAGES) {
     policy: { minimumReleaseAge: 0 },
   });
   let name = deckNameForNpm(vendored.pkg.name);
-  let dependencies = Object.fromEntries(
-    vendored.externals.map((external) => [external, `lib/${deckNameForNpm(external)}@${'^' + versionOf(external)}`]),
-  );
+  let npmManifest = vendored.pkg.files.get('package.json');
+  let packedManifest = vendored.files.find((file) => file.path === 'package.json')?.bytes;
+  if (!npmManifest || !packedManifest || !packedManifest.equals(npmManifest)) {
+    throw new Error(
+      `vendored ${vendored.pkg.name} package.json is not byte-identical to npm`,
+    );
+  }
   let bytes = pack([
     {
       path: 'importmap.json',
@@ -225,12 +238,9 @@ for (let { spec, entry } of PACKAGES) {
             deck: {
               packages: {
                 [name]: {
-                  version: vendored.pkg.version,
-                  entry: `$DECK/${vendored.entryPath}`,
                   vendoredFrom: vendored.vendoredFrom,
                 },
               },
-              ...(Object.keys(dependencies).length > 0 ? { dependencies } : {}),
             },
           },
           null,
@@ -309,7 +319,6 @@ let forkFiles = [...viewTree.entries()].map(([path, bytes]) =>
                   packages: {
                     'prosemirror-view': {
                       ...JSON.parse(bytes.toString('utf8')).deck.packages['prosemirror-view'],
-                      version: FORK_VERSION,
                       forkedFrom: {
                         deck: VIEW,
                         version: VIEW_ROW.version,
@@ -317,10 +326,6 @@ let forkFiles = [...viewTree.entries()].map(([path, bytes]) =>
                       },
                       changed: [VIEW_FILE],
                     },
-                  },
-                  // The fork needs the same wiring as upstream, or its own
-                  // bare specifiers resolve to nothing.
-                  dependencies: JSON.parse(bytes.toString('utf8')).deck.dependencies,
                 },
               },
               null,
@@ -379,7 +384,7 @@ await lockAndWrite({
   depotDir,
   depotName: DEPOT,
   storeDir,
-  deckDir: join(depotDir, 'app', 'editor'),
+  depotLock: true,
 });
 
 } // end buildMode

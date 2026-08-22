@@ -9,6 +9,7 @@ import { START_COMMANDS } from './commands/start.ts';
 import { SEAL_COMMANDS } from './commands/seal.ts';
 import { PUBLISH_COMMANDS } from './commands/publish.ts';
 import { DEPEND_COMMANDS } from './commands/depend.ts';
+import { REPOSITORY_COMMANDS } from './commands/repository.ts';
 import { PROPOSE_COMMANDS } from './commands/propose.ts';
 import { ENDORSE_COMMANDS } from './commands/endorse.ts';
 import { RECALL_COMMANDS } from './commands/recall.ts';
@@ -20,6 +21,7 @@ export const COMMANDS: Command[] = [
   ...SEAL_COMMANDS,
   ...PUBLISH_COMMANDS,
   ...DEPEND_COMMANDS,
+  ...REPOSITORY_COMMANDS,
   ...PROPOSE_COMMANDS,
   ...ENDORSE_COMMANDS,
   ...RECALL_COMMANDS,
@@ -44,7 +46,9 @@ export function assertGroupsCovered(): void {
   let ids = new Set(GROUPS.map((group) => group.id));
   for (let command of COMMANDS) {
     if (!ids.has(command.group)) {
-      throw new Error(`command "${command.name}" is in unknown group "${command.group}"`);
+      throw new Error(
+        `command "${command.name}" is in unknown group "${command.group}"`,
+      );
     }
   }
   for (let group of GROUPS) {

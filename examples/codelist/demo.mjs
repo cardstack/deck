@@ -64,10 +64,15 @@ function sortKeys(codes) {
 function tree(pkg, version, codes, note) {
   return new Map([
     [
-      'importmap.json',
+      'package.json',
       Buffer.from(
         JSON.stringify(
-          { deck: { packages: { [pkg]: { version, entry: '$DECK/index.js' } } } },
+          {
+            name: pkg,
+            version,
+            type: 'module',
+            exports: { '.': './index.js' },
+          },
           null,
           2,
         ) + '\n',
@@ -152,7 +157,7 @@ console.log(`\n4) acme/currencies@1.4.0-acme.1 — fork of 1.4.0, +3 internal co
 //
 // This one reports a conflict, and it is the interesting part of the demo.
 // The DATA merges perfectly — 10 base + 3 upstream + 3 internal, nobody
-// touched the same key. What collides is `importmap.json`, because both
+// touched the same key. What collides is `package.json`, because both
 // sides edited one key in it: the fork called itself `1.4.0-acme.1` and
 // upstream called itself `1.5.0`.
 //
@@ -161,7 +166,7 @@ console.log(`\n4) acme/currencies@1.4.0-acme.1 — fork of 1.4.0, +3 internal co
 // combination, because that is a judgement about compatibility — and the
 // merge is honest enough to say so instead of picking one.
 let rebased = mergeTrees(base, fork, next);
-let dataOnly = rebased.conflicts.filter((p) => p !== 'importmap.json');
+let dataOnly = rebased.conflicts.filter((p) => p !== 'package.json');
 if (dataOnly.length > 0) {
   throw new Error(`demo is wrong — the DATA conflicted: ${dataOnly.join(', ')}`);
 }

@@ -4,8 +4,8 @@ import { tracked } from '@glimmer/tracking';
 import { CardDef, Component, field, contains } from '@cardstack/base/card-api';
 import StringField from '@cardstack/base/string';
 // Bare import — answered by the realm decklist pin (see backport-remix-decklist.json).
-// This module’s RRI is @workspace/acme/gallery/scene → three@0.169.0.
-// @workspace/acme/gallery/legacy-viewer/scene can import 'three' too → 0.160.0 via scopes.
+// This module’s RRI is @acme/gallery/scene → three@0.169.0.
+// @acme/gallery/legacy-viewer/scene can import 'three' too → 0.160.0 via scopes.
 import * as THREE from 'three';
 
 export class GalleryScene extends CardDef {

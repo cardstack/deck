@@ -10,7 +10,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { forkDeck } from '@cardstack/deck/fork';
-import { lockDeck, parseDependencyValue } from '@cardstack/deck/lock';
+import { lockDepot, parseDependencyValue, DEPOT_LOCK_PATH } from '@cardstack/deck/lock';
 import { rebasePass } from '@cardstack/deck-tools/rebase-daemon';
 import { defineCommand, type Command } from '../command.ts';
 import { depotAt, fail } from '../support.ts';
@@ -75,10 +75,11 @@ stays the specifier your source already imports.`,
     if (!usePublisher || !usePackage) {
       fail('--use-in is <publisher>/<package>');
     }
-    let mapPath = join(depot.dir, usePublisher, usePackage, 'importmap.json');
-    let map = JSON.parse(await readFile(mapPath, 'utf8'));
-    let vendor = (map.deck ??= {});
-    let dependencies = (vendor.dependencies ??= {}) as Record<string, string>;
+    let pkgPath = join(depot.dir, usePublisher, usePackage, 'package.json');
+    let pkg = JSON.parse(await readFile(pkgPath, 'utf8')) as {
+      dependencies?: Record<string, string>;
+    };
+    let dependencies = (pkg.dependencies ??= {});
     // ALIAS, not rename: the key stays the import specifier the consumer
     // already writes, and the value says the fork answers to it. Renaming
     // the key would make every `import … from '<base>'` in the consumer's
@@ -95,14 +96,13 @@ stays the specifier your source already imports.`,
     )?.[0];
     // `live` on purpose: the point of a fork is to see every save.
     dependencies[existingKey ?? fromName] = `${result.to}@live`;
-    await writeFile(mapPath, JSON.stringify(map, null, 2) + '\n');
-    let locked = await lockDeck({
+    await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+    let locked = await lockDepot({
       depotDir: depot.dir,
       depotName: depot.name,
       storeDir: depot.storeDir,
-      deckDir: join(depot.dir, usePublisher, usePackage),
     });
-    await writeFile(mapPath, locked.text);
+    await writeFile(join(depot.dir, DEPOT_LOCK_PATH), locked.text);
     console.log(
       `  ${values['use-in']} now gets ${result.to} live wherever it imports ${fromName} — every save, no publish`,
     );

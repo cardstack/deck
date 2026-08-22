@@ -1,0 +1,37 @@
+/* Critical shell colours — linked in <head> before any module runs.
+ *
+ * Cross-document View Transitions snapshot the NEW document as soon as it
+ * exists. If `--bg` is still unset (palette.css arrives via JS), the
+ * viewport is browser-white and the default root crossfade shows it.
+ * These fallbacks match the three Hub palettes / applyTheme() defaults.
+ */
+
+:root {
+  --hub-flash: #1e1e2e; /* mocha — Hub default */
+  color-scheme: dark;
+}
+
+html[data-theme='mocha'] {
+  --hub-flash: #1e1e2e;
+  color-scheme: dark;
+}
+html[data-theme='latte'] {
+  --hub-flash: #eff1f5;
+  color-scheme: light;
+}
+html[data-theme='tokyo-night-light'] {
+  --hub-flash: #e1e2e7;
+  color-scheme: light;
+}
+
+html,
+body,
+#app {
+  background-color: var(--bg, var(--hub-flash));
+}
+
+/* The VT layer sits above the document. Without a fill, opacity crossfades
+   of ::view-transition-old/new(root) punch through to white. */
+::view-transition {
+  background-color: var(--bg, var(--hub-flash));
+}

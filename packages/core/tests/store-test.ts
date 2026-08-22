@@ -19,12 +19,13 @@ import { listObjects, listTrees } from '../src/object-store.ts';
 function libFiles(base: string, body: string) {
   return [
     {
-      path: 'importmap.json',
+      path: 'package.json',
       bytes: Buffer.from(
         JSON.stringify({
-          deck: {
-            packages: { lib: { version: base, entry: '$DECK/lib.js' } },
-          },
+          name: 'lib',
+          version: base,
+          type: 'module',
+          exports: { '.': './lib.js' },
         }),
       ),
     },
@@ -68,6 +69,19 @@ module('store: content addressing and pruning', function (hooks) {
       undefined,
       'a new record names no archive',
     );
+  });
+
+  test('concurrent local publishers preserve both Version pointers', async function (assert) {
+    let first = pack(libFiles('1.0.0', 'export const v = 1;\n'));
+    let second = pack(libFiles('1.0.0', 'export const v = 2;\n'));
+    await Promise.all([
+      publishToStore(storeDir, 'lib', '1.0.0-dev.1', first),
+      publishToStore(storeDir, 'lib', '1.0.0-dev.2', second),
+    ]);
+    assert.deepEqual(Object.keys((await readStoreMeta(storeDir, 'lib'))!.versions).sort(), [
+      '1.0.0-dev.1',
+      '1.0.0-dev.2',
+    ]);
   });
 
   test('pruning keeps the newest dev versions and never touches stables or tags', async function (assert) {
@@ -180,11 +194,12 @@ module('store: content addressing and pruning', function (hooks) {
   test('editing ONE file in a large tree costs ONE object', async function (assert) {
     let many = (marker: string) => [
       {
-        path: 'importmap.json',
+        path: 'package.json',
         bytes: Buffer.from(
           JSON.stringify({
-            imports: {},
-            deck: { packages: { big: { version: '1.0.0' } } },
+            name: 'big',
+            version: '1.0.0',
+            type: 'module',
           }) + '\n',
         ),
       },
@@ -366,14 +381,23 @@ module('store: content addressing and pruning', function (hooks) {
   test('one deck name is one upstream library', async function (assert) {
     let vendored = (npmName: string, version: string) => [
       {
+        path: 'package.json',
+        bytes: Buffer.from(
+          JSON.stringify({
+            name: npmName,
+            version,
+            type: 'module',
+            exports: { '.': './lib.js' },
+          }),
+        ),
+      },
+      {
         path: 'importmap.json',
         bytes: Buffer.from(
           JSON.stringify({
             deck: {
               packages: {
                 'babel-runtime': {
-                  version,
-                  entry: '$DECK/lib.js',
                   vendoredFrom: { registry: 'npm', name: npmName, version },
                 },
               },
@@ -423,7 +447,7 @@ module('store: content addressing and pruning', function (hooks) {
     );
   });
 
-  // A list of versions is only a timeline if the versions carry times, and
+  // A list of versions is only ordered history if the versions carry times, and
   // the two available times mean different things. The upstream instant is a
   // fact about the library; the local one is a fact about this machine. They
   // are years apart for anything vendored, so a reader that treats either as
@@ -433,14 +457,23 @@ module('store: content addressing and pruning', function (hooks) {
     let upstreamPublishedAt = '2018-08-27T00:00:00.000Z';
     let vendoredPack = pack([
       {
+        path: 'package.json',
+        bytes: Buffer.from(
+          JSON.stringify({
+            name: 'lib',
+            version: '1.0.0',
+            type: 'module',
+            exports: { '.': './lib.js' },
+          }),
+        ),
+      },
+      {
         path: 'importmap.json',
         bytes: Buffer.from(
           JSON.stringify({
             deck: {
               packages: {
                 lib: {
-                  version: '1.0.0',
-                  entry: '$DECK/lib.js',
                   vendoredFrom: {
                     registry: 'npm',
                     name: 'lib',

@@ -1,0 +1,18 @@
+{
+  "imports": {
+    "app/gallery": "/site/app/gallery@1.0.0/gallery.js",
+    "app/gallery/": "/site/app/gallery@1.0.0/",
+    "std/tokens": "/site/std/tokens@1.0.0/index.js",
+    "std/tokens/": "/site/std/tokens@1.0.0/",
+    "ui/card": "/site/ui/card@1.0.0/card.js",
+    "ui/card/": "/site/ui/card@1.0.0/",
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js",
+    "ui/pills/": "/site/ui/pills@1.0.0/"
+  },
+  "integrity": {
+    "/site/app/gallery@1.0.0/gallery.js": "sha256-u89yWSp6bj5F6dpdCy1TNxmTzIHKgNsoLAU0EA84Gd4=",
+    "/site/std/tokens@1.0.0/index.js": "sha256-nqq879dkY8uaH1bTJ6/wisBXXyjA7+O5al7d1o6w6FI=",
+    "/site/ui/card@1.0.0/card.js": "sha256-LZ13TiW5BDdcZb1sLduKucVqQKgL0WZ2gPWUzIOWOgY=",
+    "/site/ui/pills@1.0.0/pills.js": "sha256-lrX+8UWsimQ+3y8TZgeV0+aG8Fm3QECUlAPn4/GNAzk="
+  }
+}

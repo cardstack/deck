@@ -1,423 +1,292 @@
 # Deck
 
-**Deck is version management without the commit, package management
-without the install, and cloud delivery without the deploy.**
+**Version management without the commit.<br>
+Package management without the install.<br>
+Code collaboration without the clone.<br>
+Cloud delivery without the deploy.**
 
-One thing makes all three true: there is only one kind of object here — a
-file, named by the hash of its own bytes, reachable at a URL. A tree is a
-list of those names. A Version, a Step, a dependency, a fork and a release
-are all pointers to trees. Commit, install and deploy all do the same job:
-they move a copy to a second place that names things differently. Here
-there is no second place.
+Deck gives files, packages, dependencies, runnable applications, and collaborative
+work one content-addressed system. The browser can run the same immutable state
+that a reviewer inspected, a release named, and another package imported.
 
-| | |
-| --- | --- |
-| A commit, a save, a snapshot are just | the hash of the tree, taken when you stopped typing. |
-| A version, a tag, a release, a staging environment are just | pointers to one of those hashes. Moving a pointer copies nothing. |
-| An import, an install, a lockfile, `node_modules` are just | an address in an import map, written into a file you can read. |
-| A branch, a fork, a pull request are just | the same package under your own publisher, with the tree you started from recorded. That record is the whole difference between a copy and a proposal. |
-| A code review, a preview environment are just | the page loaded with `?with=` pointing somewhere else, for one request. |
-| A merge is just | three trees: yours, theirs, and the one you both started from. |
-| A revert, a rollback, a checkout are just | reading a different address. Nothing on disk changes. |
-| A build, a bundle, a deploy, a CDN are just | absent — except the bundle, which is another version derived from the first, at its own address. |
+Every settled save is safe without asking the author to make a commit. Intentional
+collaboration still has the familiar nouns—repository, branch, fork, Review, and
+merge—but those nouns coordinate immutable package state instead of copying a
+monorepo between machines.
 
-None of those is really a mechanism. They exist because three systems each
-keep their own address space, and something has to translate between them.
-With one address space, committing, installing and deploying are not three
-things you do to code — they are three names for pointing at it.
+## The model
 
-```bash
-node packages/cli/bin/deck.js hello
+```text
+bytes ──hash──▶ package tree ──name──▶ Version ──URL──▶ browser
+                    │
+                    └──────────────▶ History Step (every settled save)
+
+exact package Versions + exact RRI lock ──▶ Repository
+                                               │
+                                          authored as
+                                               ▼
+                                           Checkpoint
+                                               ▲
+                                      branch ──┘  mutable ref
+
+source branch ──exact Checkpoint──┐
+                                  ├──▶ Review ──preview──▶ Browse + Run
+target branch ──exact Checkpoint──┘       │
+                                         └──merge──▶ two-parent Checkpoint
+                                                          │
+                                                          └──CAS──▶ target branch
 ```
 
-That scaffolds a working app, serves it live, and prints the URL. Edit
-a file, reload, see it. That is the whole loop.
+The layers have deliberately different jobs:
 
-Nothing here is published to npm yet, and **`npx deck` is somebody else's
-package** — install from this repo. [INSTALL.md](INSTALL.md) covers the
-three ways; [CLI.md](CLI.md) is the CLI's own readme.
+| Layer            | Meaning                                                                                                                                                                                                        |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Version**      | An immutable name for one package tree. Settled saves can create Versions automatically; releases add durable semver names without copying bytes.                                                              |
+| **History Step** | One ordered every-save state from `deckd`. History is daily safety and does not require commit ceremony.                                                                                                       |
+| **Repository**   | An immutable set of exact package Versions plus one exact Realm Resource Identifier (RRI) lock. A mutable package is already an implicit one-package Repository; `repo-init` names a multi-package Repository. |
+| **Checkpoint**   | An authored collaboration point that binds a Repository, History head, completed index generation, message, and ordered parent Checkpoints.                                                                    |
+| **Branch**       | A mutable compare-and-swap ref inside one owner/Repository. Creating one clones the selected Repository state; unchanged content remains shared in CAS.                                                        |
+| **Fork**         | The same storage operation across an ownership boundary. It creates a mutable package in another publisher scope and records ancestry.                                                                         |
+| **Review**       | Durable source-to-target metadata bound to exact Checkpoints, with an append-only event history and an exact runnable preview.                                                                                 |
+| **Merge**        | A three-way reconciliation of base, target, and source Repositories, followed by one target-branch compare-and-swap and a new two-parent Checkpoint.                                                           |
+
+Imported packages are read-only. To change one, create a branch when you control
+its Repository, or fork it into your own publisher scope. A fork of Three.js can
+therefore become a Repository too; package and Repository are not competing
+containers in Deck.
 
 ## The layout is the address
 
-A depot is a directory. What `ls` shows and what the URL says are the
-same thing:
+A depot is a directory. Live source has the same shape on disk and over HTTP:
 
+```text
+<root>/site/acme/palette/index.js       on disk
+       /site/acme/palette/index.js      live — every save, no-store
+       /site/acme/palette@1.1.0/index.js
+                                        exact Version, immutable forever
+       /site/_history/<step>/acme/palette/index.js
+                                        an earlier every-save state
 ```
-<root>/site/acme/palette/palette.js     on disk
-       /site/acme/palette/palette.js    live — every save, no-store
-       /site/acme/palette@1.1.0/palette.js
-                                        the sealed copy, immutable forever
-       /site/_history/<changeId>/acme/palette/palette.js
-                                        any state it was ever in, published or not
+
+Canonical identities are RRIs such as `@acme/palette/` and
+`@acme/palette@1.1.0/`. Realm URLs are transport projections. Authored locks,
+Repositories, Checkpoints, and indexes use RRI identity so moving a realm does
+not change what its content means.
+
+Each depot carries its own Deck resources:
+
+```text
+site/
+├── acme/…                         live authored packages
+└── .deck/
+    ├── store/                     immutable blobs, trees, Versions, locks,
+    │                              Repositories, and Checkpoints
+    ├── refs/heads/                mutable branch refs (conditional writes)
+    ├── reviews/                   Review openings, heads, and event chains
+    ├── history/                   deckd/jj every-save History
+    └── indexes/                   immutable completed index generations
 ```
 
-`ls` and `cat` give you the LATEST of everything, and an agent can
-change any of it. Adding `@<version>` to the package segment reads the
-same path out of a seal instead. A depot carries its own machinery
-inside itself — `.deck/store/` for sealed versions, `.jj/` for seals —
-both invisible to the tree hash, so copying the directory takes the
-live files, every published version, and the whole history with it.
+Agents can inspect this state as ordinary files. Mutations go through Deck APIs
+and conditional writes so two writers cannot silently replace one another. A
+desktop backend uses the same contracts on a regular filesystem; a hosted realm
+can place the realm-contained tree on S3 Files and use S3 conditional writes for
+durable refs.
 
-## Three levels of volatility, all just URLs
+## Run it locally
 
-| You want | You write | You get |
-| --- | --- | --- |
-| every save, instantly — 18 agents on one tree | `"acme/palette": "live"` | `/site/acme/palette/…` |
-| the freshest seal, for a shape still moving | `"acme/palette": "dev"` | `/site/acme/palette@1.2.0-dev.7/…` |
-| something dependable underneath you | `"acme/palette": "^1.0.0"` | `/site/acme/palette@1.1.0/…` |
-
-`latest` is a dist-tag on a stable release. **`latest` is not live** —
-live is the bytes on disk, with no version segment at all.
-
-Ranges never match prereleases, so a `^1.0.0` dependency cannot pick up
-somebody's auto-published dev line by accident. Opting into churn is
-always explicit.
-
-## The workflow
+Prerequisites and install options are in [INSTALL.md](./INSTALL.md).
 
 ```bash
-deck serve --root ./work                 # every depot under ./work, live + auto-publishing
-# …edit anything. Every settled save auto-publishes <base>-dev.N (tag: dev)
-#   and is sealed, whether or not it is published.
+pnpm install
+./scripts/run-hub-with-deckd.sh
+```
+
+Open <http://localhost:8788/>. One port serves the Hub chrome, Browse, Run,
+Track, Review, and every demo through `*.localhost:8788` virtual hosts.
+
+The Hub has four working views over the same state:
+
+- **Browse** — files, packages, Versions, branches, exact diffs, and the
+  Repository underneath.
+- **Run** — a page or a generated harness using an exact Repository projection.
+- **Track** — automatic Versions and every-save History Steps.
+- **Review** — a queue of durable Reviews, exact package diffs, runnable
+  previews, activity, Checkpoints, and merge state.
+
+## The daily loop
+
+```bash
+deck serve --root ./work --history deckd
+# edit normally; every settled save is addressable and kept in History
 
 deck release --depot ./work/site --publisher acme --name palette \
-  --version 1.1.0 --from dev --tag latest      # instantly a real semver, zero bytes copied
+  --version 1.1.0 --from dev --tag latest
+# the Version is a pointer to existing sealed state: zero bytes copied
 
-deck lock --depot ./work/site --publisher you --name app
-#   resolves this deck's declared RANGES to exact versions and pins them in
-#   its import map — what your users get, so they never inherit your
-#   dependencies' working trees. Move them forward when you're ready.
-
-deck fork --depot ./work/site --from acme/palette --as you/palette --use-in you/app
-#   copy someone's deck into YOUR publisher scope and change it at byte speed.
-#   Separate version line, separate dist-tags. Their versions never move.
-
-deck offers --depot ./work/site          # every open proposal, and whether it still merges
-deck rebase --depot ./work/site          # re-merge them all; conflicts are reported, not written
-
-deck history ./work/site                 # every state the depot has been in
-deck restore ./work/site <changeId>      # go back to any of them; the state you
-                                         # leave is sealed first, so this is undoable
+deck history ./work/site
+deck restore ./work/site <step>
+# restore replays forward, so the state you leave remains recoverable
 ```
 
-The publisher segment IS the fork boundary: `acme/palette` and
-`you/palette` are different names with different version lines in the
-same depot. An undiverged fork costs no bytes — the store is content-
-addressed, so identical content is stored once.
+Volatility is explicit:
 
-How each promise is kept:
+| Dependency choice      | Result                                    |
+| ---------------------- | ----------------------------------------- |
+| `workspace:*` / `live` | Current bytes on disk, `no-store`         |
+| `dev`                  | Latest automatically published prerelease |
+| `^1.0.0`               | A stable Version satisfying the range     |
+| `1.1.0`                | One exact immutable Version               |
 
-| Promise | Mechanism |
-| --- | --- |
-| instant feedback | the version-less URL serves your working directory, `no-store` |
-| never lose work | every settled save auto-publishes an immutable version, and every save is sealed |
-| revert anytime | `deck restore <depot> <changeId>` — replayed forward, never rewinding |
-| ship any version | `deck release … --from dev` — names a sealed state, copies nothing |
-| share any milestone | `deck pack <deck>` → one Deck Pack (`.pack.zip`) any zip tool opens |
-| use any library | `deck vendor https://esm.sh/three@0.160.0 …` — pulled in for good, hermetic |
-| fork freely | `deck fork` — your own publisher scope; theirs is untouched |
-| stability where you need it | `deck lock` — ranges in the tree, exact pins in the map |
-| whole web platform | plain ES modules and import maps; no bundler, no transpile |
+`latest` is a dist-tag, not the working tree. Ranges never select prereleases.
+The conventional `package.json` suggests ranges; the exact import-map lock
+decides what executes.
 
-Deck is deliberately independent:
+## Branch, Review, and merge
 
-- **No framework required.** The protocol serves ANY vanilla JS/HTML
-  app. Nothing here depends on `.gts`, card-api, or Boxel — those
-  are one consumer.
-- **Reference implementation here**: a CLI and a minimal Node
-  webserver, developed and tested standalone.
-- **The Boxel realm server will IMPLEMENT Deck later**, when this is
-  mature. A working at-rest implementation already exists inside the
-  realm server (branches `deck/01`–`deck/07` on the
-  `jj-history-sidecar` worktree of the boxel monorepo, L1–L7, fully
-  tested) — it is prior art and a re-import target, not the home.
+The CLI exposes the same protocol that the Hub and agents use:
 
-## Contribution: the proposal is a version, not a diff
+```bash
+deck repo-init --depot ./work/site --owner acme --name dashboard \
+  --root app/dashboard --member app/dashboard --member acme/editor \
+  --member acme/theme --history "$HISTORY_HEAD" --index "$INDEX_HASH"
 
-A fork records its base — package, version, and treeHash — in its own import
-map, so a fork IS a proposal. Nothing registers it; there is no branch and no
-side table. That makes two things possible that a diff-based flow cannot do.
+deck branch --depot ./work/site --repo acme/dashboard \
+  --name kim/carrier-routing --from main
 
-**Review by running, not by reading.** Every proposal is already published at
-a URL, so trying one is a query parameter:
+# edit the branch's packages, then create an intentional collaboration point
+deck checkpoint --depot ./work/site --repo acme/dashboard \
+  --branch kim/carrier-routing --message "Route recovery work" \
+  --history "$HISTORY_HEAD" --index "$INDEX_HASH"
 
-```
-/site/you/app/index.html?with=acme/palette=you/palette
-/site/you/app/index.html?with=acme/palette@1.1.0
+deck review --depot ./work/site --repo acme/dashboard \
+  --source kim/carrier-routing --target main \
+  --title "Route recovery work to carrier desks"
+
+deck merge --depot ./work/site --repo acme/dashboard --number 2 \
+  --history "$HISTORY_HEAD" --index "$INDEX_HASH"
 ```
 
-The server resolves the app's import map differently for that one request —
-same rules `deck lock` uses, applied at serve time. No checkout, no build, no
-branch, and the app's own tree is untouched. Repeat `with` to try several at
-once. A trial is never cached as if it were the sealed thing.
+`History` and index values come from the realm services in an integrated host;
+the explicit CLI flags keep the protocol boundary visible. The executable
+[collaboration replay](./scripts/replay-collaboration.mjs) builds a realistic
+multi-party Repository from statements, including vendoring, automatic
+Versions, branches, Checkpoints, a realistic Review queue, an approved merge,
+and a rejected conflict. Run its assertions with:
 
-**Nobody rebases.** `deck serve --rebase` keeps every open proposal merged
-against upstream continuously: the base is exact and both sides are
-content-addressed, so re-merging is a pure function a machine can run. Clean
-merges are written into the proposal's own tree — which auto-publishes and
-seals like any other save — and the base pointer moves to what it absorbed.
-Conflicted ones are reported and **left strictly alone**: a machine never
-damages a contributor's work.
+```bash
+pnpm test:collaboration
+```
 
-So a maintainer with 200 open proposals sees the three that stopped merging,
-not 197 that need a rebase.
+Temporary `?with=` substitutions remain useful for trying alternate package
+Versions. They are preview transport, not Review identity. A Review records the
+exact Repository and Checkpoints that were examined.
 
-JSON is merged as data rather than as lines. In a pretty-printed object,
-adding a key makes the line above grow a comma, so a line merge would call
-that a conflict — and manifests and card instances are JSON. Merging by key
-means only the same key, changed differently on both sides, is a real
-disagreement.
-
-Accepting a proposal is a pointer move: upstream publishes the treeHash the
-proposal already holds. **Zero bytes are copied.**
-
-## Bring a CDN library in-house
+## Bring a library in-house
 
 ```bash
 deck vendor https://esm.sh/three@0.160.0 --name three --version 0.160.0 \
   --depot ./work/site --publisher acme --tag latest
 ```
 
-That pulls three.js's whole module graph from esm.sh ONCE, rewrites
-every cross-module reference to stay inside the pack, and seals it.
-Your app's import map then points at your own server:
+Deck walks the ESM graph once, rewrites internal references to remain inside the
+vendored tree, verifies it, and seals it. Applications then import the reviewed
+Version from their own Deck server. Vendoring is hermetic by default: an
+unresolved external edge fails instead of hiding a runtime dependency on the
+public web.
 
-```html
-<script type="importmap">
-{ "imports": { "three": "/site/acme/three@0.160.0/esm.sh/three@0.160.0.mjs" } }
-</script>
-<script type="module">
-  import * as THREE from 'three';   // never touches a public CDN
-</script>
+For npm packages with dependencies of their own, `vendor-tree` brings in the
+graph as independently addressable packages. Shared content is stored once.
+
+## Packs and delivery
+
+`deck pack` is transport, backup, cache fill, and interop—not a second package
+identity. A canonical `.pack.zip` round-trips to the same tree hash and can be
+opened by ordinary ZIP tooling.
+
+Exact content URLs are immutable and safe behind a CDN. Public catalog entries
+can use ordinary public caching. Private realms can use an authenticating edge
+or signed cookies/URLs while retaining immutable cache keys. The origin remains
+authoritative for authorization and mutable refs; the CDN delivers content.
+
+## CLI
+
+[CLI.md](./CLI.md) is the command reference. `deck help` prints the live command
+map, and `deck help <command>` explains one command from the same records used by
+the dispatcher.
+
+The groups are:
+
+```text
+start       hello serve
+seal        hash pack unpack list verify
+publish     publish tag release prune store derive verify-derivation
+depend      vendor vendor-tree lock verify-links
+repository  repo-init branch checkpoint review merge
+propose     fork offers rebase
+endorse     keygen sign verify-sig
+recall      history restore
+prove       conform
+say         claim note
 ```
 
-Verified end to end against the real esm.sh: three.js r160 loads and
-executes in a browser with every request going to the Deck server and
-none to any CDN. Vendoring is **hermetic by default** — if the graph
-reaches a host the walker will not follow, the command fails rather
-than sealing a pack with a live external reference inside it.
-`--allow-external` (keep it live) and `--allow-host` (follow it too)
-are the explicit opt-outs. The canonical source travels with the
-bytes as `vendoredFrom`, so a consumer can always tell what a
-vendored module IS — dedupe it, upgrade it, or check it upstream.
+The older package-level `fork` / `offers` / `rebase` flow remains a useful
+single-package proposal surface. Repository Reviews are the durable multi-package
+collaboration surface and are the basis of the Boxel backport.
 
-Because a browser only honours an INLINE import map, the server
-injects each document's map when it serves HTML — including replacing
-an inert `<script type="importmap" src="…">` with the real thing. The
-sealed bytes are untouched: `?format=pack` and the tree hash are
-exactly what was sealed.
+## Protocol documentation
 
-## The safe-vendor requirement (noted 2026-08-07)
+- **[Deck laws](./docs/deck-laws.md)** — the executable protocol contract.
+- **[At rest](./docs/deck-at-rest.md)** — depot layout, storage, addresses, and
+  History.
+- **[Collaboration protocol](./docs/deck-collaboration-protocol.md)** — RRI-native
+  Repository, Checkpoint, branch, Review, and merge objects.
+- **[Step, Version, and History](./docs/deck-step-version-vocabulary.md)** — the
+  every-save and authored-state vocabulary.
+- **[Pack equivalence](./docs/deck-pack-equivalence.md)** — canonical pack laws and
+  carriage modes.
+- **[Storage backends](./docs/deck-storage-backends.md)** — local filesystem and
+  realm-contained S3 Files architecture.
+- **[Efficient delivery](./docs/deck-efficient-delivery-spec.md)** — derived trees,
+  compression, preload closure, and CDN responsibilities.
+- **[Hub tour](./docs/deck-hub-tour.md)** and **[UI requirements](./docs/deck-ui-spec.md)**
+  — how to inspect the implementation and judge the product surface.
 
-A Deck server must be able to act as **your own unpkg for a curated
-set of third-party packages**: vendor in a specific, reviewed semver
-of a library (say, one vetted three.js), seal it, and serve it
-immutably by hash. Apps then import ONLY from your Deck server —
-never from a public CDN — so the supply chain narrows to versions a
-human approved, each verifiable by treeHash/Content-Digest. This
-revives the CatalogJS-era idea with modern mechanics: pin + hash +
-review, then serve forever. It falls out of the vendoring design
-(carriage modes) rather than being a bolt-on.
+## Implementation
 
-## Run it
+The packages layer so Deck Core can move into Boxel without importing the
+standalone server or tools:
+
+```text
+core ← server ← tools ← cli
+  └── history contract ← deckd (Rust + jj-lib)
+  └── conformance laws
+```
+
+- `packages/core` owns tree/pack identity, CAS, RRI locks, vendoring primitives,
+  Repository and Checkpoint objects, branch refs, Reviews, and three-way merge.
+- `packages/history` is the JavaScript client contract for every-save History.
+- `packages/deckd` is the Rust History daemon backed by jj-lib.
+- `packages/server` serves live and immutable depot state read-only.
+- `packages/tools` contains operating tools such as npm carriage, vendoring,
+  derivations, and proposal rebasing.
+- `packages/cli` is the mutation and inspection command surface.
+- `packages/conformance` runs Deck's laws against an implementation over HTTP.
+
+GitHub Actions gates every pull request with lint, all workspace package tests,
+a locked Rust `deckd` build, and the collaboration integration replay through
+the exact built daemon artifact.
+
+Run the same confidence suite locally:
 
 ```bash
-pnpm install
-pnpm demo
-# open http://localhost:8789/
+pnpm lint
+env DECKD_URL=http://127.0.0.1:1 pnpm run --filter './packages/**' --if-present -r test
+cargo build --locked --manifest-path packages/deckd/Cargo.toml
+pnpm test:collaboration
 ```
 
-[`examples/hub`](examples/hub/) starts all seven examples at once — each in its
-own process, its own depot, its own store — and serves one console: the
-Deckbook, and for each demo its explanation, its live app, and the transcript
-it actually printed while building its store. See [examples/](examples/) to run
-one on its own.
-
-Two of them are about the act of writing software with agents rather than about
-a kind of software: [two-agents](examples/two-agents/) — concurrent editing, a
-clean merge, and a conflict resolved deterministically from a published policy —
-and [variations](examples/variations/) — three agent answers at three layers,
-one promoted, two kept.
-
-## The CLI
-
-[INSTALL.md](INSTALL.md) — prerequisites, three ways to install it, and how
-to verify the install actually works.
-
-[CLI.md](CLI.md) — the CLI's readme: the eight command groups, the loop you
-will actually run, and what each refusal is protecting.
-
-`deck help` prints the command map; `deck help <command>` explains any one
-of them in full.
-
-## Deckbook
-
-Open [deckbook.html](deckbook.html) (or `http://localhost:<port>/deckbook.html`
-on a running server) for a teaching tour of the protocol against what this
-reference implementation actually runs — vocabulary, address space, live loop,
-store/packs, Versions and the Timeline, vendor, fork/lock/offers, HTTP + CLI
-maps, four
-use cases worked end to end at the command line, and honest status.
-
-## Documents
-
-Design set in [docs/](docs/) — start with:
-
-- **[deck-laws.md](docs/deck-laws.md) — the contract.** Twelve invariants,
-  each one checkable, each one checked by `deck conform`. Everything else
-  here is commentary, design history, or a record of how something was
-  measured. An implementation implements Deck by passing the suite.
-- [deck-at-rest.md](docs/deck-at-rest.md) — what a depot looks like on
-  disk: layout, store, addresses, and what the Timeline adds. The earlier
-  ratified version is kept unedited at
-  [reference/at-rest-protocol-v2.md](reference/at-rest-protocol-v2.md).
-- [deck-in-motion.md](docs/deck-in-motion.md) — the other half: offers,
-  claims, notes, signing and testing, each labelled by how finished it is.
-  The at-rest half is settled; this one is not, and the file says which
-  parts are which.
-- [deck-testing.md](docs/deck-testing.md) — a test suite is a deck, a run
-  is one suite Version against one tree hash, you run it locally, and the
-  result is a statement signed by a person. Designed, not built.
-- [deck-step-version-vocabulary.md](docs/deck-step-version-vocabulary.md)
-  — Version, Step and Timeline, and the words they replaced.
-- [deck-hub-typography.md](docs/deck-hub-typography.md) — the type
-  system for the documentation pages.
-- [deck-cas-v2-spec.md](docs/deck-cas-v2-spec.md) — next CAS work:
-  blob store (pack as transport), verified dependency links, and
-  signatures on treeHash.
-- [deck-efficient-delivery-spec.md](docs/deck-efficient-delivery-spec.md)
-  — **built.** Sealed releases without bundling-as-identity: minify as a
-  derived tree, gzip at the origin, and `modulepreload` of the decklist
-  closure. Brotli and HTTP/2–3 are the edge's job and terminate at
-  Cloudflare, never here.
-- [deck-tree-hash-v2-merkle-proposal.md](docs/deck-tree-hash-v2-merkle-proposal.md)
-  — **rejected.** A Merkle directory identity does not solve what it was
-  proposed for, and costs a second identity spec to find that out.
-  `tree-hash-v1` is the identity for everything. The measurements are in
-  [deck-tree-hash-v2-review.md](docs/deck-tree-hash-v2-review.md).
-- [deck-rebuild-sibling-proposal.md](docs/deck-rebuild-sibling-proposal.md)
-  — when git+build ≠ npm bytes: `rebuild-v1` derivation (sibling, not
-  fork); explicit `match` exact/mismatch.
-- [deck-depot-and-realm-backport.md](docs/deck-depot-and-realm-backport.md)
-  — standalone Deck says **depot** (a place), not realm; publishers sit
-  inside; Boxel realm is placement-free and may become deck-enabled.
-- [deck-land-hostnames.md](docs/deck-land-hostnames.md) — **`deck.land`**
-  map: apex / `local` / **`cloud`** (hosted sync server) / `cdn`; hub is
-  the app, not a hostname.
-- [deck-activity-protocol.md](docs/deck-activity-protocol.md) — **proposed.**
-  **`GET /_activity`** replaces `/_heat`: one agent-activity door (EWMA
-  trie + optional `story=1` run/code/commentary) for gutters and the
-  watch canvas. ([old heat note](docs/deck-heat-protocol.md) points here.)
-- [deck-step-version-vocabulary.md](docs/deck-step-version-vocabulary.md)
-  — **ruled.** UI: **Version** / **Step** / **Timeline**; imports:
-  **Import** / **Pin** / **Entry** / **Leaf** / **Closure**.
-- [deck-pack-equivalence.md](docs/deck-pack-equivalence.md) — deck ⇄
-  pack: four homes, treeHash identity, carriage modes, round-trip
-  laws, `!/` mounts, canonical-zip-v1. All opens ruled.
-- [deck-live-autopublish.md](docs/deck-live-autopublish.md) — the
-  live tree, the auto-publish loop, and seal-grained history.
-- [deck-fitted-thesis.md](docs/deck-fitted-thesis.md) — the UX thesis: a
-  deck is a card that authors its own fitted format, so the catalog is a
-  wall of running things. Eight domain cards at three sizes each, the
-  protocol reduced to a badge vocabulary, and the four surfaces that fall
-  out.
-- [deck-ui-spec.md](docs/deck-ui-spec.md) — product requirements for a
-  UI, driven by the four workloads: fixed requirements and invariants,
-  open information architecture, and a rubric that catches a design
-  which secretly serves only one workload.
-- [deck-use-cases.md](docs/deck-use-cases.md) — four workloads that
-  need this protocol rather than merely benefit from it, written
-  against the bottlenecks agentic engineering hits on git and npm.
-- [deck-vendor-source-mode.md](docs/deck-vendor-source-mode.md) — how to
-  vendor a package at its ESM module boundary instead of as a bundle, and
-  why the npm tarball turns out to be a verifiable checkout of the GitHub
-  repo: measured on three.js, 374/374 files byte-identical.
-- [deck-competitive-gaps.md](docs/deck-competitive-gaps.md) — what is
-  missing to replace git + GitHub + npm + unpkg, reconciled against what
-  the Boxel realm server and CLI already built, and classified by who
-  supplies each answer: backport, federation, protocol, or operations.
-- [deck-cardpack-requirements.md](docs/deck-cardpack-requirements.md)
-  — requirements recovered from the v0.2 implementation of what is now
-  called a **Deck Pack** (preserved verbatim in
-  [reference/cardpack-v0.2](reference/cardpack-v0.2)). `cardpack` is the
-  v0.2 name; the file form has been `.pack.zip` since v0.3.
-- [deck-unpkg-comparison.md](docs/deck-unpkg-comparison.md) and
-  [deck-esmsh-comparison.md](docs/deck-esmsh-comparison.md) —
-  production lessons from unpkg and esm.sh, and what was adopted.
-
-The remaining docs cover the semver/migration spec, the publishing
-skill, lifecycle, use-case ladder, catalog consumption modes,
-multi-package design, and
-[deck-github-mirror-analysis.md](docs/deck-github-mirror-analysis.md)
-(monorepo-per-depot mirror, provenance, deterministic intake — not built).
-
-## Status
-
-**The reference implementation is built and tested** — 402 tests green
-(215 core, 22 history, 87 server, 49 tools, 7 conformance, 13 CLI), lint and
-typecheck clean, and `deck conform` reports 59 passed / 0 failed / 3 not
-applicable.
-
-The packages layer strictly: **core ← server ← tools ← cli**. Core is the
-one that moves into the Boxel monorepo, so it is a leaf — eslint refuses an
-import from Core to any of the others, and refuses one from the server up
-into Tools.
-
-- **`packages/core`** — `tree-hash-v1` (shasum-compatible manifest,
-  UTF-8 byte-order sort), `canonical-zip-v1` (hand-rolled
-  deterministic writer, zero deps; tolerant standard-zip reader with
-  size caps), packlist (`deck-pack-v1`), `pack`/`unpack` verified
-  under the round-trip laws, the shared import-map module, the
-  **content-addressed store** (packs live once per treeHash; versions
-  are pointers, so `release` copies nothing and pruning deletes bytes
-  only when nothing points at them), the **decklist lock**, **fork**, the
-  **three-way merge** (line-level for text, key-level for JSON), and
-  **offers** — a fork with a recorded base, planned and rebased as a pure
-  function.
-- **`packages/history`** — the Timeline behind one contract, with two
-  backends: the jj CLI and historyd/deckd (jj-lib over localhost HTTP,
-  ~5-6x faster per call). A missing jj or a dead daemon degrades to
-  Versions only, with a printed reason. Restores replay forward as ordinary
-  writes, so history only ever grows.
-- **`packages/deckd`** — Rust Timeline daemon (jj-lib + watchexec-shaped FS
-  seals). Hub attaches it via `DECKD_URL`; see `./scripts/run-hub-with-deckd.sh`.
-- **`packages/server`** — read-only zero-framework serving of depots:
-  version-less = the working tree (`no-store`); exact = immutable +
-  Content-Digest; range/tag = one 302 hop; bare/alias = 301; `?meta`
-  (including which seal a version was cut from); `?format=pack`;
-  `!/` mounts; `/<depot>/_history/<changeId>/<path>`; import-map
-  injection for HTML; coded JSON errors, negative-cached by how
-  permanent the miss is; HEAD; writes refused. Plus `/_packages`, `/_browse`,
-  `/<depot>/_offers` (which **surveys** the offer queue — planning only; the
-  serve path holds no module that can write a proposal's tree), the `?with=`
-  trial override, and an SSE change bus at `/_live/events` with a drop-in
-  HMR client.
-- **`packages/tools`** — the work that operates on a depot rather than
-  serving one, kept out of Core so the backport carries none of it: npm
-  carriage (tarball fetch, integrity, git-blob identity, GitHub tree
-  verification), source-mode and map-mode **vendoring**, the transitive
-  vendor planner, the depot **cooldown policy**, minified **derivation**
-  (the only reason anything here wants terser), and the **rebase daemon** —
-  the half of the offer queue that writes. Hermetic carriage started here and
-  moved to Core, because the Boxel backport needs it and the alternative was
-  a second implementation.
-- **`packages/cli`** — 27 commands in eight groups, one module per group
-  (see [CLI.md](CLI.md)): **start** `hello serve` · **seal** `hash pack
-  unpack list verify` · **publish** `publish tag release prune store derive
-  verify-derivation` · **depend** `vendor vendor-tree lock verify-links` ·
-  **propose** `fork offers rebase` · **endorse** `keygen sign verify-sig` ·
-  **recall** `history restore` · **prove** `conform`. Each command carries
-  its own usage and explanation, and every help screen is rendered from the
-  same records the dispatcher looks up.
-- **`packages/conformance`** — the executable contract: the twelve laws as
-  checks that run, against the reference server or against any
-  implementation black-box over HTTP.
-
-Run everything: `pnpm install && pnpm test && pnpm lint`.
-
-### Not built yet
-
-Cross-depot dependencies (a lock refuses them rather than writing a
-pin nobody can serve). The `vendor`/`unvendor` map-rewrite toggle is
-designed in [docs/deck-pack-equivalence.md](docs/deck-pack-equivalence.md);
-the `!/` mount half it depends on is already serving.
+Deck is standalone and framework-independent. Boxel is its first deep consumer:
+the realm server provides canonical hosted authority, indexing, permissions,
+jobs, and S3-backed durability while Deck supplies portable content identity,
+History, Versions, Repository collaboration, and exact browser execution.

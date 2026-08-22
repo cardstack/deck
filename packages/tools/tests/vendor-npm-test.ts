@@ -245,9 +245,15 @@ module('vendor: source mode', () => {
     assert.strictEqual(result.entryPath, 'src/index.js');
     assert.deepEqual(
       result.files.map((file) => file.path),
-      ['src/a.js', 'src/index.js'],
+      ['package.json', 'src/a.js', 'src/index.js'],
     );
     assert.deepEqual(result.rewritten, [], 'nothing needed rewriting');
+    assert.true(
+      result.files
+        .find((file) => file.path === 'package.json')!
+        .bytes.equals(pkg.files.get('package.json')!),
+      'package.json bytes are what npm published, unmodified',
+    );
     assert.strictEqual(
       result.files.find((file) => file.path === 'src/index.js')!.bytes.toString(
         'utf8',

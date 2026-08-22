@@ -227,13 +227,10 @@ export async function vendorFromCdn(
   };
 }
 
-// The vendored pack declares itself like any deck: an import map naming
-// the package, its version, and the entry — plus `vendoredFrom`, the
-// canonical identity of what was pulled in.
+// Identity lives in package.json. A thin per-pack map may carry lineage
+// (`vendoredFrom`) so the sealed bytes still answer "what IS this?"
 export function vendorImportMap(
   name: string,
-  version: string,
-  entryPath: string,
   // A CDN vendor has one canonical URL to record. An npm source vendor has
   // a whole provenance chain — registry, integrity, repo, commit — so the
   // field carries an object there.
@@ -242,16 +239,33 @@ export function vendorImportMap(
   return Buffer.from(
     JSON.stringify(
       {
-        imports: {},
         deck: {
           packages: {
-            [name]: {
-              version,
-              entry: `$DECK/${entryPath}`,
-              vendoredFrom,
-            },
+            [name]: { vendoredFrom },
           },
         },
+      },
+      null,
+      2,
+    ) + '\n',
+    'utf8',
+  );
+}
+
+// Synthesized when the source had no package.json (CDN graphs). npm source
+// vendors keep the tarball's file byte-identical and do not use this.
+export function vendorPackageJson(
+  name: string,
+  version: string,
+  entryPath: string,
+): Buffer {
+  return Buffer.from(
+    JSON.stringify(
+      {
+        name,
+        version,
+        type: 'module',
+        exports: { '.': `./${entryPath}` },
       },
       null,
       2,

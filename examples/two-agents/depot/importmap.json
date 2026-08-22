@@ -1,0 +1,16 @@
+{
+  "imports": {
+    "charts/spark": "/site/charts/spark/spark.js",
+    "charts/spark/": "/site/charts/spark/",
+    "std/tokens": "/site/std/tokens@1.3.0/index.js",
+    "std/tokens/": "/site/std/tokens@1.3.0/",
+    "ui/pills": "/site/ui/pills@1.0.0/pills.js",
+    "ui/pills/": "/site/ui/pills@1.0.0/",
+    "ui/table": "/site/ui/table/table.js",
+    "ui/table/": "/site/ui/table/"
+  },
+  "integrity": {
+    "/site/std/tokens@1.3.0/index.js": "sha256-nqq879dkY8uaH1bTJ6/wisBXXyjA7+O5al7d1o6w6FI=",
+    "/site/ui/pills@1.0.0/pills.js": "sha256-lrX+8UWsimQ+3y8TZgeV0+aG8Fm3QECUlAPn4/GNAzk="
+  }
+}

@@ -52,7 +52,7 @@ Stops casual “just make the server understand this package shape.”
 ### 3. Keep compat out of `@deck/server`
 
 All npm/CJS/`exports` normalization stays in vendor / CLI / Tools.
-Serve only: live tree, `@exact`, tags, digests, maps, Timeline.
+Serve only: live tree, `@exact`, tags, digests, maps, History.
 
 If a behavior needs “best effort like ember-auto-import,” it is a
 vendor flag with an explicit lossy report — never a silent serve path.

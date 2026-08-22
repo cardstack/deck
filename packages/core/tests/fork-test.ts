@@ -19,15 +19,13 @@ module('fork: change someone else\'s deck without touching theirs', function (
     storeDir = join(depotDir, '.deck', 'store');
     await mkdir(join(depotDir, 'acme', 'palette', 'util'), { recursive: true });
     await writeFile(
-      join(depotDir, 'acme', 'palette', 'importmap.json'),
+      join(depotDir, 'acme', 'palette', 'package.json'),
       JSON.stringify(
         {
-          imports: {},
-          deck: {
-            packages: {
-              palette: { version: '1.0.0', entry: '$DECK/palette.js' },
-            },
-          },
+          name: 'palette',
+          version: '1.0.0',
+          type: 'module',
+          exports: { '.': './palette.js' },
         },
         null,
         2,
@@ -56,6 +54,7 @@ module('fork: change someone else\'s deck without touching theirs', function (
     });
     assert.deepEqual(result.files, [
       'importmap.json',
+      'package.json',
       'palette.js',
       'util/mix.js',
     ]);
@@ -81,11 +80,15 @@ module('fork: change someone else\'s deck without touching theirs', function (
       undefined,
       'forked from the live tree, so no version to name',
     );
+    let pkg = JSON.parse(
+      await readFile(join(depotDir, 'you', 'palette', 'package.json'), 'utf8'),
+    );
     assert.strictEqual(
-      map.deck.packages.palette.version,
+      pkg.version,
       '1.0.0',
       'the version line is the same NUMBER but a different NAME — you/palette',
     );
+    assert.strictEqual(pkg.name, 'palette');
   });
 
   test('an undiverged fork has the same treeHash — the store holds one copy', async function (assert) {
@@ -169,6 +172,14 @@ module('fork: change someone else\'s deck without touching theirs', function (
       from: { publisher: 'acme', package: 'palette' },
       to: { publisher: 'you', package: 'palette-hdr' },
     });
+    let pkg = JSON.parse(
+      await readFile(
+        join(depotDir, 'you', 'palette-hdr', 'package.json'),
+        'utf8',
+      ),
+    );
+    assert.strictEqual(pkg.name, 'palette-hdr');
+    assert.strictEqual(pkg.version, '1.0.0');
     let map = JSON.parse(
       await readFile(
         join(depotDir, 'you', 'palette-hdr', 'importmap.json'),
@@ -176,7 +187,6 @@ module('fork: change someone else\'s deck without touching theirs', function (
       ),
     );
     assert.deepEqual(Object.keys(map.deck.packages), ['palette-hdr']);
-    assert.strictEqual(map.deck.packages['palette-hdr'].version, '1.0.0');
   });
 
   test('forking onto an existing deck refuses unless told twice', async function (assert) {
@@ -206,7 +216,7 @@ module('fork: change someone else\'s deck without touching theirs', function (
       to: { publisher: 'you', package: 'palette' },
       force: true,
     });
-    assert.strictEqual(forced.files.length, 3);
+    assert.strictEqual(forced.files.length, 4);
     assert.strictEqual(
       (await readFile(join(depotDir, 'you', 'palette', 'palette.js'))).toString(),
       'export const colors = 3;\n',
@@ -228,7 +238,12 @@ module('fork: change someone else\'s deck without touching theirs', function (
       'acme/palette',
       '1.0.0',
       pack([
-        { path: 'importmap.json', bytes: Buffer.from('{}') },
+        {
+          path: 'package.json',
+          bytes: Buffer.from(
+            JSON.stringify({ name: 'palette', version: '1.0.0' }),
+          ),
+        },
         { path: 'a.js', bytes: Buffer.from('1\n') },
       ]),
     );

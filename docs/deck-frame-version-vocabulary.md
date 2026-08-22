@@ -1,4 +1,4 @@
-# Frame · Version · Timeline → Step
+# Frame · Version · History → Step
 
 **Superseded** (2026-08-09). Frame → Tick → **Step**.
 

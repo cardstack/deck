@@ -1,6 +1,6 @@
 // <deck-nav app="browse"> and <deck-keys> — the chrome every Hub app carries.
 //
-// Four apps, four documents, so moving between them is a link and a page
+// Five apps, five documents, so moving between them is a link and a page
 // load. There is no router here and there does not need to be one: the
 // browser has always been able to do this part.
 //
@@ -14,12 +14,12 @@
 // rather than underlined, and the keys that work are listed along the bottom
 // where you can see them rather than discovered by accident.
 //
-// `1`…`4` still switch apps. They are not printed beside the names — a row of
-// ordinals is noise once the four words are the four words — and the legend
+// `1`…`5` still switch apps. They are not printed beside the names — a row of
+// ordinals is noise once the five words are the five words — and the legend
 // at the foot of every page carries them instead, which is where every other
 // binding is documented anyway.
 
-// FOUR APPS, BUT ONLY THREE OF THEM ARE LENSES.
+// FIVE APPS, BUT ONLY THREE OF THEM ARE ADDRESS LENSES.
 //
 // `start` is about the machine. The other three are three questions about one
 // address: what is it, what does it do, what happened to it. That is not a
@@ -36,6 +36,7 @@ const ROUTES = [
   ['browse', 'the depot at rest'],
   ['run', 'the assembled, executing thing'],
   ['track', 'what changed, and where'],
+  ['review', 'proposed changes and merge'],
 ];
 
 /** The focused address, or ''. The one piece of state the lenses share. */
@@ -44,7 +45,7 @@ export function focus() {
 }
 
 /**
- * ONE EventSource PER DOCUMENT. Not one per feature.
+ * ZERO EventSources IN HUB CHROME. Live requests must release their socket.
  *
  * An SSE stream is a connection held open forever, and HTTP/1.1 allows six
  * per origin. The nav opens one for the live badge; heat wanted one; /track
@@ -54,11 +55,23 @@ export function focus() {
  * for ever, because its requests were queued behind connections that never
  * close. Starvation does not throw.
  *
- * So there is exactly one stream, and anything that cares subscribes to it.
- * Opened lazily, so a page that never subscribes never opens it at all.
+ * One stream per document fixed the iframe case but not five ordinary Hub
+ * tabs: five permanent requests still leave one HTTP/1.1 slot for every
+ * navigation, module and API response. The fifth tab can sit blank with no
+ * error because its redirect is queued behind the live streams.
+ *
+ * Hub chrome therefore does not use EventSource. It polls a tiny moving
+ * sequence at `/_live/state`; requests finish immediately and release their
+ * connection. Running pages use the same moving snapshot for HMR, so neither
+ * Hub chrome nor a stage holds a connection open.
  */
-let liveSource;
 const liveListeners = new Set();
+const liveStatusListeners = new Set();
+const LIVE_POLL_MS = 1500;
+let livePollTimer;
+let livePolling = false;
+let liveSequence;
+let liveStatus = { state: '?', text: 'live' };
 
 /**
  * A FRAMED PAGE IS A SUBJECT, NOT AN OBSERVER.
@@ -106,21 +119,82 @@ const LIVE_QUIET_MS = 1000;
 let liveTimer;
 let liveLatest;
 
+function deliverLive(data) {
+  liveLatest = { data };
+  if (liveTimer) return;
+  liveTimer = setTimeout(() => {
+    liveTimer = undefined;
+    for (let each of liveListeners) each(liveLatest);
+  }, LIVE_QUIET_MS);
+}
+
+function deliverLiveStatus(status) {
+  if (liveStatus.state === status.state && liveStatus.text === status.text) return;
+  liveStatus = status;
+  for (let each of liveStatusListeners) each(status);
+}
+
+async function pollLive() {
+  if (!livePolling || FRAMED) return;
+  try {
+    let response = await fetch('/_live/state', { cache: 'no-store' });
+    if (!response.ok) throw new Error(String(response.status));
+    let snapshot = (await response.json()).data;
+    deliverLiveStatus({ state: 'on', text: 'live' });
+    // The first answer establishes position. Replaying the last event on
+    // every navigation would make a quiet page redraw for old work.
+    if (
+      liveSequence !== undefined &&
+      snapshot.sequence > liveSequence &&
+      snapshot.event
+    ) {
+      deliverLive(JSON.stringify(snapshot.event));
+      // Reload the Hub's own module edits from their no-store addresses.
+      // Repository/fork events are data, so subscribers repaint them in place.
+      if (/^(app|ui|theme)\//.test(snapshot.event.name)) {
+        setTimeout(() => location.reload(), 80);
+        return;
+      }
+    }
+    liveSequence = snapshot.sequence;
+  } catch {
+    deliverLiveStatus({ state: 'off', text: 'live: disconnected' });
+  }
+  if (livePolling) livePollTimer = setTimeout(pollLive, LIVE_POLL_MS);
+}
+
+function startLivePolling() {
+  if (livePolling || FRAMED) return;
+  livePolling = true;
+  pollLive();
+}
+
+addEventListener('pagehide', () => {
+  livePolling = false;
+  clearTimeout(livePollTimer);
+});
+
+// A document restored from the back-forward cache keeps its subscribers but
+// pagehide stopped its timer. Rejoin without subscribing every feature twice.
+addEventListener('pageshow', () => {
+  if (!livePolling && (liveListeners.size || liveStatusListeners.size)) {
+    startLivePolling();
+  }
+});
+
 export function onLiveChange(listener) {
   if (FRAMED) return () => {};
   liveListeners.add(listener);
-  if (!liveSource) {
-    liveSource = new EventSource('/_live/events');
-    liveSource.addEventListener('change', (event) => {
-      liveLatest = event;
-      if (liveTimer) return;
-      liveTimer = setTimeout(() => {
-        liveTimer = undefined;
-        for (let each of liveListeners) each(liveLatest);
-      }, LIVE_QUIET_MS);
-    });
-  }
+  startLivePolling();
   return () => liveListeners.delete(listener);
+}
+
+function onLiveStatus(listener) {
+  if (FRAMED) return () => {};
+  liveStatusListeners.add(listener);
+  listener(liveStatus);
+  startLivePolling();
+  return () => liveStatusListeners.delete(listener);
 }
 
 /**
@@ -169,22 +243,16 @@ const THEMES = [
 const THEME_KEY = 'deck.theme';
 
 /**
- * The stored choice, or the default for the operating system's preference.
+ * The stored choice, or mocha.
  *
- * Tokyo Night is the light default. It is the one with enough contrast for a
- * page of prose — latte sets its body grey at about 3:1 against the
- * background, which is fine for a filename and under the WCAG AA floor for a
- * paragraph, and /start is mostly paragraphs.
- *
- * A stored choice always wins. This only decides what somebody sees before
- * they have had an opinion.
+ * Mocha is the Hub default — dark shell, Catppuccin. Latte and Tokyo Night
+ * stay available from the theme picker. A stored choice always wins; this
+ * only decides what somebody sees before they have had an opinion.
  */
 function theme() {
   let stored = localStorage.getItem(THEME_KEY);
   if (stored && THEMES.some(([name]) => name === stored)) return stored;
-  return matchMedia('(prefers-color-scheme: light)').matches
-    ? 'tokyo-night-light'
-    : 'mocha';
+  return 'mocha';
 }
 
 export function applyTheme(name = theme()) {
@@ -361,7 +429,7 @@ export class DeckNav extends HTMLElement {
     let paint = async () => {
       if (painting) return;
       painting = true;
-      let claims = await fetch('/_activity?top=200&grain=file')
+      let claims = await fetch('/_activity?top=200&grain=package')
         .then((response) => (response.ok ? response.json() : { foci: [] }))
         .then((body) =>
           (body.foci ?? []).flatMap((focus) =>
@@ -411,6 +479,10 @@ export class DeckNav extends HTMLElement {
 
   // `1`…`4` go to a section, the way the numbers in the nav imply. Ignored
   // while a field has focus, or the filter box would be unusable.
+  //
+  // Activate the real tab link (do not assign location.href): cross-document
+  // View Transitions only run for user-activated navigations, and a synthetic
+  // click on an <a> keeps that activation. Scripted location changes flash.
   #numberKeys() {
     addEventListener('keydown', (event) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -419,7 +491,9 @@ export class DeckNav extends HTMLElement {
       let index = Number(event.key) - 1;
       let route = ROUTES[index]?.[0];
       if (route && route !== this.getAttribute('app')) {
-        location.href = `/${route}`;
+        let link = this.querySelector(`a[data-route="${route}"]`);
+        if (link) link.click();
+        else location.href = `/${route}`;
       }
     });
   }
@@ -449,8 +523,7 @@ export class DeckNav extends HTMLElement {
       clearTimeout(this.#settle);
       this.#settle = setTimeout(() => set('on', 'live'), 4000);
     });
-    liveSource?.addEventListener('open', () => set('on', 'live'));
-    liveSource?.addEventListener('error', () => set('off', 'live: disconnected'));
+    onLiveStatus(({ state, text }) => set(state, text));
   }
 
   #settle;
@@ -526,6 +599,12 @@ export class DeckSubject extends HTMLElement {
    * need no shared clearing protocol between them.
    */
   clear() {
+    // Same as number-keys: prefer a real navigation so View Transitions run.
+    let here = document.querySelector('deck-nav a[aria-current="page"]');
+    if (here && here.getAttribute('data-inert') === '0') {
+      here.click();
+      return;
+    }
     location.href = location.pathname;
   }
 
@@ -553,10 +632,15 @@ export class DeckSubject extends HTMLElement {
  * key names. Every shortcut the page implements appears here, always, and
  * nothing appears here that the page does not implement. A legend that drifts
  * from the bindings is worse than no legend.
+ *
+ * While a Hub tour is running, `.tour` replaces the legend with chapter
+ * chrome (Prev / Next / Exit) plus a one-line protocol claim. The bar lights
+ * an accent; claims stay here so the exhibit is never covered by a popover.
  */
 export class DeckKeys extends HTMLElement {
   #keys = [];
   #shown = localStorage.getItem('deck.keys') !== 'hidden';
+  #tour = null;
 
   set keys(value) {
     this.#keys = value;
@@ -567,32 +651,104 @@ export class DeckKeys extends HTMLElement {
     return this.#keys;
   }
 
+  /** @param {null | {
+   *   chapter: string,
+   *   chapterIndex: number,
+   *   chapters: number,
+   *   step: number,
+   *   steps: number,
+   *   label?: string,
+   *   claim?: string,
+   *   onPrev?: () => void,
+   *   onNext?: () => void,
+   *   onExit?: () => void,
+   * }} value */
+  set tour(value) {
+    this.#tour = value;
+    this.render();
+  }
+
+  get tour() {
+    return this.#tour;
+  }
+
   connectedCallback() {
     this.render();
     // `h` hides and shows, and the choice sticks. Someone who has learned
     // the keys should not have to keep dismissing the reminder, and someone
     // who has not should not have to know it exists to find it — so when it
     // is hidden a single `?` remains, which is a smaller promise than a full
-    // bar and still an obvious one.
+    // bar and still an obvious one. Tour mode always shows; `h` is ignored.
     addEventListener('keydown', (event) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       let tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (this.#tour) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          this.#tour.onExit?.();
+          return;
+        }
+        if (event.key === 'ArrowRight' || event.key === 'Enter') {
+          event.preventDefault();
+          this.#tour.onNext?.();
+          return;
+        }
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          this.#tour.onPrev?.();
+          return;
+        }
+        return;
+      }
       if (event.key !== 'h' && event.key !== '?') return;
       this.toggle();
     });
     this.addEventListener('click', (event) => {
       if (event.target.closest('[data-role="keys-toggle"]')) this.toggle();
+      if (!this.#tour) return;
+      if (event.target.closest('[data-role="tour-prev"]')) this.#tour.onPrev?.();
+      if (event.target.closest('[data-role="tour-next"]')) this.#tour.onNext?.();
+      if (event.target.closest('[data-role="tour-exit"]')) this.#tour.onExit?.();
     });
   }
 
   toggle(next = !this.#shown) {
+    if (this.#tour) return;
     this.#shown = next;
     localStorage.setItem('deck.keys', next ? 'shown' : 'hidden');
     this.render();
   }
 
   render() {
+    if (this.#tour) {
+      let t = this.#tour;
+      this.innerHTML =
+        `<div class="deck-keys" data-tour="1">` +
+        `<div class="deck-tour-row">` +
+        `<button type="button" class="deck-keys-item" data-role="tour-prev" ` +
+        `${t.step <= 1 && t.chapterIndex <= 1 ? ' disabled' : ''}>` +
+        `<kbd>←</kbd><em>prev</em></button>` +
+        `<button type="button" class="deck-keys-item" data-role="tour-next">` +
+        `<kbd>→</kbd><em>next</em></button>` +
+        `<span class="deck-keys-item deck-tour-chapter">` +
+        `<em>ch ${t.chapterIndex}/${t.chapters}</em> ` +
+        `<b>${esc(t.chapter)}</b></span>` +
+        `<span class="deck-keys-item"><em>${t.step}/${t.steps}</em></span>` +
+        `<span class="deck-nav-gap"></span>` +
+        `<button type="button" class="deck-keys-item" data-role="tour-exit">` +
+        `<kbd>esc</kbd><em>exit</em></button>` +
+        `</div>` +
+        (t.claim
+          ? `<div class="deck-tour-claim">` +
+            (t.label
+              ? `<span class="deck-tour-label">${esc(t.label)}</span>`
+              : '') +
+            `<b>${esc(t.claim)}</b></div>`
+          : '') +
+        `</div>`;
+      return;
+    }
     if (!this.#shown) {
       this.innerHTML =
         `<div class="deck-keys" data-collapsed="1">` +
@@ -738,8 +894,51 @@ export const NAV_CSS = `
   padding: calc(var(--row, 1.5) * .5em) var(--gut, 2ch);
   background: var(--bg); border-top: 1px solid var(--line);
   font-size: 12px;
+  z-index: 40;
 }
 .deck-keys[data-collapsed] { border-top-color: transparent; background: none; }
+.deck-keys[data-tour="1"] {
+  flex-direction: column;
+  align-items: stretch;
+  gap: .45em;
+  z-index: 1000000010; /* above driver.js overlay so the claim stays readable */
+  border-top: 2px solid var(--a-live, #df8e1d);
+  background: color-mix(in srgb, var(--a-live, #df8e1d) 14%, var(--bg));
+  box-shadow: 0 -8px 24px color-mix(in srgb, var(--a-live, #df8e1d) 18%, transparent);
+}
+.deck-keys[data-tour="1"] .deck-tour-row {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .2em 2.5ch;
+}
+.deck-keys[data-tour="1"] .deck-tour-chapter b {
+  color: var(--a-live, #df8e1d);
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.deck-keys[data-tour="1"] .deck-tour-claim {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .35em 1.2ch;
+  font-size: 13.5px;
+  line-height: 1.4;
+  max-width: 96ch;
+}
+.deck-keys[data-tour="1"] .deck-tour-label {
+  flex: 0 0 auto;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--a-live, #df8e1d);
+  opacity: .9;
+}
+.deck-keys[data-tour="1"] .deck-tour-claim b {
+  flex: 1 1 36ch;
+  min-width: 0;
+  font-weight: 500;
+  letter-spacing: .01em;
+  white-space: normal;
+}
+.deck-keys[data-tour="1"] button:disabled {
+  opacity: .35; cursor: default;
+}
 .deck-keys-item, .deck-keys-peek {
   display: inline-flex; align-items: baseline; gap: .6ch;
   background: none; border: 0; padding: 0; font: inherit; color: inherit;
@@ -772,12 +971,57 @@ export function wrapTables(root = document) {
   }
 }
 
+/**
+ * Boot status (`#boot`) is hidden by default (see HTML + boot.js). This only
+ * dismisses it once `#app` has real content — it must never re-show the
+ * message after a View Transition, or every Hub/tour navigation flashes
+ * "connecting…".
+ */
+function installBoot(doc = document) {
+  let boot = doc.getElementById('boot');
+  let app = doc.getElementById('app');
+  if (!boot || !app || boot.dataset.deckBoot === '1') return;
+  boot.dataset.deckBoot = '1';
+
+  let appReady = () => {
+    let text = (app.textContent || '').trim();
+    return app.childElementCount > 0 || (text.length > 0 && text !== 'loading…');
+  };
+  let dismiss = () => {
+    boot.hidden = true;
+    boot.dataset.dismissed = '1';
+    app.removeAttribute('aria-busy');
+  };
+  let sync = () => {
+    if (appReady()) dismiss();
+  };
+
+  addEventListener('pagereveal', (event) => {
+    let vt = event.viewTransition;
+    if (!vt) return;
+    boot.hidden = true;
+    // Stay hidden after the morph — boot.js owns the slow-load reveal.
+    vt.finished.finally(() => {
+      if (appReady()) dismiss();
+      else boot.hidden = true;
+    });
+  });
+
+  new MutationObserver(sync).observe(app, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+  sync();
+}
+
 export function installNavStyles(doc = document) {
-  if (doc.querySelector('style[data-deck-nav]')) {
-    return;
-  }
+  let existing = doc.querySelector('style[data-deck-nav]');
+  if (existing?.dataset.deckNav === 'v5') return;
+  existing?.remove();
   let style = doc.createElement('style');
-  style.dataset.deckNav = 'v1';
+  style.dataset.deckNav = 'v5';
   style.textContent = NAV_CSS;
   doc.head.append(style);
+  installBoot(doc);
 }

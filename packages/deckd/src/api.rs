@@ -1,4 +1,4 @@
-//! HTTP surface — historyd Timeline routes (+ optional build plane).
+//! HTTP surface — historyd-compatible History routes (+ optional build plane).
 
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
-use crate::timeline::{Actor, HistoryEntry, RestorePlan, Timeline, TimelineError};
+use crate::history::{Actor, HistoryBackend, HistoryBackendError, HistoryEntry, RestorePlan};
 use crate::watch::WatchPlane;
 
 #[cfg(feature = "build")]
@@ -20,7 +20,7 @@ use crate::build::{
 
 #[derive(Clone)]
 pub struct AppState {
-    pub timeline: Arc<dyn Timeline>,
+    pub history: Arc<dyn HistoryBackend>,
     /// Present only with `--features build`.
     #[cfg(feature = "build")]
     pub build: Option<Arc<BuildPlane>>,
@@ -125,7 +125,7 @@ async fn ensure(
     State(st): State<AppState>,
     Json(body): Json<DirBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    st.timeline.ensure(&body.dir).await?;
+    st.history.ensure(&body.dir).await?;
     if let Some(watch) = &st.watch {
         if let Err(error) = watch.watch_depot(std::path::Path::new(&body.dir)) {
             tracing::warn!(dir = %body.dir, %error, "watch register failed");
@@ -138,7 +138,7 @@ async fn note(
     State(st): State<AppState>,
     Json(body): Json<NoteBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    st.timeline.note(&body.dir, &body.path).await?;
+    st.history.note(&body.dir, &body.path).await?;
     Ok(Json(serde_json::json!({})))
 }
 
@@ -146,7 +146,7 @@ async fn flush(
     State(st): State<AppState>,
     Json(body): Json<DirBody>,
 ) -> Result<Json<SealResponse>, ApiError> {
-    let change_id = st.timeline.flush_notes(&body.dir).await?;
+    let change_id = st.history.flush_notes(&body.dir).await?;
     Ok(Json(SealResponse { change_id }))
 }
 
@@ -155,7 +155,7 @@ async fn seal(
     Json(body): Json<SealBody>,
 ) -> Result<Json<SealResponse>, ApiError> {
     let change_id = st
-        .timeline
+        .history
         .seal(&body.dir, &body.message, body.actor.as_ref())
         .await?;
     Ok(Json(SealResponse { change_id }))
@@ -165,7 +165,7 @@ async fn list(
     State(st): State<AppState>,
     Json(body): Json<DirBody>,
 ) -> Result<Json<Vec<HistoryEntry>>, ApiError> {
-    Ok(Json(st.timeline.list(&body.dir).await?))
+    Ok(Json(st.history.list(&body.dir).await?))
 }
 
 async fn file_at(
@@ -173,7 +173,7 @@ async fn file_at(
     Json(body): Json<FileAtBody>,
 ) -> Result<Json<FileAtResponse>, ApiError> {
     let bytes = st
-        .timeline
+        .history
         .file_at(&body.dir, &body.revision_id, &body.path)
         .await?;
     Ok(Json(match bytes {
@@ -194,7 +194,7 @@ async fn file_list_at(
 ) -> Result<Json<FileListAtResponse>, ApiError> {
     Ok(Json(FileListAtResponse {
         paths: st
-            .timeline
+            .history
             .file_list_at(&body.dir, &body.revision_id)
             .await?,
     }))
@@ -205,7 +205,7 @@ async fn restore_plan(
     Json(body): Json<RestorePlanBody>,
 ) -> Result<Json<RestorePlan>, ApiError> {
     Ok(Json(
-        st.timeline
+        st.history
             .restore_plan(&body.dir, &body.revision_id)
             .await?,
     ))
@@ -238,12 +238,14 @@ struct ApiError {
     message: String,
 }
 
-impl From<TimelineError> for ApiError {
-    fn from(err: TimelineError) -> Self {
+impl From<HistoryBackendError> for ApiError {
+    fn from(err: HistoryBackendError) -> Self {
         let status = match &err {
-            TimelineError::NotFound(_) => StatusCode::NOT_FOUND,
-            TimelineError::Invalid(_) => StatusCode::BAD_REQUEST,
-            TimelineError::Io(_) | TimelineError::Jj(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            HistoryBackendError::NotFound(_) => StatusCode::NOT_FOUND,
+            HistoryBackendError::Invalid(_) => StatusCode::BAD_REQUEST,
+            HistoryBackendError::Io(_) | HistoryBackendError::Jj(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         };
         Self {
             status,

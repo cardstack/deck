@@ -11,8 +11,7 @@
 import { writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
-import { lockDeck } from '@cardstack/deck/lock';
+import { lockDepot, DEPOT_LOCK_PATH } from '@cardstack/deck/lock';
 import { packFromDir } from '@cardstack/deck/pack';
 import { publishToStore } from '@cardstack/deck/store';
 
@@ -36,16 +35,10 @@ export async function publishShared(storeDir) {
 }
 
 /**
- * Resolve a deck's declared ranges into pins and write them into its own
- * importmap.json — `deck lock`, in the tree, where you can read it.
- *
- * The pins are checked in, and every version these demos depend on is exact,
- * so a clean run must produce no change. `changed` coming back true means
- * something really did resolve differently, which is worth saying out loud
- * rather than quietly relocking.
+ * Resolve suggested ranges into the depot-root lock — `deck lock`.
  */
 export async function lockAndWrite(options) {
-  let locked = await lockDeck(options);
-  await writeFile(join(options.deckDir, IMPORT_MAP_PATH), locked.text);
+  let locked = await lockDepot(options);
+  await writeFile(join(options.depotDir, DEPOT_LOCK_PATH), locked.text);
   return locked;
 }

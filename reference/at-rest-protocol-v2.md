@@ -6,7 +6,7 @@
 > would destroy the record of what was agreed.
 >
 > It is **not** the current specification. Its vocabulary predates the
-> Version / Step / Timeline pass, it calls a Deck Pack a "cardpack", and its
+> Version / Step / History pass, it calls a Deck Pack a "cardpack", and its
 > store layout predates per-file content addressing. For what is true now:
 >
 > - `docs/deck-laws.md` — the twelve laws, which are the contract

@@ -38,7 +38,7 @@ is accepted or abandoned.
 | identity | tree hash, packlist, object | — |
 | naming | Version, dist-tag, range | — |
 | distribution | address grammar, cache rules | — |
-| time | Step, Timeline | the live loop that produces them |
+| time | Step, History | the live loop that produces them |
 | provenance | `vendoredFrom`, publish times | — |
 | trust | the signature itself, over a tree hash | how a signature is earned, and whose you accept |
 | change | — | offer, rebase, conflict |
@@ -298,7 +298,7 @@ are not this path.
 
 ## 4. What this means for the words
 
-- **At rest**: Version, Step, Timeline, tree hash, Deck Pack, depot, deck,
+- **At rest**: Version, Step, History, tree hash, Deck Pack, depot, deck,
   publisher, Import, Pin, Entry, Leaf, Closure.
 - **In motion**: offer, conflict, rebase, claim, note, reply, activity, touch;
   and (social, not protocol objects) synthesis tip, locus shift.
@@ -312,6 +312,6 @@ of making either — and it is why the vocabulary pass happened.
 ## 5. Reading order
 
 1. `docs/deck-laws.md` — the contract. Almost entirely at rest.
-2. `docs/deck-at-rest.md` — layout, store, addresses, Timeline.
+2. `docs/deck-at-rest.md` — layout, store, addresses, History.
 3. This document — what moves, and how finished it is.
 4. `docs/deck-activity-protocol.md` — claims and touch, in detail.

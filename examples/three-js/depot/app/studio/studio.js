@@ -33,15 +33,15 @@ let app = document.querySelector('#app');
 app.classList.remove('loading');
 app.innerHTML = `
   <header>
-    <div class="crumb">deck · example · W3</div>
-    <h1>374 files, and you may edit any of them.</h1>
+    <div class="crumb">deck · teach · three.js fork</div>
+    <h1>374 files — edit one, keep the rest.</h1>
     <p class="lede">Two canvases. One <code>MeshPhongMaterial</code> torus knot
-      each, and <strong>exactly one file</strong> different between them.</p>
+      each, and <strong>one GLSL chunk</strong> different between them.</p>
   </header>
 
   <section class="canvases">
     ${[
-      { side: upstream, kind: 'upstream', title: 'as published', sub: 'vendored from npm source, unmodified' },
+      { side: upstream, kind: 'upstream', title: 'upstream (unmodified)', sub: 'vendored from npm source, unmodified' },
       {
         side: fork,
         kind: 'fork',

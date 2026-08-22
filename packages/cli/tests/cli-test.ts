@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { treeHashFromDir } from '@cardstack/deck/tree-hash';
 import { readStoreMeta, readStoredPack } from '@cardstack/deck/store';
 import { storeDirFor } from '@cardstack/deck-server/depot';
-import { jjVersion } from '@cardstack/deck-history/jj-cli';
+import { HistorydHistory } from '@cardstack/deck-history/historyd';
 import { GROUPS } from '../src/command.ts';
 import { COMMANDS, commandsIn } from '../src/registry.ts';
 
@@ -101,13 +101,12 @@ module('deck CLI end-to-end', function (hooks) {
     let source = join(work, DECK);
     await mkdir(join(source, 'util'), { recursive: true });
     await writeFile(
-      join(source, 'importmap.json'),
+      join(source, 'package.json'),
       JSON.stringify({
-        deck: {
-          packages: {
-            'my-lib': { version: '1.0.0', entry: '$DECK/index.js' },
-          },
-        },
+        name: 'my-lib',
+        version: '1.0.0',
+        type: 'module',
+        exports: { '.': './index.js' },
       }),
     );
     await writeFile(join(source, 'index.js'), 'export const LIB = true;\n');
@@ -362,9 +361,12 @@ module('deck CLI end-to-end', function (hooks) {
     let lib = join(work, 'demo', 'acme', 'lib');
     await mkdir(lib, { recursive: true });
     await writeFile(
-      join(lib, 'importmap.json'),
+      join(lib, 'package.json'),
       JSON.stringify({
-        deck: { packages: { lib: { version: '1.0.0', entry: '$DECK/lib.js' } } },
+        name: 'lib',
+        version: '1.0.0',
+        type: 'module',
+        exports: { '.': './lib.js' },
       }),
     );
     await writeFile(join(lib, 'lib.js'), 'export const LIB = 1;\n');
@@ -388,58 +390,50 @@ module('deck CLI end-to-end', function (hooks) {
     );
 
     // The app declares a RANGE.
-    let appMap = join(work, DECK, 'importmap.json');
-    let map = JSON.parse(await readFile(appMap, 'utf8'));
-    map.deck.dependencies = { 'acme/lib': '^1.0.0' };
-    await writeFile(appMap, JSON.stringify(map, null, 2));
+    let appPkg = join(work, DECK, 'package.json');
+    let pkg = JSON.parse(await readFile(appPkg, 'utf8'));
+    pkg.dependencies = { 'acme/lib': '^1.0.0' };
+    await writeFile(appPkg, JSON.stringify(pkg, null, 2));
 
     await assert.rejects(
-      deck(
-        [
-          'lock',
-          '--depot',
-          'demo',
-          '--publisher',
-          'acme',
-          '--name',
-          'my-lib',
-          '--check',
-        ],
-        work,
-      ),
+      deck(['lock', '--depot', 'demo', '--check'], work),
       /lock is out of date/,
       '--check is the CI shape: report, never write',
     );
 
-    let { stdout } = await deck(
-      ['lock', '--depot', 'demo', '--publisher', 'acme', '--name', 'my-lib'],
-      work,
-    );
+    let { stdout } = await deck(['lock', '--depot', 'demo'], work);
     assert.true(stdout.includes('acme/lib  ^1.0.0 → /demo/acme/lib@1.0.0/lib.js'), stdout);
-    let locked = JSON.parse(await readFile(appMap, 'utf8'));
+    let locked = JSON.parse(
+      await readFile(join(work, 'demo', 'importmap.json'), 'utf8'),
+    );
     assert.strictEqual(
       locked.imports['acme/lib'],
       '/demo/acme/lib@1.0.0/lib.js',
       'the pin is what a consumer gets',
     );
     assert.strictEqual(
-      locked.deck.dependencies['acme/lib'],
+      JSON.parse(await readFile(appPkg, 'utf8')).dependencies['acme/lib'],
       '^1.0.0',
       'the range is what the author meant — both are kept',
     );
 
-    let { stdout: again } = await deck(
-      ['lock', '--depot', 'demo', '--publisher', 'acme', '--name', 'my-lib'],
-      work,
-    );
+    let { stdout: again } = await deck(['lock', '--depot', 'demo'], work);
     assert.true(again.includes('already locked'), again);
   });
 
   test('history + restore: the mulligan, through the CLI', async function (assert) {
     let source = join(work, DECK);
-    if (!(await jjVersion())) {
-      assert.ok(true, 'skipped — jj is not installed; tier 2 is optional');
-      return;
+    {
+      let probe = new HistorydHistory();
+      let ok = await probe.probe(source);
+      probe.close();
+      if (!ok) {
+        assert.ok(
+          true,
+          'skipped — deckd is not running; every-save History is optional',
+        );
+        return;
+      }
     }
     await writeFile(join(source, 'index.js'), 'export const LIB = 1;\n');
     await deck(['history', 'demo'], work); // listing seals the depot
@@ -478,10 +472,10 @@ module('deck CLI end-to-end', function (hooks) {
     await assert.rejects(
       // Port 1 answers nothing — an explicitly requested backend that is not
       // there degrades to tier 1 rather than silently becoming another one.
-      deck(['history', 'demo', '--history', 'historyd'], work, {
+      deck(['history', 'demo', '--history', 'deckd'], work, {
         DECK_HISTORYD_URL: 'http://127.0.0.1:1',
       }),
-      /no daemon at http:\/\/127\.0\.0\.1:1/,
+      /no deckd at http:\/\/127\.0\.0\.1:1/,
       'the message names what was missing',
     );
   });

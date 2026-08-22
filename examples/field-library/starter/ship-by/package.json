@@ -1,0 +1,12 @@
+{
+  "name": "ship-by",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "dependencies": {
+    "date-fns": "lib/date-fns@^4.1.0",
+    "zod": "lib/zod@^3.25.0"
+  }
+}

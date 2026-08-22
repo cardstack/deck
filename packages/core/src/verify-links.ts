@@ -1,16 +1,23 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import semver from 'semver';
-import {
-  IMPORT_MAP_PATH,
-  parseDependencies,
-  parsePackages,
-  treePathFromMapValue,
-} from './import-map.ts';
+import { IMPORT_MAP_PATH, treePathFromMapValue } from './import-map.ts';
 import { packagesFromPack } from './import-map-pack.ts';
-import { parseDependencyValue } from './lock.ts';
-import { readStoreMeta, readStoredFile, readStoredPack } from './store.ts';
+import { parseDependencyValue, LIVE_SPEC } from './lock.ts';
+import {
+  PACKAGE_JSON_PATH,
+  entryFromPackageJson,
+  parsePackageJson,
+  suggestedDependencies,
+} from './package-json.ts';
+import {
+  isValidDistTag,
+  readStoreMeta,
+  readStoredFile,
+  readStoredPack,
+} from './store.ts';
 import { readEnvelope, verifyEnvelope } from './signature.ts';
+import { readZipEntry } from './canonical-zip.ts';
 
 // L11 · Fail closed — an unverifiable claim is refused, not warned about.
 //
@@ -99,53 +106,57 @@ export async function verifyLinks(
   let findings: LinkFinding[] = [];
   let checked = 0;
 
+  let pkgText: string | undefined;
   let mapText: string | undefined;
   if (packBytes) {
-    let { readZipEntry } = await import('./canonical-zip.ts');
+    pkgText = readZipEntry(packBytes, PACKAGE_JSON_PATH)?.toString('utf8');
     mapText = readZipEntry(packBytes, IMPORT_MAP_PATH)?.toString('utf8');
   } else if (deckDir) {
+    try {
+      pkgText = await readFile(join(deckDir, PACKAGE_JSON_PATH), 'utf8');
+    } catch {
+      pkgText = undefined;
+    }
     try {
       mapText = await readFile(join(deckDir, IMPORT_MAP_PATH), 'utf8');
     } catch {
       mapText = undefined;
     }
   }
-  if (mapText === undefined) {
+  if (pkgText === undefined) {
     return {
       deck,
       checked: 0,
       findings: [
         {
           code: 'link-missing-record',
-          specifier: IMPORT_MAP_PATH,
-          detail: 'the deck has no import map, so nothing about it is checkable',
+          specifier: PACKAGE_JSON_PATH,
+          detail: 'the deck has no package.json, so nothing about it is checkable',
         },
       ],
     };
   }
 
-  let parsed = JSON.parse(mapText) as {
-    imports?: Record<string, string>;
-    scopes?: Record<string, Record<string, string>>;
-  };
-  let imports = parsed.imports ?? {};
-  let dependencies = parseDependencies(mapText) ?? {};
-  let packages = parsePackages(mapText) ?? {};
+  let pkg = parsePackageJson(pkgText);
+  let imports: Record<string, string> = {};
+  if (mapText !== undefined) {
+    try {
+      let parsed = JSON.parse(mapText) as {
+        imports?: Record<string, string>;
+      };
+      imports = parsed.imports ?? {};
+    } catch {
+      imports = {};
+    }
+  }
+  let dependencies = pkg ? suggestedDependencies(pkg) : {};
 
   // The deck's own entry must exist in the deck's own tree.
-  let selfName = deck.split('/').at(-1)!;
-  let declaredEntry = packages[selfName]?.entry
-    ? treePathFromMapValue(packages[selfName].entry!)
-    : undefined;
+  let declaredEntry = pkg ? entryFromPackageJson(pkg) : undefined;
   if (declaredEntry) {
     checked++;
     let present = packBytes
-      ? Boolean(
-          (await import('./canonical-zip.ts')).readZipEntry(
-            packBytes,
-            declaredEntry,
-          ),
-        )
+      ? Boolean(readZipEntry(packBytes, declaredEntry))
       : await readFile(join(deckDir!, ...declaredEntry.split('/'))).then(
           () => true,
           () => false,
@@ -182,7 +193,7 @@ export async function verifyLinks(
 
     let scoped = `${target.publisher}/${target.package}`;
     let version: string | undefined;
-    if (spec !== 'live') {
+    if (spec !== LIVE_SPEC) {
       let meta = await readStoreMeta(storeDir, scoped);
       if (!meta || Object.keys(meta.versions).length === 0) {
         findings.push({
@@ -234,7 +245,9 @@ export async function verifyLinks(
       }
     }
 
-    let expected = expectedPin(depotName, target, version, entry);
+    let pinSpec =
+      spec === LIVE_SPEC ? undefined : isValidDistTag(spec) ? spec : version;
+    let expected = expectedPin(depotName, target, pinSpec, entry);
     let actualPrefix = imports[`${specifier}/`];
     let actualEntry = imports[specifier];
     if (actualPrefix === undefined && actualEntry === undefined) {
@@ -280,7 +293,7 @@ export async function verifyLinks(
       findings.push({
         code: 'link-missing-record',
         specifier,
-        detail: `pinned to ${targetUrl} with no entry in deck.dependencies`,
+        detail: `pinned to ${targetUrl} with no entry in package.json dependencies`,
       });
     }
   }

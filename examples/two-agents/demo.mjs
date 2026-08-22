@@ -25,8 +25,6 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { forkDeck } from '@cardstack/deck/fork';
-import { IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
-import { lockDeck } from '@cardstack/deck/lock';
 import { discoverOffers, planRebase } from '@cardstack/deck/offer';
 import { pack } from '@cardstack/deck/pack';
 import { publishToStore } from '@cardstack/deck/store';
@@ -41,7 +39,7 @@ import {
   openDemoDepot,
   serveLive,
 } from '../shared/depot.mjs';
-import { publishShared } from '../shared/publish.mjs';
+import { publishShared, lockAndWrite } from '../shared/publish.mjs';
 import { demoBuildMode, resetDemoDepot, ensurePristine, wantDemoReset } from '../shared/reset.mjs';
 import { RULES, mergeWithPolicy, resolveByPolicy } from './resolve.mjs';
 
@@ -82,12 +80,13 @@ const POLICY = {
 function upstreamTree(version, tokens) {
   return [
     {
-      path: IMPORT_MAP_PATH,
+      path: 'package.json',
       bytes: Buffer.from(
         json({
-          deck: {
-            packages: { tokens: { version, entry: '$DECK/index.js' } },
-          },
+          name: 'tokens',
+          version,
+          type: 'module',
+          exports: { '.': './index.js' },
         }),
         'utf8',
       ),
@@ -418,12 +417,8 @@ if (bare.decisions.length !== 0 || bare.unresolved.length !== 1) {
 // 7. Serve it.
 // ---------------------------------------------------------------------------
 let appDir = join(depotDir, 'app', 'board');
-let locked = await lockDeck({ depotDir, depotName: DEPOT, storeDir, deckDir: appDir });
-if (locked.changed) {
-  await writeFile(join(appDir, IMPORT_MAP_PATH), locked.text);
-}
+let locked = await lockAndWrite({ depotDir, depotName: DEPOT, storeDir });
 let appFiles = await readTreeFromDir(appDir);
-appFiles.set(IMPORT_MAP_PATH, Buffer.from(locked.text, 'utf8'));
 await publishToStore(
   storeDir,
   'app/board',

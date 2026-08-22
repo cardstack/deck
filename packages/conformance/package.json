@@ -10,6 +10,7 @@
     "./at-rest": "./src/at-rest.ts",
     "./over-http": "./src/over-http.ts",
     "./run": "./src/run.ts",
+    "./rri": "./src/rri.ts",
     "./export": "./src/export.ts"
   },
   "scripts": {

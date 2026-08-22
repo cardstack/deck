@@ -2,7 +2,7 @@
 > as a noun, which the vocabulary ruling replaced. Read
 > `docs/deck-step-version-vocabulary.md` first: a published state is a
 > **Version**, one every-save capture is a **Step**, and the tape of Steps is
-> the **Timeline**. A depot has either a Timeline or Versions only.
+> the **History**. A depot has either every-save History or Version history only.
 
 # Live-tree serving + auto-publish: the filesystem endpoint design
 

@@ -8,7 +8,7 @@ Companions: `deck-depot-and-realm-backport.md`, `deck-laws.md` (L1/L3/L4),
 `deck-catalog-consumption-modes.md`, `packages/core/src/merge.ts` (3-way).
 
 Original decisions: Chris, 2026-08-07 (one-way mirror). Extended 2026-08-09
-with store-vs-Timeline clarity, monorepo confirmation, provenance carriers,
+with store-vs-History clarity, monorepo confirmation, provenance carriers,
 and a **deterministic merge-back** path when a GitHub repo is allowed to be
 read/write — still **without AI**.
 
@@ -20,11 +20,11 @@ read/write — still **without AI**.
 | --- | --- | --- |
 | **Version** (immutable cut, `@1.2.3`) | `.deck/store/` — `meta.json` → `treeHash` + CAS blobs | Projected as annotated tag + tree on `main` |
 | **Dist-tag** (`latest`, `dev`) | store `meta.json` `tags` | Projected as moving branch |
-| **Timeline Step** (every save) | `.jj` (Git-compatible under the hood) | Optional `history` branch |
+| **History Step** (every save) | `.jj` (Git-compatible under the hood) | Optional `history` branch |
 | **Live tree** | depot working directories `publisher/package/…` | Tree inside the monorepo |
 
 **Versions are not stored in jj/git.** The store is the npm+unpkg half.
-jj is optional Timeline only. A depot can publish forever with
+jj is optional History only. A depot can publish forever with
 `History: Versions` and no `.jj` at all.
 
 **GitHub is never the registry.** At best it is a projection (mirror) or
@@ -56,7 +56,7 @@ to it.** Prefer `publisher/package@version` for catalogs with many authors.
 
 - **`main`:** one commit per *semantic* event (publish, yank, quarantine,
   migration batch, …). Deterministic rebuild from depot events.
-- **`history`:** raw Timeline (colocated jj/git) pushed as-is. Opt-in for
+- **`history`:** raw History (colocated jj/git) pushed as-is. Opt-in for
   “share an app”; on for catalog if you want every Step public.
 - Readers choose; nothing authoritative lives only on GitHub.
 
@@ -106,7 +106,7 @@ tags for Versions.
 | --- | --- |
 | Version `@1.2.3` | annotated tag `publisher/package@1.2.3` |
 | Dist-tag `latest` / `dev` | branch `latest` / `dev` (or `tags/latest` — choose one scheme) |
-| Timeline Steps | branch `history` (optional) |
+| History Steps | branch `history` (optional) |
 | Semantic export tip | branch `main` |
 
 Identity for merges and audit is **`treeHash`**, not `git rev-parse`.
@@ -143,14 +143,14 @@ tree bytes the store has.
 treeHash: <64 hex>
 Deck-Version: publisher/package@1.2.3
 Base-Version: publisher/package@1.2.0
-Change-Id: <jj change id when Timeline on>
+Change-Id: <jj change id when History on>
 Actor: <actor id>
 ```
 
 - **`treeHash`:** L1 identity of that package tree (required on Version tags).  
 - **`Base-Version`:** parent cut when exporting a tip that will accept
   GitHub PRs (required for intake repos).  
-- **`Change-Id`:** Step linkage when Timeline exists; omit if Versions-only.
+- **`Change-Id`:** Step linkage when History exists; omit if Versions-only.
 
 Tag message body may repeat the same fields for humans browsing Releases.
 
@@ -166,7 +166,7 @@ Tag message body may repeat the same fields for humans browsing Releases.
 | Dist-tag move | force-with-lease update of tag branch |
 | Publish | curated `main` commit + tag |
 | Yank / quarantine | tombstone commit; tag retained |
-| Restore (Timeline) | ordinary commit on `history` (+ `main` if it was also a publish) |
+| Restore (History) | ordinary commit on `history` (+ `main` if it was also a publish) |
 
 ---
 
@@ -213,11 +213,11 @@ that fix that. The GitHub handshake is still work we have not built.
 | Idea behind share/gather | Deck today | Verdict |
 | --- | --- | --- |
 | “Server is SoT; git is a side channel” | Depot + store are SoT by law; GitHub is explicitly not the registry (§0) | **Enabled** — this is the whole point of the design |
-| Share *WIP anytime*, not only a release | Live tree is first-class; Versions optional; Timeline optional | **Enabled in model** — tip can be `live` with `Base-Version` = last publish |
+| Share *WIP anytime*, not only a release | Live tree is first-class; Versions optional; every-save History optional | **Enabled in model** — tip can be `live` with `Base-Version` = last publish |
 | Bring work back without clobbering | `mergeTrees` + `treeHash` already in Core | **Enabled in model** — gather is “run the merge,” not “copy files” |
 | Know what you are merging against | Store holds immutable `@x.y.z`; `?meta` exposes digests (incl. live) | **Enabled** — Base-Version is a real object, not a milestone nickname |
 | Package-scoped move (not whole realm dump) | Addressing is already `publisher/package` | **Enabled** — monorepo mirror matches the unit people share |
-| Don’t invent a second history for collab | jj/Timeline ≠ Versions; share branches are disposable | **Enabled** — we finally have vocabulary legacy lacked |
+| Don’t invent a second history for collab | jj/History ≠ Versions; share branches are disposable | **Enabled** — we finally have vocabulary legacy lacked |
 | Teammate sees your intent while you work | Claims (`deck claim`) on paths | **Partially** — coordination inside a depot, not a substitute for a PR |
 | Review / comment / CI social graph | None in Deck Core | **Not really** — still GitHub’s job (or a future Boxel CR) |
 | One command that “just shares” with no repo setup | No mirror, no `deck share` yet | **Not built** — design only |
@@ -295,7 +295,7 @@ the same provenance offers already use (`treeHash` + base Version).
 
 Two git models were intentional (and correct):
 
-1. **`.boxel-history/`** — local undo only (Deck: Timeline / jj Steps).  
+1. **`.boxel-history/`** — local undo only (Deck: History / jj Steps).
 2. **GitHub share/gather** — team collaboration layer (Deck: this doc).
 
 Source of truth stayed the **server**, not git. That ruling carries over
@@ -390,7 +390,7 @@ deck gather <publisher/package> \
 
 | `--into` | Effect |
 | --- | --- |
-| **`live`** (default for humans) | `mergeTrees(base, ours=PR, theirs=current live)` → write working tree; optional Timeline Step; **claim** may be refreshed/cleared by actor |
+| **`live`** (default for humans) | `mergeTrees(base, ours=PR, theirs=current live)` → write working tree; optional History Step; **claim** may be refreshed/cleared by actor |
 | **`publish`** | Same merge, then verify-links → `publishToStore` (new Version). Same as §6 intake success path |
 
 Never: copy-overwrite live; never: move an existing Version tag; never:
@@ -500,7 +500,7 @@ mess. Details retained from 2026-08-07 catalog cleanup notes:
 | Piece | Status |
 | --- | --- |
 | Store Versions + dist-tags | **Built** |
-| Timeline via jj | **Built** (optional) |
+| History via jj | **Built** (optional) |
 | npm/CDN vendor into store | **Built** (not GitHub) |
 | Deck → GitHub export bot | **Not built** (this doc) |
 | `deck share` / `deck gather` | **Not built** (§5b; verbs kept) |
@@ -555,7 +555,7 @@ milestone-as-default without an explicit `--from`.
 - Intake: conflicting edit on same file vs `onto` fails with path list.  
 - Intake: clean PR publishes new Version; old Version tag unchanged;  
   `@exact` URL serves new treeHash.  
-- Depot with **no** `.jj` still exports Versions (Timeline optional).
+- Depot with **no** every-save History still exports Versions.
 
 ### 9.4 Non-goals for v1
 
@@ -580,7 +580,7 @@ milestone-as-default without an explicit `--from`.
 ## 10. Summary
 
 - **Monorepo per depot** matches depot layout; Versions stay in
-  `.deck/store`; jj is Timeline only.  
+  `.deck/store`; jj is History only.
 - **Catalog mirrors are read-only**; contribution uses **intake** repos
   with declared `Base-Version` and Deck’s 3-way merge — deterministic,
   no AI.  

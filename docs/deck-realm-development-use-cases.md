@@ -53,7 +53,7 @@ history, picks the changeId from before the refactor, restores. The
 restore replays through the realm write path and seals a NEW change —
 history stays append-only; the "bad hour" remains inspectable.
 *Exercises:* `restorePlan` → `writeMany`/`deleteAll` → seal.
-*Accept:* files byte-identical to the target revision; a new changeId
+*Accept:* files byte-identical to the target History Step; a new changeId
 at the top of `_history`; nothing force-mutated on disk. *Status:* ✅.
 
 **UC-3 · Schema change, data follows immediately.** Sam renames

@@ -26,7 +26,8 @@ let REPORT = { now: Date.now(), scores: {}, last: {} };
 let listeners = new Set();
 
 /**
- * Fetch the report. ~5 KB, cached on the server for a few seconds.
+ * Fetch the report. Package grain — enough to decorate depot/deck lists.
+ * File lists inherit the enclosing package's warmth (see `scoreOf`).
  *
  * Never throws: a Hub that cannot report activity should lose the decoration
  * and keep the list. Everything below degrades to zero, which renders as an
@@ -50,7 +51,7 @@ export async function loadActivity() {
 
 async function fetchActivity() {
   try {
-    let response = await fetch('/_activity?top=400&grain=file', {
+    let response = await fetch('/_activity?top=200&grain=package', {
       headers: { accept: 'application/json' },
     });
     if (response.ok) {
@@ -109,6 +110,24 @@ export function scoreOf(prefix) {
   for (let [path, list] of Object.entries(REPORT.claims ?? {})) {
     if (path !== clean && !path.startsWith(`${clean}/`)) continue;
     claims.push(...list);
+  }
+  // Package-grain reports have no file leaves. A file row still wants a
+  // colour: use the longest scored prefix that contains it (usually the deck).
+  if (score === 0 && files === 0) {
+    let best = '';
+    for (let path of Object.keys(REPORT.scores ?? {})) {
+      if (clean === path || clean.startsWith(`${path}/`)) {
+        if (path.length > best.length) best = path;
+      }
+    }
+    if (best) {
+      score = REPORT.scores[best] ?? 0;
+      last = REPORT.last?.[best] ?? 0;
+      files = 1;
+    }
+    for (let [path, list] of Object.entries(REPORT.claims ?? {})) {
+      if (clean === path || clean.startsWith(`${path}/`)) claims.push(...list);
+    }
   }
   return { score, last, files, claims };
 }

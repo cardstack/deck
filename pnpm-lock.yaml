@@ -159,6 +159,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/server
 
+  examples/collaboration:
+    dependencies:
+      '@cardstack/deck':
+        specifier: workspace:*
+        version: link:../../packages/core
+
   examples/shared:
     dependencies:
       '@cardstack/deck':
@@ -326,6 +332,8 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+
+  packages/deckd: {}
 
   packages/history:
     dependencies:

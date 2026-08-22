@@ -50,9 +50,14 @@ export type {
 /**
  * Resolve one specifier the way a browser resolves it against an import map.
  *
+ * This is "resolve a module specifier" / "resolve an imports match" from
+ * the HTML Standard (reference/html.spec.whatwg.org/import-maps.html,
+ * snapshot of https://html.spec.whatwg.org/multipage/webappapis.html#import-maps).
+ *
  * An exact key wins. Failing that, the longest key ending in `/` that
  * prefixes the specifier, with the remainder appended. Scopes are consulted
- * first, longest scope prefix first.
+ * first, longest scope prefix first. A scope key that does not end in `/`
+ * must match the importer URL exactly.
  *
  * `fromUrl` is the importing document or module — the argument that makes
  * scopes possible at all. Two decks can depend on different versions of one

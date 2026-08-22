@@ -61,6 +61,8 @@ export interface ForkOptions {
   // copying — and is where a Matrix user id goes when this reaches the
   // realm server.
   actor?: string;
+  // Exact upstream Checkpoint when forking a mutable package through Hub.
+  baseCheckpointHash?: string;
 }
 
 // The map travels with the copy, so it has to say what the copy IS: the
@@ -73,20 +75,20 @@ function rewriteMap(
   forkedFrom: ForkedFrom,
 ): string {
   let parsed = JSON.parse(mapText);
-  let vendor = parsed.deck ?? parsed.boxel;
-  if (vendor?.packages?.[from.package] && from.package !== to.package) {
+  parsed.deck ??= {};
+  parsed.deck.packages ??= {};
+  let vendor = parsed.deck;
+  if (vendor.packages[from.package] && from.package !== to.package) {
     vendor.packages[to.package] = vendor.packages[from.package];
     delete vendor.packages[from.package];
   }
-  let entry = vendor?.packages?.[to.package];
-  if (entry) {
-    entry.forkedFrom = forkedFrom;
-  }
+  vendor.packages[to.package] ??= {};
+  vendor.packages[to.package].forkedFrom = forkedFrom;
   return JSON.stringify(parsed, null, 2) + '\n';
 }
 
 export async function forkDeck(options: ForkOptions): Promise<ForkResult> {
-  let { depotDir, storeDir, from, to, force, actor } = options;
+  let { depotDir, storeDir, from, to, force, actor, baseCheckpointHash } = options;
   let targetDir = join(depotDir, to.publisher, to.package);
   let exists = await stat(targetDir).then(
     () => true,
@@ -134,15 +136,28 @@ export async function forkDeck(options: ForkOptions): Promise<ForkResult> {
     package: `${from.publisher}/${from.package}`,
     ...(version ? { version } : {}),
     treeHash: baseTreeHash,
+    ...(baseCheckpointHash ? { checkpointHash: baseCheckpointHash } : {}),
     ...(actor ? { actor } : {}),
   };
-  let mapText = files.get(IMPORT_MAP_PATH)?.toString('utf8');
-  if (mapText) {
+  let pkgText = files.get('package.json')?.toString('utf8');
+  if (pkgText) {
+    let pkg = JSON.parse(pkgText) as { name?: string };
+    if (
+      typeof pkg.name === 'string' &&
+      (pkg.name === from.package || pkg.name.endsWith(`/${from.package}`))
+    ) {
+      pkg.name = to.package;
+    }
     files.set(
-      IMPORT_MAP_PATH,
-      Buffer.from(rewriteMap(mapText, from, to, forkedFrom), 'utf8'),
+      'package.json',
+      Buffer.from(`${JSON.stringify(pkg, null, 2)}\n`, 'utf8'),
     );
   }
+  let mapText = files.get(IMPORT_MAP_PATH)?.toString('utf8') ?? '{"imports":{}}\n';
+  files.set(
+    IMPORT_MAP_PATH,
+    Buffer.from(rewriteMap(mapText, from, to, forkedFrom), 'utf8'),
+  );
   for (let [path, bytes] of files) {
     let destination = join(targetDir, ...path.split('/'));
     await mkdir(dirname(destination), { recursive: true });

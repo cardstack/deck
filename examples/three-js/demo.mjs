@@ -131,15 +131,13 @@ let vendored = await vendorFromNpmSource({
   entry: tree.entry,
   policy: { minimumReleaseAge: 0 },
 });
-let manifest = (version, extra = {}) =>
+let lineage = (extra = {}) =>
   Buffer.from(
     JSON.stringify(
       {
         deck: {
           packages: {
             three: {
-              version,
-              entry: `$DECK/${vendored.entryPath}`,
               vendoredFrom: vendored.vendoredFrom,
               ...extra,
             },
@@ -153,9 +151,14 @@ let manifest = (version, extra = {}) =>
   );
 
 let upstream = pack([
-  { path: 'importmap.json', bytes: manifest(VERSION) },
+  { path: 'importmap.json', bytes: lineage() },
   ...vendored.files,
 ]);
+let packedManifest = unpack(upstream).files.get('package.json');
+let npmManifest = pkg.files.get('package.json');
+if (!packedManifest || !npmManifest || !packedManifest.equals(npmManifest)) {
+  throw new Error('vendored three.js package.json is not byte-identical to npm');
+}
 let upstreamHash = (
   await publishToStore(storeDir, 'lib/three', VERSION, upstream, { tag: 'latest' })
 ).treeHash;
@@ -193,7 +196,7 @@ let forkFiles = [...opened.files.entries()].map(([path, bytes]) =>
     : path === 'importmap.json'
       ? {
           path,
-          bytes: manifest(FORK_VERSION, {
+          bytes: lineage({
             forkedFrom: { deck: 'lib/three', version: VERSION, treeHash: upstreamHash },
             changed: [TARGET],
           }),
@@ -268,7 +271,7 @@ await lockAndWrite({
   depotDir,
   depotName: DEPOT,
   storeDir,
-  deckDir: join(depotDir, 'app', 'studio'),
+  depotLock: true,
 });
 
 } // end buildMode

@@ -1,0 +1,36 @@
+{
+  "imports": {
+    "@tanstack/query-core": "/hub/lib/tanstack-query-core@browser/build/modern/index.js",
+    "@tanstack/query-core/": "/hub/lib/tanstack-query-core@browser/",
+    "@tanstack/table-core": "/hub/lib/tanstack-table-core@browser/dist/index.js",
+    "@tanstack/table-core/": "/hub/lib/tanstack-table-core@browser/",
+    "diff": "/hub/lib/diff@9.0.0/libesm/index.js",
+    "diff/": "/hub/lib/diff@9.0.0/",
+    "driver.js": "/hub/lib/driver-js@1.8.0/dist/driver.js.mjs",
+    "driver.js/": "/hub/lib/driver-js@1.8.0/",
+    "highlight-js": "/hub/lib/highlight-js@esm/lib/core.js",
+    "highlight-js/": "/hub/lib/highlight-js@esm/",
+    "ui/activity": "/hub/ui/activity/activity.js",
+    "ui/activity/": "/hub/ui/activity/",
+    "ui/nav": "/hub/ui/nav/nav.js",
+    "ui/nav/": "/hub/ui/nav/",
+    "ui/history": "/hub/ui/history/history.js",
+    "ui/history/": "/hub/ui/history/",
+    "ui/tour": "/hub/ui/tour/tour.js",
+    "ui/tour/": "/hub/ui/tour/"
+  },
+  "scopes": {
+    "/hub/lib/tanstack-table-core@9.1.1-browser.05cec605/": {
+      "@tanstack/store": "/hub/lib/tanstack-store@0.11.1/dist/index.js",
+      "@tanstack/store/": "/hub/lib/tanstack-store@0.11.1/"
+    }
+  },
+  "integrity": {
+    "/hub/lib/diff@9.0.0/libesm/index.js": "sha256-sfQA/STaRDd4Z+3nq4R6NJQEI/i78/xUddjHZHdZoqo=",
+    "/hub/lib/driver-js@1.8.0/dist/driver.js.mjs": "sha256-kPXgQwWi0N8WpfYAC/frXTZstq7tG/mlw79cwruArTI=",
+    "/hub/lib/highlight-js@esm/lib/core.js": "sha256-QS/RqAp7ztxq601uV69sqNuIxesdxMutC+0NE1jy218=",
+    "/hub/lib/tanstack-query-core@browser/build/modern/index.js": "sha256-iisviX8WZHasNxVEyoDNJd812vDLVIdHjENBgPI30BM=",
+    "/hub/lib/tanstack-store@0.11.1/dist/index.js": "sha256-vGy00gQx1KEuoHPrJ7SYx/jxMBzBVkdle9jPX2yviyI=",
+    "/hub/lib/tanstack-table-core@browser/dist/index.js": "sha256-d0tlBKsEdSD6Qp0oKtfCO5YB8CbjqWfhOE3b0DHtw/g="
+  }
+}

@@ -50,21 +50,19 @@ async function readSseChange(
   throw new Error(`timed out waiting for SSE change event: ${buffer}`);
 }
 
-module('live HMR-lite (SSE)', function (hooks) {
+module('live HMR-lite transports', function (hooks) {
   hooks.before(async function () {
     workDir = await mkdtemp(join(tmpdir(), 'deck-hmr-test-'));
     depotDir = join(workDir, 'demo');
     deckDir = join(depotDir, 'me', 'mylib');
     await mkdir(deckDir, { recursive: true });
     await writeFile(
-      join(deckDir, 'importmap.json'),
+      join(deckDir, 'package.json'),
       JSON.stringify({
-        imports: {},
-        deck: {
-          packages: {
-            mylib: { version: '0.1.0', entry: '$DECK/lib.js' },
-          },
-        },
+        name: 'mylib',
+        version: '0.1.0',
+        type: 'module',
+        exports: { '.': './lib.js' },
       }),
     );
     await writeFile(join(deckDir, 'lib.js'), 'export const v = 1;\n');
@@ -98,8 +96,8 @@ module('live HMR-lite (SSE)', function (hooks) {
     assert.equal(res.status, 200);
     assert.true(/javascript/.test(res.headers.get('content-type') ?? ''));
     let body = await res.text();
-    assert.true(body.includes('EventSource'));
-    assert.true(body.includes('/_live/events'));
+    assert.true(body.includes("fetch('/_live/state'"));
+    assert.false(body.includes('EventSource'));
   });
 
   test('liveBus emit fans out over SSE', async function (assert) {
@@ -121,6 +119,22 @@ module('live HMR-lite (SSE)', function (hooks) {
     assert.equal(event.name, 'me/mylib');
     assert.equal(event.treeHash, 'a'.repeat(64));
     await reader.cancel();
+  });
+
+  test('/_live/state exposes a pollable moving sequence', async function (assert) {
+    let before = await (await fetch(`${origin}/_live/state`)).json();
+    server.liveBus.emit({
+      name: 'me/mylib',
+      treeHash: 'b'.repeat(64),
+    });
+    let res = await fetch(`${origin}/_live/state`);
+    let after = await res.json();
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.equal(after.data.sequence, before.data.sequence + 1);
+    assert.deepEqual(after.data.event, {
+      name: 'me/mylib',
+      treeHash: 'b'.repeat(64),
+    });
   });
 
   test('settled live edits emit through the watcher onto SSE', async function (

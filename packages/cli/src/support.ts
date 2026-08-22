@@ -8,7 +8,7 @@ export function fail(message: string): never {
   process.exit(1);
 }
 
-// 8787 is jj-historyd's default; a deck server sharing a machine with one
+// 8787 is deckd's default; a deck server sharing a machine with one
 // would collide silently, so the server sits next door.
 export const DEFAULT_PORT = '8788';
 

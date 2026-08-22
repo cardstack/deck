@@ -1,4 +1,4 @@
-//! Watchexec-shaped FS pipeline for Timeline writes.
+//! Watchexec-shaped FS pipeline for every-save History writes.
 //!
 //! notify → channel → machinery filter → HistoryService::enqueue_note
 //! (per-depot debounce + jj-lib seal on a blocking pool).
@@ -15,8 +15,8 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
-use crate::timeline::is_machinery_path;
-use crate::timeline::jj_lib::HistoryService;
+use crate::history::is_machinery_path;
+use crate::history::jj_lib::HistoryService;
 
 /// Relative path change inside a watched depot.
 #[derive(Debug, Clone)]
@@ -108,7 +108,7 @@ impl WatchPlane {
             .unwrap()
             .watch(&root, RecursiveMode::Recursive)
             .map_err(|e| format!("watch {}: {e}", root.display()))?;
-        info!(root = %root.display(), "watching depot for Timeline seals");
+        info!(root = %root.display(), "watching depot for History captures");
         Ok(())
     }
 

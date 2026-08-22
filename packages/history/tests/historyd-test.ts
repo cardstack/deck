@@ -132,7 +132,7 @@ module('history: historyd client', function (hooks) {
       path: '/seal',
       body: { dir: DIR, message: 'save: app.js' },
     });
-    assert.strictEqual(history.kind, 'historyd');
+    assert.strictEqual(history.kind, 'deckd');
   });
 
   test('a no-op seal reports nothing sealed', async function (assert) {
@@ -224,7 +224,7 @@ module('history: historyd client', function (hooks) {
   test('a daemon error surfaces with its status and body', async function (assert) {
     await assert.rejects(
       history.seal(DIR, 'boom'),
-      /historyd \/seal 500: .*working copy is locked/,
+      /deckd \/seal 500: .*working copy is locked/,
       'a failed seal is never mistaken for "nothing to seal"',
     );
     assert.strictEqual(

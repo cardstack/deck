@@ -105,7 +105,7 @@ app.innerHTML = `
       <code>XAC</code>, <code>XPT</code> and <code>XVC</code> alone. No data
       collided, because nobody touched the same key.</li>
     <li><b>One thing did need a person, and it was the right one.</b> The
-      rebase reported a conflict in <code>importmap.json</code>: the fork
+      rebase reported a conflict in <code>package.json</code>: the fork
       called itself <code>1.4.0-acme.1</code> and upstream called itself
       <code>1.5.0</code>. A machine can combine two sets of codes, because
       "both" is well defined. It cannot decide what to name the combination.</li>
@@ -218,3 +218,5 @@ code{font-family:var(--mono);font-size:.86em}
 .reading b{color:var(--ink)}
 `;
 document.head.append(style);
+
+// teach: currencies viewer v2 — pin moved

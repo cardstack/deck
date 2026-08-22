@@ -2,13 +2,7 @@
 // A field library — many decks, one shelf.
 //
 // Six card fields, each in its own deck, each declaring the npm libraries it
-// wants by the bare specifier its source already writes: `date-fns`, `zod`,
-// `luxon`, `nanoid`, `chroma-js`. None of those is a deck name. The decks are
-// `lib/date-fns`, `lib/zod`, and so on, and the decklist in each field's
-// importmap.json is what connects the two:
-//
-//     "zod": "lib/zod@^3.25.0"
-//      ^ import specifier   ^ the deck that answers to it
+// wants in package.json by the bare specifier its source already writes.
 //
 // That is ALIASING, and it is what lets vendored npm source stay unmodified
 // while the depot names things its own way.
@@ -30,8 +24,9 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { IMPORT_MAP_PATH, parseDependencies } from '@cardstack/deck/import-map';
+import { IMPORT_MAP_PATH } from '@cardstack/deck/import-map';
 import { lockDeck } from '@cardstack/deck/lock';
+import { parsePackageJson, suggestedDependencies } from '@cardstack/deck/package-json';
 import { pack } from '@cardstack/deck/pack';
 import { inspectStore, publishToStore, readStoredPack } from '@cardstack/deck/store';
 import { peekPacklist } from '@cardstack/deck/pack';
@@ -52,7 +47,7 @@ import {
   startEditorBridge,
 } from '../shared/editor-bridge.mjs';
 import { demoBuildMode } from '../shared/reset.mjs';
-import { publishShared } from '../shared/publish.mjs';
+import { lockAndWrite, publishShared } from '../shared/publish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8793);
@@ -147,8 +142,6 @@ for (let library of LIBRARIES) {
         deck: {
           packages: {
             [name]: {
-              version: library.version,
-              entry: `$DECK/${vendored.entryPath}`,
               vendoredFrom: vendored.vendoredFrom,
             },
           },
@@ -181,16 +174,14 @@ for (let library of LIBRARIES) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Lock and seal each field deck.
+// 2. Seal each field deck.
 //
-//    `deck lock` turns the ranges the author wrote into exact pins and writes
-//    them INTO the tree — so the lock is a file you can read, and moving a
-//    dependency is an ordinary save. The pins are checked in here, which means
-//    a clean run must produce no change; if it does, the demo says so instead
-//    of quietly relocking.
+//    Ranges live in package.json. `deck lock` writes the resolved pins at
+//    the depot root — that file is the lock. Sealing here publishes the
+//    tree as it stands; the depot lock is written once after every deck
+//    is in the store.
 // ---------------------------------------------------------------------------
-console.log('\n2) locking and sealing the six field decks');
-let drifted = [];
+console.log('\n2) sealing the six field decks');
 async function lockAndSeal(deckName) {
   let deckDir = join(depotDir, ...deckName.split('/'));
   let { text, changed, resolutions } = await lockDeck({
@@ -199,14 +190,12 @@ async function lockAndSeal(deckName) {
     storeDir,
     deckDir,
   });
-  if (changed) {
-    // The reader's field is seeded WITHOUT a lock, so locking it on the first
-    // run is the expected outcome rather than drift in a checked-in file.
-    if (deckName !== EDITABLE) drifted.push(deckName);
+  if (!text) {
+    await rm(join(deckDir, IMPORT_MAP_PATH), { force: true });
+  } else if (changed) {
     await writeFile(join(deckDir, IMPORT_MAP_PATH), text);
   }
   let files = await readTreeFromDir(deckDir);
-  files.set(IMPORT_MAP_PATH, Buffer.from(text, 'utf8'));
   let { treeHash } = await publishToStore(
     storeDir,
     deckName,
@@ -244,7 +233,10 @@ let urls = new Map();
 for (let deckName of [...FIELDS, EDITABLE]) {
   let deckDir = join(depotDir, ...deckName.split('/'));
   let files = await readTreeFromDir(deckDir);
-  let declared = parseDependencies(files.get(IMPORT_MAP_PATH).toString('utf8')) ?? {};
+  let pkg = parsePackageJson(
+    files.get('package.json')?.toString('utf8') ?? '{}',
+  );
+  let declared = pkg ? suggestedDependencies(pkg) : {};
   edges += Object.keys(declared).length;
 }
 for (let library of shelfInfo) {
@@ -324,17 +316,12 @@ await writeFile(
 );
 
 let app = await lockAndSeal(APP);
-let appMap = JSON.parse(app.text);
+let depotLock = await lockAndWrite({ depotDir, depotName: DEPOT, storeDir });
+let appMap = JSON.parse(depotLock.text);
 let scopeCount = Object.keys(appMap.scopes ?? {}).length;
 console.log(`\n4) ${APP}@${VERSION} · ${app.treeHash.slice(0, 12)}…`);
 console.log(`   ${Object.keys(appMap.imports).length} top-level pins, ${scopeCount} scopes`);
 console.log(`   The page imports seven field decks and not one library.`);
-
-if (drifted.length > 0) {
-  console.log(`\n   NOTE: the checked-in lock was out of date and has been`);
-  console.log(`   rewritten for: ${drifted.join(', ')}`);
-  console.log(`   Commit the importmap.json changes, or pin the libraries back.`);
-}
 
 // ---------------------------------------------------------------------------
 // 5. Serve. Everything is at rest: no write endpoint, no login.
@@ -408,7 +395,7 @@ server.listen(PORT, async () => {
   console.log(`      ${origin}/\n`);
   console.log(`      /${DEPOT}/${APP}@${VERSION}/index.html`);
   console.log(`      /${DEPOT}/${APP}@${VERSION}/index.html?with=${EDITABLE}   ← the working tree`);
-  console.log(`      /${DEPOT}/fields/swatch@${VERSION}/importmap.json        ← the lock, readable`);
+  console.log(`      /${DEPOT}/importmap.json                                   ← the lock, readable`);
   console.log(`      /${DEPOT}/lib/chroma-js@3.1.2/index.js`);
   console.log(`      /${DEPOT}/lib/chroma-js@2.6.0/index.js   ← both, at once\n`);
 });

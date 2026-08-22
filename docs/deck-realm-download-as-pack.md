@@ -4,7 +4,7 @@
 [`deck-pack-equivalence.md`](deck-pack-equivalence.md),
 [`deck-cardpack-requirements.md`](deck-cardpack-requirements.md) (the
 two-plane model and the recovered rewriting rules),
-[`deck-boxel-backport-plan.md`](deck-boxel-backport-plan.md) (K14).
+[`deck-boxel-backport-plan.md`](./plans/deck-boxel-backport-plan.md) (K14).
 
 > **Vocabulary.** This note is about the Boxel construct, so it says **realm**
 > throughout and means it.

@@ -1,0 +1,13 @@
+{
+  "name": "board",
+  "version": "1.0.0-dev.5",
+  "type": "module",
+  "exports": {
+    ".": "./board.js"
+  },
+  "dependencies": {
+    "ui/table": "live",
+    "charts/spark": "live",
+    "ui/pills": "^1.0.0"
+  }
+}

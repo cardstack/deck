@@ -1,16 +1,16 @@
-//! deckd — Timeline daemon for Deck.
+//! deckd — every-save History daemon for Deck.
 //!
 //! Speaks the historyd HTTP contract used by `@cardstack/deck-history`.
 //! Write path is watchexec-shaped: notify → filter → per-depot debounce →
 //! jj-lib seal. HTTP remains for ensure / list / file-at / optional /note.
 //!
-//! Default binary: Timeline + watch only.
-//! Optional: `--features build` (esbuild plane), `--features jj-cli`.
+//! Default binary: History + watch only.
+//! Optional: `--features build` (esbuild plane).
 
 mod api;
 #[cfg(feature = "build")]
 mod build;
-mod timeline;
+mod history;
 mod watch;
 
 use std::net::SocketAddr;
@@ -19,8 +19,8 @@ use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
 use crate::api::AppState;
-use crate::timeline::jj_lib::JjLibTimeline;
-use crate::timeline::Timeline;
+use crate::history::jj_lib::JjLibHistory;
+use crate::history::HistoryBackend;
 use crate::watch::WatchPlane;
 
 #[tokio::main]
@@ -31,9 +31,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let bind = std::env::var("DECKD_BIND").unwrap_or_else(|_| "127.0.0.1:8787".into());
 
-    let jj_timeline = JjLibTimeline::new();
-    let history = jj_timeline.history();
-    let watch = match WatchPlane::start(history) {
+    let jj_history = JjLibHistory::new();
+    let history_service = jj_history.history();
+    let watch = match WatchPlane::start(history_service) {
         Ok(w) => Some(w),
         Err(error) => {
             tracing::warn!(%error, "FS watch plane disabled; HTTP /note still works");
@@ -41,25 +41,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let timeline: Arc<dyn Timeline> = Arc::new(jj_timeline);
+    let history: Arc<dyn HistoryBackend> = Arc::new(jj_history);
     #[cfg(feature = "build")]
     let state = {
         let jj_bin = std::env::var("JJ_BIN").unwrap_or_else(|_| "jj".into());
         AppState {
-            timeline,
+            history,
             build: Some(Arc::new(crate::build::BuildPlane::new(jj_bin))),
             watch,
         }
     };
     #[cfg(not(feature = "build"))]
-    let state = AppState { timeline, watch };
+    let state = AppState { history, watch };
 
     let app = api::router(state);
     let addr: SocketAddr = bind.parse()?;
     tracing::info!(
         %addr,
         build = cfg!(feature = "build"),
-        "deckd listening (jj-lib Timeline + watchexec-shaped FS seals)"
+        "deckd listening (jj-lib History + watchexec-shaped FS captures)"
     );
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

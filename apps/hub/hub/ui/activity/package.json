@@ -1,0 +1,6 @@
+{
+  "name": "activity",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./activity.js" }
+}

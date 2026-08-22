@@ -68,10 +68,89 @@ a.s-file { color: var(--fg); }
 * { box-sizing: border-box; }
 ::selection { background: var(--sel); }
 
+/* ── Cross-document View Transitions (MPA tab strip) ─────────────────────
+   Opt-in `@view-transition { navigation: auto }` lives inline in each app's
+   HTML so the browser can start the transition before the stylesheet lands.
+   Names + nested groups live here so every page shares one chrome map.
+
+   NO FADES. The UA default fades old↓ and new↑; at mid-transition the page
+   dims (and flashes white). Goal: the outgoing page (browse, run, …) stays
+   fully opaque on screen until the next document is ready, then cuts. */
+@media (prefers-reduced-motion: no-preference) {
+  body {
+    view-transition-name: hub-shell;
+  }
+  deck-nav {
+    view-transition-name: hub-nav;
+    view-transition-group: hub-shell;
+  }
+  deck-subject {
+    view-transition-name: hub-subject;
+    view-transition-group: hub-shell;
+  }
+  #app {
+    view-transition-name: hub-main;
+    view-transition-group: hub-shell;
+  }
+  deck-keys {
+    view-transition-name: hub-keys;
+    view-transition-group: hub-shell;
+  }
+  .hub-boot {
+    view-transition-name: none;
+  }
+
+  /* Instant cut — no morph timing that could interpolate opacity/geometry. */
+  ::view-transition-group(*) {
+    animation-duration: 0s;
+    animation-timing-function: step-end;
+  }
+
+  /* Outgoing snapshot stays full strength; incoming stays invisible until the
+     cut. Never run the UA fade keyframes. */
+  ::view-transition-old(*) {
+    animation: none !important;
+    opacity: 1 !important;
+    mix-blend-mode: normal;
+    z-index: 2;
+  }
+  ::view-transition-new(*) {
+    animation: none !important;
+    opacity: 0 !important;
+    mix-blend-mode: normal;
+    z-index: 1;
+  }
+}
+
+/* Hold the main region's height so an empty `#app` during a view transition
+   does not collapse the shell (nav + keys stay put). */
+#app {
+  min-height: 50vh;
+}
+
+/* Outside every named transition group — corner status, not a page flash. */
+.hub-boot {
+  position: fixed;
+  left: var(--gut);
+  bottom: 3.6em;
+  z-index: 4;
+  margin: 0;
+  color: var(--dim);
+  pointer-events: none;
+  letter-spacing: 0.04em;
+}
+.hub-boot[hidden] {
+  display: none;
+}
+
+html {
+  background-color: var(--bg, var(--hub-flash, #1e1e2e));
+}
+
 body {
   margin: 0;
   padding: 0 var(--gut) 6em;
-  background: var(--bg);
+  background: var(--bg, var(--hub-flash, #1e1e2e));
   color: var(--fg);
   font-family: var(--mono);
   font-size: 13px;
@@ -245,7 +324,13 @@ pre.blob:not(.diff) .ln::before {
   text-align: right; color: var(--dim);
   position: sticky; left: 0; background: var(--bg);
 }
-pre.blob .ln:target { background: var(--sel); }
+pre.blob a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--line);
+}
+pre.blob a:hover { text-decoration-color: currentColor; }
 
 /* ── syntax ─────────────────────────────────────────────────────────
    Our own mapping of highlight.js classes onto the palette, rather than
@@ -504,6 +589,13 @@ td.indent { padding-left: 2ch; }
 .sortbar label { color: var(--dim); margin-right: .6ch; }
 
 .feed { list-style: none; margin: 0; padding: 0; }
+.feed-more {
+  text-align: center;
+  padding: calc(var(--row) * .8em) 0 calc(var(--row) * 1.2em);
+  letter-spacing: .06em;
+}
+.feed-more[data-state='loading'],
+.feed-more[data-state='fetch'] { color: var(--a-live, var(--amber)); }
 
 /* RECENCY IS BRIGHTNESS. `--fresh` runs 1 → 0 over a day, and the entry fades
    with it, so "something just happened" reads from across the room and stops
@@ -770,6 +862,40 @@ td.indent { padding-left: 2ch; }
 .pick li a { color: var(--a-package); }
 .pick li .dim { padding-left: 1.5ch; }
 
+/* A library is executable context, not an error. Run follows the reverse
+   import edge to the page where the package becomes visible, then makes the
+   selected Version a no-store trial. */
+.use-view { max-width: 90rem; }
+.use-explainer {
+  max-width: 76ch;
+  margin: calc(var(--row) * .8em) 0 calc(var(--row) * 1.2em);
+  padding-left: var(--gut);
+  border-left: 2px solid var(--blue);
+}
+.use-explainer h1 {
+  margin: 0 0 calc(var(--row) * .25em);
+  color: var(--fg);
+  font-size: 1rem;
+}
+.use-explainer p { margin: calc(var(--row) * .35em) 0; }
+.use-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1ch;
+  margin: calc(var(--row) * .7em) 0;
+}
+.use-flow span, .use-flow strong {
+  padding: .25em .7em;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font-weight: 500;
+}
+.use-flow strong { color: var(--a-package); }
+.use-flow i { color: var(--dim); font-style: normal; }
+.run-action { white-space: nowrap; font-weight: 600; }
+.use-fallback { margin-top: calc(var(--row) * .8em); }
+
 /* The set-aside control and its way back. Both are quiet: the band already
    has the reader's attention, and a loud dismiss button competes with the
    thing it is dismissing. */
@@ -786,3 +912,186 @@ td.indent { padding-left: 2ch; }
   color: var(--fg); border-color: var(--dim);
 }
 button.aside { margin-left: 1.5ch; align-self: center; }
+
+/* ── repository collaboration ─────────────────────────────────────────── */
+.repository { max-width: 112ch; margin: 0 auto; padding-top: calc(var(--row) * .8em); }
+.repo-title { display: flex; align-items: baseline; gap: .2ch; font-size: 1.15em; }
+.repo-title strong { font-size: 1em; }
+.visibility, .status { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 0 .8ch; font-size: .9em; line-height: 1.6; }
+.visibility { color: var(--dim); margin-left: 1ch; }
+.repo-tabs { display: flex; gap: 3ch; margin: calc(var(--row) * .7em) 0 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.repo-tabs a { padding: calc(var(--row) * .35em) 0; white-space: nowrap; }
+.repo-tabs a[aria-current='page'] { color: var(--fg); border-bottom: 2px solid var(--orange); }
+.repo-section { padding: calc(var(--row) * 1.1em) 0; border-bottom: 1px solid var(--line); }
+.repo-section > header { display: flex; justify-content: space-between; align-items: center; gap: 2ch; margin-bottom: calc(var(--row) * .7em); }
+.repo-section > header > div { display: flex; align-items: baseline; gap: 1.5ch; }
+.repo-section h1 { color: var(--fg); font-weight: 600; margin: 0; }
+.section-index { color: var(--dim); }
+.repo-table { border-collapse: collapse; width: 100%; }
+.repo-table th { text-align: left; border-bottom: 1px solid var(--fg); padding: .35em 2ch .35em 0; }
+.repo-table td { border-bottom: 1px solid var(--line); padding: .6em 2ch .6em 0; }
+.repo-table tr:last-child td { border-bottom: 0; }
+.branch-mark { color: var(--green); margin-right: .7ch; }
+.branch-mark.branch-feature { color: var(--a-publisher); }
+.status-main { color: var(--dim); }
+.status-open { color: var(--green); border-color: color-mix(in srgb, var(--green) 55%, var(--line)); }
+.status-merged { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 55%, var(--line)); }
+.section-note { color: var(--dim); margin: calc(var(--row) * .5em) 0 0; max-width: 78ch; }
+.section-note strong { color: var(--fg); font-weight: 400; }
+.action { display: inline-block; font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 2px; padding: .35em 1.2ch; cursor: pointer; }
+.action:hover, .action:focus-visible { background: var(--sel); text-decoration: none; }
+.action.primary { color: var(--bg); background: var(--green); border-color: var(--green); font-weight: 600; }
+.action.primary:hover { filter: brightness(1.08); }
+.action.quiet { color: var(--dim); background: transparent; }
+.action:disabled { opacity: .55; cursor: not-allowed; }
+.pull-summary { border-left: 2px solid var(--green); padding-left: 2ch; }
+.pull-summary:has(.status-merged) { border-left-color: var(--violet); }
+.pull-heading { display: flex; align-items: flex-start; gap: 1.5ch; }
+.pull-heading strong { font-size: 1.08em; }
+.pull-heading p { margin: .25em 0 0; color: var(--dim); }
+.merge-line { display: flex; gap: 1ch; align-items: center; margin: calc(var(--row) * .8em) 0; color: var(--dim); }
+.merge-line code { color: var(--fg); background: var(--panel); padding: .1em .7ch; }
+.handoff { color: var(--a-package); }
+.handoffs { display: flex; align-items: center; flex-wrap: wrap; gap: 2ch; margin-top: calc(var(--row) * .8em); }
+.empty-pull { color: var(--dim); border-left: 2px solid var(--line); padding-left: 2ch; }
+.protocol-object { border-top: 1px solid var(--line); }
+.protocol-object:last-child { border-bottom: 1px solid var(--line); }
+.protocol-object summary { display: grid; grid-template-columns: 25ch minmax(0, 1fr); gap: 2ch; padding: .6em 0; cursor: pointer; }
+.protocol-object summary:hover { background: var(--panel); }
+.protocol-object summary code { color: var(--dim); overflow-wrap: anywhere; }
+.protocol-object pre { margin: 0 0 calc(var(--row) * .7em); padding: 1em 2ch; background: var(--panel); overflow: auto; }
+@media (max-width: 44rem) {
+  .repository { max-width: none; }
+  .protocol-object summary { grid-template-columns: 1fr; gap: 0; }
+  .repo-section > header { align-items: flex-start; }
+}
+
+/* Branches are an address choice, not a second application inside Browse. */
+.repo-context { position: relative; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 2ch; min-height: 2.4rem; padding-bottom: .65rem; margin-bottom: .65rem; border-bottom: 1px solid var(--line); }
+.repo-identity, .repo-controls { display: flex; align-items: center; gap: .7ch; min-width: 0; }
+.repo-switcher { position: relative; }
+.repo-switcher > summary { list-style: none; cursor: pointer; padding: .35em .8ch; border: 1px solid var(--line); background: var(--bg); color: var(--text); white-space: nowrap; }
+.repo-switcher > summary::-webkit-details-marker { display: none; }
+.repo-switcher[open] > summary { background: var(--panel); }
+.repo-menu { position: absolute; right: 0; top: calc(100% + .35rem); min-width: 17rem; padding: .35rem; border: 1px solid var(--line-strong); background: var(--bg); box-shadow: 0 1rem 2.5rem rgb(0 0 0 / .35); }
+.repo-option { display: flex; justify-content: space-between; gap: 2ch; padding: .45rem .6rem; color: var(--text); }
+.repo-option:hover, .repo-option.selected { background: var(--panel); }
+.repo-option code { color: var(--dim); }
+.repo-empty { display: block; padding: .45rem .6rem; color: var(--dim); }
+.repo-menu-new { margin-top: .35rem; padding-top: .35rem; border-top: 1px solid var(--line); }
+.repo-menu-new b { display: block; padding: .25rem .6rem; color: var(--dim); font-size: .85em; font-weight: 500; }
+.repo-menu-new button { display: block; width: 100%; padding: .45rem .6rem; border: 0; background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.repo-menu-new button:hover { background: var(--panel); }
+.repo-review { color: var(--accent); white-space: nowrap; }
+.repo-new { border: 1px solid var(--line-strong); padding: .4em 1ch; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+.repo-new.primary { border-color: var(--accent); color: var(--accent); }
+.repo-context-readonly .visibility { margin-right: auto; }
+.repo-action-dialog { width: min(31rem, calc(100vw - 2rem)); padding: 0; border: 1px solid var(--line-strong); background: var(--bg); color: var(--text); box-shadow: 0 1.5rem 4rem rgb(0 0 0 / .45); }
+.repo-action-dialog::backdrop { background: rgb(20 22 30 / .55); backdrop-filter: blur(2px); }
+.repo-action-dialog form { display: grid; gap: 1rem; padding: 1.1rem; }
+.repo-action-dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.repo-action-dialog header > div { display: flex; align-items: baseline; gap: .75rem; }
+.repo-action-dialog h2 { margin: 0; font-size: 1rem; font-weight: 650; }
+.repo-dialog-close { border: 0; background: transparent; color: var(--dim); font: inherit; font-size: 1.25rem; cursor: pointer; }
+.repo-action-dialog label { display: grid; gap: .4rem; color: var(--dim); font-size: .85rem; }
+.repo-action-dialog input { width: 100%; box-sizing: border-box; padding: .65rem .7rem; border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); font: inherit; }
+.repo-action-dialog input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.repo-action-dialog p { margin: 0; }
+.repo-dialog-error:empty { display: none; }
+.repo-action-dialog footer { display: flex; justify-content: flex-end; gap: .5rem; padding-top: .2rem; }
+@media (max-width: 44rem) {
+  .repo-context { align-items: flex-start; }
+  .repo-identity { flex-wrap: wrap; }
+  .repo-menu { right: 0; min-width: min(17rem, 82vw); }
+}
+.review-context { padding-bottom: calc(var(--row) * .7em); border-bottom: 1px solid var(--line); }
+
+/* Reviews are an inbox first and a document second. A reviewer should be able
+   to triage a working day's queue without scrolling through one giant card. */
+.review-page { max-width: 128ch; }
+.review-inbox { padding-top: calc(var(--row) * .65em); }
+.queue-actions, .queue-filters { display: flex; align-items: center; gap: .5ch; }
+.queue-filters { padding: .2em; border: 1px solid var(--line); background: var(--panel); }
+.queue-filters button {
+  border: 0; padding: .22em .8ch; background: transparent; color: var(--dim);
+  font: inherit; cursor: pointer;
+}
+.queue-filters button[aria-pressed='true'] { background: var(--bg); color: var(--fg); }
+.queue-filters b { color: inherit; font-weight: 500; }
+.queue-summary { color: var(--dim); font-size: .88em; }
+.review-queue { border-top: 1px solid var(--line); }
+.review-queue-row {
+  display: grid; grid-template-columns: 16ch minmax(28ch, 1fr) 14ch 15ch 2ch;
+  align-items: center; gap: 1.5ch; width: 100%; min-height: 3.15rem;
+  padding: .42rem .75rem; border: 0; border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent; background: transparent; color: var(--fg);
+  text-align: left; font: inherit; cursor: pointer;
+}
+.review-queue-row:hover { background: var(--panel); }
+.review-queue-row[aria-current='true'] { border-left-color: var(--orange); background: var(--sel); }
+.queue-status {
+  display: inline-block; justify-self: start; padding: .08em .65ch;
+  border: 1px solid var(--line); border-radius: 999px; font-size: .8em;
+  white-space: nowrap;
+}
+.queue-status-approved { color: var(--green); border-color: color-mix(in srgb, var(--green) 55%, var(--line)); }
+.queue-status-changes { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 55%, var(--line)); }
+.queue-status-waiting, .queue-status-closed { color: var(--dim); }
+.queue-status-merged { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 55%, var(--line)); }
+.queue-title { display: grid; min-width: 0; }
+.queue-title b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.queue-title small { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-author, .review-queue-row time { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-open { color: var(--dim); }
+.review-detail { padding-top: calc(var(--row) * .7em); }
+.review-detail .pull-summary { padding-left: 1.3ch; }
+.review-detail .pull-heading { align-items: baseline; }
+.review-detail .pull-heading p { max-width: 78ch; }
+.review-meta {
+  display: flex; align-items: center; flex-wrap: wrap; gap: .6ch 1ch;
+  margin: .55rem 0 .7rem; color: var(--dim); font-size: .9em;
+}
+.review-meta code { color: var(--fg); background: var(--panel); padding: .05em .5ch; }
+.review-detail-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(26ch, 2fr); gap: 3ch; }
+.review-detail-grid h2 {
+  margin: 0 0 .35rem; color: var(--dim); font-size: .78em; font-weight: 500;
+  letter-spacing: .12em; text-transform: uppercase;
+}
+.review-changes { border-top: 1px solid var(--line); }
+.review-changes a {
+  display: flex; justify-content: space-between; gap: 2ch;
+  padding: .42rem .5rem; border-bottom: 1px solid var(--line);
+}
+.review-changes a:hover { background: var(--panel); text-decoration: none; }
+.review-changes a > span:last-child { white-space: nowrap; }
+.review-events, .review-history { margin: 0; padding: 0; list-style: none; }
+.review-events { border-top: 1px solid var(--line); }
+.review-events li {
+  display: grid; grid-template-columns: 15ch minmax(0, 1fr) auto; gap: 1ch;
+  padding: .42rem .5rem; border-bottom: 1px solid var(--line); font-size: .88em;
+}
+.review-events b { font-weight: 550; }
+.review-events span, .review-events time { color: var(--dim); }
+.review-events time { white-space: nowrap; }
+.review-history { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 3ch; }
+.review-history li {
+  display: grid; grid-template-columns: 13ch minmax(0, 1fr); gap: 1ch;
+  padding: .42rem 0; border-bottom: 1px solid var(--line); font-size: .9em;
+}
+.review-history li code { color: var(--dim); }
+.review-history li strong { font-weight: 500; }
+@media (max-width: 62rem) {
+  .review-queue-row { grid-template-columns: 14ch minmax(20ch, 1fr) 12ch 2ch; }
+  .review-queue-row time { display: none; }
+  .review-detail-grid, .review-history { grid-template-columns: 1fr; }
+}
+@media (max-width: 44rem) {
+  .review-inbox > header { flex-direction: column; }
+  .queue-actions { width: 100%; justify-content: space-between; }
+  .queue-summary, .queue-author { display: none; }
+  .review-queue-row { grid-template-columns: 15ch minmax(0, 1fr) 2ch; padding-inline: .35rem; }
+  .review-detail .pull-heading { display: grid; grid-template-columns: 15ch minmax(0, 1fr); align-items: start; }
+  .review-detail .pull-heading .status { justify-self: start; }
+  .review-events li { grid-template-columns: 13ch minmax(0, 1fr); }
+  .review-events time { display: none; }
+}

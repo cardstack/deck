@@ -1,5 +1,14 @@
 # A package resolves through its own map
 
+**Status: SUPERSEDED for the consuming depot** (2026-08-12) by
+[`deck-package-json-and-depot-lock.md`](deck-package-json-and-depot-lock.md).
+A package's `package.json` is a suggestion; the consuming realm's canonical
+composition of root and package/app-local import maps is the only resolution
+authority. Same pack, two depots, two programs — that
+is the owner's jurisdiction. This file remains the record of the earlier
+ruling and still describes sealed-map behaviour for trees that have no
+depot lock (dual-lock fallback).
+
 **Status: RULING** (2026-08-11). Companions:
 [`deck-multi-package-design.md`](deck-multi-package-design.md) (the map format,
 and the design this narrows),
@@ -93,10 +102,10 @@ tune the depot.
 
 - ~~**Whether a depot may ever override a sealed pin.**~~ **Settled** by
   [`deck-who-may-intervene.md`](deck-who-may-intervene.md). A sealed pin may
-  be advanced *within the range the package itself declared* — permission
+  be advanced _within the range the package itself declared_ — permission
   granted in writing at publish time, so it is not a depot second-guessing a
   package. Out-of-range remains open there.
-- **What a packaged module's *unsealed* imports mean.** A `$DECK/` reference
+- **What a packaged module's _unsealed_ imports mean.** A `$DECK/` reference
   is documented as the deliberate live escape hatch; whether a bare specifier
   with no sealed answer should refuse to resolve, or fall through to the
   depot, is open. Refusing is more honest and more annoying.

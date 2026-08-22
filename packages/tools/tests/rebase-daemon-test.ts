@@ -29,6 +29,32 @@ async function writeDeck(
 ): Promise<void> {
   let dir = join(depotDir, ...name.split('/'));
   await mkdir(dir, { recursive: true });
+  let pkgName = name.split('/')[1]!;
+  let deck = (map.deck ?? {}) as {
+    packages?: Record<string, { version?: string; entry?: string }>;
+    dependencies?: Record<string, string>;
+  };
+  let self = deck.packages?.[pkgName];
+  await writeFile(
+    join(dir, 'package.json'),
+    JSON.stringify(
+      {
+        name: pkgName,
+        version: self?.version ?? '0.1.0',
+        type: 'module',
+        ...(self?.entry
+          ? {
+              exports: {
+                '.': `./${self.entry.replace(/^\$DECK\//, '')}`,
+              },
+            }
+          : {}),
+        ...(deck.dependencies ? { dependencies: deck.dependencies } : {}),
+      },
+      null,
+      2,
+    ) + '\n',
+  );
   await writeFile(
     join(dir, 'importmap.json'),
     JSON.stringify(map, null, 2) + '\n',

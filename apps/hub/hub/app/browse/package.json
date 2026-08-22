@@ -1,0 +1,15 @@
+{
+  "name": "browse",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./browse.js" },
+  "dependencies": {
+    "ui/nav": "workspace:*",
+    "diff": "^9.0.0",
+    "highlight-js": "esm",
+    "@tanstack/table-core": "browser",
+    "ui/activity": "workspace:*",
+    "ui/history": "workspace:*",
+    "ui/tour": "workspace:*"
+  }
+}
