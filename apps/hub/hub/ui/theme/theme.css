@@ -1089,7 +1089,9 @@ button.aside { margin-left: 1.5ch; align-self: center; }
   .review-inbox > header { flex-direction: column; }
   .queue-actions { width: 100%; justify-content: space-between; }
   .queue-summary, .queue-author { display: none; }
-  .review-queue-row { grid-template-columns: 12ch minmax(0, 1fr) 2ch; padding-inline: .35rem; }
+  .review-queue-row { grid-template-columns: 15ch minmax(0, 1fr) 2ch; padding-inline: .35rem; }
+  .review-detail .pull-heading { display: grid; grid-template-columns: 15ch minmax(0, 1fr); align-items: start; }
+  .review-detail .pull-heading .status { justify-self: start; }
   .review-events li { grid-template-columns: 13ch minmax(0, 1fr); }
   .review-events time { display: none; }
 }

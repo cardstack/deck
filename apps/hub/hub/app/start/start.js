@@ -1373,7 +1373,7 @@ function view(state) {
     `<button type="button" data-role="tour">walk the stories</button>` +
     `</div>` +
     `<p class="lede"><b>Every save is kept.</b> After a short quiet period,
-     Deck gives the package tree an immutable automatic Version. When a
+     Deck gives the package tree an immutable automatic Version. When an
      every-save History is attached, the same save is also an ordered Step: the exact
      depot state, when it happened, and which files changed. You can inspect,
      run, compare and restore work that was never committed. A later
