@@ -561,7 +561,11 @@ async function main() {
         storeDir: join(depotDir, '.deck', 'store'),
         history,
       },
-      debounceMs: 50,
+      // Use the same quiet period as the real server. The replay copies a
+      // package's source and manifest as separate filesystem operations; a
+      // shorter test-only window can publish the half-written package on a
+      // slower CI filesystem.
+      debounceMs: 500,
       onError: (error) => watcherErrors.push(error),
     });
     await watcher.settled();
