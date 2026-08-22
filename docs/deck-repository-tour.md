@@ -19,13 +19,14 @@ From the Deck checkout:
 DECK_REPLAY_COLLABORATION=1 ./scripts/run-hub-with-deckd.sh
 ```
 
-After deckd is ready, the replay itself takes under four seconds. It creates
-eight attributed History revisions, eleven watcher-created development
-Versions across `1.0`, `1.1`, and `1.2` lines, stable LTS/latest releases, a
-hermetically vendored two-module package, three branches, four Checkpoints,
-merged Review #1, and open approved Review #2. It then reads the state back and
-asserts the RRI lock, old History revision, Version tags, two-parent merge,
-event chains, semver-aware projections, and clean three-package preview.
+After deckd is ready, the replay itself takes only a few seconds. It creates a
+rich attributed History and development-Version tape across `1.0`, `1.1`, and
+`1.2` lines, stable LTS/latest releases, a hermetically vendored two-module
+package, seven branches, and six durable Reviews: four open, one merged, and
+one closed. The open queue includes waiting, approved, and changes-requested
+work. It then reads the state back and asserts the RRI lock, old History
+revision, Version tags, two-parent merge, event chains, semver-aware
+projections, and clean package previews.
 
 Open `http://localhost:8788/track?at=/collaboration&group=0` to see the replay
 as a tape. History rows retain save descriptions and actors. Press `a` to add
@@ -122,11 +123,14 @@ deck review \
 ```
 
 Visit [Review](http://localhost:8788/review?repository=acme/dashboard&depot=collaboration).
-The page shows exact package diffs, a runnable projection, Checkpoint history,
-review events, and expandable canonical protocol objects.
+The page starts with a dense operational queue. Select a Review to see its
+exact package diffs, runnable projection, Checkpoint history, Review events,
+and expandable canonical protocol objects. Use `j`/`k` to process rows, `r` to
+run the selected state, and `m` to merge it.
 
-The replay owns Review numbers 1 and 2, so this fresh follow-up becomes Review
-#3. Always use the number printed by `deck review` rather than assuming it.
+The replay owns Review numbers 1 through 6, so this fresh follow-up becomes
+Review #7. Always use the number printed by `deck review` rather than assuming
+it.
 
 ## 6. Merge through the same protocol
 
@@ -134,7 +138,7 @@ The replay owns Review numbers 1 and 2, so this fresh follow-up becomes Review
 deck merge \
   --depot examples/collaboration/depot \
   --repo acme/dashboard \
-  --number 3 \
+  --number 7 \
   --history <post-merge-deckd-head> \
   --index <post-merge-index-generation-hash>
 ```

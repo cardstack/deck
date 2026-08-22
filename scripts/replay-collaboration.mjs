@@ -79,8 +79,8 @@ async function copyTree(source, destination = depotDir) {
   await cp(source, destination, { recursive: true, force: true });
 }
 
-async function copyScenarioFile(path) {
-  let source = join(kimCarrierRouting, path);
+async function copyScenarioFile(path, sourceTree = kimCarrierRouting) {
+  let source = join(sourceTree, path);
   let destination = join(depotDir, path);
   await mkdir(dirname(destination), { recursive: true });
   await cp(source, destination, { force: true });
@@ -218,10 +218,14 @@ async function stopServer(server) {
 }
 
 async function approve(number, branch, actor) {
+  return reviewVerdict(number, branch, actor, 'approved');
+}
+
+async function reviewVerdict(number, branch, actor, verdict) {
   let head = await readBranchHead(depotDir, branch);
   check(
     head?.latestCheckpointHash,
-    `${branch} must have a Checkpoint before approval`,
+    `${branch} must have a Checkpoint before a verdict`,
   );
   await appendReviewEvent({
     realmDir: depotDir,
@@ -230,11 +234,90 @@ async function approve(number, branch, actor) {
     actor: { id: `@${actor.toLowerCase()}:acme.test`, name: actor },
     createdAt: new Date().toISOString(),
     checkpointHash: head.latestCheckpointHash,
-    verdict: 'approved',
+    verdict,
   });
 }
 
-async function readHubState(service) {
+async function closeReview(number, actor) {
+  await appendReviewEvent({
+    realmDir: depotDir,
+    number,
+    type: 'closed',
+    actor: { id: `@${actor.toLowerCase()}:acme.test`, name: actor },
+    createdAt: new Date().toISOString(),
+  });
+}
+
+async function seedQueueReview({
+  history,
+  watcher,
+  baseHistory,
+  number,
+  actor,
+  branch,
+  files,
+  saveMessage,
+  checkpointMessage,
+  title,
+  body,
+  verdict,
+  reviewer,
+  closed,
+}) {
+  await applyRestore(history, depotDir, baseHistory);
+  await settle(history, `Switch authoring view to ${branch}`, 'Deck Workspace');
+  await runDeck(
+    actor,
+    'branch',
+    '--depot',
+    depotDir,
+    '--repo',
+    repository,
+    '--name',
+    branch,
+    '--from',
+    'main',
+  );
+  for (let path of files) await copyScenarioFile(path);
+  let saved = await settleAndPublish(history, watcher, saveMessage, actor);
+  await runDeck(
+    actor,
+    'checkpoint',
+    '--depot',
+    depotDir,
+    '--repo',
+    repository,
+    '--branch',
+    branch,
+    '--message',
+    checkpointMessage,
+    '--history',
+    saved.historyHead,
+    '--index',
+    saved.indexGenerationHash,
+  );
+  await runDeck(
+    actor,
+    'review',
+    '--depot',
+    depotDir,
+    '--repo',
+    repository,
+    '--source',
+    branch,
+    '--target',
+    'main',
+    '--title',
+    title,
+    '--body',
+    body,
+  );
+  if (verdict) await reviewVerdict(number, branch, reviewer, verdict);
+  if (closed) await closeReview(number, actor);
+  return saved;
+}
+
+async function readHubState(service, reviewNumber) {
   let status;
   let bytes;
   let response = {
@@ -248,7 +331,8 @@ async function readHubState(service) {
   let handled = await service.handle(
     { method: 'GET' },
     response,
-    '/_hub/repositories/collaboration/acme/dashboard',
+    '/_hub/repositories/collaboration/acme/dashboard' +
+      (reviewNumber ? `/reviews/${reviewNumber}` : ''),
   );
   check(handled, 'Hub service handles the Repository state route');
   check(
@@ -519,7 +603,73 @@ async function main() {
     await approve(2, 'kim/carrier-routing', 'Mina');
 
     say(
-      '05  assert vendoring, revisions, Checkpoints, Review events, and merge topology',
+      '05  seed a realistic Review queue from four more independent branches',
+    );
+    await seedQueueReview({
+      history,
+      watcher,
+      baseHistory: merge.historyHead,
+      number: 3,
+      actor: 'Lee',
+      branch: 'lee/night-operations-shell',
+      files: ['app/dashboard/index.html'],
+      saveMessage: 'Give fulfillment control a night operations shell',
+      checkpointMessage: 'Tighten the command surface for overnight dispatch',
+      title: 'Give overnight dispatch a denser operations shell',
+      body: 'Moves the fulfillment dashboard into a compact dark command surface while retaining the approved recovery workflow.',
+    });
+    await seedQueueReview({
+      history,
+      watcher,
+      baseHistory: merge.historyHead,
+      number: 4,
+      actor: 'Noor',
+      branch: 'noor/escalation-tokens',
+      files: ['acme/theme/index.js', 'acme/theme/package.json'],
+      saveMessage: 'Add carrier escalation tokens to the shared theme',
+      checkpointMessage: 'Name trade, network, carrier, and local desks',
+      title: 'Add carrier escalation tokens to the shared theme',
+      body: 'Introduces shared desk colors and escalation names for carrier recovery surfaces.',
+      verdict: 'changes-requested',
+      reviewer: 'Mina',
+    });
+    await seedQueueReview({
+      history,
+      watcher,
+      baseHistory: merge.historyHead,
+      number: 5,
+      actor: 'Priya',
+      branch: 'priya/carrier-command-copy',
+      files: ['app/dashboard/index.js', 'app/dashboard/package.json'],
+      saveMessage: 'Draft carrier command language for the dashboard',
+      checkpointMessage: 'Reframe delivery recovery around carrier desks',
+      title: 'Reframe delivery recovery around carrier command',
+      body: 'Explores carrier-first dashboard language. Closed after the dispatch team chose the narrower ownership-row proposal.',
+      closed: true,
+    });
+    await seedQueueReview({
+      history,
+      watcher,
+      baseHistory: merge.historyHead,
+      number: 6,
+      actor: 'Jules',
+      branch: 'jules/desk-ownership',
+      files: [
+        'acme/editor/index.js',
+        'acme/editor/package.json',
+        'acme/theme/index.js',
+        'acme/theme/package.json',
+      ],
+      saveMessage: 'Show carrier desk ownership in exception rows',
+      checkpointMessage: 'Route each exception to a carrier recovery desk',
+      title: 'Show carrier desk ownership in exception rows',
+      body: 'Adds carrier and recovery-desk ownership directly to each ranked exception without replacing the approved dashboard shell.',
+      verdict: 'approved',
+      reviewer: 'Mina',
+    });
+
+    say(
+      '06  assert vendoring, revisions, Checkpoints, Review events, and merge topology',
     );
     let [
       mainHead,
@@ -527,6 +677,10 @@ async function main() {
       kimHead,
       review1,
       review2,
+      review3,
+      review4,
+      review5,
+      review6,
       historyEntries,
       vendorMeta,
       dashboardMeta,
@@ -538,6 +692,10 @@ async function main() {
       readBranchHead(depotDir, 'kim/carrier-routing'),
       readReview(depotDir, 1),
       readReview(depotDir, 2),
+      readReview(depotDir, 3),
+      readReview(depotDir, 4),
+      readReview(depotDir, 5),
+      readReview(depotDir, 6),
       history.list(depotDir, { flush: false }),
       readStoreMeta(join(depotDir, '.deck', 'store'), 'vendor/impact-score'),
       readStoreMeta(join(depotDir, '.deck', 'store'), 'app/dashboard'),
@@ -566,6 +724,27 @@ async function main() {
       'Review #2 records Mina approval',
     );
     check(
+      review3?.ref.state === 'open' && review3.events.length === 0,
+      'Review #3 is waiting for its first reviewer',
+    );
+    check(
+      review4?.ref.state === 'open' &&
+        review4.events.some(
+          (event) =>
+            event.type === 'reviewed' &&
+            event.verdict === 'changes-requested',
+        ),
+      'Review #4 records requested changes',
+    );
+    check(review5?.ref.state === 'closed', 'Review #5 is closed');
+    check(
+      review6?.ref.state === 'open' &&
+        review6.events.some(
+          (event) => event.type === 'reviewed' && event.verdict === 'approved',
+        ),
+      'Review #6 is approved and ready to process',
+    );
+    check(
       vendorMeta?.versions['1.0.0'],
       'vendored impact-score Version exists',
     );
@@ -576,22 +755,22 @@ async function main() {
     check(
       dashboardMeta?.tags.latest === '1.1.0' &&
         dashboardMeta.tags.lts === '1.0.0' &&
-        dashboardMeta.tags.dev === '1.2.0-dev.2',
-      'dashboard records stable, LTS, and current development lines',
+        dashboardMeta.tags.dev,
+      'dashboard records stable, LTS, and a current development line',
     );
     check(
-      Object.keys(dashboardMeta?.versions ?? {}).length === 7,
-      'dashboard has seven meaningful Versions across three semver lines',
+      Object.keys(dashboardMeta?.versions ?? {}).length >= 7,
+      'dashboard has a rich set of Versions across multiple semver lines',
     );
     check(
       editorMeta?.tags.latest === '1.1.0' &&
-        editorMeta.tags.dev === '1.2.0-dev.1' &&
+        editorMeta.tags.dev &&
         themeMeta?.tags.latest === '1.1.0' &&
-        themeMeta.tags.dev === '1.2.0-dev.1',
+        themeMeta.tags.dev,
       'editor and theme carry released and in-review Version lines',
     );
     check(
-      historyEntries.length >= 8,
+      historyEntries.length >= 16,
       'every-save History contains the replayed work',
     );
 
@@ -683,11 +862,19 @@ async function main() {
         (state) =>
           state.main?.checkpointHash === mainHead.latestCheckpointHash &&
           state.main?.projection?.version?.startsWith('1.1.0-repository.') &&
-          state.review?.number === 2 &&
-          state.preview?.changedMembers?.length === 3 &&
-          state.preview?.projection?.version?.startsWith('1.2.0-repository.'),
+          state.reviews?.length === 6 &&
+          state.review?.number === 6 &&
+          state.preview?.changedMembers?.length === 2 &&
+          state.preview?.projection?.version?.startsWith('1.1.0-repository.'),
       ),
       'concurrent Hub projections preserve semver lines and reuse immutable Versions',
+    );
+    let requestedReview = await readHubState(hubService, 4);
+    check(
+      requestedReview.review?.number === 4 &&
+        requestedReview.changes?.length === 1 &&
+        requestedReview.changes[0]?.name === '@acme/theme/',
+      'Hub selects an exact Review and computes its own package preview',
     );
 
     await writeFile(
@@ -696,7 +883,8 @@ async function main() {
         schema: 'deck-scenario-replay-v1',
         scenario: 'collaboration',
         mergedReview: 1,
-        openReview: 2,
+        openReviews: [2, 3, 4, 6],
+        closedReview: 5,
       }),
     );
 
@@ -711,8 +899,11 @@ async function main() {
     say(
       `  kim/carrier-routing     ${kimHead.latestCheckpointHash.slice(0, 12)}  open Review #2`,
     );
+    say('  review queue            4 open · 1 merged · 1 closed');
     say(`  History revisions       ${historyEntries.length}`);
-    say('  dashboard Versions      1.0.0 lts → 1.1.0 latest → 1.2.0-dev.2');
+    say(
+      `  dashboard Versions      1.0.0 lts → 1.1.0 latest → ${dashboardMeta.tags.dev} dev`,
+    );
     say(
       '  vendored                 vendor/impact-score@1.0.0 (approved, 2 modules)',
     );

@@ -271,7 +271,7 @@ export async function createRepositoryService({ depots, log = console.log, onCha
     return rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   }
 
-  async function state(entry) {
+  async function state(entry, selectedNumber) {
     let branchNames = await namesBelow(realmDeckPath(entry.realmDir, 'refs', 'heads'));
     let branches = (await Promise.all(branchNames.map((name) => branchState(entry, name)))).filter(Boolean);
     let main = branches.find((branch) => branch.name === 'main');
@@ -293,7 +293,12 @@ export async function createRepositoryService({ depots, log = console.log, onCha
       members,
     };
     if (!main) return { ...common, initialized: false, branches: [], reviews: [], history: [], protocol: [] };
-    let selectedReview = reviews.find((item) => item.state === 'open') ?? reviews[0];
+    let selectedReview =
+      (selectedNumber
+        ? reviews.find((item) => item.number === selectedNumber)
+        : undefined) ??
+      reviews.find((item) => item.state === 'open') ??
+      reviews[0];
     let preview = selectedReview?.state === 'open'
       ? await previewReview(entry.realmDir, selectedReview.number)
       : undefined;
@@ -593,6 +598,11 @@ export async function createRepositoryService({ depots, log = console.log, onCha
       try {
         if (req.method === 'GET' && !tail) {
           json(res, 200, await state(entry));
+          return true;
+        }
+        let selected = tail.match(/^\/reviews\/(\d+)$/);
+        if (req.method === 'GET' && selected) {
+          json(res, 200, await state(entry, Number(selected[1])));
           return true;
         }
         let body = await bodyOf(req);

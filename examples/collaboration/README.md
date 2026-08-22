@@ -36,12 +36,15 @@ The replay performs these statements in order:
    packages. This produces a visible `1.2.0-dev.1`/`.2` tape, then a
    Checkpoint and approved Review #2. The Review remains open and turns the
    app into an unmistakably different carrier command center.
-6. Assert the exact vendored Version and RRI lock, all three semver lines,
+6. Replay four more independent branches into Reviews #3–#6: one waiting for
+   review, one with changes requested, one closed, and one approved. These are
+   real package changes and Checkpoints, not display-only queue records.
+7. Assert the exact vendored Version and RRI lock, all three semver lines,
    autosave descriptions and actors, old and new History revisions, branch
-   heads, Review events, merge topology, semver-aware projections, and clean
-   three-way preview.
+   heads, all six Review event chains, merge topology, semver-aware
+   projections, and clean three-way previews.
 
-On this machine the replay takes under four seconds after deckd is available.
+On this machine the replay takes only a few seconds after deckd is available.
 
 ## Run it
 
@@ -89,3 +92,8 @@ a lock-file mutation.
 
 `depot/` is ignored by git. The authoritative fixture is the ordered replay
 plus its readable source inputs—not generated CAS objects or mutable refs.
+
+Review opens as an operational queue: four open Reviews with waiting,
+approved, and changes-requested dispositions, plus merged and closed work in
+the **all** filter. Select rows or use `j`/`k`; `r` runs the selected exact
+Repository and `m` merges it through the real Review endpoint.

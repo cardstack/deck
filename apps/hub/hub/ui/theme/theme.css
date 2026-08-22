@@ -943,6 +943,7 @@ button.aside { margin-left: 1.5ch; align-self: center; }
 .action.primary { color: var(--bg); background: var(--green); border-color: var(--green); font-weight: 600; }
 .action.primary:hover { filter: brightness(1.08); }
 .action.quiet { color: var(--dim); background: transparent; }
+.action:disabled { opacity: .55; cursor: not-allowed; }
 .pull-summary { border-left: 2px solid var(--green); padding-left: 2ch; }
 .pull-summary:has(.status-merged) { border-left-color: var(--violet); }
 .pull-heading { display: flex; align-items: flex-start; gap: 1.5ch; }
@@ -1004,3 +1005,91 @@ button.aside { margin-left: 1.5ch; align-self: center; }
   .repo-menu { right: 0; min-width: min(17rem, 82vw); }
 }
 .review-context { padding-bottom: calc(var(--row) * .7em); border-bottom: 1px solid var(--line); }
+
+/* Reviews are an inbox first and a document second. A reviewer should be able
+   to triage a working day's queue without scrolling through one giant card. */
+.review-page { max-width: 128ch; }
+.review-inbox { padding-top: calc(var(--row) * .65em); }
+.queue-actions, .queue-filters { display: flex; align-items: center; gap: .5ch; }
+.queue-filters { padding: .2em; border: 1px solid var(--line); background: var(--panel); }
+.queue-filters button {
+  border: 0; padding: .22em .8ch; background: transparent; color: var(--dim);
+  font: inherit; cursor: pointer;
+}
+.queue-filters button[aria-pressed='true'] { background: var(--bg); color: var(--fg); }
+.queue-filters b { color: inherit; font-weight: 500; }
+.queue-summary { color: var(--dim); font-size: .88em; }
+.review-queue { border-top: 1px solid var(--line); }
+.review-queue-row {
+  display: grid; grid-template-columns: 16ch minmax(28ch, 1fr) 14ch 15ch 2ch;
+  align-items: center; gap: 1.5ch; width: 100%; min-height: 3.15rem;
+  padding: .42rem .75rem; border: 0; border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent; background: transparent; color: var(--fg);
+  text-align: left; font: inherit; cursor: pointer;
+}
+.review-queue-row:hover { background: var(--panel); }
+.review-queue-row[aria-current='true'] { border-left-color: var(--orange); background: var(--sel); }
+.queue-status {
+  display: inline-block; justify-self: start; padding: .08em .65ch;
+  border: 1px solid var(--line); border-radius: 999px; font-size: .8em;
+  white-space: nowrap;
+}
+.queue-status-approved { color: var(--green); border-color: color-mix(in srgb, var(--green) 55%, var(--line)); }
+.queue-status-changes { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 55%, var(--line)); }
+.queue-status-waiting, .queue-status-closed { color: var(--dim); }
+.queue-status-merged { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 55%, var(--line)); }
+.queue-title { display: grid; min-width: 0; }
+.queue-title b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.queue-title small { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-author, .review-queue-row time { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-open { color: var(--dim); }
+.review-detail { padding-top: calc(var(--row) * .7em); }
+.review-detail .pull-summary { padding-left: 1.3ch; }
+.review-detail .pull-heading { align-items: baseline; }
+.review-detail .pull-heading p { max-width: 78ch; }
+.review-meta {
+  display: flex; align-items: center; flex-wrap: wrap; gap: .6ch 1ch;
+  margin: .55rem 0 .7rem; color: var(--dim); font-size: .9em;
+}
+.review-meta code { color: var(--fg); background: var(--panel); padding: .05em .5ch; }
+.review-detail-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(26ch, 2fr); gap: 3ch; }
+.review-detail-grid h2 {
+  margin: 0 0 .35rem; color: var(--dim); font-size: .78em; font-weight: 500;
+  letter-spacing: .12em; text-transform: uppercase;
+}
+.review-changes { border-top: 1px solid var(--line); }
+.review-changes a {
+  display: flex; justify-content: space-between; gap: 2ch;
+  padding: .42rem .5rem; border-bottom: 1px solid var(--line);
+}
+.review-changes a:hover { background: var(--panel); text-decoration: none; }
+.review-changes a > span:last-child { white-space: nowrap; }
+.review-events, .review-history { margin: 0; padding: 0; list-style: none; }
+.review-events { border-top: 1px solid var(--line); }
+.review-events li {
+  display: grid; grid-template-columns: 15ch minmax(0, 1fr) auto; gap: 1ch;
+  padding: .42rem .5rem; border-bottom: 1px solid var(--line); font-size: .88em;
+}
+.review-events b { font-weight: 550; }
+.review-events span, .review-events time { color: var(--dim); }
+.review-events time { white-space: nowrap; }
+.review-history { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 3ch; }
+.review-history li {
+  display: grid; grid-template-columns: 13ch minmax(0, 1fr); gap: 1ch;
+  padding: .42rem 0; border-bottom: 1px solid var(--line); font-size: .9em;
+}
+.review-history li code { color: var(--dim); }
+.review-history li strong { font-weight: 500; }
+@media (max-width: 62rem) {
+  .review-queue-row { grid-template-columns: 14ch minmax(20ch, 1fr) 12ch 2ch; }
+  .review-queue-row time { display: none; }
+  .review-detail-grid, .review-history { grid-template-columns: 1fr; }
+}
+@media (max-width: 44rem) {
+  .review-inbox > header { flex-direction: column; }
+  .queue-actions { width: 100%; justify-content: space-between; }
+  .queue-summary, .queue-author { display: none; }
+  .review-queue-row { grid-template-columns: 12ch minmax(0, 1fr) 2ch; padding-inline: .35rem; }
+  .review-events li { grid-template-columns: 13ch minmax(0, 1fr); }
+  .review-events time { display: none; }
+}
