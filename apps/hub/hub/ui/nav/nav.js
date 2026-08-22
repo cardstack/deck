@@ -45,7 +45,7 @@ export function focus() {
 }
 
 /**
- * ONE EventSource PER DOCUMENT. Not one per feature.
+ * ZERO EventSources IN HUB CHROME. Live requests must release their socket.
  *
  * An SSE stream is a connection held open forever, and HTTP/1.1 allows six
  * per origin. The nav opens one for the live badge; heat wanted one; /track
@@ -55,11 +55,23 @@ export function focus() {
  * for ever, because its requests were queued behind connections that never
  * close. Starvation does not throw.
  *
- * So there is exactly one stream, and anything that cares subscribes to it.
- * Opened lazily, so a page that never subscribes never opens it at all.
+ * One stream per document fixed the iframe case but not five ordinary Hub
+ * tabs: five permanent requests still leave one HTTP/1.1 slot for every
+ * navigation, module and API response. The fifth tab can sit blank with no
+ * error because its redirect is queued behind the live streams.
+ *
+ * Hub chrome therefore does not use EventSource. It polls a tiny moving
+ * sequence at `/_live/state`; requests finish immediately and release their
+ * connection. Running pages use the same moving snapshot for HMR, so neither
+ * Hub chrome nor a stage holds a connection open.
  */
-let liveSource;
 const liveListeners = new Set();
+const liveStatusListeners = new Set();
+const LIVE_POLL_MS = 1500;
+let livePollTimer;
+let livePolling = false;
+let liveSequence;
+let liveStatus = { state: '?', text: 'live' };
 
 /**
  * A FRAMED PAGE IS A SUBJECT, NOT AN OBSERVER.
@@ -107,21 +119,82 @@ const LIVE_QUIET_MS = 1000;
 let liveTimer;
 let liveLatest;
 
+function deliverLive(data) {
+  liveLatest = { data };
+  if (liveTimer) return;
+  liveTimer = setTimeout(() => {
+    liveTimer = undefined;
+    for (let each of liveListeners) each(liveLatest);
+  }, LIVE_QUIET_MS);
+}
+
+function deliverLiveStatus(status) {
+  if (liveStatus.state === status.state && liveStatus.text === status.text) return;
+  liveStatus = status;
+  for (let each of liveStatusListeners) each(status);
+}
+
+async function pollLive() {
+  if (!livePolling || FRAMED) return;
+  try {
+    let response = await fetch('/_live/state', { cache: 'no-store' });
+    if (!response.ok) throw new Error(String(response.status));
+    let snapshot = (await response.json()).data;
+    deliverLiveStatus({ state: 'on', text: 'live' });
+    // The first answer establishes position. Replaying the last event on
+    // every navigation would make a quiet page redraw for old work.
+    if (
+      liveSequence !== undefined &&
+      snapshot.sequence > liveSequence &&
+      snapshot.event
+    ) {
+      deliverLive(JSON.stringify(snapshot.event));
+      // Reload the Hub's own module edits from their no-store addresses.
+      // Repository/fork events are data, so subscribers repaint them in place.
+      if (/^(app|ui|theme)\//.test(snapshot.event.name)) {
+        setTimeout(() => location.reload(), 80);
+        return;
+      }
+    }
+    liveSequence = snapshot.sequence;
+  } catch {
+    deliverLiveStatus({ state: 'off', text: 'live: disconnected' });
+  }
+  if (livePolling) livePollTimer = setTimeout(pollLive, LIVE_POLL_MS);
+}
+
+function startLivePolling() {
+  if (livePolling || FRAMED) return;
+  livePolling = true;
+  pollLive();
+}
+
+addEventListener('pagehide', () => {
+  livePolling = false;
+  clearTimeout(livePollTimer);
+});
+
+// A document restored from the back-forward cache keeps its subscribers but
+// pagehide stopped its timer. Rejoin without subscribing every feature twice.
+addEventListener('pageshow', () => {
+  if (!livePolling && (liveListeners.size || liveStatusListeners.size)) {
+    startLivePolling();
+  }
+});
+
 export function onLiveChange(listener) {
   if (FRAMED) return () => {};
   liveListeners.add(listener);
-  if (!liveSource) {
-    liveSource = new EventSource('/_live/events');
-    liveSource.addEventListener('change', (event) => {
-      liveLatest = event;
-      if (liveTimer) return;
-      liveTimer = setTimeout(() => {
-        liveTimer = undefined;
-        for (let each of liveListeners) each(liveLatest);
-      }, LIVE_QUIET_MS);
-    });
-  }
+  startLivePolling();
   return () => liveListeners.delete(listener);
+}
+
+function onLiveStatus(listener) {
+  if (FRAMED) return () => {};
+  liveStatusListeners.add(listener);
+  listener(liveStatus);
+  startLivePolling();
+  return () => liveStatusListeners.delete(listener);
 }
 
 /**
@@ -450,8 +523,7 @@ export class DeckNav extends HTMLElement {
       clearTimeout(this.#settle);
       this.#settle = setTimeout(() => set('on', 'live'), 4000);
     });
-    liveSource?.addEventListener('open', () => set('on', 'live'));
-    liveSource?.addEventListener('error', () => set('off', 'live: disconnected'));
+    onLiveStatus(({ state, text }) => set(state, text));
   }
 
   #settle;

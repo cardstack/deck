@@ -25,6 +25,7 @@
 // `browse` the depot wins. Real data beating a convenience alias is the
 // correct precedence, and it costs nothing to get right.
 import { readFile, readdir, rm, stat } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDeckServer } from '@cardstack/deck-server/server';
@@ -33,9 +34,9 @@ import { claimsDirFor } from '@cardstack/deck-server/activity';
 import { createHistory } from '@cardstack/deck-history/create';
 import { createRepositoryService } from './repository-service.mjs';
 import {
+  createEditorBridge,
   readEditable,
   seedEditable,
-  startEditorBridge,
 } from '../../examples/shared/editor-bridge.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -85,27 +86,16 @@ const APPS = [
 // to a different name genuinely invalidates its pins; rewriting them at
 // serve time would make the server lie about the bytes it is handing out.
 //
-// So each demo depot gets a SECOND mount, on its own port, under the name it
-// was sealed for. Same directory, same store, no copies, no child processes,
-// no rebuild — one extra listener each, and the pins are correct because
-// they were always correct for that name. /browse reads them from the Hub's
-// own mount, where the name is unambiguous across nine depots; /run frames
-// them from their own origin, where they run.
+// So each demo depot gets a SECOND logical mount under the name it was sealed
+// for. It is selected by host, not by port:
 //
-// THE PORTS ARE EPHEMERAL, AND THAT IS THE WHOLE POINT.
+//   http://collaboration.localhost:8788/site/…
 //
-// This used to claim 8801–8809 by arithmetic. Nine fixed ports is nine
-// standing appointments with EADDRINUSE: leave a Hub running and start
-// another, or share the machine with anything that likes 8801, and the boot
-// died on an unhandled listen error. The failure was invisible in the worst
-// possible way — the OLD Hub still held 8788, so the browser found a Hub,
-// asked it for /_hub/origins, got nothing usable, and framed every demo at
-// the Hub's own origin, where /site/ pins resolve to nothing. Nine blank
-// frames and no error on screen anywhere.
-//
-// Port 0 asks the kernel for a port that is free, which is the only way to
-// ask that has no race in it. Nothing was ever entitled to a number here:
-// /_hub/origins is the contract, and it reports whatever we got.
+// Same directory, same store, no copies, no child processes, no extra
+// listeners. Absolute `/site/…` pins stay truthful because the browser keeps
+// the virtual host while resolving them. /browse uses the Hub host and the
+// unambiguous example name; /run uses the example's virtual host. One Hub,
+// one public port, isolated address spaces.
 async function demoDepots() {
   let names;
   try {
@@ -223,10 +213,10 @@ let repositoryService = await createRepositoryService({
   onChange: (event) => server.liveBus.emit(event),
 });
 
-// The second mount: each demo depot served as `site`, on its own port, so its
-// own pins resolve. `createDeckServer` is cheap and these share the store on
-// disk with the Hub's read-only mount — two names for one directory, which is
-// exactly what the pins needed.
+// The second mount: each demo depot is served as `site` on a virtual host, so
+// its own pins resolve. `createDeckServer` is cheap and these share the store
+// on disk with the Hub's read-only mount — two names for one directory, one
+// listener for the whole product.
 //
 // AND THE TIMELINE HAS TO COME WITH IT.
 //
@@ -241,40 +231,34 @@ let repositoryService = await createRepositoryService({
 // Two clients over one timeline are two processes' worth of locking against
 // one working copy. Sharing costs nothing and is also simply what is true:
 // there is one timeline here.
-const origins = new Map();
-const originErrors = new Map();
 // The write path, for the examples that have one. Not part of Deck: the deck
-// server answers GET and HEAD and nothing else, so a page cannot ask it to
-// save a file, and a demo that wants the reader to make an edit runs a second
-// process that puts bytes on disk the way their editor would. Port 0 for the
-// same reason the demo mounts use it — nothing here is entitled to a number.
+// server answers GET and HEAD and nothing else. The Hub's virtual-host router
+// gives the example's tiny allow-listed editor adapter the same public origin,
+// while the Deck server still refuses every write the adapter did not claim.
 const bridges = new Map();
 for (let depot of demos) {
   if (!depot.editable) continue;
   try {
     await seedEditable(depot.sidecarDir, depot.editable);
-    let bridge = await startEditorBridge({
+    let bridge = await createEditorBridge({
       depotDir: depot.dir,
       files: depot.editable.files,
-      port: 0,
-      // The Hub and its demo mounts are plain HTTP, and the bridge has to
-      // match: a fetch from an http page to an https port fails silently.
-      tls: false,
     });
-    bridges.set(depot.name, { origin: bridge.origin, files: depot.editable.files });
+    bridges.set(depot.name, { ...bridge, files: depot.editable.files });
   } catch (error) {
     console.error(`   editor bridge: ${depot.name} — ${error.message ?? error}`);
   }
 }
 
-// Every demo origin gets a watcher so LIVE in /run is a real tip: save →
-// publish → SSE → /_live/hmr.js reload. Editor bridges are separate (write
-// path from the page); watchers are the IDE/Cursor path. Controllers stay
-// reachable for the process life via this array.
+// Every demo virtual host gets a watcher so LIVE in /run is a real tip:
+// save → publish → moving live-state snapshot → /_live/hmr.js reload.
+// Controllers stay reachable for the process life via this array.
 const demoWatchers = [];
+const virtualServers = new Map();
 
 for (let depot of demos) {
-  let server = createDeckServer({
+  let bridge = bridges.get(depot.name);
+  let demoServer = createDeckServer({
     depots: [
       {
         name: 'site',
@@ -283,19 +267,28 @@ for (let depot of demos) {
         history: depot.history,
       },
     ],
+    action(req, res) {
+      if (!bridge) return false;
+      let path = new URL(req.url ?? '/', 'http://localhost').pathname;
+      if (!['/write', '/revert'].includes(path)) return false;
+      return bridge.respond(req, res).then(() => true);
+    },
     fallback(req, res) {
       let path = new URL(req.url ?? '/', 'http://localhost').pathname;
-      // Where this demo's editor bridge is listening, answered by the origin
-      // the page was loaded from. The page cannot guess it — the port is
-      // whatever the kernel gave us.
-      if (path === '/_demo/editor' && bridges.has(depot.name)) {
+      if (path === '/_demo/editor' && bridge) {
         res.writeHead(200, {
           'content-type': 'application/json; charset=utf-8',
           'cache-control': 'no-store',
         });
-        res.end(JSON.stringify(bridges.get(depot.name)));
+        res.end(
+          JSON.stringify({
+            origin: `http://${depot.name}.localhost:${PORT}`,
+            files: bridge.files,
+          }),
+        );
         return;
       }
+      if (path === '/files' && bridge) return bridge.respond(req, res);
       serveSidecar(depot, path, res).then((served) => {
         if (served) return;
         res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
@@ -303,43 +296,27 @@ for (let depot of demos) {
       });
     },
   });
-  try {
-    let port = await new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(0, () => resolve(server.address().port));
-    });
-    origins.set(depot.name, `http://localhost:${port}`);
-    // Watch every demo, not only editor-bridge ones. /run's green LIVE notch
-    // is the sports-stream tip: Cursor/IDE saves must publish + fan out on
-    // this origin's liveBus so the framed page's /_live/hmr.js reloads.
-    // Historical ?step= addresses stay immutable (DVR) — HMR only matters
-    // when the stage is pointed at the working tree.
-    let watcher = watchDepot({
-      depot: {
-        name: 'site',
-        dir: depot.dir,
-        storeDir: depot.storeDir,
-        history: depot.history,
-      },
-      onLiveChange: (event) => server.liveBus.emit(event),
-      onPublish: (event) =>
-        console.log(
-          event.reused
-            ? `   ${depot.name}: ${event.name} is already published as ${event.version}`
-            : `   ${depot.name}: saved → ${event.name}@${event.version}`,
-        ),
-      onError: (error) => console.error(`   ${depot.name} watch: ${error}`),
-    });
-    watcher.rescan();
-    demoWatchers.push(watcher);
-  } catch (error) {
-    // One depot that cannot get a listener is one demo that cannot run. It is
-    // not a reason to take the other eight down with it, and it is absolutely
-    // not a reason to say nothing: /run reads this and prints it where the
-    // frame would have been.
-    originErrors.set(depot.name, String(error.message ?? error));
-    console.error(`   demo origin: ${depot.name} — ${error.message ?? error}`);
-  }
+  virtualServers.set(depot.name, demoServer);
+  // Watch every demo, not only editor-adapter ones. Historical ?step=
+  // addresses stay immutable (DVR); live state reloads only the working tip.
+  let watcher = watchDepot({
+    depot: {
+      name: 'site',
+      dir: depot.dir,
+      storeDir: depot.storeDir,
+      history: depot.history,
+    },
+    onLiveChange: (event) => demoServer.liveBus.emit(event),
+    onPublish: (event) =>
+      console.log(
+        event.reused
+          ? `   ${depot.name}: ${event.name} is already published as ${event.version}`
+          : `   ${depot.name}: saved → ${event.name}@${event.version}`,
+      ),
+    onError: (error) => console.error(`   ${depot.name} watch: ${error}`),
+  });
+  watcher.rescan();
+  demoWatchers.push(watcher);
 }
 
 // ---------------------------------------------------------------------------
@@ -441,17 +418,6 @@ const server = createDeckServer({
         return res.end(JSON.stringify({ ok: false, error: 'not-found' }));
       })();
     }
-    if (path === '/_hub/origins') {
-      let body = JSON.stringify({
-        origins: Object.fromEntries(origins),
-        errors: Object.fromEntries(originErrors),
-      });
-      res.writeHead(200, {
-        'content-type': 'application/json; charset=utf-8',
-        'cache-control': 'no-store',
-      });
-      return res.end(body);
-    }
     if (path === '/') {
       // Until /start exists, the front door is whatever is built.
       let first = APPS.find((app) => built.has(app.route));
@@ -483,6 +449,31 @@ const server = createDeckServer({
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
     res.end(`no route for ${path}\n`);
   },
+});
+
+// One socket, many truthful depot roots. The Host header selects the logical
+// `site` mount used by a running demo; the ordinary localhost host selects the
+// Hub and its browse-name mounts. Inner Deck servers never listen themselves.
+const gateway = createServer((req, res) => {
+  let hostname;
+  try {
+    hostname = new URL(`http://${req.headers.host ?? 'localhost'}`).hostname;
+  } catch {
+    hostname = 'localhost';
+  }
+  let suffix = '.localhost';
+  if (hostname.endsWith(suffix)) {
+    let name = hostname.slice(0, -suffix.length);
+    let target = virtualServers.get(name);
+    if (!target) {
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end(`no demo named ${name}\n`);
+      return;
+    }
+    target.emit('request', req, res);
+    return;
+  }
+  server.emit('request', req, res);
 });
 
 // The Hub edits itself. Every save under `apps/hub/depot` auto-publishes an
@@ -527,17 +518,17 @@ setInterval(async () => {
 // this is the one listener that can still collide, and it says so in words
 // instead of a stack trace. An already-running Hub is the likeliest cause and
 // the likeliest thing to be mistaken for a broken one.
-server.once('error', (error) => {
+gateway.once('error', (error) => {
   if (error.code !== 'EADDRINUSE') throw error;
   console.error(`\n   Port ${PORT} is taken — something is already listening.`);
   console.error(`   If it is an older Hub, stop it first; a stale one serves`);
-  console.error(`   stale demo origins and every demo frame comes up blank.\n`);
+  console.error(`   stale Hub code and every demo frame may come up blank.\n`);
   console.error(`      lsof -ti:${PORT} | xargs kill`);
   console.error(`      PORT=8789 node apps/hub/hub.mjs   # or just use another\n`);
   process.exit(1);
 });
 
-server.listen(PORT, () => {
+gateway.listen(PORT, () => {
   console.log('\n  THE DECK HUB\n');
   console.log(`      http://localhost:${PORT}/\n`);
   for (let app of APPS) {
@@ -550,21 +541,23 @@ server.listen(PORT, () => {
   console.log(`\n   depots mounted: ${depots.length}`);
   console.log(`      hub${' '.repeat(20)} ${hub.dir}`);
   for (let depot of demos) {
-    let where = origins.get(depot.name) ?? `unavailable — ${originErrors.get(depot.name)}`;
-    console.log(`      ${depot.name.padEnd(22)} runs at ${where}`);
+    console.log(
+      `      ${depot.name.padEnd(22)} runs at http://${depot.name}.localhost:${PORT}`,
+    );
   }
   console.log(
-    '\n   Each demo is READ at /<name>/… here and RUN at its own origin above,',
+    '\n   One listener. Each demo is READ at /<name>/… and RUN on its virtual host,',
   );
   console.log(
-    '   because every one of them was sealed as `site` and a pin names a depot.\n',
+    '   because every one was sealed as `site` and absolute pins keep that host.\n',
   );
 });
 
 for (let signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     watcher.stop?.();
-    server.close();
+    for (let demoWatcher of demoWatchers) demoWatcher.stop?.();
+    gateway.close();
     process.exit(0);
   });
 }

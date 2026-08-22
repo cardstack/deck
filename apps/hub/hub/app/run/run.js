@@ -164,39 +164,22 @@ async function getJson(url) {
 /**
  * Where a deck actually RUNS.
  *
- * The Hub mounts every demo depot under its example name so nine of them can
- * coexist, but each was sealed under the name `site`, and a pin names a
- * depot. Read from `/codelist/...` the bytes are right and the pins point at
- * an address this origin does not answer. So the Hub serves each demo depot a
- * second time, as `site`, on its own port — and this is where /run points the
- * frame. Same directory, same store, correct pins.
+ * The Hub mounts every demo depot under its example name so they can coexist,
+ * but each was sealed under the name `site`, and a pin names a depot. A
+ * virtual host gives each demo that truthful `/site` root while every request
+ * still enters through the Hub's one public port.
  */
-let ORIGINS = {};
-let ORIGIN_ERRORS = {};
-let ORIGINS_REACHABLE = false;
-
-async function loadOrigins() {
-  try {
-    let response = await fetch('/_hub/origins');
-    if (!response.ok) throw new Error(`/_hub/origins answered ${response.status}`);
-    let body = await response.json();
-    ORIGINS = body.origins ?? {};
-    ORIGIN_ERRORS = body.errors ?? {};
-    ORIGINS_REACHABLE = true;
-  } catch {
-    ORIGINS_REACHABLE = false;
-  }
+function demoOrigin(depot) {
+  let origin = new URL(location.origin);
+  origin.hostname = `${depot}.localhost`;
+  return origin.origin;
 }
 
 /**
- * Where a deck runs, or WHY IT CANNOT — never a quiet substitute.
+ * Where a deck runs.
  *
- * The Hub's own decks run at the Hub's origin, because that is the depot they
- * were sealed for. A demo runs at its second mount and nowhere else. When the
- * origin for a demo is unknown there is no fallback worth having: framing it
- * here would load an HTML page whose every import 404s, which renders as an
- * empty white box with nothing in the console the reader can see. Silence is
- * the one answer this must never give, so a missing origin returns a reason.
+ * The Hub's own decks run at the Hub host. A demo runs at
+ * `<depot>.localhost` on the same port, where its sealed `/site` pins resolve.
  */
 /** Concrete page last framed — scrubbing must not use a depot-only `?at=`. */
 let stageAt = '';
@@ -243,29 +226,11 @@ function runTarget(at, withs = currentWith(), step = currentStep()) {
       url:
         depot === 'hub'
           ? `/hub/${HISTORY}/${step}/${path}${suffix}`
-          : ORIGINS[depot]
-            ? `${ORIGINS[depot]}/site/${HISTORY}/${step}/${path}${suffix}`
-            : undefined,
-      why: ORIGINS[depot] || depot === 'hub' ? undefined :
-        `No depot named ${depot} is mounted, so there is no origin to run it at.`,
+          : `${demoOrigin(depot)}/site/${HISTORY}/${step}/${path}${suffix}`,
     };
   }
   if (depot === 'hub') return { url: `/${depot}/${inner}${suffix}` };
-  let origin = ORIGINS[depot];
-  if (origin) return { url: `${origin}/site/${inner}${suffix}` };
-  if (!ORIGINS_REACHABLE) {
-    return {
-      why:
-        'This Hub is not reporting where its demos run. That is what a stale ' +
-        'server looks like: an older process still holding this port. Stop it ' +
-        'and start again — `lsof -ti:8788 | xargs kill`.',
-    };
-  }
-  return {
-    why:
-      ORIGIN_ERRORS[depot] ??
-      `No depot named ${depot} is mounted, so there is no origin to run it at.`,
-  };
+  return { url: `${demoOrigin(depot)}/site/${inner}${suffix}` };
 }
 
 // ---------------------------------------------------------------------------
@@ -1215,7 +1180,6 @@ app.addEventListener('input', (event) => {
   if (readout) readout.textContent = needle ? `${shown} shown` : '';
 });
 
-await loadOrigins();
 onActivityChange(() => {
   // Only the index is decorated, and re-rendering while a demo is framed
   // would tear the iframe down and restart whatever it was doing.

@@ -1,8 +1,7 @@
-// Live-change bus: watchers publish settled tree updates; the server fans
-// them out over SSE (`/_live/events`) so a page can hot-reload without a
-// manual refresh. This is HMR-lite for a no-bundler world — ESM module
-// URLs don't rewrite themselves, so the default client reloads the page
-// when a watched package it depends on changes.
+// Live-change bus: watchers publish settled tree updates. A short-lived
+// snapshot (`/_live/state`) lets any number of browser tabs observe it without
+// each holding a scarce HTTP/1.1 connection open. The SSE endpoint remains a
+// protocol surface for clients that deliberately want a stream.
 
 export interface LiveChangeEvent {
   name: string;
@@ -15,12 +14,17 @@ export type LiveChangeListener = (event: LiveChangeEvent) => void;
 export interface LiveBus {
   emit(event: LiveChangeEvent): void;
   subscribe(listener: LiveChangeListener): () => void;
+  snapshot(): { sequence: number; event?: LiveChangeEvent };
 }
 
 export function createLiveBus(): LiveBus {
   let listeners = new Set<LiveChangeListener>();
+  let sequence = 0;
+  let latest: LiveChangeEvent | undefined;
   return {
     emit(event) {
+      sequence += 1;
+      latest = event;
       for (let listener of listeners) {
         try {
           listener(event);
@@ -35,27 +39,21 @@ export function createLiveBus(): LiveBus {
         listeners.delete(listener);
       };
     },
+    snapshot() {
+      return {
+        sequence,
+        ...(latest ? { event: latest } : {}),
+      };
+    },
   };
 }
 
-// Tiny client served at /_live/hmr.js — drop-in for any /live page.
+// Tiny client served at /_live/hmr.js — drop-in for any live page. It polls
+// the moving snapshot rather than holding one connection forever.
 export const HMR_CLIENT_SOURCE = `/* deck live HMR-lite */
 (() => {
-  if (typeof EventSource === 'undefined') return;
-  const interested = new Set();
-  const pathLive = location.pathname.match(/^\\/live\\/([a-z0-9][a-z0-9-]{0,63})/);
-  if (pathLive) interested.add(pathLive[1]);
-  for (const script of document.querySelectorAll('script[type="importmap"]')) {
-    try {
-      const map = JSON.parse(script.textContent || '{}');
-      for (const value of Object.values(map.imports || {})) {
-        const m = String(value).match(/^\\/live\\/([a-z0-9][a-z0-9-]{0,63})/);
-        if (m) interested.add(m[1]);
-      }
-    } catch {}
-  }
-  let timer;
-  let last = '';
+  let flashTimer;
+  let sequence;
   const banner = document.createElement('div');
   banner.setAttribute('data-deck-hmr', '');
   banner.style.cssText = [
@@ -69,21 +67,24 @@ export const HMR_CLIENT_SOURCE = `/* deck live HMR-lite */
   function flash(text) {
     banner.textContent = text;
     banner.style.opacity = '1';
-    clearTimeout(timer);
-    timer = setTimeout(() => { banner.style.opacity = '0'; }, 1200);
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { banner.style.opacity = '0'; }, 1200);
   }
-  const es = new EventSource('/_live/events');
-  es.addEventListener('change', (e) => {
-    let ev;
-    try { ev = JSON.parse(e.data); } catch { return; }
-    if (!ev?.name || (interested.size && !interested.has(ev.name))) return;
-    const key = ev.name + '@' + (ev.version || ev.treeHash || '');
-    if (key === last) return;
-    last = key;
-    flash('deck · reloading ' + ev.name);
-    // Live routes are no-store; a reload picks up new ESM bytes.
-    setTimeout(() => location.reload(), 80);
-  });
-  es.onerror = () => { /* browser auto-reconnects */ };
+  async function poll() {
+    try {
+      const response = await fetch('/_live/state', { cache: 'no-store' });
+      if (!response.ok) throw new Error(String(response.status));
+      const state = (await response.json()).data;
+      if (sequence !== undefined && state.sequence > sequence && state.event) {
+        flash('deck · reloading ' + state.event.name);
+        // Live routes are no-store; a reload picks up new ESM bytes.
+        setTimeout(() => location.reload(), 80);
+        return;
+      }
+      sequence = state.sequence;
+    } catch {}
+    setTimeout(poll, 1000);
+  }
+  poll();
 })();
 `;

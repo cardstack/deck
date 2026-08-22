@@ -149,6 +149,7 @@ const SIGNATURES_PATH = new RegExp(
 // something the Hub computes for itself.
 const ACTIVITY_PATH = /^\/_activity\/?$/;
 const LIVE_EVENTS_PATH = '/_live/events';
+const LIVE_STATE_PATH = '/_live/state';
 const LIVE_HMR_PATH = '/_live/hmr.js';
 const BROWSER_PATHS = new Set(['/', '/_browser', '/_browser/']);
 
@@ -1054,6 +1055,15 @@ export function createDeckServer(options: DeckServerOptions): DeckServer {
         },
         HMR_CLIENT_SOURCE,
       );
+      return;
+    }
+
+    // Hub chrome polls a moving sequence instead of holding one SSE socket
+    // per open tab. SSE remains the right shape for a running demo on its own
+    // origin; on the Hub's HTTP/1.1 origin, six tabs would occupy the entire
+    // browser connection pool and make the next navigation look blank.
+    if (pathname === LIVE_STATE_PATH) {
+      respondJson(req, res, { data: liveBus.snapshot() }, 'no-store');
       return;
     }
 

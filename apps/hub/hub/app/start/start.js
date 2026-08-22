@@ -796,7 +796,8 @@ ${LAWS.map(
 <tr><td><code>GET /&lt;depot&gt;/_offers</code></td><td class="dim">open proposals with their merge status</td></tr>
 <tr><td><code>GET /&lt;depot&gt;/_trees/&lt;treeHash&gt;/signatures</code></td><td class="dim">endorsements, addressed by tree (L9)</td></tr>
 <tr><td><code>GET /_activity</code></td><td class="dim">where work is happening, and what anyone declared</td></tr>
-<tr><td><code>GET /_live/events</code></td><td class="dim">a change bus</td></tr>
+<tr><td><code>GET /_live/state</code></td><td class="dim">a short-lived moving change snapshot for Hub chrome</td></tr>
+<tr><td><code>GET /_live/events</code></td><td class="dim">an optional SSE change bus for streaming clients</td></tr>
 </tbody></table>
 <p>A client MUST treat every one of these as optional and degrade rather than
 fail. The capability block in <code>/_packages</code> is how it finds out,
@@ -1053,7 +1054,8 @@ deck merge --depot ./work/site --repo you/palette --number 1</code></pre>
      <tr><td><code>GET /&lt;depot&gt;/_history</code></td><td>the History</td></tr>
      <tr><td><code>GET /_packages</code></td><td>catalog and capability truth</td></tr>
      <tr><td><code>GET /_activity</code></td><td>where the work is, and who declared it</td></tr>
-     <tr><td><code>GET /_live/events</code></td><td>the change bus</td></tr>
+     <tr><td><code>GET /_live/state</code></td><td>a pollable moving change snapshot for Hub chrome</td></tr>
+     <tr><td><code>GET /_live/events</code></td><td>an optional SSE change bus for streaming clients</td></tr>
      </tbody></table>`,
   ],
 ];
@@ -1276,6 +1278,10 @@ function view(state) {
     [
       'now',
       'What this server is running right now',
+      `<p class="lede"><b>One public port.</b> Hub chrome and every runnable
+       demo enter through <code>*.localhost:${esc(location.port)}</code>.
+       A demo's virtual host preserves its sealed <code>/site/…</code> pins;
+       it does not start another server.</p>` +
       `<div data-role="now">${
         state
           ? depotTable(state) + activeNote(state)

@@ -289,7 +289,7 @@ editor; the server distributes what it finds.`,
         })`,
       );
       console.log(`  browse: ${origin}/  — depots, packages, versions`);
-      console.log(`  hmr:  ${origin}/_live/hmr.js → SSE /_live/events`);
+      console.log(`  hmr:  ${origin}/_live/hmr.js → poll /_live/state`);
       for (let depot of depots) {
         for (let deck of await discoverDecks(depot.dir)) {
           console.log(

@@ -80,7 +80,7 @@ export async function seedEditable(exampleDir, declared) {
 }
 
 /**
- * Serve a write endpoint for a fixed, named set of files.
+ * Build a listener-free write endpoint for a fixed, named set of files.
  *
  * `files` is the allow-list: `{ '<id>': '<path under depotDir>' }`. A
  * request names an id, never a path, so the browser cannot choose what to
@@ -94,13 +94,8 @@ export async function seedEditable(exampleDir, declared) {
  * @param {object} options
  * @param {string} options.depotDir
  * @param {Record<string,string>} options.files
- * @param {number} options.port  0 asks the kernel for a free one
- * @param {boolean} [options.tls]  defaults to whatever the demos are using.
- *   The bridge has to speak the SAME scheme as the page that calls it: a
- *   fetch from an http page to an https port fails with nothing useful on
- *   screen, and the page reads that as "no bridge running".
  */
-export async function startEditorBridge({ depotDir, files, port, tls: wantTls }) {
+export async function createEditorBridge({ depotDir, files }) {
   let originals = new Map();
   for (let [id, relative] of Object.entries(files)) {
     originals.set(id, await readFile(join(depotDir, relative), 'utf8'));
@@ -173,6 +168,21 @@ export async function startEditorBridge({ depotDir, files, port, tls: wantTls })
     }
   }
 
+  return { respond };
+}
+
+/**
+ * Give a standalone example its own editor listener. The Hub instead mounts
+ * `createEditorBridge()` behind its one virtual-host listener.
+ *
+ * @param {object} options
+ * @param {string} options.depotDir
+ * @param {Record<string,string>} options.files
+ * @param {number} options.port 0 asks the kernel for a free one
+ * @param {boolean} [options.tls] defaults to whatever the demo uses
+ */
+export async function startEditorBridge({ depotDir, files, port, tls: wantTls }) {
+  let { respond } = await createEditorBridge({ depotDir, files });
   let secure = wantTls ?? DEMO_TLS;
   let tls = secure ? resolveTlsMaterials(true) : undefined;
   let server = tls

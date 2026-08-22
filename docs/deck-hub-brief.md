@@ -10,9 +10,9 @@ must exist (§12). None of it is repeated here. This brief adds: which
 direction won and why, the five apps, the journeys, the shared parts, the
 stack, and what has to be built on the server to support it.
 
-Scope note: the nine demos under `examples/` are **out of scope** and are not
-modified. They keep their own processes, ports and depots. Hub work is
-additive.
+The examples under `examples/` keep their own depots and standalone runners.
+When the Hub mounts them, however, they are logical tenants of the Hub's one
+listener rather than extra processes or ports.
 
 ---
 
@@ -235,12 +235,13 @@ badge.
 `variations` demo already works and the pattern that makes A/B/C choosing
 possible without a deploy.
 
-**Integration note.** The demos are separate processes on ports 8790–8798.
-They currently default to HTTPS with a self-signed leaf, which costs a
-click-through per port before an iframe will load. The Hub should launch them
-with `DECK_DEMO_HTTP=1` so `/run` works on first load; the HTTP/2 comparison
-stays available in `examples/three-js/bench.mjs`, where it is the subject
-rather than an obstacle.
+**One-port integration.** The Hub owns one listener. Each demo is a logical
+`site` mount selected by a virtual localhost host, for example
+`http://collaboration.localhost:8788/site/…`. This preserves the absolute
+`/site/…` pins each depot was sealed with and preserves iframe origin
+isolation, without one process or ephemeral port per demo. Hub chrome and the
+HMR client both poll the short-lived `/_live/state` snapshot, so many tabs do
+not exhaust the HTTP/1.1 connection pool.
 
 ---
 
@@ -534,8 +535,9 @@ Small, and none of it changes the protocol surface.
 3. **Module counts for the self-report.** `moduleClosure` already exists in
    `preload.ts`; expose the count per deck so `/start` can grade tree vs
    bundle without re-probing npm. *(small addition to `?meta`)*
-4. **Demo aggregation.** The Hub already polls the nine demo processes for
-   `/api/demos`. Keep it; `/run` consumes it.
+4. **Demo multiplexing — done.** One Node listener dispatches by Host to
+   unbound Deck server instances. The normal Hub host reads each depot by its
+   example name; `<example>.localhost` runs the same directory as `site`.
 5. **`tree` on `?meta` — done.** `files` was a list of paths, which answers
    *added* and *removed* and cannot answer *changed*. `tree` is the packlist
    verbatim (path, size, sha256), so a comparison is one request per side
