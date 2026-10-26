@@ -11,7 +11,8 @@ jj-lib path copied closely from boxel-labs
 [`jj-historyd`](file:///Users/chris/Projects/boxel-labs/examples/jj-lib-node/rust)
 (`HistoryService` + axum + `spawn_blocking`/`pollster`).
 
-Dependency: crates.io `jj-lib = "0.43.0"` (same pin as historyd).
+Dependency: crates.io `jj-lib = "0.46.0"`, which needs rustc 1.97.1;
+`rust-toolchain.toml` pins the compiler, so run cargo from this directory.
 
 ## Features
 
@@ -70,6 +71,142 @@ When Hub uses `DECKD_URL`, Node watchers publish + HMR only — they do not
 | ----------------------------- | ---------------------------------------- |
 | ensure / seal / restore       | per-workspace **write** lock             |
 | list / file-at / file-list-at | per-workspace **read** lock (concurrent) |
+| commit / outcome              | per-repo **file** lock (cross-process)   |
+
+## Explicit commits
+
+`/commit`, `/outcome`, `/head` and `/tree-hash` record a revision from content
+the caller staged, never from a working copy. A writer such as realm-server
+can then record each write exactly once, even when deckd's response is lost.
+
+Each call names `repo`, the absolute path of one history directory (for
+example `<realm>/.history`). The directory's parent must exist; deckd creates
+the directory and a bare jj repo inside it on first use:
+
+```text
+<repo>/
+  jj/                       # jj repo, internal git backend, no working copy
+  deckd/commit.lock         # flock held around /commit and /outcome
+  deckd/operations/<opId>   # pending | committed <revision> | fenced
+```
+
+A revision is the git commit ID (40 hex). HEAD is the repo's single visible
+head; an empty repo's HEAD is the root commit, `0000…0000`.
+
+### Guarantees
+
+- **Exactly the listed paths.** A revision is HEAD's tree plus the request's
+  `changes`; nothing on disk is read.
+- **Compare-and-swap on HEAD.** A commit whose `parent` isn't HEAD is refused
+  with `parent-mismatch` and the current `head`, never re-parented.
+- **Idempotent by operation ID.** Committing an ID that already committed
+  returns the original revision with `replayed: true` and writes nothing,
+  even when the retry's `parent` is now stale.
+- **Fencing outcome query.** `/outcome` reports `committed` or `absent`.
+  Reporting `absent` fences the ID: a later commit with it is refused with
+  `operation-fenced`.
+- **Durable, not in-memory.** Outcomes and fences are files under `<repo>`,
+  so they survive a restart and are shared by every deckd on the same
+  filesystem. Record existence is tested with `O_EXCL` creates, which an NFS
+  server answers, so a stale negative lookup can't hide one.
+- **No-op writes record nothing.** When the changes leave the tree as it was,
+  no revision is created; the response returns HEAD with `created: false`.
+
+Correctness doesn't depend on deckd's in-process state. The file lock
+serializes deckd processes; a writer running on several hosts should still
+serialize its own commits (realm-server uses a Postgres advisory lock).
+
+Each commit's message ends with the caller's trailers, then
+`Deckd-Operation-Id: <operationId>`, which callers may not set themselves.
+
+### `POST /commit`
+
+```json
+{
+  "repo": "/realms/acme/.history",
+  "parent": "0000000000000000000000000000000000000000",
+  "operationId": "01JB8ZQ4T6W3",
+  "author": { "name": "Jane", "email": "jane@example.com" },
+  "message": "Update Author/jane.json",
+  "trailers": [{ "key": "Boxel-Channel", "value": "host" }],
+  "changes": [
+    { "path": "Author/jane.json", "contentBase64": "eyJuYW1lIjoiSmFuZSJ9" },
+    { "path": "Author/old.json", "delete": true }
+  ]
+}
+```
+
+```json
+{
+  "revision": "6f1c2d8e0a9b4c3d2e1f0a9b8c7d6e5f4a3b2c1d",
+  "tree": "9a3e1b7c5d2f4e6a8b0c1d3e5f7a9b1c3d5e7f9a",
+  "created": true,
+  "replayed": false
+}
+```
+
+- `operationId`: 1–128 characters from `[A-Za-z0-9._-]`, not starting with `.`.
+- `changes`: each entry has `path` plus exactly one of `contentBase64` or
+  `delete: true`. A path appears at most once. Paths are relative and may not
+  contain `..` or empty segments. Deleting an absent path changes nothing.
+- `trailers`: optional. Keys match `[A-Za-z0-9-]+`; values are one line.
+- `message` is required. `author.name` and `author.email` are required and may
+  not contain newlines, `<` or `>`.
+
+### `POST /outcome`
+
+```json
+{ "repo": "/realms/acme/.history", "operationId": "01JB8ZQ4T6W3" }
+```
+
+```json
+{ "state": "committed", "revision": "6f1c2d8e0a9b4c3d2e1f0a9b8c7d6e5f4a3b2c1d" }
+```
+
+or `{ "state": "absent" }`, after which the ID is fenced. It is a POST because
+it can change state.
+
+### `POST /head`
+
+```json
+{ "repo": "/realms/acme/.history" }
+```
+
+```json
+{
+  "revision": "6f1c2d8e0a9b4c3d2e1f0a9b8c7d6e5f4a3b2c1d",
+  "tree": "9a3e1b7c5d2f4e6a8b0c1d3e5f7a9b1c3d5e7f9a"
+}
+```
+
+### `POST /tree-hash`
+
+```json
+{
+  "repo": "/realms/acme/.history",
+  "revision": "6f1c2d8e0a9b4c3d2e1f0a9b8c7d6e5f4a3b2c1d"
+}
+```
+
+```json
+{ "tree": "9a3e1b7c5d2f4e6a8b0c1d3e5f7a9b1c3d5e7f9a" }
+```
+
+The tree hash is the git tree ID, so identical content has the same hash in
+any repo, whoever committed it and whatever the message.
+
+### Errors
+
+Every error body is `{ "code", "error" }`, plus fields named below.
+
+| Status | `code`               | When                                                 |
+| ------ | -------------------- | ---------------------------------------------------- |
+| 400    | `invalid-request`    | Bad repo path, operation ID, path, trailer or base64 |
+| 404    | `revision-not-found` | `/tree-hash` for a revision the repo doesn't have    |
+| 409    | `parent-mismatch`    | `parent` isn't HEAD; body has `head`                 |
+| 409    | `operation-fenced`   | The operation ID was reported `absent` by `/outcome` |
+| 503    | `lock-timeout`       | Another process held the repo's lock for 30 s        |
+| 500    | `internal`           | jj or filesystem failure                             |
 
 ## Run
 

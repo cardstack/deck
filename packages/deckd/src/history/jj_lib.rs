@@ -22,6 +22,9 @@ use futures::StreamExt as _;
 use jj_lib::backend::{FileId, TreeValue};
 use jj_lib::commit::Commit;
 use jj_lib::config::{ConfigLayer, ConfigSource, StackedConfig};
+use jj_lib::default_backend_factories::{
+    default_backend_factories, default_working_copy_factories,
+};
 use jj_lib::fileset::FilesetExpression;
 use jj_lib::gitignore::GitIgnoreFile;
 use jj_lib::matchers::{EverythingMatcher, NothingMatcher};
@@ -29,14 +32,12 @@ use jj_lib::merge::Diff;
 use jj_lib::merged_tree::MergedTree;
 use jj_lib::object_id::{HexPrefix, ObjectId, PrefixResolution};
 use jj_lib::ref_name::WorkspaceName;
-use jj_lib::repo::{ReadonlyRepo, Repo as _, StoreFactories};
+use jj_lib::repo::{ReadonlyRepo, Repo as _};
 use jj_lib::repo_path::{RepoPath, RepoPathBuf};
 use jj_lib::revset::{RevsetExpression, RevsetFilterPredicate};
 use jj_lib::settings::UserSettings;
 use jj_lib::working_copy::SnapshotOptions;
-use jj_lib::workspace::{
-    default_working_copy_factories, Workspace, WorkspaceInitError, WorkspaceLoadError,
-};
+use jj_lib::workspace::{Workspace, WorkspaceInitError, WorkspaceLoadError};
 use tokio::sync::Mutex;
 
 /// Per-depot async note debounce. Realm servers fire `/note` and return;
@@ -432,7 +433,7 @@ pub fn is_valid_history_path(path: &str) -> bool {
         .any(|segment| segment.is_empty() || segment == "..")
 }
 
-fn hermetic_git_env() {
+pub(super) fn hermetic_git_env() {
     // Prevent GitBackend from reading host git config (same as historyd).
     unsafe {
         std::env::set_var("GIT_CONFIG_SYSTEM", "/dev/null");
@@ -440,7 +441,7 @@ fn hermetic_git_env() {
     }
 }
 
-fn user_settings(actor: Option<&Actor>) -> HistoryResult<UserSettings> {
+pub(super) fn user_settings(actor: Option<&Actor>) -> HistoryResult<UserSettings> {
     let name = actor
         .map(|a| sanitize(&a.name))
         .unwrap_or_else(|| "deck-history".into());
@@ -461,7 +462,8 @@ fn user_settings(actor: Option<&Actor>) -> HistoryResult<UserSettings> {
         ConfigLayer::parse(ConfigSource::User, &config_text)
             .map_err(|e| HistoryError::msg(e.to_string()))?,
     );
-    UserSettings::from_config(config).map_err(|e| HistoryError::msg(e.to_string()))
+    UserSettings::from_config_and_home_dir(config, None)
+        .map_err(|e| HistoryError::msg(e.to_string()))
 }
 
 fn sanitize(value: &str) -> String {
@@ -543,7 +545,8 @@ async fn ensure_repo_inner(dir: &Path) -> HistoryResult<()> {
     if !jj.is_dir() {
         // historyd used init_colocated_git; Deck forbids depot .git → internal.
         let settings = user_settings(None)?;
-        let (_workspace, _repo) = Workspace::init_internal_git(&settings, dir).await?;
+        let (_workspace, _repo) =
+            Workspace::init_internal_git(&settings, dir, gix::hash::Kind::Sha1).await?;
     }
 
     if !jj_repo.is_dir() {
@@ -595,7 +598,7 @@ async fn load_workspace(dir: &Path) -> HistoryResult<(Workspace, Arc<ReadonlyRep
     let workspace = Workspace::load(
         &settings,
         dir,
-        &StoreFactories::default(),
+        &default_backend_factories(),
         &default_working_copy_factories(),
     )?;
     let repo = workspace
@@ -824,6 +827,7 @@ async fn files_summary_from_index(
     match repo
         .index()
         .changed_paths_in_commit(commit.id())
+        .await
         .map_err(|e| HistoryError::msg(e.to_string()))?
     {
         Some(paths) => Ok(paths
@@ -851,7 +855,7 @@ async fn files_summary_from_index(
 
 async fn file_at_inner(dir: &Path, revision_id: &str, path: &str) -> HistoryResult<Option<Vec<u8>>> {
     let (_workspace, repo) = load_workspace(dir).await?;
-    let commit = match resolve_revision(repo.as_ref(), revision_id)? {
+    let commit = match resolve_revision(repo.as_ref(), revision_id).await? {
         Some(c) => c,
         None => return Ok(None),
     };
@@ -872,7 +876,8 @@ async fn file_at_inner(dir: &Path, revision_id: &str, path: &str) -> HistoryResu
 
 async fn file_list_at_inner(dir: &Path, revision_id: &str) -> HistoryResult<Vec<String>> {
     let (_workspace, repo) = load_workspace(dir).await?;
-    let commit = resolve_revision(repo.as_ref(), revision_id)?
+    let commit = resolve_revision(repo.as_ref(), revision_id)
+        .await?
         .ok_or_else(|| HistoryError::msg("revision not found"))?;
     let root = repo.store().root_commit();
     let mut paths = Vec::new();
@@ -896,7 +901,8 @@ async fn file_list_at_inner(dir: &Path, revision_id: &str) -> HistoryResult<Vec<
 
 async fn restore_plan_inner(dir: &Path, revision_id: &str) -> HistoryResult<RestorePlan> {
     let (_workspace, repo) = load_workspace(dir).await?;
-    let target = resolve_revision(repo.as_ref(), revision_id)?
+    let target = resolve_revision(repo.as_ref(), revision_id)
+        .await?
         .ok_or_else(|| HistoryError::msg("revision not found"))?;
     let wc_id = repo
         .view()
@@ -931,10 +937,14 @@ async fn restore_plan_inner(dir: &Path, revision_id: &str) -> HistoryResult<Rest
     Ok(RestorePlan { writes, deletes })
 }
 
-fn resolve_revision(repo: &ReadonlyRepo, revision_id: &str) -> HistoryResult<Option<Commit>> {
+async fn resolve_revision(
+    repo: &ReadonlyRepo,
+    revision_id: &str,
+) -> HistoryResult<Option<Commit>> {
     if let Some(prefix) = HexPrefix::try_from_reverse_hex(revision_id) {
         match repo
             .resolve_change_id_prefix(&prefix)
+            .await
             .map_err(|e| HistoryError::msg(e.to_string()))?
         {
             PrefixResolution::SingleMatch(targets) => {
@@ -957,6 +967,7 @@ fn resolve_revision(repo: &ReadonlyRepo, revision_id: &str) -> HistoryResult<Opt
         match repo
             .index()
             .resolve_commit_id_prefix(&prefix)
+            .await
             .map_err(|e| HistoryError::msg(e.to_string()))?
         {
             PrefixResolution::SingleMatch(commit_id) => {

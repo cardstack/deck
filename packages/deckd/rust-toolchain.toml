@@ -1,0 +1,4 @@
+# jj-lib 0.46 needs rustc 1.97.1 or newer. rustup reads this file from the
+# current directory, so run cargo from packages/deckd.
+[toolchain]
+channel = "1.99.1"

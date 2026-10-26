@@ -7,6 +7,7 @@ use std::pin::Pin;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod commit;
 pub mod jj_lib;
 pub mod jj_lib_notes;
 
