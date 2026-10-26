@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use axum::extract::{DefaultBodyLimit, State};
+use axum::extract::rejection::JsonRejection;
+use axum::extract::{DefaultBodyLimit, FromRequest, Request, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -83,8 +84,38 @@ pub fn router(state: AppState) -> Router {
 }
 
 /// A commit carries every staged file base64-encoded in one JSON body, so it
-/// needs far more than axum's 2 MB default. Batch limits are the caller's.
-const COMMIT_BODY_LIMIT: usize = 512 * 1024 * 1024;
+/// needs more than axum's 2 MB default. The whole body and its decoded copy
+/// are held in memory, so this stays well under what the sidecar can spare;
+/// a larger push is split into several commits by the caller.
+const COMMIT_BODY_LIMIT: usize = 64 * 1024 * 1024;
+
+/// A JSON request body whose rejections (malformed JSON, a missing field, the
+/// wrong content type, a body over the limit) answer as typed `ApiError`s,
+/// like every other error.
+struct Body<T>(T);
+
+impl<S, T> FromRequest<S> for Body<T>
+where
+    Json<T>: FromRequest<S, Rejection = JsonRejection>,
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        match Json::<T>::from_request(req, state).await {
+            Ok(Json(value)) => Ok(Body(value)),
+            Err(rejection) => {
+                let status = rejection.status();
+                let code = if status == StatusCode::PAYLOAD_TOO_LARGE {
+                    "payload-too-large"
+                } else {
+                    "invalid-request"
+                };
+                Err(ApiError::new(status, code, rejection.body_text()))
+            }
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct DirBody {
@@ -147,7 +178,7 @@ struct RestorePlanBody {
 
 async fn ensure(
     State(st): State<AppState>,
-    Json(body): Json<DirBody>,
+    Body(body): Body<DirBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     st.history.ensure(&body.dir).await?;
     if let Some(watch) = &st.watch {
@@ -160,7 +191,7 @@ async fn ensure(
 
 async fn note(
     State(st): State<AppState>,
-    Json(body): Json<NoteBody>,
+    Body(body): Body<NoteBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     st.history.note(&body.dir, &body.path).await?;
     Ok(Json(serde_json::json!({})))
@@ -168,7 +199,7 @@ async fn note(
 
 async fn flush(
     State(st): State<AppState>,
-    Json(body): Json<DirBody>,
+    Body(body): Body<DirBody>,
 ) -> Result<Json<SealResponse>, ApiError> {
     let change_id = st.history.flush_notes(&body.dir).await?;
     Ok(Json(SealResponse { change_id }))
@@ -176,7 +207,7 @@ async fn flush(
 
 async fn seal(
     State(st): State<AppState>,
-    Json(body): Json<SealBody>,
+    Body(body): Body<SealBody>,
 ) -> Result<Json<SealResponse>, ApiError> {
     let change_id = st
         .history
@@ -187,14 +218,14 @@ async fn seal(
 
 async fn list(
     State(st): State<AppState>,
-    Json(body): Json<DirBody>,
+    Body(body): Body<DirBody>,
 ) -> Result<Json<Vec<HistoryEntry>>, ApiError> {
     Ok(Json(st.history.list(&body.dir).await?))
 }
 
 async fn file_at(
     State(st): State<AppState>,
-    Json(body): Json<FileAtBody>,
+    Body(body): Body<FileAtBody>,
 ) -> Result<Json<FileAtResponse>, ApiError> {
     let bytes = st
         .history
@@ -214,7 +245,7 @@ async fn file_at(
 
 async fn file_list_at(
     State(st): State<AppState>,
-    Json(body): Json<FileListAtBody>,
+    Body(body): Body<FileListAtBody>,
 ) -> Result<Json<FileListAtResponse>, ApiError> {
     Ok(Json(FileListAtResponse {
         paths: st
@@ -226,7 +257,7 @@ async fn file_list_at(
 
 async fn restore_plan(
     State(st): State<AppState>,
-    Json(body): Json<RestorePlanBody>,
+    Body(body): Body<RestorePlanBody>,
 ) -> Result<Json<RestorePlan>, ApiError> {
     Ok(Json(
         st.history
@@ -283,7 +314,7 @@ struct TreeHashResponse {
 
 async fn commit(
     State(st): State<AppState>,
-    Json(body): Json<CommitBody>,
+    Body(body): Body<CommitBody>,
 ) -> Result<Json<CommitOutcome>, ApiError> {
     let mut changes = Vec::with_capacity(body.changes.len());
     for change in body.changes {
@@ -325,7 +356,7 @@ async fn commit(
 
 async fn outcome(
     State(st): State<AppState>,
-    Json(body): Json<OutcomeBody>,
+    Body(body): Body<OutcomeBody>,
 ) -> Result<Json<OperationOutcome>, ApiError> {
     let repo = std::path::PathBuf::from(body.repo);
     let operation_id = body.operation_id;
@@ -336,7 +367,7 @@ async fn outcome(
 
 async fn head(
     State(st): State<AppState>,
-    Json(body): Json<RepoBody>,
+    Body(body): Body<RepoBody>,
 ) -> Result<Json<RevisionTree>, ApiError> {
     let repo = std::path::PathBuf::from(body.repo);
     Ok(Json(run_commits(&st, move |c| c.head(&repo)).await?))
@@ -344,7 +375,7 @@ async fn head(
 
 async fn tree_hash(
     State(st): State<AppState>,
-    Json(body): Json<TreeHashBody>,
+    Body(body): Body<TreeHashBody>,
 ) -> Result<Json<TreeHashResponse>, ApiError> {
     let repo = std::path::PathBuf::from(body.repo);
     let revision = body.revision;
@@ -369,7 +400,7 @@ where
 #[cfg(feature = "build")]
 async fn ensure_build(
     State(st): State<AppState>,
-    Json(body): Json<EnsureBuildRequest>,
+    Body(body): Body<EnsureBuildRequest>,
 ) -> Result<Json<EnsureBuildResponse>, ApiError> {
     let Some(build) = &st.build else {
         return Err("build plane unavailable".to_string().into());
@@ -380,7 +411,7 @@ async fn ensure_build(
 #[cfg(feature = "build")]
 async fn artifact_at(
     State(st): State<AppState>,
-    Json(body): Json<ArtifactAtRequest>,
+    Body(body): Body<ArtifactAtRequest>,
 ) -> Result<Json<ArtifactAtResponse>, ApiError> {
     let Some(build) = &st.build else {
         return Err("build plane unavailable".to_string().into());
@@ -426,6 +457,11 @@ impl From<CommitError> for ApiError {
             CommitError::RevisionNotFound(_) => {
                 Self::new(StatusCode::NOT_FOUND, "revision-not-found", message)
             }
+            CommitError::HistoryUnsettled { .. } => Self::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "history-unsettled",
+                message,
+            ),
             CommitError::LockTimeout(_) => {
                 Self::new(StatusCode::SERVICE_UNAVAILABLE, "lock-timeout", message)
             }

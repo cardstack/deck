@@ -194,6 +194,18 @@ History (compat with today’s historyd client in
 | `POST /file-list-at` | `{ dir, revisionId }`       | paths — **close the CLI gap**                      |
 | `POST /restore-plan` | `{ dir, revisionId }`       | `{ writes, deletes }`                              |
 
+Explicit commits, for a writer that stages content itself and must record each
+write exactly once. These address a bare history repo by path rather than a
+depot; the [deckd README](../packages/deckd/README.md#explicit-commits) has the
+full contract:
+
+| Route             | Body (sketch)                                                        | Result                                                    |
+| ----------------- | -------------------------------------------------------------------- | --------------------------------------------------------- |
+| `POST /commit`    | `{ repo, parent, operationId, author, message, trailers?, changes }` | `{ revision, tree, created, replayed }`, or a typed error |
+| `POST /outcome`   | `{ repo, operationId }`                                              | `committed` + revision, or `absent` (fences the ID)       |
+| `POST /head`      | `{ repo }`                                                           | `{ revision, tree }`                                      |
+| `POST /tree-hash` | `{ repo, revision }`                                                 | `{ tree }`, the git tree ID                               |
+
 Build (deferred — **not** on the Hub serve path):
 
 | Route                | Body (sketch)                               | Result                                     |

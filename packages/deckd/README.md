@@ -86,7 +86,7 @@ the directory and a bare jj repo inside it on first use:
 ```text
 <repo>/
   jj/                       # jj repo, internal git backend, no working copy
-  deckd/commit.lock         # flock held around /commit and /outcome
+  deckd/HEAD                # recorded HEAD; locked around every call but /tree-hash
   deckd/operations/<opId>   # pending | committed <revision> | fenced
 ```
 
@@ -96,7 +96,8 @@ head; an empty repo's HEAD is the root commit, `0000…0000`.
 ### Guarantees
 
 - **Exactly the listed paths.** A revision is HEAD's tree plus the request's
-  `changes`; nothing on disk is read.
+  `changes`; nothing on disk is read. A change that would turn a file into a
+  directory or back is refused, since it would remove paths it doesn't list.
 - **Compare-and-swap on HEAD.** A commit whose `parent` isn't HEAD is refused
   with `parent-mismatch` and the current `head`, never re-parented.
 - **Idempotent by operation ID.** Committing an ID that already committed
@@ -112,9 +113,26 @@ head; an empty repo's HEAD is the root commit, `0000…0000`.
 - **No-op writes record nothing.** When the changes leave the tree as it was,
   no revision is created; the response returns HEAD with `created: false`.
 
-Correctness doesn't depend on deckd's in-process state. The file lock
-serializes deckd processes; a writer running on several hosts should still
-serialize its own commits (realm-server uses a Postgres advisory lock).
+Correctness doesn't depend on deckd's in-process state:
+
+- **One lock file, never deleted.** An exclusive lock on `deckd/HEAD`
+  serializes deckd processes. Deleting a lock file on release lets two NFS
+  clients each hold the lock, one on the unlinked inode and one on its
+  replacement, so this file stays.
+- **A recorded HEAD.** `deckd/HEAD` holds the revision deckd last recorded,
+  written just before jj publishes it. Taking an NFS lock revalidates that
+  file's cached data, so it is current even when this host's listing of jj's
+  operations is stale. jj's HEAD must match it before anything is written.
+  - When jj is one commit behind (a crash between recording and publishing, or
+    a stale listing), the recorded commit is published, which is idempotent.
+  - Any other mismatch is reloaded for a few seconds, then refused with
+    `history-unsettled` and nothing written.
+- **Fences hold.** A `fenced` record for an operation found committed means
+  the lock failed to exclude a writer. It is reported as an error that needs an
+  operator, never overwritten.
+
+A writer running on several hosts should still serialize its own commits
+(realm-server uses a Postgres advisory lock).
 
 Each commit's message ends with the caller's trailers, then
 `Deckd-Operation-Id: <operationId>`, which callers may not set themselves.
@@ -148,7 +166,9 @@ Each commit's message ends with the caller's trailers, then
 - `operationId`: 1–128 characters from `[A-Za-z0-9._-]`, not starting with `.`.
 - `changes`: each entry has `path` plus exactly one of `contentBase64` or
   `delete: true`. A path appears at most once. Paths are relative and may not
-  contain `..` or empty segments. Deleting an absent path changes nothing.
+  contain empty, `.`, `..` or `.git` segments. No listed path may be inside
+  another listed path, inside a file in HEAD, or name a directory in HEAD.
+  Deleting an absent path changes nothing.
 - `trailers`: optional. Keys match `[A-Za-z0-9-]+`; values are one line.
 - `message` is required. `author.name` and `author.email` are required and may
   not contain newlines, `<` or `>`.
@@ -197,16 +217,19 @@ any repo, whoever committed it and whatever the message.
 
 ### Errors
 
-Every error body is `{ "code", "error" }`, plus fields named below.
+Every error body is `{ "code", "error" }`, plus fields named below, on every
+route, including a request deckd can't parse.
 
-| Status | `code`               | When                                                 |
-| ------ | -------------------- | ---------------------------------------------------- |
-| 400    | `invalid-request`    | Bad repo path, operation ID, path, trailer or base64 |
-| 404    | `revision-not-found` | `/tree-hash` for a revision the repo doesn't have    |
-| 409    | `parent-mismatch`    | `parent` isn't HEAD; body has `head`                 |
-| 409    | `operation-fenced`   | The operation ID was reported `absent` by `/outcome` |
-| 503    | `lock-timeout`       | Another process held the repo's lock for 30 s        |
-| 500    | `internal`           | jj or filesystem failure                             |
+| Status      | `code`               | When                                                                    |
+| ----------- | -------------------- | ----------------------------------------------------------------------- |
+| 400/415/422 | `invalid-request`    | Unparseable JSON, a missing field, the wrong content type, or bad input |
+| 404         | `revision-not-found` | `/tree-hash` for a revision the repo doesn't have                       |
+| 409         | `parent-mismatch`    | `parent` isn't HEAD; body has `head`                                    |
+| 409         | `operation-fenced`   | The operation ID was reported `absent` by `/outcome`                    |
+| 413         | `payload-too-large`  | A `/commit` body over 64 MiB; split the change into several commits     |
+| 503         | `history-unsettled`  | jj's HEAD didn't match `deckd/HEAD` within a few seconds; retry         |
+| 503         | `lock-timeout`       | Another process held the repo's lock for 30 s                           |
+| 500         | `internal`           | jj or filesystem failure, or a fenced operation found committed         |
 
 ## Run
 

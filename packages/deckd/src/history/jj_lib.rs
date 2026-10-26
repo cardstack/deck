@@ -632,11 +632,19 @@ async fn snapshot_wc(
         .get_commit(&wc_commit_id)
         .map_err(|e| HistoryError::msg(e.to_string()))?;
 
-    let (new_tree, _stats) = locked_ws
+    let (new_tree, stats) = locked_ws
         .locked_wc()
         .snapshot(&options)
         .await
         .map_err(|e| HistoryError::msg(e.to_string()))?;
+    // jj skips names that aren't valid UTF-8; those files never enter History.
+    for (dir, name) in &stats.invalid_utf8_paths {
+        tracing::warn!(
+            dir = %dir.as_internal_file_string(),
+            name = ?name,
+            "snapshot skipped a file whose name isn't valid UTF-8"
+        );
+    }
 
     let repo = if new_tree.tree_ids_and_labels() != wc_commit.tree().tree_ids_and_labels() {
         let mut tx = repo.start_transaction();

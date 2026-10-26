@@ -2,83 +2,13 @@
 //! between calls: operation outcomes and fences live in the repo, so a new
 //! process gives the same answers.
 
-use std::net::TcpListener;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::path::Path;
 
 use serde_json::{json, Value};
 
-struct Deckd {
-    child: Child,
-    base: String,
-}
+mod common;
 
-impl Deckd {
-    /// Start deckd on a fresh port. A restart needs no particular port: all
-    /// state is in the repo.
-    fn start() -> Self {
-        let port = free_port();
-        let child = Command::new(env!("CARGO_BIN_EXE_deckd"))
-            .env("DECKD_BIND", format!("127.0.0.1:{port}"))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("start deckd");
-        let base = format!("http://127.0.0.1:{port}");
-        let started = Instant::now();
-        while ureq::get(&format!("{base}/health")).call().is_err() {
-            assert!(
-                started.elapsed() < Duration::from_secs(20),
-                "deckd did not start"
-            );
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        Self { child, base }
-    }
-
-    /// POST `body` and return the status and JSON response, error or not.
-    fn post(&self, route: &str, body: Value) -> (u16, Value) {
-        match ureq::post(&format!("{}{route}", self.base)).send_json(body) {
-            Ok(response) => (response.status(), response.into_json().unwrap()),
-            Err(ureq::Error::Status(status, response)) => (status, response.into_json().unwrap()),
-            Err(error) => panic!("{route}: {error}"),
-        }
-    }
-
-    fn kill(mut self) {
-        self.child.kill().unwrap();
-        self.child.wait().unwrap();
-    }
-}
-
-impl Drop for Deckd {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
-fn realm(name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
-        "deckd-restart-{name}-{}-{nanos}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
+use common::{realm, Deckd};
 
 fn commit_body(repo: &Path, parent: &str, operation_id: &str) -> Value {
     json!({

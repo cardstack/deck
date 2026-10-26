@@ -10,16 +10,25 @@
 //! ```text
 //! <repo>/
 //!   jj/                       # bare jj repo, internal git backend
-//!   deckd/commit.lock         # cross-process lock around commit / outcome
+//!   deckd/HEAD                # recorded HEAD; locked around every call
 //!   deckd/operations/<opId>   # `pending` | `committed <rev>` | `fenced`
 //! ```
 //!
 //! Correctness rests on files in the repo, never on this process's memory:
 //!
-//! - `commit` and `outcome` run under a flock on `deckd/commit.lock`, so
-//!   deckd processes on different hosts sharing the directory serialize. A
-//!   per-repo in-process mutex sits in front of it because Linux NFS emulates
-//!   flock with POSIX locks, which don't exclude threads of one process.
+//! - `commit`, `outcome` and `head` hold an exclusive lock on `deckd/HEAD`,
+//!   which is never deleted, so deckd processes on different hosts sharing the
+//!   directory serialize. A per-repo in-process mutex sits in front of it
+//!   because Linux NFS emulates flock with POSIX locks, which don't exclude
+//!   threads of one process.
+//! - `deckd/HEAD` holds the revision deckd last recorded, written before jj
+//!   publishes it. It is read through the locked descriptor, and taking an NFS
+//!   lock revalidates that file's cached data, so it is current even when this
+//!   host's listing of jj's operation heads is stale. jj's HEAD must equal it
+//!   before anything is written. When jj is exactly one commit behind (a crash
+//!   between recording and publishing, or a stale listing), the recorded
+//!   commit is published again, which is idempotent. Any other disagreement is
+//!   reloaded until it settles, then refused as `HistoryUnsettled`.
 //! - Whether an operation record exists is only ever learned from
 //!   `create_new` (O_EXCL), which the NFS server answers. A peer's cached
 //!   negative lookup can't make an existing record look absent.
@@ -29,8 +38,8 @@
 //!   unrecorded, so after that repair every committed operation has a record.
 
 use std::collections::{HashMap, HashSet};
-use std::fs::{File, OpenOptions};
-use std::io::{ErrorKind, Write as _};
+use std::fs::{File, OpenOptions, TryLockError};
+use std::io::{ErrorKind, Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -38,12 +47,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use jj_lib::backend::{BackendError, CommitId, CopyId, Signature, Timestamp, TreeValue};
 use jj_lib::commit::Commit;
 use jj_lib::default_backend_factories::default_backend_factories;
-use jj_lib::lock::FileLock;
 use jj_lib::merge::Merge;
+use jj_lib::merged_tree::MergedTree;
 use jj_lib::merged_tree_builder::MergedTreeBuilder;
 use jj_lib::object_id::ObjectId as _;
 use jj_lib::repo::{ReadonlyRepo, Repo as _, RepoLoader};
-use jj_lib::repo_path::RepoPathBuf;
+use jj_lib::repo_path::{RepoPath, RepoPathBuf};
 use jj_lib::signing_factory::signer_from_settings;
 use jj_lib::trailer::parse_description_trailers;
 use serde::{Deserialize, Serialize};
@@ -53,8 +62,15 @@ use super::jj_lib::{hermetic_git_env, is_valid_history_path, user_settings};
 /// Trailer deckd adds to every explicit commit. Callers may not set it.
 const OPERATION_ID_TRAILER: &str = "Deckd-Operation-Id";
 
-/// How long a call waits for another process's commit lock before giving up.
+/// How long a call waits for another process's lock before giving up.
 const LOCK_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long a call waits for jj's HEAD to agree with `deckd/HEAD`.
+const SETTLE_TIMEOUT: Duration = if cfg!(test) {
+    Duration::from_millis(300)
+} else {
+    Duration::from_secs(5)
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CommitError {
@@ -68,6 +84,8 @@ pub enum CommitError {
     RevisionNotFound(String),
     #[error("timed out waiting for the commit lock on {0}")]
     LockTimeout(String),
+    #[error("history HEAD {observed} does not match recorded HEAD {recorded}; retry")]
+    HistoryUnsettled { recorded: String, observed: String },
     #[error("{0}")]
     Internal(String),
 }
@@ -162,8 +180,8 @@ impl CommitService {
         validate_commit_request(&request)?;
         let gate = self.gate(repo_dir);
         let _in_process = gate.lock().unwrap_or_else(|e| e.into_inner());
-        let _file_lock = lock_repo(repo_dir)?;
-        pollster::block_on(commit_locked(repo_dir, request))
+        let mut head_file = lock_repo(repo_dir)?;
+        pollster::block_on(commit_locked(repo_dir, &mut head_file, request))
     }
 
     /// Report whether `operation_id` committed. Reporting it absent fences it:
@@ -173,23 +191,18 @@ impl CommitService {
         validate_operation_id(operation_id)?;
         let gate = self.gate(repo_dir);
         let _in_process = gate.lock().unwrap_or_else(|e| e.into_inner());
-        let _file_lock = lock_repo(repo_dir)?;
-        pollster::block_on(outcome_locked(repo_dir, operation_id))
+        let mut head_file = lock_repo(repo_dir)?;
+        pollster::block_on(outcome_locked(repo_dir, &mut head_file, operation_id))
     }
 
     /// The current HEAD, creating an empty repo (HEAD is the root commit) if
     /// there is none yet.
     pub fn head(&self, repo_dir: &Path) -> CommitResult<RevisionTree> {
         validate_repo_dir(repo_dir)?;
-        let repo = if repo_dir.join("jj").is_dir() {
-            pollster::block_on(load_repo(repo_dir))?
-        } else {
-            let gate = self.gate(repo_dir);
-            let _in_process = gate.lock().unwrap_or_else(|e| e.into_inner());
-            let _file_lock = lock_repo(repo_dir)?;
-            pollster::block_on(load_or_init(repo_dir))?
-        };
-        let head = head_commit(&repo)?;
+        let gate = self.gate(repo_dir);
+        let _in_process = gate.lock().unwrap_or_else(|e| e.into_inner());
+        let mut head_file = lock_repo(repo_dir)?;
+        let (_repo, head) = pollster::block_on(settled_head(repo_dir, &mut head_file))?;
         Ok(RevisionTree {
             revision: head.id().hex(),
             tree: tree_hash(&head),
@@ -198,10 +211,15 @@ impl CommitService {
 
     pub fn tree_hash(&self, repo_dir: &Path, revision: &str) -> CommitResult<RevisionTree> {
         validate_repo_dir(repo_dir)?;
-        if !repo_dir.join("jj").is_dir() {
-            return Err(CommitError::RevisionNotFound(revision.to_owned()));
-        }
-        let repo = pollster::block_on(load_repo(repo_dir))?;
+        // Load first rather than testing for `jj/`: a cached negative lookup
+        // must not turn an existing revision into a 404.
+        let repo = match pollster::block_on(load_repo(repo_dir)) {
+            Ok(repo) => repo,
+            Err(_) if !repo_dir.join("jj").exists() => {
+                return Err(CommitError::RevisionNotFound(revision.to_owned()))
+            }
+            Err(error) => return Err(error),
+        };
         let commit = get_commit(&repo, revision)?;
         Ok(RevisionTree {
             revision: commit.id().hex(),
@@ -219,9 +237,12 @@ impl CommitService {
 }
 
 /// The body of [`CommitService::commit`]. Callers hold both repo locks.
-async fn commit_locked(repo_dir: &Path, request: CommitRequest) -> CommitResult<CommitOutcome> {
-    let repo = load_or_init(repo_dir).await?;
-    let head = head_commit(&repo)?;
+async fn commit_locked(
+    repo_dir: &Path,
+    head_file: &mut File,
+    request: CommitRequest,
+) -> CommitResult<CommitOutcome> {
+    let (repo, head) = settled_head(repo_dir, head_file).await?;
     repair_head_record(repo_dir, &head)?;
 
     let record_path = operation_record_path(repo_dir, &request.operation_id);
@@ -256,7 +277,13 @@ async fn commit_locked(repo_dir: &Path, request: CommitRequest) -> CommitResult<
         });
     }
 
-    let tree = build_tree(&repo, &head, &request.changes).await?;
+    let tree = match build_tree(&repo, &head, &request.changes).await {
+        Ok(tree) => tree,
+        Err(error) => {
+            std::fs::remove_file(&record_path).map_err(internal)?;
+            return Err(error);
+        }
+    };
     if tree.tree_ids() == head.tree_ids() {
         write_record(&record_path, &Record::Committed(head_hex.clone()))?;
         return Ok(CommitOutcome {
@@ -282,15 +309,17 @@ async fn commit_locked(repo_dir: &Path, request: CommitRequest) -> CommitResult<
         .write()
         .await
         .map_err(internal)?;
+    let revision = commit.id().hex();
+    // The commit point: from here a crash leaves this revision as HEAD, and
+    // the next locked call publishes it if jj hasn't.
+    write_recorded_head(head_file, &revision)?;
     tx.commit(format!(
-        "commit {} for operation {}",
-        commit.id().hex(),
+        "commit {revision} for operation {}",
         request.operation_id
     ))
     .await
     .map_err(internal)?;
 
-    let revision = commit.id().hex();
     write_record(&record_path, &Record::Committed(revision.clone()))?;
     Ok(CommitOutcome {
         revision,
@@ -301,9 +330,12 @@ async fn commit_locked(repo_dir: &Path, request: CommitRequest) -> CommitResult<
 }
 
 /// The body of [`CommitService::outcome`]. Callers hold both repo locks.
-async fn outcome_locked(repo_dir: &Path, operation_id: &str) -> CommitResult<OperationOutcome> {
-    let repo = load_or_init(repo_dir).await?;
-    let head = head_commit(&repo)?;
+async fn outcome_locked(
+    repo_dir: &Path,
+    head_file: &mut File,
+    operation_id: &str,
+) -> CommitResult<OperationOutcome> {
+    let (_repo, head) = settled_head(repo_dir, head_file).await?;
     repair_head_record(repo_dir, &head)?;
 
     let record_path = operation_record_path(repo_dir, operation_id);
@@ -320,22 +352,96 @@ async fn outcome_locked(repo_dir: &Path, operation_id: &str) -> CommitResult<Ope
     }
 }
 
-/// Take the cross-process commit lock on `repo_dir`, creating the repo
-/// directory if needed. Callers hold the repo's in-process gate first.
-fn lock_repo(repo_dir: &Path) -> CommitResult<FileLock> {
+/// Take the cross-process lock on `repo_dir`, creating the repo directory if
+/// needed, and return the locked `deckd/HEAD`. Callers hold the repo's
+/// in-process gate first. Dropping the file releases the lock.
+fn lock_repo(repo_dir: &Path) -> CommitResult<File> {
     create_repo_dir(repo_dir)?;
     let deckd_dir = repo_dir.join("deckd");
     std::fs::create_dir_all(deckd_dir.join("operations")).map_err(internal)?;
-    let lock_path = deckd_dir.join("commit.lock");
+    // The lock file is never deleted. Deleting one on release (as jj-lib's
+    // `FileLock` does) lets two NFS clients each hold "the" lock: one on the
+    // unlinked inode, which NFS keeps alive under a hidden name, and one on
+    // its replacement.
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(deckd_dir.join("HEAD"))
+        .map_err(internal)?;
     let started = Instant::now();
     loop {
-        match FileLock::try_lock(lock_path.clone()).map_err(internal)? {
-            Some(file_lock) => return Ok(file_lock),
-            None if started.elapsed() >= LOCK_TIMEOUT => {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(TryLockError::WouldBlock) if started.elapsed() >= LOCK_TIMEOUT => {
                 return Err(CommitError::LockTimeout(repo_dir.display().to_string()))
             }
-            None => std::thread::sleep(Duration::from_millis(10)),
+            Err(TryLockError::WouldBlock) => std::thread::sleep(Duration::from_millis(10)),
+            Err(TryLockError::Error(error)) => return Err(internal(error)),
         }
+    }
+}
+
+/// The revision in the locked `deckd/HEAD`; empty means the root commit.
+fn read_recorded_head(head_file: &mut File, root: &CommitId) -> CommitResult<CommitId> {
+    let mut text = String::new();
+    head_file.seek(SeekFrom::Start(0)).map_err(internal)?;
+    head_file.read_to_string(&mut text).map_err(internal)?;
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(root.clone());
+    }
+    CommitId::try_from_hex(text)
+        .ok_or_else(|| CommitError::Internal(format!("unreadable deckd/HEAD {text:?}")))
+}
+
+/// Overwrite `deckd/HEAD` in place. Every revision has the same length, so
+/// the file is never truncated and a reader never sees it empty.
+fn write_recorded_head(head_file: &mut File, revision: &str) -> CommitResult<()> {
+    head_file.seek(SeekFrom::Start(0)).map_err(internal)?;
+    head_file
+        .write_all(format!("{revision}\n").as_bytes())
+        .map_err(internal)?;
+    head_file.sync_all().map_err(internal)
+}
+
+/// Load the repo and return its HEAD once it agrees with `deckd/HEAD`. Callers
+/// hold both repo locks.
+async fn settled_head(
+    repo_dir: &Path,
+    head_file: &mut File,
+) -> CommitResult<(Arc<ReadonlyRepo>, Commit)> {
+    let started = Instant::now();
+    loop {
+        let repo = load_or_init(repo_dir).await?;
+        let recorded = read_recorded_head(head_file, repo.store().root_commit_id())?;
+        let head = head_commit(&repo)?;
+        if head.id() == &recorded {
+            return Ok((repo, head));
+        }
+        // jj one commit behind: the recorded revision was written and then
+        // either never published (a crash) or published where this host's
+        // listing can't see it yet. Publishing it is right in both cases, and
+        // publishing it twice merges to the same single head.
+        if let Ok(commit) = repo.store().get_commit(&recorded) {
+            if commit.parent_ids() == std::slice::from_ref(head.id()) {
+                let mut tx = repo.start_transaction();
+                tx.repo_mut().add_head(&commit).await.map_err(internal)?;
+                let repo = tx
+                    .commit(format!("publish recorded HEAD {}", recorded.hex()))
+                    .await
+                    .map_err(internal)?;
+                return Ok((repo, commit));
+            }
+        }
+        if started.elapsed() >= SETTLE_TIMEOUT {
+            return Err(CommitError::HistoryUnsettled {
+                recorded: recorded.hex(),
+                observed: head.id().hex(),
+            });
+        }
+        std::thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -367,6 +473,16 @@ fn validate_operation_id(operation_id: &str) -> CommitResult<()> {
             "invalid operation id {operation_id:?}: use 1-128 of [A-Za-z0-9._-], not starting with `.`"
         )))
     }
+}
+
+/// A path a commit may write or delete. Beyond what reads accept, it has no
+/// `.` segment (git rejects such trees) and no `.git` segment (git refuses to
+/// check one out). History only grows, so a bad tree could never be removed.
+fn is_valid_commit_path(path: &str) -> bool {
+    is_valid_history_path(path)
+        && !path
+            .split('/')
+            .any(|segment| segment == "." || segment.eq_ignore_ascii_case(".git"))
 }
 
 fn validate_commit_request(request: &CommitRequest) -> CommitResult<()> {
@@ -415,7 +531,7 @@ fn validate_commit_request(request: &CommitRequest) -> CommitResult<()> {
     }
     let mut seen = HashSet::new();
     for change in &request.changes {
-        if !is_valid_history_path(&change.path) {
+        if !is_valid_commit_path(&change.path) {
             return Err(CommitError::Invalid(format!(
                 "invalid path {:?}",
                 change.path
@@ -426,6 +542,20 @@ fn validate_commit_request(request: &CommitRequest) -> CommitResult<()> {
                 "path {:?} appears more than once",
                 change.path
             )));
+        }
+    }
+    // A listed path inside another listed path would turn a file into a
+    // directory or back, changing what the other entry says.
+    for change in &request.changes {
+        let mut ancestor = change.path.as_str();
+        while let Some((parent, _)) = ancestor.rsplit_once('/') {
+            if seen.contains(parent) {
+                return Err(CommitError::Invalid(format!(
+                    "path {:?} is inside listed path {parent:?}",
+                    change.path
+                )));
+            }
+            ancestor = parent;
         }
     }
     Ok(())
@@ -463,6 +593,8 @@ fn create_repo_dir(repo_dir: &Path) -> CommitResult<()> {
 /// crash mid-init never leaves a half-made `jj/`.
 async fn load_or_init(repo_dir: &Path) -> CommitResult<Arc<ReadonlyRepo>> {
     let jj_dir = repo_dir.join("jj");
+    // A cached negative lookup can make an existing `jj/` look absent; the
+    // rename in `install_repo` is what decides.
     if !jj_dir.is_dir() {
         let staging = repo_dir.join("deckd").join(format!("init-{}", nonce()));
         std::fs::create_dir_all(&staging).map_err(internal)?;
@@ -487,9 +619,26 @@ async fn load_or_init(repo_dir: &Path) -> CommitResult<Arc<ReadonlyRepo>> {
         )
         .await
         .map_err(internal)?;
-        std::fs::rename(&staging, &jj_dir).map_err(internal)?;
+        install_repo(&staging, &jj_dir)?;
     }
     load_repo(repo_dir).await
+}
+
+/// Move a freshly initialized repo into place. When `jj/` already exists the
+/// staged copy is discarded and the existing repo wins.
+fn install_repo(staging: &Path, jj_dir: &Path) -> CommitResult<()> {
+    match std::fs::rename(staging, jj_dir) {
+        Ok(()) => Ok(()),
+        Err(e)
+            if matches!(
+                e.kind(),
+                ErrorKind::AlreadyExists | ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            std::fs::remove_dir_all(staging).map_err(internal)
+        }
+        Err(e) => Err(internal(e)),
+    }
 }
 
 async fn load_repo(repo_dir: &Path) -> CommitResult<Arc<ReadonlyRepo>> {
@@ -537,16 +686,54 @@ fn tree_hash(commit: &Commit) -> String {
     }
 }
 
+/// What the parent tree holds at `path`.
+enum Existing {
+    Absent,
+    File,
+    Directory,
+}
+
+async fn existing(tree: &MergedTree, path: &RepoPath) -> CommitResult<Existing> {
+    let value = tree.path_value(path).await.map_err(internal)?;
+    Ok(match value.as_resolved() {
+        Some(None) => Existing::Absent,
+        Some(Some(TreeValue::Tree(_))) => Existing::Directory,
+        // Files, symlinks, submodules and conflicts all block a directory.
+        _ => Existing::File,
+    })
+}
+
+/// HEAD's tree with `changes` applied. A change may not turn a file into a
+/// directory or back: that would remove paths the request didn't list.
 async fn build_tree(
     repo: &Arc<ReadonlyRepo>,
     parent: &Commit,
     changes: &[Change],
-) -> CommitResult<jj_lib::merged_tree::MergedTree> {
+) -> CommitResult<MergedTree> {
     let store = repo.store();
-    let mut builder = MergedTreeBuilder::new(parent.tree());
+    let base = parent.tree();
+    let mut builder = MergedTreeBuilder::new(base.clone());
     for change in changes {
         let path = RepoPathBuf::from_internal_string(change.path.clone())
             .map_err(|e| CommitError::Invalid(format!("invalid path {:?}: {e}", change.path)))?;
+        for ancestor in path.ancestors().skip(1) {
+            if ancestor.is_root() {
+                break;
+            }
+            if let Existing::File = existing(&base, ancestor).await? {
+                return Err(CommitError::Invalid(format!(
+                    "path {:?} is inside file {:?}",
+                    change.path,
+                    ancestor.as_internal_file_string()
+                )));
+            }
+        }
+        if let Existing::Directory = existing(&base, &path).await? {
+            return Err(CommitError::Invalid(format!(
+                "path {:?} is a directory; list the files inside it instead",
+                change.path
+            )));
+        }
         let value = match &change.content {
             Some(bytes) => {
                 let id = store
@@ -643,6 +830,8 @@ fn write_record(path: &Path, record: &Record) -> CommitResult<()> {
 /// Make HEAD's operation record say `committed HEAD`. The record is written
 /// whenever it doesn't already say so, including when reading it fails: a
 /// missing file may only be a stale NFS lookup, and the write is the truth.
+/// A `fenced` record for HEAD's operation means the lock failed to exclude a
+/// writer; that is refused loudly, never overwritten.
 fn repair_head_record(repo_dir: &Path, head: &Commit) -> CommitResult<()> {
     let Some(operation_id) = parse_description_trailers(head.description())
         .into_iter()
@@ -656,10 +845,19 @@ fn repair_head_record(repo_dir: &Path, head: &Commit) -> CommitResult<()> {
     }
     let path = operation_record_path(repo_dir, &operation_id);
     let expected = Record::Committed(head.id().hex());
-    if read_record(&path).ok().as_ref() != Some(&expected) {
-        write_record(&path, &expected)?;
+    match read_record(&path).ok() {
+        Some(record) if record == expected => Ok(()),
+        Some(Record::Fenced) => {
+            let message = format!(
+                "operation {operation_id} was reported absent but committed as {}; \
+                 history needs an operator",
+                head.id().hex()
+            );
+            tracing::error!(repo = %repo_dir.display(), "{message}");
+            Err(CommitError::Internal(message))
+        }
+        _ => write_record(&path, &expected),
     }
-    Ok(())
 }
 
 fn nonce() -> String {
@@ -1156,6 +1354,243 @@ mod tests {
         .unwrap();
 
         assert!(second.created);
+    }
+
+    /// Overwrite the locked `deckd/HEAD`, as a crashed or partitioned peer
+    /// would leave it.
+    fn set_recorded_head(realm: &Realm, revision: &str) {
+        let mut file = lock_repo(&realm.repo()).unwrap();
+        write_recorded_head(&mut file, revision).unwrap();
+    }
+
+    /// Write a commit for `operation_id` without publishing it, as a writer
+    /// that crashed between recording and publishing would.
+    fn unpublished_commit(realm: &Realm, parent: &str, operation_id: &str) -> String {
+        pollster::block_on(async {
+            let repo = load_repo(&realm.repo()).await.unwrap();
+            let head = get_commit(&repo, parent).unwrap();
+            let req = request(parent, operation_id, vec![write("crashed.txt", "x")]);
+            let tree = build_tree(&repo, &head, &req.changes).await.unwrap();
+            let mut tx = repo.start_transaction();
+            let commit = tx
+                .repo_mut()
+                .new_commit(vec![head.id().clone()], tree)
+                .set_description(description(&req))
+                .write()
+                .await
+                .unwrap();
+            commit.id().hex()
+        })
+    }
+
+    fn assert_invalid(result: CommitResult<CommitOutcome>, needle: &str) {
+        match result {
+            Err(CommitError::Invalid(message)) => {
+                assert!(message.contains(needle), "{message:?} lacks {needle:?}")
+            }
+            other => panic!("expected invalid request, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn changes_may_not_cross_a_file_directory_boundary() {
+        let realm = Realm::new("boundary");
+        let service = CommitService::new();
+        let root = head(&service, &realm);
+        let base = commit(
+            &service,
+            &realm,
+            request(
+                &root,
+                "op-base",
+                vec![write("a", "1"), write("d/x", "1"), write("d/y", "1")],
+            ),
+        )
+        .unwrap();
+        let attempt =
+            |op: &str, changes| commit(&service, &realm, request(&base.revision, op, changes));
+
+        assert_invalid(attempt("op-1", vec![write("a/b", "2")]), "inside file");
+        assert_invalid(attempt("op-2", vec![write("d", "2")]), "is a directory");
+        assert_invalid(attempt("op-3", vec![delete("d")]), "is a directory");
+        assert_invalid(
+            attempt("op-4", vec![write("e", "2"), write("e/f", "2")]),
+            "inside listed path",
+        );
+        assert_invalid(
+            attempt("op-5", vec![delete("a"), write("a/b", "2")]),
+            "inside listed path",
+        );
+
+        // Refused requests leave no claim, so the IDs stay usable.
+        let fixed = attempt("op-1", vec![write("a2/b", "2")]).unwrap();
+        assert!(fixed.created);
+        assert_eq!(
+            files_at(&realm, &fixed.revision),
+            files(&[("a", "1"), ("a2/b", "2"), ("d/x", "1"), ("d/y", "1")])
+        );
+    }
+
+    #[test]
+    fn dot_and_git_segments_are_refused() {
+        let realm = Realm::new("dot-paths");
+        let service = CommitService::new();
+        let root = head(&service, &realm);
+
+        for path in [".", "x/./y", ".git/config", "x/.GIT/hooks", "x/.git"] {
+            assert_invalid(
+                commit(
+                    &service,
+                    &realm,
+                    request(&root, "op", vec![write(path, "")]),
+                ),
+                "invalid path",
+            );
+        }
+        // Names that only start with those segments are ordinary files.
+        let done = commit(
+            &service,
+            &realm,
+            request(
+                &root,
+                "op",
+                vec![write(".gitignore", ""), write("x/.github/ci", "")],
+            ),
+        )
+        .unwrap();
+        assert!(done.created);
+    }
+
+    #[test]
+    fn lock_file_records_head_and_persists() {
+        let realm = Realm::new("head-file");
+        let service = CommitService::new();
+        let root = head(&service, &realm);
+
+        let done = commit(
+            &service,
+            &realm,
+            request(&root, "op-1", vec![write("a", "1")]),
+        )
+        .unwrap();
+
+        let recorded = std::fs::read_to_string(realm.repo().join("deckd/HEAD")).unwrap();
+        assert_eq!(recorded.trim(), done.revision);
+    }
+
+    #[test]
+    fn commit_recorded_but_not_published_is_published_by_the_next_call() {
+        let realm = Realm::new("roll-forward");
+        let service = CommitService::new();
+        let root = head(&service, &realm);
+        let revision = unpublished_commit(&realm, &root, "op-crashed");
+        set_recorded_head(&realm, &revision);
+        std::fs::write(
+            operation_record_path(&realm.repo(), "op-crashed"),
+            "pending\n",
+        )
+        .unwrap();
+
+        let restarted = CommitService::new();
+
+        assert_eq!(
+            outcome(&restarted, &realm, "op-crashed"),
+            OperationOutcome::Committed {
+                revision: revision.clone()
+            }
+        );
+        assert_eq!(head(&restarted, &realm), revision);
+        assert_eq!(files_at(&realm, &revision), files(&[("crashed.txt", "x")]));
+        let next = commit(
+            &restarted,
+            &realm,
+            request(&revision, "op-next", vec![write("b", "2")]),
+        )
+        .unwrap();
+        assert!(next.created);
+    }
+
+    #[test]
+    fn head_that_disagrees_with_the_record_is_refused() {
+        let realm = Realm::new("unsettled");
+        let service = CommitService::new();
+        let root = head(&service, &realm);
+        let first = commit(
+            &service,
+            &realm,
+            request(&root, "op-1", vec![write("a", "1")]),
+        )
+        .unwrap();
+        // A recorded HEAD jj can't reach, as a stale listing would look.
+        set_recorded_head(&realm, &"ab".repeat(20));
+
+        let error = commit(
+            &service,
+            &realm,
+            request(&first.revision, "op-2", vec![write("b", "2")]),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(error, CommitError::HistoryUnsettled { .. }),
+            "{error:?}"
+        );
+        // Nothing was claimed or written.
+        set_recorded_head(&realm, &first.revision);
+        assert_eq!(outcome(&service, &realm, "op-2"), OperationOutcome::Absent);
+        assert_eq!(head(&service, &realm), first.revision);
+    }
+
+    #[test]
+    fn fenced_record_for_head_is_reported_not_overwritten() {
+        let realm = Realm::new("fence-violated");
+        let service = CommitService::new();
+        let root = head(&service, &realm);
+        commit(
+            &service,
+            &realm,
+            request(&root, "op-1", vec![write("a", "1")]),
+        )
+        .unwrap();
+        let record = operation_record_path(&realm.repo(), "op-1");
+        std::fs::write(&record, "fenced\n").unwrap();
+
+        let error = service.outcome(&realm.repo(), "op-2").unwrap_err();
+
+        assert!(
+            error.to_string().contains("reported absent but committed"),
+            "{error}"
+        );
+        assert_eq!(std::fs::read_to_string(&record).unwrap(), "fenced\n");
+    }
+
+    #[test]
+    fn initializing_over_an_existing_repo_keeps_it() {
+        let realm = Realm::new("init-race");
+        let service = CommitService::new();
+        let root = head(&service, &realm);
+        let done = commit(
+            &service,
+            &realm,
+            request(&root, "op-1", vec![write("a", "1")]),
+        )
+        .unwrap();
+        let staging = realm.repo().join("deckd/init-late");
+        std::fs::create_dir_all(staging.join("store")).unwrap();
+
+        install_repo(&staging, &realm.repo().join("jj")).unwrap();
+
+        assert!(!staging.exists());
+        assert_eq!(head(&service, &realm), done.revision);
+    }
+
+    #[test]
+    fn tree_hash_in_a_missing_repo_is_not_found() {
+        let realm = Realm::new("tree-no-repo");
+        let error = CommitService::new()
+            .tree_hash(&realm.repo(), &"ab".repeat(20))
+            .unwrap_err();
+        assert!(matches!(error, CommitError::RevisionNotFound(_)));
     }
 
     #[test]
