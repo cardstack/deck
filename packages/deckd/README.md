@@ -81,13 +81,15 @@ can then record each write exactly once, even when deckd's response is lost.
 
 Each call names `repo`, the absolute path of one history directory (for
 example `<realm>/.history`). The directory's parent must exist; deckd creates
-the directory and a bare jj repo inside it on first use:
+the directory and a bare jj repo inside it on first use. When `DECKD_REPO_ROOT`
+is set, `repo` must resolve, symlinks followed, to a directory inside it;
+deployments should set it to the realms directory.
 
 ```text
 <repo>/
   jj/                       # jj repo, internal git backend, no working copy
   deckd/HEAD                # recorded HEAD; locked around every call but /tree-hash
-  deckd/operations/<opId>   # pending | committed <revision> | fenced
+  deckd/operations/<opId>   # pending <digest> | committed <revision> <digest> | fenced
 ```
 
 A revision is the git commit ID (40 hex). HEAD is the repo's single visible
@@ -102,13 +104,16 @@ head; an empty repo's HEAD is the root commit, `0000…0000`.
   with `parent-mismatch` and the current `head`, never re-parented.
 - **Idempotent by operation ID.** Committing an ID that already committed
   returns the original revision with `replayed: true` and writes nothing,
-  even when the retry's `parent` is now stale.
+  even when the retry's `parent` is now stale. The retry must ask for the
+  same thing: an ID that committed a different author, message, trailers or
+  changes is refused with `operation-mismatch`.
 - **Fencing outcome query.** `/outcome` reports `committed` or `absent`.
   Reporting `absent` fences the ID: a later commit with it is refused with
   `operation-fenced`.
 - **Durable, not in-memory.** Outcomes and fences are files under `<repo>`,
   so they survive a restart and are shared by every deckd on the same
-  filesystem. Record existence is tested with `O_EXCL` creates, which an NFS
+  filesystem. Each record and its directory entry are synced before the call
+  returns. Record existence is tested with `O_EXCL` creates, which an NFS
   server answers, so a stale negative lookup can't hide one.
 - **No-op writes record nothing.** When the changes leave the tree as it was,
   no revision is created; the response returns HEAD with `created: false`.
@@ -118,11 +123,18 @@ Correctness doesn't depend on deckd's in-process state:
 - **One lock file, never deleted.** An exclusive lock on `deckd/HEAD`
   serializes deckd processes. Deleting a lock file on release lets two NFS
   clients each hold the lock, one on the unlinked inode and one on its
-  replacement, so this file stays.
+  replacement, so this file stays. Within a process, calls for one repo also
+  share a mutex keyed by the directory's device and inode, so a symlinked
+  spelling can't bypass it. Both locks share the 30 s `lock-timeout`.
 - **A recorded HEAD.** `deckd/HEAD` holds the revision deckd last recorded,
   written just before jj publishes it. Taking an NFS lock revalidates that
   file's cached data, so it is current even when this host's listing of jj's
   operations is stale. jj's HEAD must match it before anything is written.
+  - The file holds two checksummed slots, and each write goes to the slot
+    without the latest value, so a write torn by a crash leaves the previous
+    revision readable.
+  - A revision is recorded only after its git objects are synced, so a power
+    loss can't leave `deckd/HEAD` naming a commit the store lost.
   - When jj is one commit behind (a crash between recording and publishing, or
     a stale listing), the recorded commit is published, which is idempotent.
   - Any other mismatch is reloaded for a few seconds, then refused with
@@ -168,7 +180,8 @@ Each commit's message ends with the caller's trailers, then
   `delete: true`. A path appears at most once. Paths are relative and may not
   contain empty, `.`, `..` or `.git` segments. No listed path may be inside
   another listed path, inside a file in HEAD, or name a directory in HEAD.
-  Deleting an absent path changes nothing.
+  Deleting an absent path changes nothing. Writing an existing file keeps its
+  executable bit.
 - `trailers`: optional. Keys match `[A-Za-z0-9-]+`; values are one line.
 - `message` is required. `author.name` and `author.email` are required and may
   not contain newlines, `<` or `>`.
@@ -213,7 +226,9 @@ it can change state.
 ```
 
 The tree hash is the git tree ID, so identical content has the same hash in
-any repo, whoever committed it and whatever the message.
+any repo, whoever committed it and whatever the message. The revision must be
+in the repo's history; a commit object that was written but never published
+is `revision-not-found`.
 
 ### Errors
 
@@ -226,9 +241,10 @@ route, including a request deckd can't parse.
 | 404         | `revision-not-found` | `/tree-hash` for a revision the repo doesn't have                       |
 | 409         | `parent-mismatch`    | `parent` isn't HEAD; body has `head`                                    |
 | 409         | `operation-fenced`   | The operation ID was reported `absent` by `/outcome`                    |
+| 409         | `operation-mismatch` | The operation ID committed a different request; body has `revision`     |
 | 413         | `payload-too-large`  | A `/commit` body over 64 MiB; split the change into several commits     |
 | 503         | `history-unsettled`  | jj's HEAD didn't match `deckd/HEAD` within a few seconds; retry         |
-| 503         | `lock-timeout`       | Another process held the repo's lock for 30 s                           |
+| 503         | `lock-timeout`       | Other calls held the repo's locks for 30 s                              |
 | 500         | `internal`           | jj or filesystem failure, or a fenced operation found committed         |
 
 ## Run

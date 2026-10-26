@@ -454,6 +454,11 @@ impl From<CommitError> for ApiError {
             CommitError::OperationFenced(_) => {
                 Self::new(StatusCode::CONFLICT, "operation-fenced", message)
             }
+            CommitError::OperationMismatch { revision, .. } => {
+                let mut error = Self::new(StatusCode::CONFLICT, "operation-mismatch", message);
+                error.details.insert("revision".into(), revision.into());
+                error
+            }
             CommitError::RevisionNotFound(_) => {
                 Self::new(StatusCode::NOT_FOUND, "revision-not-found", message)
             }

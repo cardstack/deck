@@ -43,7 +43,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let history: Arc<dyn HistoryBackend> = Arc::new(jj_history);
-    let commits = Arc::new(CommitService::new());
+    // When set, explicit-commit repos must live under this directory.
+    let commits = Arc::new(match std::env::var_os("DECKD_REPO_ROOT") {
+        Some(root) => CommitService::with_root(std::path::Path::new(&root))?,
+        None => CommitService::new(),
+    });
     #[cfg(feature = "build")]
     let state = {
         let jj_bin = std::env::var("JJ_BIN").unwrap_or_else(|_| "jj".into());
