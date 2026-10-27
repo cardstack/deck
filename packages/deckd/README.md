@@ -7,8 +7,7 @@ jj-lib seal). Design: [`docs/deck-daemon.md`](../../docs/deck-daemon.md).
 Lives in the Deck monorepo at `packages/deckd/`. History + watch is the
 default binary; optional planes are feature-gated off.
 
-jj-lib path copied closely from boxel-labs
-[`jj-historyd`](file:///Users/chris/Projects/boxel-labs/examples/jj-lib-node/rust)
+jj-lib path copied closely from an internal `jj-historyd` prototype
 (`HistoryService` + axum + `spawn_blocking`/`pollster`).
 
 Dependency: crates.io `jj-lib = "0.46.0"`, which needs rustc 1.97.1;
