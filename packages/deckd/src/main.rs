@@ -19,6 +19,7 @@ use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
 use crate::api::AppState;
+use crate::history::commit::CommitService;
 use crate::history::jj_lib::JjLibHistory;
 use crate::history::HistoryBackend;
 use crate::watch::WatchPlane;
@@ -42,17 +43,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let history: Arc<dyn HistoryBackend> = Arc::new(jj_history);
+    // When set, explicit-commit repos must live under this directory.
+    let commits = Arc::new(match std::env::var_os("DECKD_REPO_ROOT") {
+        Some(root) => CommitService::with_root(std::path::Path::new(&root))?,
+        None => CommitService::new(),
+    });
     #[cfg(feature = "build")]
     let state = {
         let jj_bin = std::env::var("JJ_BIN").unwrap_or_else(|_| "jj".into());
         AppState {
             history,
+            commits,
             build: Some(Arc::new(crate::build::BuildPlane::new(jj_bin))),
             watch,
         }
     };
     #[cfg(not(feature = "build"))]
-    let state = AppState { history, watch };
+    let state = AppState {
+        history,
+        commits,
+        watch,
+    };
 
     let app = api::router(state);
     let addr: SocketAddr = bind.parse()?;

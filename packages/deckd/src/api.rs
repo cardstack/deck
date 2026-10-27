@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::rejection::JsonRejection;
+use axum::extract::{DefaultBodyLimit, FromRequest, Request, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -10,6 +11,10 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
+use crate::history::commit::{
+    Author, Change, CommitError, CommitOutcome, CommitRequest, CommitService, CommitTrailer,
+    OperationOutcome, RevisionTree,
+};
 use crate::history::{Actor, HistoryBackend, HistoryBackendError, HistoryEntry, RestorePlan};
 use crate::watch::WatchPlane;
 
@@ -21,6 +26,8 @@ use crate::build::{
 #[derive(Clone)]
 pub struct AppState {
     pub history: Arc<dyn HistoryBackend>,
+    /// Explicit-content commits for repos addressed by path.
+    pub commits: Arc<CommitService>,
     /// Present only with `--features build`.
     #[cfg(feature = "build")]
     pub build: Option<Arc<BuildPlane>>,
@@ -40,6 +47,13 @@ pub fn router(state: AppState) -> Router {
         .route("/file-at", post(file_at))
         .route("/file-list-at", post(file_list_at))
         .route("/restore-plan", post(restore_plan))
+        .route(
+            "/commit",
+            post(commit).layer(DefaultBodyLimit::max(COMMIT_BODY_LIMIT)),
+        )
+        .route("/outcome", post(outcome))
+        .route("/head", post(head))
+        .route("/tree-hash", post(tree_hash))
         .route("/ensure-build", post(ensure_build))
         .route("/artifact-at", post(artifact_at))
         .layer(TraceLayer::new_for_http())
@@ -56,10 +70,51 @@ pub fn router(state: AppState) -> Router {
         .route("/file-at", post(file_at))
         .route("/file-list-at", post(file_list_at))
         .route("/restore-plan", post(restore_plan))
+        .route(
+            "/commit",
+            post(commit).layer(DefaultBodyLimit::max(COMMIT_BODY_LIMIT)),
+        )
+        .route("/outcome", post(outcome))
+        .route("/head", post(head))
+        .route("/tree-hash", post(tree_hash))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
     app
+}
+
+/// A commit carries every staged file base64-encoded in one JSON body, so it
+/// needs more than axum's 2 MB default. The whole body and its decoded copy
+/// are held in memory, so this stays well under what the sidecar can spare;
+/// a larger push is split into several commits by the caller.
+const COMMIT_BODY_LIMIT: usize = 64 * 1024 * 1024;
+
+/// A JSON request body whose rejections (malformed JSON, a missing field, the
+/// wrong content type, a body over the limit) answer as typed `ApiError`s,
+/// like every other error.
+struct Body<T>(T);
+
+impl<S, T> FromRequest<S> for Body<T>
+where
+    Json<T>: FromRequest<S, Rejection = JsonRejection>,
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        match Json::<T>::from_request(req, state).await {
+            Ok(Json(value)) => Ok(Body(value)),
+            Err(rejection) => {
+                let status = rejection.status();
+                let code = if status == StatusCode::PAYLOAD_TOO_LARGE {
+                    "payload-too-large"
+                } else {
+                    "invalid-request"
+                };
+                Err(ApiError::new(status, code, rejection.body_text()))
+            }
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,7 +178,7 @@ struct RestorePlanBody {
 
 async fn ensure(
     State(st): State<AppState>,
-    Json(body): Json<DirBody>,
+    Body(body): Body<DirBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     st.history.ensure(&body.dir).await?;
     if let Some(watch) = &st.watch {
@@ -136,7 +191,7 @@ async fn ensure(
 
 async fn note(
     State(st): State<AppState>,
-    Json(body): Json<NoteBody>,
+    Body(body): Body<NoteBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     st.history.note(&body.dir, &body.path).await?;
     Ok(Json(serde_json::json!({})))
@@ -144,7 +199,7 @@ async fn note(
 
 async fn flush(
     State(st): State<AppState>,
-    Json(body): Json<DirBody>,
+    Body(body): Body<DirBody>,
 ) -> Result<Json<SealResponse>, ApiError> {
     let change_id = st.history.flush_notes(&body.dir).await?;
     Ok(Json(SealResponse { change_id }))
@@ -152,7 +207,7 @@ async fn flush(
 
 async fn seal(
     State(st): State<AppState>,
-    Json(body): Json<SealBody>,
+    Body(body): Body<SealBody>,
 ) -> Result<Json<SealResponse>, ApiError> {
     let change_id = st
         .history
@@ -163,14 +218,14 @@ async fn seal(
 
 async fn list(
     State(st): State<AppState>,
-    Json(body): Json<DirBody>,
+    Body(body): Body<DirBody>,
 ) -> Result<Json<Vec<HistoryEntry>>, ApiError> {
     Ok(Json(st.history.list(&body.dir).await?))
 }
 
 async fn file_at(
     State(st): State<AppState>,
-    Json(body): Json<FileAtBody>,
+    Body(body): Body<FileAtBody>,
 ) -> Result<Json<FileAtResponse>, ApiError> {
     let bytes = st
         .history
@@ -190,7 +245,7 @@ async fn file_at(
 
 async fn file_list_at(
     State(st): State<AppState>,
-    Json(body): Json<FileListAtBody>,
+    Body(body): Body<FileListAtBody>,
 ) -> Result<Json<FileListAtResponse>, ApiError> {
     Ok(Json(FileListAtResponse {
         paths: st
@@ -202,7 +257,7 @@ async fn file_list_at(
 
 async fn restore_plan(
     State(st): State<AppState>,
-    Json(body): Json<RestorePlanBody>,
+    Body(body): Body<RestorePlanBody>,
 ) -> Result<Json<RestorePlan>, ApiError> {
     Ok(Json(
         st.history
@@ -211,10 +266,141 @@ async fn restore_plan(
     ))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommitBody {
+    repo: String,
+    parent: String,
+    operation_id: String,
+    author: Author,
+    message: String,
+    #[serde(default)]
+    trailers: Vec<CommitTrailer>,
+    changes: Vec<ChangeBody>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangeBody {
+    path: String,
+    #[serde(default)]
+    content_base64: Option<String>,
+    #[serde(default)]
+    delete: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OutcomeBody {
+    repo: String,
+    operation_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepoBody {
+    repo: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct TreeHashBody {
+    repo: String,
+    revision: String,
+}
+
+#[derive(Debug, Serialize)]
+struct TreeHashResponse {
+    tree: String,
+}
+
+async fn commit(
+    State(st): State<AppState>,
+    Body(body): Body<CommitBody>,
+) -> Result<Json<CommitOutcome>, ApiError> {
+    let mut changes = Vec::with_capacity(body.changes.len());
+    for change in body.changes {
+        let content = match (change.content_base64, change.delete) {
+            (Some(encoded), false) => Some(
+                base64::engine::general_purpose::STANDARD
+                    .decode(encoded)
+                    .map_err(|e| {
+                        CommitError::Invalid(format!("contentBase64 for {:?}: {e}", change.path))
+                    })?,
+            ),
+            (None, true) => None,
+            _ => {
+                return Err(CommitError::Invalid(format!(
+                    "change {:?} needs exactly one of contentBase64 or delete: true",
+                    change.path
+                ))
+                .into())
+            }
+        };
+        changes.push(Change {
+            path: change.path,
+            content,
+        });
+    }
+    let request = CommitRequest {
+        parent: body.parent,
+        operation_id: body.operation_id,
+        author: body.author,
+        message: body.message,
+        trailers: body.trailers,
+        changes,
+    };
+    let repo = std::path::PathBuf::from(body.repo);
+    Ok(Json(
+        run_commits(&st, move |c| c.commit(&repo, request)).await?,
+    ))
+}
+
+async fn outcome(
+    State(st): State<AppState>,
+    Body(body): Body<OutcomeBody>,
+) -> Result<Json<OperationOutcome>, ApiError> {
+    let repo = std::path::PathBuf::from(body.repo);
+    let operation_id = body.operation_id;
+    Ok(Json(
+        run_commits(&st, move |c| c.outcome(&repo, &operation_id)).await?,
+    ))
+}
+
+async fn head(
+    State(st): State<AppState>,
+    Body(body): Body<RepoBody>,
+) -> Result<Json<RevisionTree>, ApiError> {
+    let repo = std::path::PathBuf::from(body.repo);
+    Ok(Json(run_commits(&st, move |c| c.head(&repo)).await?))
+}
+
+async fn tree_hash(
+    State(st): State<AppState>,
+    Body(body): Body<TreeHashBody>,
+) -> Result<Json<TreeHashResponse>, ApiError> {
+    let repo = std::path::PathBuf::from(body.repo);
+    let revision = body.revision;
+    let found = run_commits(&st, move |c| c.tree_hash(&repo, &revision)).await?;
+    Ok(Json(TreeHashResponse { tree: found.tree }))
+}
+
+/// Commit work waits on repo locks and drives jj-lib's `!Send` futures, so it
+/// runs on a blocking thread.
+async fn run_commits<T, F>(st: &AppState, f: F) -> Result<T, ApiError>
+where
+    T: Send + 'static,
+    F: FnOnce(Arc<CommitService>) -> Result<T, CommitError> + Send + 'static,
+{
+    let commits = st.commits.clone();
+    tokio::task::spawn_blocking(move || f(commits))
+        .await
+        .map_err(|e| ApiError::from(format!("join error: {e}")))?
+        .map_err(ApiError::from)
+}
+
 #[cfg(feature = "build")]
 async fn ensure_build(
     State(st): State<AppState>,
-    Json(body): Json<EnsureBuildRequest>,
+    Body(body): Body<EnsureBuildRequest>,
 ) -> Result<Json<EnsureBuildResponse>, ApiError> {
     let Some(build) = &st.build else {
         return Err("build plane unavailable".to_string().into());
@@ -225,7 +411,7 @@ async fn ensure_build(
 #[cfg(feature = "build")]
 async fn artifact_at(
     State(st): State<AppState>,
-    Json(body): Json<ArtifactAtRequest>,
+    Body(body): Body<ArtifactAtRequest>,
 ) -> Result<Json<ArtifactAtResponse>, ApiError> {
     let Some(build) = &st.build else {
         return Err("build plane unavailable".to_string().into());
@@ -235,37 +421,86 @@ async fn artifact_at(
 
 struct ApiError {
     status: StatusCode,
+    /// Stable, machine-readable error kind.
+    code: &'static str,
     message: String,
+    /// Extra fields merged into the error body, e.g. `head` on a conflict.
+    details: serde_json::Map<String, serde_json::Value>,
+}
+
+impl ApiError {
+    fn new(status: StatusCode, code: &'static str, message: String) -> Self {
+        Self {
+            status,
+            code,
+            message,
+            details: serde_json::Map::new(),
+        }
+    }
+}
+
+impl From<CommitError> for ApiError {
+    fn from(err: CommitError) -> Self {
+        let message = err.to_string();
+        match err {
+            CommitError::Invalid(_) => {
+                Self::new(StatusCode::BAD_REQUEST, "invalid-request", message)
+            }
+            CommitError::ParentMismatch { head, .. } => {
+                let mut error = Self::new(StatusCode::CONFLICT, "parent-mismatch", message);
+                error.details.insert("head".into(), head.into());
+                error
+            }
+            CommitError::OperationFenced(_) => {
+                Self::new(StatusCode::CONFLICT, "operation-fenced", message)
+            }
+            CommitError::OperationMismatch { revision, .. } => {
+                let mut error = Self::new(StatusCode::CONFLICT, "operation-mismatch", message);
+                error.details.insert("revision".into(), revision.into());
+                error
+            }
+            CommitError::RevisionNotFound(_) => {
+                Self::new(StatusCode::NOT_FOUND, "revision-not-found", message)
+            }
+            CommitError::HistoryUnsettled { .. } => Self::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "history-unsettled",
+                message,
+            ),
+            CommitError::LockTimeout(_) => {
+                Self::new(StatusCode::SERVICE_UNAVAILABLE, "lock-timeout", message)
+            }
+            CommitError::Internal(_) => {
+                Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", message)
+            }
+        }
+    }
 }
 
 impl From<HistoryBackendError> for ApiError {
     fn from(err: HistoryBackendError) -> Self {
-        let status = match &err {
-            HistoryBackendError::NotFound(_) => StatusCode::NOT_FOUND,
-            HistoryBackendError::Invalid(_) => StatusCode::BAD_REQUEST,
+        let (status, code) = match &err {
+            HistoryBackendError::NotFound(_) => (StatusCode::NOT_FOUND, "not-found"),
+            HistoryBackendError::Invalid(_) => (StatusCode::BAD_REQUEST, "invalid-request"),
             HistoryBackendError::Io(_) | HistoryBackendError::Jj(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal")
             }
         };
-        Self {
-            status,
-            message: err.to_string(),
-        }
+        Self::new(status, code, err.to_string())
     }
 }
 
 impl From<String> for ApiError {
     fn from(message: String) -> Self {
-        Self {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message,
-        }
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", message)
     }
 }
 
 impl axum::response::IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
-        let body = Json(serde_json::json!({ "error": self.message }));
-        (self.status, body).into_response()
+        let mut body = self.details;
+        body.insert("code".into(), self.code.into());
+        body.insert("error".into(), self.message.into());
+        (self.status, Json(serde_json::Value::Object(body))).into_response()
     }
 }

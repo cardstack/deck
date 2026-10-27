@@ -16,12 +16,15 @@ axum = { version = "0.8", features = ["json"] }
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 futures = "0.3"
-# Same crates.io pin as boxel-labs jj-historyd (not a fork of the jj git tree).
-jj-lib = "0.43.0"
+# Only for `gix::hash::Kind` when initializing a repo; must match jj-lib's gix.
+gix = { version = "0.88.0", default-features = false }
+# From crates.io, not a fork of the jj git tree. 0.46 needs rustc 1.97.1.
+jj-lib = "0.46.0"
 notify = "7"
 pollster = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = { version = "0.11", default-features = false }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "process", "sync", "fs", "io-util", "time"] }
 tower-http = { version = "0.6", features = ["trace"] }
@@ -33,3 +36,6 @@ default = []
 # Derived esbuild AMD plane (`/ensure-build`, `/artifact-at`). Off by default —
 # History is the product; enable with `cargo run --features build`.
 build = []
+
+[dev-dependencies]
+ureq = { version = "2", default-features = false, features = ["json"] }

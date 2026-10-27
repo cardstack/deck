@@ -51,10 +51,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      # Run cargo from packages/deckd so rustup picks up its rust-toolchain.toml.
       - name: Show Rust toolchain
+        working-directory: packages/deckd
         run: rustc --version && cargo --version
       - name: Build deckd
-        run: cargo build --locked --manifest-path packages/deckd/Cargo.toml
+        working-directory: packages/deckd
+        run: cargo build --locked
+      - name: Test deckd
+        working-directory: packages/deckd
+        run: cargo test --locked
       - name: Preserve deckd for collaboration replay
         uses: actions/upload-artifact@v4
         with:
