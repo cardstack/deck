@@ -72,11 +72,13 @@ When Hub uses `DECKD_URL`, Node watchers publish + HMR only — they do not
 | ensure / seal / restore       | per-workspace **write** lock             |
 | list / file-at / file-list-at | per-workspace **read** lock (concurrent) |
 | commit / outcome              | per-repo **file** lock (cross-process)   |
+| tree / read / tree-hash       | none; the file lock only on a miss       |
 
 ## Explicit commits
 
 `/commit`, `/outcome`, `/head` and `/tree-hash` record a revision from content
-the caller staged, never from a working copy. A writer such as realm-server
+the caller staged, never from a working copy. `/tree` and `/read` read a
+revision back. A writer such as realm-server
 can then record each write exactly once, even when deckd's response is lost.
 
 Each call names `repo`, the absolute path of one history directory (for
@@ -230,6 +232,59 @@ any repo, whoever committed it and whatever the message. The revision must be
 in the repo's history; a commit object that was written but never published
 is `revision-not-found`.
 
+### `POST /tree`
+
+```json
+{
+  "repo": "/realms/acme/.history",
+  "revision": "6f1c2d8e0a9b4c3d2e1f0a9b8c7d6e5f4a3b2c1d"
+}
+```
+
+```json
+{
+  "entries": [
+    {
+      "path": "Author/jane.json",
+      "blob": "3b18e512dba79e4c8300dd08aeb37f8e728b8dad",
+      "executable": false
+    }
+  ]
+}
+```
+
+Every file in the revision's tree, in path order. `blob` is the git blob ID
+of the file's bytes (`git hash-object`), so a caller can compare files on disk
+with a revision without reading them out of history. The revision must be in
+the repo's history, as for `/tree-hash`.
+
+### `POST /read`
+
+```json
+{
+  "repo": "/realms/acme/.history",
+  "revision": "6f1c2d8e0a9b4c3d2e1f0a9b8c7d6e5f4a3b2c1d",
+  "paths": ["Author/jane.json", "Author/old.json"]
+}
+```
+
+```json
+{
+  "files": [
+    { "path": "Author/jane.json", "contentBase64": "eyJuYW1lIjoiSmFuZSJ9" },
+    { "path": "Author/old.json", "absent": true }
+  ],
+  "remaining": []
+}
+```
+
+- Each path's bytes at the revision, in the order asked. A path the revision
+  has no file at, including a directory, is `absent`.
+- One answer carries at most 32 MiB of content. Paths past that point are not
+  read and are listed in `remaining`, in order, for the caller to ask for
+  again. The first path is always read, so every file can be read.
+- Paths follow `/commit`'s rules.
+
 ### Errors
 
 Every error body is `{ "code", "error" }`, plus fields named below, on every
@@ -238,7 +293,7 @@ route, including a request deckd can't parse.
 | Status      | `code`               | When                                                                    |
 | ----------- | -------------------- | ----------------------------------------------------------------------- |
 | 400/415/422 | `invalid-request`    | Unparseable JSON, a missing field, the wrong content type, or bad input |
-| 404         | `revision-not-found` | `/tree-hash` for a revision the repo doesn't have                       |
+| 404         | `revision-not-found` | `/tree-hash`, `/tree` or `/read` for a revision the repo doesn't have   |
 | 409         | `parent-mismatch`    | `parent` isn't HEAD; body has `head`                                    |
 | 409         | `operation-fenced`   | The operation ID was reported `absent` by `/outcome`                    |
 | 409         | `operation-mismatch` | The operation ID committed a different request; body has `revision`     |

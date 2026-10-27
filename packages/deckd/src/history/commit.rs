@@ -52,6 +52,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, TryLockError as MutexTryLockError, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use futures::AsyncReadExt as _;
 use jj_lib::backend::{BackendError, CommitId, CopyId, Signature, Timestamp, TreeValue};
 use jj_lib::commit::Commit;
 use jj_lib::default_backend_factories::default_backend_factories;
@@ -168,6 +169,34 @@ pub struct RevisionTree {
     pub tree: String,
 }
 
+/// One file in a revision's tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TreeEntry {
+    pub path: String,
+    /// The git blob ID of the file's bytes.
+    pub blob: String,
+    pub executable: bool,
+}
+
+/// A path's bytes at a revision, or `None` where the revision has no file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileContent {
+    pub path: String,
+    pub content: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadResult {
+    pub files: Vec<FileContent>,
+    /// The paths asked for and not read, because reading them would have
+    /// taken the answer past `READ_MAX_BYTES`.
+    pub remaining: Vec<String>,
+}
+
+/// The most file content one `read` returns. The answer is base64 in one JSON
+/// body, a third larger again, and is held in memory on both sides.
+pub const READ_MAX_BYTES: usize = if cfg!(test) { 16 } else { 32 * 1024 * 1024 };
+
 /// Explicit-content commits, operation outcomes and tree hashes. Holds no
 /// state that correctness depends on; a fresh instance behaves exactly like
 /// one that has been running.
@@ -240,6 +269,106 @@ impl CommitService {
     /// The tree of `revision`, which must be in the repo's history: a commit
     /// object that was written but never published is not found.
     pub fn tree_hash(&self, repo_dir: &Path, revision: &str) -> CommitResult<RevisionTree> {
+        let (_repo, commit) = self.published(repo_dir, revision)?;
+        Ok(RevisionTree {
+            revision: commit.id().hex(),
+            tree: tree_hash(&commit),
+        })
+    }
+
+    /// Every file in `revision`'s tree with its git blob ID, in path order.
+    /// The blob ID is the git object ID of the file's bytes, so a caller can
+    /// tell whether a file on disk matches without reading it out of history.
+    pub fn tree(&self, repo_dir: &Path, revision: &str) -> CommitResult<Vec<TreeEntry>> {
+        let (_repo, commit) = self.published(repo_dir, revision)?;
+        let mut entries = Vec::new();
+        for (path, value) in commit.tree().entries() {
+            let path = path.as_internal_file_string().to_owned();
+            match value.map_err(internal)?.into_resolved() {
+                Ok(Some(TreeValue::File { id, executable, .. })) => entries.push(TreeEntry {
+                    path,
+                    blob: id.hex(),
+                    executable,
+                }),
+                // Explicit commits write only regular files, so anything else
+                // is a repo this service did not write.
+                _ => {
+                    return Err(CommitError::Internal(format!(
+                        "{path:?} is not a regular file in revision {revision}"
+                    )))
+                }
+            }
+        }
+        Ok(entries)
+    }
+
+    /// The bytes `revision` holds at each of `paths`, in the order asked, or
+    /// `None` for a path that is absent or a directory there. Stops before the
+    /// file that would take the content past `READ_MAX_BYTES` (unless it is
+    /// the first), returning the paths it did not read as `remaining`, so a
+    /// caller reads a large set in several calls.
+    pub fn read(
+        &self,
+        repo_dir: &Path,
+        revision: &str,
+        paths: &[String],
+    ) -> CommitResult<ReadResult> {
+        for path in paths {
+            if !is_valid_commit_path(path) {
+                return Err(CommitError::Invalid(format!("invalid path {path:?}")));
+            }
+        }
+        let (repo, commit) = self.published(repo_dir, revision)?;
+        pollster::block_on(async {
+            let tree = commit.tree();
+            let mut files = Vec::new();
+            let mut total = 0usize;
+            for (index, path) in paths.iter().enumerate() {
+                let repo_path = RepoPathBuf::from_internal_string(path.clone())
+                    .map_err(|e| CommitError::Invalid(format!("invalid path {path:?}: {e}")))?;
+                let value = tree.path_value(&repo_path).await.map_err(internal)?;
+                let content = match value.as_resolved() {
+                    Some(Some(TreeValue::File { id, .. })) => {
+                        let mut bytes = Vec::new();
+                        repo.store()
+                            .read_file(&repo_path, id)
+                            .await
+                            .map_err(internal)?
+                            .read_to_end(&mut bytes)
+                            .await
+                            .map_err(internal)?;
+                        Some(bytes)
+                    }
+                    _ => None,
+                };
+                let size = content.as_ref().map_or(0, Vec::len);
+                if index > 0 && total + size > READ_MAX_BYTES {
+                    return Ok(ReadResult {
+                        files,
+                        remaining: paths[index..].to_vec(),
+                    });
+                }
+                total += size;
+                files.push(FileContent {
+                    path: path.clone(),
+                    content,
+                });
+            }
+            Ok(ReadResult {
+                files,
+                remaining: Vec::new(),
+            })
+        })
+    }
+
+    /// The repo and `revision` as a commit in its history. Reads without the
+    /// repo locks, and takes them only when this host's view doesn't show the
+    /// revision, which settles HEAD first.
+    fn published(
+        &self,
+        repo_dir: &Path,
+        revision: &str,
+    ) -> CommitResult<(Arc<ReadonlyRepo>, Commit)> {
         let repo_dir = self.resolve_repo_dir(repo_dir)?;
         let not_found = || CommitError::RevisionNotFound(revision.to_owned());
         let id = CommitId::try_from_hex(revision).ok_or_else(not_found)?;
@@ -251,23 +380,19 @@ impl CommitService {
             Err(error) => return Err(error),
         };
         let heads: Vec<CommitId> = repo.view().heads().iter().cloned().collect();
-        let commit = match pollster::block_on(published_commit(&repo, &heads, &id))? {
-            Some(commit) => commit,
-            // Unlocked, this host's listing may not show a peer's latest
-            // commit yet. Only a miss pays for the lock, which settles HEAD.
-            None => self
-                .locked(&repo_dir, |repo_dir, head_file| {
-                    pollster::block_on(async {
-                        let (repo, head) = settled_head(repo_dir, head_file).await?;
-                        published_commit(&repo, &[head.id().clone()], &id).await
-                    })
-                })?
-                .ok_or_else(not_found)?,
-        };
-        Ok(RevisionTree {
-            revision: commit.id().hex(),
-            tree: tree_hash(&commit),
-        })
+        if let Some(commit) = pollster::block_on(published_commit(&repo, &heads, &id))? {
+            return Ok((repo, commit));
+        }
+        // Unlocked, this host's listing may not show a peer's latest commit
+        // yet. Only a miss pays for the lock, which settles HEAD.
+        self.locked(&repo_dir, |repo_dir, head_file| {
+            pollster::block_on(async {
+                let (repo, head) = settled_head(repo_dir, head_file).await?;
+                let commit = published_commit(&repo, &[head.id().clone()], &id).await?;
+                Ok(commit.map(|commit| (repo, commit)))
+            })
+        })?
+        .ok_or_else(not_found)
     }
 
     /// Run `body` holding both repo locks, with the resolved repo directory
@@ -1209,8 +1334,6 @@ fn nonce() -> String {
 
 #[cfg(test)]
 mod tests {
-    use futures::AsyncReadExt as _;
-
     use super::*;
 
     /// A realm directory whose history repo is `<realm>/.history`. The repo
@@ -2378,5 +2501,189 @@ mod tests {
             }
         });
         assert!(executable);
+    }
+
+    fn git_blob_id(content: &str) -> String {
+        let mut child = std::process::Command::new("git")
+            .args(["hash-object", "--stdin"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(content.as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    }
+
+    #[test]
+    fn tree_lists_every_file_with_its_git_blob_id() {
+        let realm = Realm::new("tree-lists");
+        let service = CommitService::new();
+        let root = head(&service, &realm);
+        let revision = commit(
+            &service,
+            &realm,
+            request(
+                &root,
+                "op-tree",
+                vec![
+                    write("b.json", "{\"b\":1}"),
+                    write("dir/a.gts", "export {}"),
+                ],
+            ),
+        )
+        .unwrap()
+        .revision;
+        let entries = service.tree(&realm.repo(), &revision).unwrap();
+        assert_eq!(
+            entries,
+            vec![
+                TreeEntry {
+                    path: "b.json".into(),
+                    blob: git_blob_id("{\"b\":1}"),
+                    executable: false,
+                },
+                TreeEntry {
+                    path: "dir/a.gts".into(),
+                    blob: git_blob_id("export {}"),
+                    executable: false,
+                },
+            ]
+        );
+        assert_eq!(service.tree(&realm.repo(), &root).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn tree_of_an_unknown_revision_is_not_found() {
+        let realm = Realm::new("tree-unknown");
+        let service = CommitService::new();
+        head(&service, &realm);
+        let result = service.tree(&realm.repo(), &"ab".repeat(20));
+        assert!(matches!(result, Err(CommitError::RevisionNotFound(_))));
+    }
+
+    #[test]
+    fn read_returns_each_path_at_the_revision() {
+        let realm = Realm::new("read-at");
+        let service = CommitService::new();
+        let root = head(&service, &realm);
+        let first = commit(
+            &service,
+            &realm,
+            request(
+                &root,
+                "op-1",
+                vec![write("a.txt", "one"), write("d/b.txt", "two")],
+            ),
+        )
+        .unwrap()
+        .revision;
+        let second = commit(
+            &service,
+            &realm,
+            request(
+                &first,
+                "op-2",
+                vec![write("a.txt", "uno"), delete("d/b.txt")],
+            ),
+        )
+        .unwrap()
+        .revision;
+        let paths: Vec<String> = ["a.txt", "d/b.txt", "d", "missing.txt"]
+            .iter()
+            .map(|p| p.to_string())
+            .collect();
+        let at = |revision: &str| {
+            let found = service.read(&realm.repo(), revision, &paths).unwrap();
+            assert!(found.remaining.is_empty());
+            found
+                .files
+                .into_iter()
+                .map(|f| (f.path, f.content.map(|c| String::from_utf8(c).unwrap())))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            at(&first),
+            vec![
+                ("a.txt".into(), Some("one".into())),
+                ("d/b.txt".into(), Some("two".into())),
+                ("d".into(), None),
+                ("missing.txt".into(), None),
+            ]
+        );
+        assert_eq!(
+            at(&second),
+            vec![
+                ("a.txt".into(), Some("uno".into())),
+                ("d/b.txt".into(), None),
+                ("d".into(), None),
+                ("missing.txt".into(), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn read_stops_before_the_byte_ceiling_and_names_the_rest() {
+        let realm = Realm::new("read-ceiling");
+        let service = CommitService::new();
+        let root = head(&service, &realm);
+        let revision = commit(
+            &service,
+            &realm,
+            request(
+                &root,
+                "op-big",
+                vec![
+                    write("a.txt", "0123456789"),
+                    write("b.txt", "0123456789"),
+                    write("c.txt", "0123456789abcdefghij"),
+                ],
+            ),
+        )
+        .unwrap()
+        .revision;
+        let paths: Vec<String> = ["a.txt", "b.txt", "c.txt"]
+            .iter()
+            .map(|p| p.to_string())
+            .collect();
+        let found = service.read(&realm.repo(), &revision, &paths).unwrap();
+        assert_eq!(
+            found
+                .files
+                .iter()
+                .map(|f| f.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a.txt"]
+        );
+        assert_eq!(
+            found.remaining,
+            vec!["b.txt".to_string(), "c.txt".to_string()]
+        );
+        // A file over the ceiling on its own is still returned when it is
+        // the first asked for, so every path can be read.
+        let found = service
+            .read(&realm.repo(), &revision, &found.remaining[1..])
+            .unwrap();
+        assert_eq!(found.files[0].content.as_ref().map(Vec::len), Some(20));
+        assert!(found.remaining.is_empty());
+    }
+
+    #[test]
+    fn read_refuses_invalid_paths() {
+        let realm = Realm::new("read-invalid");
+        let service = CommitService::new();
+        let root = head(&service, &realm);
+        for path in ["../x", "/abs", "a//b", ".git/config"] {
+            let result = service.read(&realm.repo(), &root, &[path.to_string()]);
+            assert!(
+                matches!(result, Err(CommitError::Invalid(_))),
+                "{path} was not refused"
+            );
+        }
     }
 }

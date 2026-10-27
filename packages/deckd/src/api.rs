@@ -13,7 +13,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::history::commit::{
     Author, Change, CommitError, CommitOutcome, CommitRequest, CommitService, CommitTrailer,
-    OperationOutcome, RevisionTree,
+    OperationOutcome, RevisionTree, TreeEntry,
 };
 use crate::history::{Actor, HistoryBackend, HistoryBackendError, HistoryEntry, RestorePlan};
 use crate::watch::WatchPlane;
@@ -54,6 +54,8 @@ pub fn router(state: AppState) -> Router {
         .route("/outcome", post(outcome))
         .route("/head", post(head))
         .route("/tree-hash", post(tree_hash))
+        .route("/tree", post(tree))
+        .route("/read", post(read))
         .route("/ensure-build", post(ensure_build))
         .route("/artifact-at", post(artifact_at))
         .layer(TraceLayer::new_for_http())
@@ -77,6 +79,8 @@ pub fn router(state: AppState) -> Router {
         .route("/outcome", post(outcome))
         .route("/head", post(head))
         .route("/tree-hash", post(tree_hash))
+        .route("/tree", post(tree))
+        .route("/read", post(read))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -312,6 +316,34 @@ struct TreeHashResponse {
     tree: String,
 }
 
+#[derive(Debug, Serialize)]
+struct TreeResponse {
+    entries: Vec<TreeEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReadBody {
+    repo: String,
+    revision: String,
+    paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadFile {
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content_base64: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    absent: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ReadResponse {
+    files: Vec<ReadFile>,
+    remaining: Vec<String>,
+}
+
 async fn commit(
     State(st): State<AppState>,
     Body(body): Body<CommitBody>,
@@ -381,6 +413,40 @@ async fn tree_hash(
     let revision = body.revision;
     let found = run_commits(&st, move |c| c.tree_hash(&repo, &revision)).await?;
     Ok(Json(TreeHashResponse { tree: found.tree }))
+}
+
+async fn tree(
+    State(st): State<AppState>,
+    Body(body): Body<TreeHashBody>,
+) -> Result<Json<TreeResponse>, ApiError> {
+    let repo = std::path::PathBuf::from(body.repo);
+    let revision = body.revision;
+    let entries = run_commits(&st, move |c| c.tree(&repo, &revision)).await?;
+    Ok(Json(TreeResponse { entries }))
+}
+
+async fn read(
+    State(st): State<AppState>,
+    Body(body): Body<ReadBody>,
+) -> Result<Json<ReadResponse>, ApiError> {
+    let repo = std::path::PathBuf::from(body.repo);
+    let revision = body.revision;
+    let paths = body.paths;
+    let found = run_commits(&st, move |c| c.read(&repo, &revision, &paths)).await?;
+    Ok(Json(ReadResponse {
+        files: found
+            .files
+            .into_iter()
+            .map(|file| ReadFile {
+                path: file.path,
+                absent: file.content.is_none(),
+                content_base64: file
+                    .content
+                    .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes)),
+            })
+            .collect(),
+        remaining: found.remaining,
+    }))
 }
 
 /// Commit work waits on repo locks and drives jj-lib's `!Send` futures, so it
