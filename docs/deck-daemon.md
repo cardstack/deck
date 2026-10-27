@@ -13,9 +13,9 @@ Companions: [`deck-at-rest.md`](deck-at-rest.md) (layout),
 [`deck-embroider-lessons.md`](deck-embroider-lessons.md) (pain at seal time),
 [`deck-boxel-backport-for-team.md`](./plans/deck-boxel-backport-for-team.md) (campaign).
 
-jj-lib source used for spikes / dependency work:
-`/Users/chris/Projects/jj` (upstream [`jj-vcs/jj`](https://github.com/jj-vcs/jj)
-`lib/`). That tree is **not** where AMD or esbuild live.
+jj-lib source used for spikes / dependency work: a local checkout of
+[`jj-vcs/jj`](https://github.com/jj-vcs/jj) (`lib/`). That tree is **not** where AMD or
+esbuild live.
 
 **Implementation:** [`packages/deckd/`](../packages/deckd/) — historyd-compatible
 HTTP, History under `.deck/history`, jj-lib in-process with a watchexec-shaped
@@ -52,7 +52,7 @@ machinery directory, build pain at settle/seal time — not on GET.
 - Deck owns the binary and its RPC. jj upstream stays a **library dependency**
   (jj-lib), not a long-lived full-repo fork, unless a lib patch is unavoidable.
 - Prefer: crate depends on jj-lib from crates.io or a pinned path to
-  `/Users/chris/Projects/jj/lib`. Deck ships `deckd`; it does not become
+  a local jj checkout's `lib/`. Deck ships `deckd`; it does not become
   “Cardstack’s jj distribution.”
 
 ### R2 — Roles of deckd

@@ -1,6 +1,6 @@
 //! Notes for an in-process jj-lib backend (not compiled in this POC).
 //!
-//! Local jj checkout for spikes: `/Users/chris/Projects/jj` (`jj-lib` in `lib/`).
+//! jj source for spikes: [`jj-vcs/jj`](https://github.com/jj-vcs/jj) (`jj-lib` in `lib/`).
 //!
 //! ## Why CLI first
 //!
@@ -46,4 +46,4 @@
 #![allow(dead_code)]
 
 /// Marker so the module is not empty.
-pub const JJ_LIB_SPIKE_ROOT_HINT: &str = "/Users/chris/Projects/jj";
+pub const JJ_LIB_SPIKE_ROOT_HINT: &str = "https://github.com/jj-vcs/jj";

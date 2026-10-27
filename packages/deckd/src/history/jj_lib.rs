@@ -1,6 +1,5 @@
-//! jj-lib History — copied closely from
-//! `/Users/chris/Projects/boxel-labs/examples/jj-lib-node/rust/src/lib.rs`
-//! (`jj-historyd`), with these Deck-only deltas called out inline:
+//! jj-lib History — copied closely from an internal `jj-historyd` prototype,
+//! with these Deck-only deltas called out inline:
 //!
 //! 1. `Workspace::init_internal_git` (not colocated) — no depot `.git` / gitlink.
 //! 2. After init, durable store lives at `.deck/history/repo` with a thin
