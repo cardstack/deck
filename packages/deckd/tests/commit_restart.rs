@@ -42,11 +42,17 @@ fn committed_outcome_survives_a_restart() {
     assert_eq!(status, 200);
     assert_eq!(
         outcome,
-        json!({ "state": "committed", "revision": committed["revision"] })
+        json!({
+            "state": "committed",
+            "revision": committed["revision"],
+            "parent": root,
+            "created": true,
+        })
     );
     let (_, retried) = deckd.post("/commit", commit_body(&repo, &root, "op-1"));
     assert_eq!(retried["revision"], committed["revision"]);
     assert_eq!(retried["replayed"], json!(true));
+    assert_eq!(retried["parent"], json!(root));
     let (_, tree) = deckd.post(
         "/tree-hash",
         json!({ "repo": repo, "revision": committed["revision"] }),

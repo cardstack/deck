@@ -147,9 +147,12 @@ pub struct CommitRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CommitOutcome {
     pub revision: String,
+    /// `revision`'s parent; `None` only for the root commit.
+    pub parent: Option<String>,
     pub tree: String,
     /// False when the changes left the tree as it was and no revision was
-    /// written; `revision` is then the unchanged HEAD.
+    /// written; `revision` is then the unchanged HEAD. On a replay, whether
+    /// the operation's first commit wrote `revision`.
     pub created: bool,
     /// True when this operation ID had already committed and nothing new
     /// was written.
@@ -159,7 +162,13 @@ pub struct CommitOutcome {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "camelCase")]
 pub enum OperationOutcome {
-    Committed { revision: String },
+    /// `created` is false when the operation's changes left the tree as it
+    /// was, so `revision` is the HEAD it found rather than one it wrote.
+    Committed {
+        revision: String,
+        parent: Option<String>,
+        created: bool,
+    },
     Absent,
 }
 
@@ -500,8 +509,9 @@ async fn commit_locked(
                 let commit = get_commit(&repo, &revision)?;
                 return Ok(CommitOutcome {
                     revision,
+                    parent: parent_of(&commit),
                     tree: tree_hash(&commit),
-                    created: false,
+                    created: written_by(&commit, &request.operation_id),
                     replayed: true,
                 });
             }
@@ -545,6 +555,7 @@ async fn commit_locked(
         )?;
         return Ok(CommitOutcome {
             revision: head_hex,
+            parent: parent_of(&head),
             tree: tree_hash(&head),
             created: false,
             replayed: false,
@@ -587,6 +598,7 @@ async fn commit_locked(
     )?;
     Ok(CommitOutcome {
         revision,
+        parent: Some(head_hex),
         tree: tree_hash(&commit),
         created: true,
         replayed: false,
@@ -599,7 +611,7 @@ async fn outcome_locked(
     head_file: &mut File,
     operation_id: &str,
 ) -> CommitResult<OperationOutcome> {
-    let (_repo, head) = settled_head(repo_dir, head_file).await?;
+    let (repo, head) = settled_head(repo_dir, head_file).await?;
     repair_head_record(repo_dir, &head)?;
 
     let record_path = operation_record_path(repo_dir, operation_id);
@@ -607,7 +619,14 @@ async fn outcome_locked(
         return Ok(OperationOutcome::Absent);
     }
     match read_record(&record_path)? {
-        Record::Committed { revision, .. } => Ok(OperationOutcome::Committed { revision }),
+        Record::Committed { revision, .. } => {
+            let commit = get_commit(&repo, &revision)?;
+            Ok(OperationOutcome::Committed {
+                parent: parent_of(&commit),
+                created: written_by(&commit, operation_id),
+                revision,
+            })
+        }
         Record::Fenced => Ok(OperationOutcome::Absent),
         Record::Pending(_) => {
             write_record(&record_path, &Record::Fenced)?;
@@ -975,6 +994,19 @@ fn get_commit(repo: &Arc<ReadonlyRepo>, revision: &str) -> CommitResult<Commit> 
         Err(BackendError::ObjectNotFound { .. }) => Err(not_found()),
         Err(e) => Err(internal(e)),
     }
+}
+
+/// An explicit commit's one parent, or `None` for the root commit.
+fn parent_of(commit: &Commit) -> Option<String> {
+    commit.parent_ids().first().map(|id| id.hex())
+}
+
+/// Whether `commit` is the one `operation_id` wrote, rather than the HEAD an
+/// operation whose changes left the tree as it was found.
+fn written_by(commit: &Commit, operation_id: &str) -> bool {
+    parse_description_trailers(commit.description())
+        .into_iter()
+        .any(|t| t.key == OPERATION_ID_TRAILER && t.value == operation_id)
 }
 
 fn tree_hash(commit: &Commit) -> String {
@@ -1577,26 +1609,54 @@ mod tests {
         let root = head(&service, &realm);
         let req = request(&root, "op-1", vec![write("a.txt", "1")]);
         let first = commit(&service, &realm, req.clone()).unwrap();
+        let later = commit(
+            &service,
+            &realm,
+            request(&first.revision, "op-2", vec![write("b.txt", "2")]),
+        )
+        .unwrap();
 
-        // The retry's parent is now stale; the replay still wins.
+        // The retry's parent is now stale; the replay still wins, and reports
+        // the revision's own parent rather than the current HEAD.
         let again = commit(&service, &realm, req).unwrap();
 
         assert_eq!(again.revision, first.revision);
         assert_eq!(again.tree, first.tree);
+        assert_eq!(again.parent, Some(root.clone()));
+        assert!(again.replayed);
+        assert!(again.created, "op-1 wrote the revision it replays");
+        assert_eq!(head(&service, &realm), later.revision);
+        assert_eq!(
+            outcome(&service, &realm, "op-1"),
+            OperationOutcome::Committed {
+                revision: first.revision,
+                parent: Some(root),
+                created: true,
+            }
+        );
+    }
+
+    #[test]
+    fn replaying_an_operation_that_changed_nothing_says_it_wrote_nothing() {
+        let realm = Realm::new("idempotent-unchanged");
+        let service = CommitService::new();
+        let root = head(&service, &realm);
+        let first = commit(
+            &service,
+            &realm,
+            request(&root, "op-1", vec![write("a.txt", "1")]),
+        )
+        .unwrap();
+        let req = request(&first.revision, "op-2", vec![write("a.txt", "1")]);
+        let same = commit(&service, &realm, req.clone()).unwrap();
+        assert!(!same.created);
+
+        let again = commit(&service, &realm, req).unwrap();
+
         assert!(again.replayed);
         assert!(!again.created);
-        assert_eq!(head(&service, &realm), first.revision);
-        let parent = pollster::block_on(async {
-            let repo = load_repo(&realm.repo()).await.unwrap();
-            get_commit(&repo, &first.revision)
-                .unwrap()
-                .parent_ids()
-                .to_vec()
-        });
-        assert_eq!(
-            parent.iter().map(|id| id.hex()).collect::<Vec<_>>(),
-            vec![root]
-        );
+        assert_eq!(again.revision, first.revision);
+        assert_eq!(again.parent, Some(root));
     }
 
     #[test]
@@ -1645,7 +1705,9 @@ mod tests {
         assert_eq!(
             outcome(&restarted, &realm, "op-1"),
             OperationOutcome::Committed {
-                revision: done.revision.clone()
+                revision: done.revision.clone(),
+                parent: Some(root.clone()),
+                created: true,
             }
         );
         // Asking doesn't fence a committed operation; a retry still replays.
@@ -1676,7 +1738,9 @@ mod tests {
         assert_eq!(
             outcome(&service, &realm, "op-1"),
             OperationOutcome::Committed {
-                revision: done.revision.clone()
+                revision: done.revision.clone(),
+                parent: Some(root.clone()),
+                created: true,
             }
         );
         std::fs::remove_file(&record).unwrap();
@@ -2048,7 +2112,9 @@ mod tests {
         assert_eq!(
             outcome(&restarted, &realm, "op-crashed"),
             OperationOutcome::Committed {
-                revision: revision.clone()
+                revision: revision.clone(),
+                parent: Some(root.clone()),
+                created: true,
             }
         );
         assert_eq!(head(&restarted, &realm), revision);
@@ -2214,7 +2280,9 @@ mod tests {
         assert_eq!(
             outcome(&service, &realm, "op-2"),
             OperationOutcome::Committed {
-                revision: first.revision
+                revision: first.revision,
+                parent: first.parent,
+                created: false,
             }
         );
     }

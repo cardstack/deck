@@ -171,11 +171,18 @@ Each commit's message ends with the caller's trailers, then
 ```json
 {
   "revision": "6f1c2d8e0a9b4c3d2e1f0a9b8c7d6e5f4a3b2c1d",
+  "parent": "0000000000000000000000000000000000000000",
   "tree": "9a3e1b7c5d2f4e6a8b0c1d3e5f7a9b1c3d5e7f9a",
   "created": true,
   "replayed": false
 }
 ```
+
+- `parent` is `revision`'s own parent, which on a replay may be older than
+  the request's `parent`. It is `null` only for the root commit.
+- `created` is false when the changes left HEAD's tree as it was, and
+  `revision` is that HEAD. On a replay (`replayed: true`) it says whether the
+  operation's first commit wrote `revision` or found the tree unchanged.
 
 - `operationId`: 1–128 characters from `[A-Za-z0-9._-]`, not starting with `.`.
 - `changes`: each entry has `path` plus exactly one of `contentBase64` or
@@ -195,10 +202,16 @@ Each commit's message ends with the caller's trailers, then
 ```
 
 ```json
-{ "state": "committed", "revision": "6f1c2d8e0a9b4c3d2e1f0a9b8c7d6e5f4a3b2c1d" }
+{
+  "state": "committed",
+  "revision": "6f1c2d8e0a9b4c3d2e1f0a9b8c7d6e5f4a3b2c1d",
+  "parent": "0000000000000000000000000000000000000000",
+  "created": true
+}
 ```
 
-or `{ "state": "absent" }`, after which the ID is fenced. It is a POST because
+`parent` and `created` mean what they do in `/commit`'s answer. Or the answer
+is `{ "state": "absent" }`, after which the ID is fenced. It is a POST because
 it can change state.
 
 ### `POST /head`
